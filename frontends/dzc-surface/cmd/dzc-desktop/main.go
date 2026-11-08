@@ -256,14 +256,34 @@ func run() error {
 		dock := &shell.dock
 		dock.window, dock.preview, dock.history = win, preview, history
 		dock.configure(settings.EdgeDocking == "true")
-		win.OnBlur(func() { history.targetInvalid.Store(true); preview.clear(); focusChanged.Emit(win, false) })
+		win.OnBlur(func() {
+			history.targetInvalid.Store(true)
+			preview.clear()
+			focusChanged.Emit(win, false)
+			fmt.Fprintln(os.Stdout, "recording-cancel")
+		})
 		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus"); focusChanged.Emit(win, true) })
-		win.OnShow(func() { shell.idle.cancel(); dock.hidden = false; dock.shown = time.Now(); visibilityChanged.Emit(win, true) })
-		win.OnHide(func() { preview.clear(); visibilityChanged.Emit(win, false) })
+		win.OnShow(func() {
+			shell.idle.cancel()
+			dock.hidden = false
+			dock.shown = time.Now()
+			visibilityChanged.Emit(win, true)
+		})
+		win.OnHide(func() {
+			preview.clear()
+			visibilityChanged.Emit(win, false)
+			fmt.Fprintln(os.Stdout, "recording-cancel")
+		})
 		win.OnMove(func() { preview.clear(); windowMoved.Emit(win, true) })
 		win.OnFileDrop(func(e *mygo.FileDropEvent) { filesDropped.Emit(win, e.Paths) })
 		win.OnClose(func(*mygo.CloseEvent) { fmt.Fprintln(os.Stdout, "closing") })
-		win.OnClosed(func() { shell.idle.cancel(); dock.hidden = false; dock.configure(false); preview.clear(); mygo.App.Quit() })
+		win.OnClosed(func() {
+			shell.idle.cancel()
+			dock.hidden = false
+			dock.configure(false)
+			preview.clear()
+			mygo.App.Quit()
+		})
 		win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
 		win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
 		win.Page().LoadURL("mygo://localhost/")
@@ -313,6 +333,9 @@ func run() error {
 			for commands.Scan() {
 				command := commands.Text()
 				if len(command) > 0 && command[0] == '{' {
+					if acceptRecordingEvent(win, command) {
+						continue
+					}
 					shell.resident.accept(command)
 					continue
 				}

@@ -102,9 +102,9 @@ async fn connection(host: Arc<Host>, mut stream: Stream, state: Arc<Connections>
         Err(code) => { send(&mut stream, Response::failure(id, code)).await?; return Ok(()); },
     };
     send(&mut stream, Response::success(id, serde_json::to_value(hello)?)).await?;
-    #[cfg(feature = "native-screen")]
     let screen_owner = session.id().to_owned();
     let result = requests(host.clone(), session, stream, state, stopped).await;
+    host.recording.disconnect(&screen_owner);
     #[cfg(feature = "native-screen")]
     host.screen.disconnect(&screen_owner);
     result

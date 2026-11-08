@@ -17,7 +17,7 @@ interface HotkeyRecorderProps {
 }
 const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkeyChange, onClear, disabled = false, placeholder }: HotkeyRecorderProps) => {
     const [recordingError, setRecordingError] = useState<string | null>(null);
-    const { record, cancel } = useHotkeyRecording({ recording: recording && !disabled, onRecorded: onHotkeyChange,
+    const { record, cancel, nativeReady } = useHotkeyRecording({ recording: recording && !disabled, onRecorded: onHotkeyChange,
         onCancelled: () => setRecording(false),
         onError: error => setRecordingError(t("hotkey_register_failed") + String(error)),
     });
@@ -56,6 +56,7 @@ const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkey
             role="button"
             aria-label={t(labelKey)}
             aria-pressed={recording && !disabled}
+            aria-busy={recording && !nativeReady}
             aria-disabled={disabled}
             tabIndex={disabled ? -1 : 0}
             onClick={event => { startRecording(); event.currentTarget.focus(); }}

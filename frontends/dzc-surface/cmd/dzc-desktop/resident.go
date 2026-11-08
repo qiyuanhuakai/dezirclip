@@ -20,7 +20,7 @@ import (
 )
 
 // The resident keeps the configured keyboard shortcuts after the WebView exits.
-func refreshMainShortcuts(owner *client.Client, registered map[string]bool, toggle func()) map[string]string {
+func refreshMainShortcuts(owner *client.Client, registered map[string]bool, toggle func(), record func(string) bool) map[string]string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	settings, err := (&Library{owner}).Preferences(ctx)
@@ -44,7 +44,11 @@ func refreshMainShortcuts(owner *client.Client, registered map[string]bool, togg
 	}
 	for key := range wanted {
 		if !registered[key] {
-			if err := mygo.GlobalShortcut.Register(key, toggle); err != nil {
+			if err := mygo.GlobalShortcut.Register(key, func() {
+				if !record(key) {
+					toggle()
+				}
+			}); err != nil {
 				log.Printf("Main window shortcut unavailable: %v", err)
 			} else {
 				registered[key] = true
@@ -69,6 +73,9 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		var setTrayVisible func(bool) error
 		pinnedCount := 0
 		var commands io.WriteCloser
+		recorder := &shortcutRecording{post: mygo.RunOnMain}
+		panel.SetShortcutRecorder(recorder.offer)
+		selector.SetShortcutRecorder(recorder.offer)
 		gpuDisabled := false
 		stopping := false
 		closing := false
@@ -178,7 +185,14 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 						if json.Unmarshal([]byte(line), &request) == nil && request.ID != 0 {
 							mygo.RunOnMain(func() {
 								reply := func(err error) {
-									_ = json.NewEncoder(input).Encode(residentReply{ID: request.ID, Success: err == nil})
+									response := residentReply{ID: request.ID, Success: err == nil}
+									if err != nil {
+										response.Error = err.Error()
+										if request.Operation == "recording" {
+											log.Printf("Shortcut recording transition failed (enabled=%t): %v", !request.Disabled, err)
+										}
+									}
+									_ = json.NewEncoder(input).Encode(response)
 								}
 								if stopping || migrating || commands != input || ((moved || pending != nil) && request.Operation != "relaunch-profile") {
 									reply(fmt.Errorf("main window closed"))
@@ -230,6 +244,16 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 									reply(err)
 								case "capture":
 									selector.Capture(request.Full, request.Epoch, reply)
+								case "recording":
+									if request.Disabled {
+										reply(recorder.stop())
+										return
+									}
+									reply(recorder.start(owner, request.Epoch, func(event recordingEvent) {
+										if commands == input {
+											_ = json.NewEncoder(input).Encode(event)
+										}
+									}))
 								case "native-panel":
 									key := ""
 									switch request.Panel {
@@ -298,6 +322,8 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 						continue
 					}
 					switch line {
+					case "recording-cancel":
+					mygo.RunOnMain(func() { recorder.abort() })
 					case "closing":
 						mygo.RunOnMain(func() { closing = true })
 					case "focus":
@@ -305,7 +331,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 							if !stopping && !migrating && !moved && pending == nil {
 								panel.RefreshShortcut()
 								selector.Refresh()
-								refreshMainShortcuts(owner, registered, toggle)
+								refreshMainShortcuts(owner, registered, toggle, recorder.offer)
 							}
 						})
 					}
@@ -314,6 +340,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 					log.Printf("Main window exited: %v", err)
 				}
 				mygo.RunOnMain(func() {
+					_ = recorder.stop()
 					input.Close()
 					commands = nil
 					closing = false
@@ -334,7 +361,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		}
 		toggle = func() { present("toggle") }
 		open := func() { present("show") }
-		startupSettings := refreshMainShortcuts(owner, registered, toggle)
+		startupSettings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
 		setTrayVisible = func(visible bool) error {
 			if (tray != nil) == visible {
 				return nil
@@ -370,6 +397,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				event.PreventDefault()
 				return
 			}
+			_ = recorder.stop()
 			stopping = true
 			for key := range registered {
 				mygo.GlobalShortcut.Unregister(key)

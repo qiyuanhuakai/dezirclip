@@ -103,6 +103,12 @@ func (c *residentBridge) send(ctx context.Context, request residentRequest, dead
 			return errReconnect
 		}
 		if !reply.Success {
+			if request.Operation == "recording" || request.Operation == "native-panel" {
+				if reply.Error != "" {
+					return errors.New(reply.Error)
+				}
+				return errors.New("NativeShortcutUnavailable")
+			}
 			if request.Operation == "move-profile" || request.Operation == "relaunch-profile" {
 				if reply.Error != "" {
 					return errors.New(reply.Error)

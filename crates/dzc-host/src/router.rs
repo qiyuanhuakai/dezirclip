@@ -77,6 +77,7 @@ pub struct Host {
     pub(crate) snapshots: crate::desktop::Snapshots,
     observed_epoch: Mutex<u64>,
     hotkey: Mutex<Option<crate::hotkey::Hotkey>>,
+    pub(crate) recording: crate::recording::Recording,
     pub(crate) queue: crate::paste_queue::Queue,
     delivery: Mutex<()>,
     pub(crate) uploads: crate::upload::Uploads,
@@ -121,7 +122,7 @@ impl Host {
             application_selection: Mutex::new(()),
             #[cfg(feature = "native-screen")]
             screen: Default::default(),
-            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), queue: Default::default(), delivery:Mutex::new(()), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
+            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), recording: Default::default(), queue: Default::default(), delivery:Mutex::new(()), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
         *host.hotkey.lock().map_err(unavailable)? = Some(crate::hotkey::Hotkey::new(Arc::downgrade(&host)));
         Ok(host)
     }
@@ -266,6 +267,11 @@ impl Host {
             Err(_) => return Err(WireErrorCode::Unavailable),
         };
         if self.is_stopping() { return Err(WireErrorCode::Busy); }
+        if self.recording.active()? {
+            let hotkey = self.history.privacy().hotkey().map_err(privacy_error)?;
+            self.publish(EventKind::ServiceStateChanged, EventData {entry_id: None, status: Some(format!("hotkey_recorded:{hotkey}"))})?;
+            return Ok(true);
+        }
         self.history.privacy().toggle(now_ms()?).map_err(privacy_error)?;
         self.synchronize_privacy()?;
         Ok(true)
@@ -330,6 +336,7 @@ impl Host {
             methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
+                methods.push("desktop.hotkey.recording");
                 methods.push("desktop.settings.view.set");
                 methods.push("desktop.settings.fonts");
                 methods.extend(["desktop.window.pin", "desktop.window.resize"]);
@@ -584,6 +591,17 @@ impl Host {
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            Method::DesktopHotkeyRecording => {
+                session.require(Permission::PrivacyWrite)?;
+                let input: RecordingParams = params(request.params)?;
+                if input.enabled {
+                    self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                } else {
+                    self.desktop_permission(session, &input.service_instance_id)?;
+                }
+                self.recording.set(session.id(), input.enabled)?;
+                result("OperationResult", OperationResult { performed: true })
+            }
             Method::DesktopSettingsViewSet => {
                 let input: ViewSettingParams = params(request.params)?;
                 self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
@@ -821,6 +839,29 @@ pub(crate) mod tests {
             assert!(report.methods.iter().any(|name|name == "desktop.history.page"));
             assert!(report.methods.len() <= if extended {256} else {64});
         }
+    }
+
+    #[test]
+    fn desktop_recording_routes_privacy_chords_without_toggling_the_session() {
+        let host = synthetic_host();
+        host.history.privacy().set_registered_hotkey("Ctrl+Alt+F23").unwrap();
+        let grant = host.grants.issue_control(ClientRole::Desktop).unwrap();
+        let mut request = hello(ClientRole::Desktop);
+        request.grant = Some(grant.token().into());
+        let (desktop, _) = host.hello(request).unwrap();
+        let epoch = host.snapshot().unwrap().privacy_epoch;
+        let input = serde_json::json!({"service_instance_id":host.instance_id(),"expected_epoch":epoch,"enabled":true});
+        let (cli, _) = host.hello(hello(ClientRole::Cli)).unwrap();
+        assert!(dispatch(&host, &cli, Method::DesktopHotkeyRecording, input.clone()).error.is_some());
+        assert!(dispatch(&host, &desktop, Method::DesktopHotkeyRecording, input).error.is_none());
+        let sequence = host.snapshot().unwrap().event_sequence;
+        assert!(host.try_toggle_privacy().unwrap());
+        assert_eq!(host.snapshot().unwrap().privacy_epoch, epoch);
+        assert!(host.snapshot().unwrap().event_sequence > sequence);
+        assert_eq!(host.history.privacy().hotkey().unwrap(), "Ctrl+Alt+F23");
+        host.recording.disconnect(desktop.id());
+        assert!(host.try_toggle_privacy().unwrap());
+        assert!(host.snapshot().unwrap().privacy_epoch > epoch);
     }
 
     #[test]

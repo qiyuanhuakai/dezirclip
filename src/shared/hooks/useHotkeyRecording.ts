@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "../lib/desktopInvoke";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 interface RecordingOwner {
   readonly cancel: () => void;
   readonly fail: (error: unknown) => void;
+  readonly activated: (ready: boolean) => void;
   ready: boolean;
 }
 
@@ -13,7 +14,12 @@ let modeQueue = Promise.resolve();
 
 function synchronizeNativeMode() {
   modeQueue = modeQueue.catch(() => undefined).then(async () => {
-    try { await invoke("set_recording_mode", { enabled: activeOwner?.ready === true }); }
+    const owner = activeOwner;
+    const enabled = owner?.ready === true;
+    try {
+      await invoke("set_recording_mode", { enabled });
+      if (activeOwner === owner) owner?.activated(enabled);
+    }
     catch (error) {
       if (activeOwner) activeOwner.fail(error);
       else console.error("Failed to stop hotkey recording", error);
@@ -27,6 +33,7 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
   readonly onCancelled: () => void;
   readonly onError?: (error: unknown) => void;
 }) {
+  const [nativeReady, setNativeReady] = useState(false);
   const callbacks = useRef({ onRecorded, onCancelled, onError });
   callbacks.current = { onRecorded, onCancelled, onError };
   const wasRecording = useRef(false);
@@ -44,10 +51,15 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
     if (owner.current && activeOwner !== owner.current) return;
     consumed.current = true;
     const handler = callbacks.current;
-    handler.onCancelled();
     // Release temporary recording grabs before the shortcut owner registers the chosen chord.
     modeQueue = modeQueue.catch(() => undefined).then(() => invoke<void>("set_recording_mode", { enabled: false }));
-    void modeQueue.then(() => handler.onRecorded(hotkey), error => handler.onError?.(error));
+    void modeQueue.then(() => {
+      handler.onCancelled();
+      handler.onRecorded(hotkey);
+    }, error => {
+      handler.onCancelled();
+      handler.onError?.(error);
+    });
   }, []);
 
   useEffect(() => {
@@ -56,9 +68,11 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
     const cleanups: UnlistenFn[] = [];
     const current: RecordingOwner = {
       cancel, ready: false,
+      activated: setNativeReady,
       fail: error => { callbacks.current.onError?.(error); cancel(); },
     };
     const previous = activeOwner;
+    setNativeReady(false);
     activeOwner = current;
     owner.current = current;
     previous?.cancel();
@@ -85,5 +99,5 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
     };
   }, [cancel, record, recording]);
 
-  return { record, cancel };
+  return { record, cancel, nativeReady: recording && nativeReady };
 }

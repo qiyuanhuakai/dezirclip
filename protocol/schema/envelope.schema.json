@@ -92,6 +92,7 @@
         "desktop.ocr.engine",
         "desktop.settings.preferences",
         "desktop.settings.view.set",
+        "desktop.hotkey.recording",
         "desktop.settings.capture.get",
         "desktop.settings.capture.set",
         "desktop.screen.begin",
@@ -1247,6 +1248,10 @@
               }
             }
           }
+        },
+        {
+          "if": { "properties": { "method": { "const": "desktop.hotkey.recording" } }, "required": ["method"] },
+          "then": { "properties": { "params": { "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/RecordingParams" } } }
         },
         {
           "if": {

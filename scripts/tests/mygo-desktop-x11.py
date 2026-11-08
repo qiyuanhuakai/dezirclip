@@ -792,6 +792,31 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
                      'Confirmed import did not persist the previewed entry')
         print('Verified choosing a backup file in the native dialog, previewing its text and importing it through the shared React settings')
         custom_rules = open_settings_group('Clipboard', 'Custom Rules')
+        def begin_privacy_recording():
+            button = wait_for(lambda: find_item('Toggle privacy session shortcut'), 'Privacy shortcut recorder unavailable')
+            atspi.Component.scroll_to(button, atspi.ScrollType.ANYWHERE)
+            assert atspi.Action.do_action(button, 0)
+            wait_for(lambda: button.get_state_set().contains(atspi.StateType.PRESSED)
+                     and not button.get_state_set().contains(atspi.StateType.BUSY),
+                     'Privacy shortcut recorder did not acquire its native recording connection')
+            return button
+        privacy = wait_for(lambda: find_item('Privacy session'), 'Privacy session toggle unavailable')
+        was_private = privacy.get_state_set().contains(atspi.StateType.CHECKED)
+        for chord in [(Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_v),
+                      (Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_a),
+                      (Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F8)]:
+            button = begin_privacy_recording()
+            shortcut(chord)
+            wait_for(lambda: not button.get_state_set().contains(atspi.StateType.PRESSED),
+                     'Existing native shortcut was not routed into the recorder')
+            wait_for(lambda: button.get_state_set().contains(atspi.StateType.SENSITIVE),
+                     'Privacy shortcut validation did not finish')
+            print(f'Verified native shortcut recording for {chord}', flush=True)
+            assert privacy.get_state_set().contains(atspi.StateType.CHECKED) == was_private
+            wait_for(lambda: find_item('Toggle privacy session shortcut'), 'Recording activated a native panel or hid the main window')
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            assert db.execute("SELECT value FROM settings WHERE key='app.privacy_session_hotkey'").fetchone() in (None, ('',))
+        print('Verified main, quick-paste and screenshot shortcuts reach the recorder and remain unavailable to the privacy shortcut')
         snapshot = wait_for(lambda: find_item('Rich Text Snapshot Preview'), 'Snapshot setting unavailable')
         assert atspi.Action.do_action(snapshot, 0)
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:

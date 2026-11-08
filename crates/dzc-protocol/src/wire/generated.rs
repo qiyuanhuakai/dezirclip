@@ -136,6 +136,14 @@ pub struct SurfaceActionParams {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct RecordingParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SourceAppIcon {
     pub src: Option<String>,
 }
@@ -558,6 +566,8 @@ pub enum Method {
     DesktopSettingsPreferences,
     #[serde(rename = "desktop.settings.view.set")]
     DesktopSettingsViewSet,
+    #[serde(rename = "desktop.hotkey.recording")]
+    DesktopHotkeyRecording,
     #[serde(rename = "desktop.settings.capture.get")]
     DesktopSettingsCaptureGet,
     #[serde(rename = "desktop.settings.capture.set")]

@@ -99,6 +99,12 @@ type SurfaceActionParams struct {
     ServiceInstanceId *string `json:"service_instance_id,omitempty"`
 }
 
+type RecordingParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Enabled bool `json:"enabled"`
+}
+
 type SourceAppIcon struct {
     Src *string `json:"src"`
 }
@@ -390,6 +396,7 @@ const (
     MethodDesktopOcrEngine Method = "desktop.ocr.engine"
     MethodDesktopSettingsPreferences Method = "desktop.settings.preferences"
     MethodDesktopSettingsViewSet Method = "desktop.settings.view.set"
+    MethodDesktopHotkeyRecording Method = "desktop.hotkey.recording"
     MethodDesktopSettingsCaptureGet Method = "desktop.settings.capture.get"
     MethodDesktopSettingsCaptureSet Method = "desktop.settings.capture.set"
     MethodDesktopScreenBegin Method = "desktop.screen.begin"

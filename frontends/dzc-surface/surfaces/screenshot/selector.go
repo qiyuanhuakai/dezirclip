@@ -16,6 +16,7 @@ import (
 )
 
 type Selector struct {
+	record        func(string) bool
 	window        *mygo.Window
 	stopping      bool
 	owner         *client.Client
@@ -36,6 +37,8 @@ type selection struct {
 	start, end ui.Point
 	dragging   bool
 }
+
+func (s *Selector) SetShortcutRecorder(record func(string) bool) { s.record = record }
 
 func (s *Selector) HasShortcut() bool { return len(s.hotkeys) != 0 }
 
@@ -106,7 +109,11 @@ func (s *Selector) Refresh() error {
 			delete(s.hotkeys, full)
 		}
 		if key != "" {
-			if err := mygo.GlobalShortcut.Register(key, func() { s.begin(full) }); err != nil {
+			if err := mygo.GlobalShortcut.Register(key, func() {
+				if s.record == nil || !s.record(key) {
+					s.begin(full)
+				}
+			}); err != nil {
 				log.Printf("Screenshot shortcut unavailable: %v", err)
 				registrationErrors = errors.Join(registrationErrors, err)
 			} else {

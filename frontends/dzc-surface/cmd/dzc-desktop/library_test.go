@@ -78,6 +78,81 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	owner.Close()
 	library := Library{owner}
+	t.Run("resident recording restarts", func(t *testing.T) {
+		callbacks := make(chan func(), 16)
+		recorder := shortcutRecording{post: func(callback func()) { callbacks <- callback }}
+		defer recorder.stop()
+		status, err := library.Status(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for round := 0; round < 4; round++ {
+			var events []recordingEvent
+			if err := recorder.start(owner, status.State.PrivacyEpoch, func(event recordingEvent) { events = append(events, event) }); err != nil {
+				t.Fatalf("recording round %d: %v", round, err)
+			}
+			if !recorder.offer("Ctrl+Shift+V") {
+				t.Fatal("active recorder did not consume shortcut")
+			}
+			// Let the subscription enter its native read before requesting graceful stop.
+			time.Sleep(30 * time.Millisecond)
+			if err := recorder.stop(); err != nil {
+				t.Fatal(err)
+			}
+			if recorder.offer("Ctrl+Shift+V") {
+				t.Fatal("stopped recorder still consumes shortcut")
+			}
+			if len(events) != 1 || events[0].Cancelled || events[0].Hotkey != "Ctrl+Shift+V" {
+				t.Fatalf("explicit stop sent an unsolicited cancellation: %+v", events)
+			}
+		}
+		var cancelled bool
+		if err := recorder.start(owner, status.State.PrivacyEpoch, func(event recordingEvent) { cancelled = event.Cancelled }); err != nil {
+			t.Fatal(err)
+		}
+		recorder.abort()
+		if !cancelled || recorder.offer("Ctrl+Shift+V") {
+			t.Fatal("external cancellation did not stop and notify the recorder")
+		}
+	})
+	t.Run("recording connection ownership", func(t *testing.T) {
+		first, err := owner.DesktopConnection(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer first.Close()
+		second, err := owner.DesktopConnection(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer second.Close()
+		request := protocol.RecordingParams{ServiceInstanceId: first.Hello().State.ServiceInstanceId, ExpectedEpoch: first.Hello().State.PrivacyEpoch, Enabled: true}
+		var result protocol.OperationResult
+		if err := first.Call(ctx, protocol.MethodDesktopHotkeyRecording, request, "OperationResult", &result); err != nil {
+			t.Fatal(err)
+		}
+		if err := second.Call(ctx, protocol.MethodDesktopHotkeyRecording, request, "OperationResult", &result); err == nil {
+			t.Fatal("second connection took over active recording")
+		}
+		first.Close()
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			err = second.Call(ctx, protocol.MethodDesktopHotkeyRecording, request, "OperationResult", &result)
+			if err == nil {
+				break
+			}
+			var remote *client.RemoteError
+			if !errors.As(err, &remote) || remote.Code != protocol.WireErrorCodeBusy || time.Now().After(deadline) {
+				t.Fatal(err)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		request.Enabled = false
+		request.ExpectedEpoch++
+		if err := second.Call(ctx, protocol.MethodDesktopHotkeyRecording, request, "OperationResult", &result); err != nil {
+			t.Fatalf("stale epoch prevented recording cleanup: %v", err)
+		}
+	})
 	t.Run("privacy shortcut validation", func(t *testing.T) {
 		if _, err := library.SetPrivacyHotkey(ctx, "not-a-key"); err == nil {
 			t.Fatal("invalid privacy shortcut accepted")

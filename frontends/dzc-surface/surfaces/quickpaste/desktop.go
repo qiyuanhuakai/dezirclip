@@ -18,6 +18,7 @@ type desktopPresenter struct {
 	ticket     protocol.QuickTicket
 	shortcut   string
 	notice     bool
+	record     func(string) bool
 }
 
 // NewDesktopPanel runs on the MyGo UI thread. The standalone Desktop owns
@@ -59,6 +60,8 @@ func (p *Panel) preferences() (protocol.QuickPreferences, error) {
 	return pref, err
 }
 
+func (p *Panel) SetShortcutRecorder(record func(string) bool) { p.local.record = record }
+
 func (p *Panel) HasShortcut() bool { return p.local != nil && p.local.shortcut != "" }
 
 func (p *Panel) RefreshShortcut() error {
@@ -85,7 +88,11 @@ func (p *Panel) RefreshShortcut() error {
 		p.local.shortcut = ""
 	}
 	if hotkey != "" {
-		if err := mygo.GlobalShortcut.Register(hotkey, p.toggleDesktop); err != nil {
+		if err := mygo.GlobalShortcut.Register(hotkey, func() {
+			if p.local.record == nil || !p.local.record(hotkey) {
+				p.toggleDesktop()
+			}
+		}); err != nil {
 			log.Printf("Quick paste shortcut unavailable: %v", err)
 			return err
 		}

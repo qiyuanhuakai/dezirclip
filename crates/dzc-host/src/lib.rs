@@ -17,6 +17,7 @@ mod themes;
 mod desktop_actions;
 mod desktop_policy;
 mod hotkey;
+mod recording;
 mod upload;
 mod ocr;
 mod surface;

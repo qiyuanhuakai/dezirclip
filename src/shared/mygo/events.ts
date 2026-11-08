@@ -94,6 +94,8 @@ export async function listen<T>(event: string, receive: (message: DesktopEvent<T
   if (event === "open-settings-panel") settingsListeners++;
   if (!watching) {
     watching = true;
+    window.mygo.on<string>("hotkey-recorded", hotkey => dispatch("hotkey-recorded", hotkey));
+    window.mygo.on("recording-cancelled", () => dispatch("recording-cancelled"));
     window.mygo.on("settings-requested", () => { void receiveSettingsRequest().catch(console.error); });
     window.mygo.on<boolean>("window-focus", focused => dispatch("mygo-window-focus", focused));
     window.mygo.on<boolean>("window-visibility", visible => dispatch(visible ? "privacy-view-shown" : "privacy-view-hidden"));
