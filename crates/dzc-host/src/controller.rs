@@ -160,6 +160,27 @@ async fn stop_expected(database: &Path, instance: Option<&str>) -> io::Result<()
 pub async fn start(database: &Path, executable: &Path, no_capture: bool) -> io::Result<ServiceStatus> {
     start_preflight(database,executable,no_capture,true,dzc_platform::ipc::ProcessExit::ensure_supported).await
 }
+
+/// Invoked by the elevated desktop helper after Windows has accepted UAC.
+/// Validate the packaged Service before stopping the observed instance, and
+/// preserve whether that instance owns clipboard capture.
+pub async fn restart_elevated(database: &Path, executable: &Path, instance: &str) -> io::Result<ServiceStatus> {
+    if !dzc_platform::desktop_system::supported() || !dzc_platform::desktop_system::is_admin()? {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "ElevatedWindowsProcessRequired"));
+    }
+    let original = status(database).await?;
+    if original.mode != HostMode::Service || original.state.service_instance_id != instance {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "ServiceChangedBeforeElevation"));
+    }
+    dzc_platform::ipc::ProcessExit::ensure_supported()?;
+    inspect_service_build(executable)?;
+    stop_instance(database, instance).await?;
+    let replacement = start_verified(database, executable, !original.capture_owner, false, true, endpoint(database)?).await?;
+    if replacement.mode != HostMode::Service || replacement.state.service_instance_id == instance || replacement.capture_owner != original.capture_owner {
+        return Err(io::Error::other("ElevatedServiceReplacementUnconfirmed"));
+    }
+    Ok(replacement)
+}
 /// Find the current desktop Host. Starting the sibling Service is opt-in and
 /// cannot displace an Embedded Host that wins a concurrent startup.
 pub async fn desktop_endpoint(database: &Path, start_if_missing: bool) -> io::Result<serde_json::Value> {
@@ -195,7 +216,11 @@ async fn start_preflight(database: &Path, executable: &Path, no_capture: bool, a
     // unsupported service transition leaves the existing embedded owner alone.
     probe()?;
     let endpoint = endpoint(database)?;
-    // The explicit helper must share the executable contract before startup.
+    inspect_service_build(executable)?;
+    start_verified(database, executable, no_capture, allow_handoff, false, endpoint).await
+}
+
+fn inspect_service_build(executable: &Path) -> io::Result<()> {
     // This query neither opens history nor initializes native clipboard ports.
     let output = dzc_platform::ipc::inspect_helper(executable, &["--build-info"], Duration::from_secs(5), 16_384)?;
     let identity: BuildInfo = serde_json::from_slice(&output)?;
@@ -205,7 +230,12 @@ async fn start_preflight(database: &Path, executable: &Path, no_capture: bool, a
         || (current.source_state == "verified_checkout" && !current.same_verified_build_set(&identity)) {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "ServiceBuildSetMismatch"));
     }
+    Ok(())
+}
+
+async fn start_verified(database: &Path, executable: &Path, no_capture: bool, allow_handoff: bool, require_new: bool, endpoint: Endpoint) -> io::Result<ServiceStatus> {
     if let Ok(mut existing) = Client::control(&endpoint, ClientRole::Cli).await {
+        if require_new { return Err(io::Error::new(io::ErrorKind::AlreadyExists, "AnotherHostStartedDuringElevation")); }
         drop(dzc_platform::ipc::ProcessExit::open(&existing.peer)?);
         let status: ServiceStatus = existing.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await?;
         if !allow_handoff { return Ok(status); }
@@ -280,6 +310,10 @@ mod tests {
             let rejected=stop_instance(&database,&wrong_instance).await.unwrap_err();
             assert_eq!(rejected.kind(),io::ErrorKind::InvalidInput);
             assert_eq!(status(&database).await.unwrap().state.service_instance_id,original.state.service_instance_id);
+            assert_eq!(stopped.load(Ordering::SeqCst),0);
+            assert!(!host.is_stopping());
+            let replacement=start_verified(&database,&directory.join("nonexistent-service"),true,false,true,endpoint.clone()).await.unwrap_err();
+            assert_eq!(replacement.kind(),io::ErrorKind::AlreadyExists);
             assert_eq!(stopped.load(Ordering::SeqCst),0);
             assert!(!host.is_stopping());
             let error=start_preflight(&database,&directory.join("nonexistent-service"),false,true,||Err(io::Error::new(io::ErrorKind::Unsupported,"SyntheticProcessObservationDenied"))).await.unwrap_err();

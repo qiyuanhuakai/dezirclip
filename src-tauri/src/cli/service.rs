@@ -11,6 +11,8 @@ enum ServiceCommand {
     Start { #[arg(long)] no_capture: bool, #[arg(long)] json: bool },
     /// Stop and drain the current Host; a failed stop remains a failure.
     Stop { #[arg(long)] from_instance: Option<String> },
+    /// Restart the observed standalone Service from an already elevated Windows process.
+    RestartElevated { #[arg(long)] from_instance: String, #[arg(long)] json: bool },
     /// Query the current Host without starting one.
     Status { #[arg(long)] json: bool },
     /// Move an installed profile offline or through the identified standalone Service.
@@ -50,6 +52,10 @@ pub fn run(args: ServiceArgs) -> Result<(),String> {
                 status_output(status,json)
             }
             ServiceCommand::Status { json } => status_output(controller::status(&database).await.map_err(|e|e.to_string())?,json),
+            ServiceCommand::RestartElevated { from_instance, json } => {
+                let status = controller::restart_elevated(&database, &controller::sibling_executable().map_err(|e|e.to_string())?, &from_instance).await.map_err(|e|e.to_string())?;
+                status_output(status,json)
+            }
             ServiceCommand::MoveData { directory, from_instance, epoch, json } => {
                 if cfg!(feature = "portable") {
                     return Err("Move the complete portable directory to relocate its data".into());

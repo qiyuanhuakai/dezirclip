@@ -97,9 +97,15 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
         { value: "game_mode", label: props.t("paste_method_game_mode") }
     ];
 
+    const pasteMethodBusy = useRef(false);
+    const [pasteMethodError, setPasteMethodError] = useState(false);
     const applyPasteMethod = async (val: string) => {
-        if (val === 'game_mode') {
-            try {
+        if (pasteMethodBusy.current) return;
+        pasteMethodBusy.current = true;
+        setPasteMethodError(false);
+        let staged = false;
+        try {
+            if (val === 'game_mode') {
                 const isAdmin = await invoke<boolean>("check_is_admin");
                 if (!isAdmin) {
                     const confirmed = await ask(
@@ -112,19 +118,25 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
 
                     if (confirmed) {
                         await invoke("save_setting", { key: 'app.paste_method', value: 'game_mode' });
+                        staged = true;
                         await invoke("restart_as_admin");
                         return;
                     } else {
                         return;
                     }
                 }
-            } catch (err) {
-                console.error("Failed to check admin status:", err);
             }
+            await invoke("save_setting", { key: 'app.paste_method', value: val });
+            props.setPasteMethod(val);
+        } catch (err) {
+            if (staged) {
+                await invoke("save_setting", { key: 'app.paste_method', value: props.pasteMethod }).catch(console.error);
+            }
+            console.error("Failed to change paste method:", err);
+            setPasteMethodError(true);
+        } finally {
+            pasteMethodBusy.current = false;
         }
-
-        props.setPasteMethod(val);
-        invoke("save_setting", { key: 'app.paste_method', value: val }).catch(console.error);
     };
     const [rulesDraft, setRulesDraft] = useState<string | null>(null);
     const [rulesSaveFailed, setRulesSaveFailed] = useState(false);
@@ -589,6 +601,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             width="124px"
                             onChange={applyPasteMethod}
                         />
+                        {pasteMethodError && <span role="alert">{props.t('common_error')}</span>}
                     </div>
                     <div className="setting-item">
                         <props.LabelWithHint
