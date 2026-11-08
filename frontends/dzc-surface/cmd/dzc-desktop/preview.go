@@ -272,6 +272,17 @@ func (p *Preview) PointerInside(ctx context.Context, sequence uint64) bool {
 	return inside
 }
 
+func (p *Preview) IsAlwaysOnTop(ctx context.Context) bool {
+	main := mygo.CallerWindow(ctx)
+	onTop := false
+	mygo.RunOnMain(func() {
+		if main != nil && p.main == main && p.window != nil && !p.window.IsDestroyed() {
+			onTop = p.window.IsVisible() && p.window.IsAlwaysOnTop()
+		}
+	})
+	return onTop
+}
+
 func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, id int64, state protocol.RuntimeState, reveal bool, placement *previewPlacement, appearance previewAppearance) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

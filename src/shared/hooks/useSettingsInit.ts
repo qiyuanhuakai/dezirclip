@@ -37,7 +37,7 @@ export const useSettingsInit = ({
 
         if (catalog === getCustomThemes()) loadCustomThemesFromSettings(result);
         setAppSettings(result);
-        if (result["app.hotkey"]) setHotkey(result["app.hotkey"]);
+        if (result["app.hotkey"] !== undefined) setHotkey(result["app.hotkey"]);
 
         const loadedTheme = result["app.theme"] || "mica";
         const loadedColorMode = result["app.color_mode"] || "system";

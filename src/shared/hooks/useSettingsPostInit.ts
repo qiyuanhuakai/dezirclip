@@ -190,8 +190,8 @@ export const useSettingsPostInit = ({
     if (settings["app.arrow_key_selection"] === "false") setArrowKeySelection(false);
     setRegistryWinVEnabled(settings["app.use_win_v_shortcut"] === "true");
 
-    if (settings["app.sequential_hotkey"]) setSequentialHotkey(settings["app.sequential_hotkey"]);
-    if (settings["app.rich_paste_hotkey"]) setRichPasteHotkey(settings["app.rich_paste_hotkey"]);
+    if (settings["app.sequential_hotkey"] !== undefined) setSequentialHotkey(settings["app.sequential_hotkey"]);
+    if (settings["app.rich_paste_hotkey"] !== undefined) setRichPasteHotkey(settings["app.rich_paste_hotkey"]);
     if (settings["app.search_hotkey"] !== undefined) setSearchHotkey(settings["app.search_hotkey"]);
     if (settings["app.sequential_mode"] === "true") setSequentialModeState(true);
     setSoundEnabled(settings["app.sound_enabled"] === "true");

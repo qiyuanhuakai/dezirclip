@@ -38,6 +38,10 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  is_window_topmost: args => {
+    if (args.label !== "compact-preview") throw new Error(`Unknown MyGo preview: ${String(args.label)}`);
+    return window.mygo.call("Preview.IsAlwaysOnTop");
+  },
   test_hotkey_available: args => shellCall("TestHotkeyAvailable", args.hotkey),
   register_hotkey: args => shellCall("SetMainHotkeys", args.hotkey, currentEpoch()),
   set_search_hotkey: args => shellCall("SetSearchHotkey", args.hotkey, currentEpoch()),
