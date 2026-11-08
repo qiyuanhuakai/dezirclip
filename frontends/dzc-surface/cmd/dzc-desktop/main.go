@@ -168,6 +168,7 @@ func (h *History) SendEmoji(ctx context.Context, kind, content string, epoch uin
 			return "target_required", nil
 		}
 		if err := h.events.PasteWindowEmoji(ctx, params); err != nil {
+			fmt.Fprintf(os.Stderr, "Host window emoji paste failed: %v\n", err)
 			return "", err
 		}
 		return "completed", nil
