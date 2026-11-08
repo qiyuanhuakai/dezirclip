@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, rc::Rc};
 use windows::{core::w, Win32::{
     Foundation::HWND,
-    System::DataExchange::{CloseClipboard, GetOpenClipboardWindow, OpenClipboard},
+    System::DataExchange::{GetOpenClipboardWindow, OpenClipboard},
     UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, HWND_MESSAGE, WINDOW_EX_STYLE, WINDOW_STYLE},
 }};
 
@@ -32,7 +32,8 @@ impl ClipboardReadGuard {
 impl Drop for ClipboardReadGuard {
     fn drop(&mut self) {
         unsafe {
-            let _ = CloseClipboard();
+            // Retain the anonymous-token protection used by the previous text backend.
+            let _ = clipboard_win::raw::close();
             let _ = DestroyWindow(self.window);
         }
     }
@@ -52,11 +53,39 @@ mod tests {
         assert!(ClipboardReadGuard::open().is_err(), "A nested transaction replaced the reader lock");
         std::thread::spawn(|| unsafe {
             let opened = OpenClipboard(None).is_ok();
-            if opened { let _ = CloseClipboard(); }
+            if opened { let _ = clipboard_win::raw::close(); }
             assert!(!opened, "Another thread replaced the reader lock");
         }).join().unwrap();
         assert_eq!(unsafe { GetOpenClipboardWindow().unwrap() }, guard.window);
         drop(guard);
-        drop(ClipboardReadGuard::open().unwrap());
+        let guard = ClipboardReadGuard::open().unwrap();
+        let text = "CI clipboard reader 中文 😀\r\nsecond line";
+        let units: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
+        unsafe {
+            use windows::Win32::{
+                Foundation::{GlobalFree, HANDLE},
+                System::{DataExchange::{EmptyClipboard, GetClipboardSequenceNumber, SetClipboardData},
+                    Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE}},
+            };
+            EmptyClipboard().unwrap();
+            let memory = GlobalAlloc(GMEM_MOVEABLE, units.len() * 2).unwrap();
+            let data = GlobalLock(memory);
+            if data.is_null() {
+                let _ = GlobalFree(Some(memory));
+                panic!("Synthetic clipboard allocation could not be locked");
+            }
+            std::ptr::copy_nonoverlapping(units.as_ptr(), data.cast::<u16>(), units.len());
+            let _ = GlobalUnlock(memory);
+            if let Err(error) = SetClipboardData(13, Some(HANDLE(memory.0))) {
+                let _ = GlobalFree(Some(memory));
+                panic!("Synthetic clipboard publication failed: {error}");
+            }
+            drop(guard);
+            let sequence = GetClipboardSequenceNumber();
+            assert_eq!(super::super::windows_clipboard::get_clipboard_text().as_deref(), Some(text));
+            assert_eq!(GetClipboardSequenceNumber(), sequence, "Read changed the clipboard selection");
+            let _cleanup = ClipboardReadGuard::open().unwrap();
+            EmptyClipboard().unwrap();
+        }
     }
 }

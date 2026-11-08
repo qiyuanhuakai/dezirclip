@@ -1595,6 +1595,7 @@ dependencies = [
  "aes-gcm",
  "arboard",
  "base64 0.22.1",
+ "clipboard-win",
  "dbus",
  "dirs 5.0.1",
  "dunce",
