@@ -71,7 +71,11 @@ func (*DesktopShell) Focus(ctx context.Context) error {
 	if w == nil || !w.IsVisible() {
 		return errors.New("WindowUnavailable")
 	}
-	w.Focus()
+	// Re-focusing an already active native window can move WebView keyboard focus
+	// away from the recorder that requested activation.
+	if !w.IsFocused() {
+		w.Focus()
+	}
 	return nil
 }
 

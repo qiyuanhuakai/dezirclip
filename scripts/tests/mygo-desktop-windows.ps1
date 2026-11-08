@@ -260,7 +260,7 @@ function Test-MainHotkeys($Main, $Root, $Resident, [string]$Executable, $Editor,
         if (!$button) { return $false }
         $pattern = $null
         $button.TryGetCurrentPattern([Windows.Automation.TogglePattern]::Pattern, [ref]$pattern) -and
-            $pattern.Current.ToggleState -eq [Windows.Automation.ToggleState]::On
+            $pattern.Current.ToggleState -eq [Windows.Automation.ToggleState]::On -and $button.Current.HasKeyboardFocus
     } 'Main shortcut editor did not enter recording mode'
     [Windows.Forms.SendKeys]::SendWait('^+{F9}')
     $null = Get-ControlPoint $Root 'Delete Ctrl+Shift+F9'
