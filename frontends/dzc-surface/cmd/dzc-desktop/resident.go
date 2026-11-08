@@ -199,6 +199,12 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 									return
 								}
 								switch request.Operation {
+								case "main-hotkeys":
+									reply(changeMainHotkeys(registered, request.Hotkey, func(key string) error {
+										return mygo.GlobalShortcut.Register(key, func() {
+											if !recorder.offer(key) { toggle() }
+										})
+									}, mygo.GlobalShortcut.Unregister, func() error { return persistMainHotkeys(owner, request.Hotkey, request.Epoch) }))
 								case "test-hotkey":
 									err := testNativeHotkey(request.Hotkey)
 									if err != nil {

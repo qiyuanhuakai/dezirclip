@@ -388,6 +388,32 @@
         }
       ]
     },
+    "MainHotkeyParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "hotkeys": {
+          "type": "string",
+          "maxLength": 2064
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "hotkeys"
+      ],
+      "additionalProperties": false
+    },
     "RecordingParams": {
       "type": "object",
       "properties": {
@@ -1485,6 +1511,7 @@
         "desktop.settings.preferences",
         "desktop.settings.view.set",
         "desktop.hotkey.recording",
+        "desktop.hotkey.main.set",
         "desktop.settings.capture.get",
         "desktop.settings.capture.set",
         "desktop.screen.begin",
@@ -2699,6 +2726,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.hotkey.main.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/MainHotkeyParams"
               }
             }
           }

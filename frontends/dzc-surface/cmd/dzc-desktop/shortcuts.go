@@ -1,11 +1,75 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
+	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
+
+func (s *DesktopShell) SetMainHotkeys(ctx context.Context, hotkeys string, epoch uint64) error {
+	return s.resident.send(ctx, residentRequest{Operation: "main-hotkeys", Hotkey: hotkeys, Epoch: epoch}, 10*time.Second)
+}
+
+// Keep old registrations until both new native claims and persistence succeed.
+func changeMainHotkeys(registered map[string]bool, raw string, register func(string) error, unregister func(string), save func() error) error {
+	wanted := make(map[string]bool)
+	for _, key := range strings.FieldsFunc(raw, func(r rune) bool { return r == '\r' || r == '\n' }) {
+		key = strings.TrimSpace(key)
+		if key != "" {
+			wanted[key] = true
+		}
+	}
+	if len(raw) > 2064 || len(wanted) > 16 {
+		return errors.New("InvalidShortcut")
+	}
+	added := make([]string, 0, len(wanted))
+	rollback := func() {
+		for _, key := range added {
+			unregister(key)
+		}
+	}
+	for key := range wanted {
+		if !registered[key] {
+			if err := register(key); err != nil {
+				rollback()
+				return err
+			}
+			added = append(added, key)
+		}
+	}
+	if err := save(); err != nil {
+		rollback()
+		return err
+	}
+	for key := range registered {
+		if !wanted[key] {
+			unregister(key)
+			delete(registered, key)
+		}
+	}
+	for _, key := range added {
+		registered[key] = true
+	}
+	return nil
+}
+
+func persistMainHotkeys(owner *client.Client, hotkeys string, epoch uint64) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	var result protocol.OperationResult
+	err := owner.DesktopCall(ctx, protocol.MethodDesktopHotkeyMainSet, protocol.MainHotkeyParams{
+		ServiceInstanceId: owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Hotkeys: hotkeys,
+	}, "OperationResult", &result)
+	if err == nil && !result.Performed {
+		return client.ErrProtocol
+	}
+	return err
+}
 
 // Run on the resident UI thread, which owns every desktop global shortcut.
 func testNativeHotkey(hotkey string) error {

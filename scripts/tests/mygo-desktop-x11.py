@@ -803,6 +803,35 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
                  'Availability probe did not reject the resident quick-paste shortcut')
         assert find_item('Delete Ctrl+Shift+V') is None
         print('Verified the resident availability probe rejects its existing shortcut without adding a main binding', flush=True)
+        assert atspi.Action.do_action(main_recorder, 0)
+        wait_for(lambda: main_recorder.get_state_set().contains(atspi.StateType.PRESSED)
+                 and not main_recorder.get_state_set().contains(atspi.StateType.BUSY),
+                 'Main shortcut recorder did not restart for a new binding')
+        shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F9))
+        wait_for(lambda: find_item('Delete Ctrl+Shift+F9'), 'New main shortcut was not shown after saving')
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.hotkey'").fetchone() == ('Ctrl+Shift+F8\nCtrl+Shift+F9',),
+                     'Main shortcut list was not persisted by the Host')
+        shortcut_window = settings_window().get_xid()
+        alternate.present()
+        wait_for(alternate.is_active, 'Independent editor did not regain focus before testing the new shortcut')
+        shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F9))
+        wait_for(lambda: int(subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1], 16) == shortcut_window,
+                 'New main shortcut did not focus the shared WebView from another application')
+        shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F9))
+        wait_for(lambda: subprocess.run(['xwininfo', '-id', str(shortcut_window)], capture_output=True).returncode != 0,
+                 'New main shortcut did not close the WebView')
+        shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F9))
+        wait_for(lambda: find_item('Settings'), 'New main shortcut did not recreate the WebView')
+        open_appearance('Settings', 'Clipboard', 'Global Hotkey')
+        remove_main = wait_for(lambda: find_item('Delete Ctrl+Shift+F9'), 'Saved shortcut did not survive WebView recreation')
+        assert atspi.Action.do_action(remove_main, 0)
+        wait_for(lambda: not find_item('Delete Ctrl+Shift+F9'), 'Removed main shortcut remained in the editor')
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.hotkey'").fetchone() == ('Ctrl+Shift+F8',),
+                     'Removing a main shortcut did not preserve the original binding')
+        custom_rules = wait_for(lambda: find_item('Custom Rules'), 'Clipboard settings did not survive shortcut editing')
+        print('Verified main shortcut addition, persistence, native activation, WebView recreation and removal', flush=True)
         def begin_privacy_recording():
             button = wait_for(lambda: find_item('Toggle privacy session shortcut'), 'Privacy shortcut recorder unavailable')
             atspi.Component.scroll_to(button, atspi.ScrollType.ANYWHERE)

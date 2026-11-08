@@ -337,6 +337,7 @@ impl Host {
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
                 methods.push("desktop.hotkey.recording");
+                methods.push("desktop.hotkey.main.set");
                 methods.push("desktop.settings.view.set");
                 methods.push("desktop.settings.fonts");
                 methods.extend(["desktop.window.pin", "desktop.window.resize"]);
@@ -602,6 +603,37 @@ impl Host {
                 self.recording.set(session.id(), input.enabled)?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            Method::DesktopHotkeyMainSet => {
+                let input: MainHotkeyParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                let normalize = dzc_platform::shortcut::normalize_shortcut;
+                let keys = input.hotkeys.split(['\r', '\n']).map(str::trim).filter(|key| !key.is_empty())
+                    .map(normalize).collect::<Result<Vec<_>, _>>().map_err(|_| WireErrorCode::InvalidRequest)?;
+                if keys.len() > 16 || keys.iter().collect::<std::collections::HashSet<_>>().len() != keys.len() {
+                    return Err(WireErrorCode::InvalidRequest);
+                }
+                let settings = self.history.desktop_preferences().map_err(unavailable)?;
+                let privacy = self.history.privacy().hotkey().map_err(privacy_error)?;
+                let reserved = [
+                    settings.get("app.quick_paste_hotkey").map(String::as_str).unwrap_or("Ctrl+Shift+V"),
+                    settings.get("app.screenshot_hotkey").map(String::as_str).unwrap_or("Ctrl+Shift+A"),
+                    settings.get("app.screenshot_full_hotkey").map(String::as_str).unwrap_or("Ctrl+Shift+F"),
+                    settings.get("app.sequential_hotkey").map(String::as_str).unwrap_or(""),
+                    settings.get("app.rich_paste_hotkey").map(String::as_str).unwrap_or(""),
+                    settings.get("app.search_hotkey").map(String::as_str).unwrap_or(""),
+                    privacy.as_str(),
+                ];
+                if reserved.iter().filter_map(|key| normalize(key).ok()).any(|key| keys.contains(&key)) {
+                    return Err(WireErrorCode::Busy);
+                }
+                self.history.set_main_hotkeys(&keys, input.expected_epoch).map_err(|error| match error.code {
+                    dzc_core::api::CoreErrorCode::PrivacyEpochChanged => WireErrorCode::PrivacyEpochChanged,
+                    dzc_core::api::CoreErrorCode::Validation => WireErrorCode::InvalidRequest,
+                    _ => WireErrorCode::Unavailable,
+                })?;
+                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
+                result("OperationResult", OperationResult { performed: true })
+            }
             Method::DesktopSettingsViewSet => {
                 let input: ViewSettingParams = params(request.params)?;
                 self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
@@ -839,6 +871,34 @@ pub(crate) mod tests {
             assert!(report.methods.iter().any(|name|name == "desktop.history.page"));
             assert!(report.methods.len() <= if extended {256} else {64});
         }
+    }
+
+    #[test]
+    fn main_hotkeys_validate_authority_conflicts_duplicates_and_epoch() {
+        let host = synthetic_host();
+        host.history.privacy().set_registered_hotkey("Ctrl+Alt+F23").unwrap();
+        let grant = host.grants.issue_control(ClientRole::Desktop).unwrap();
+        let mut request = hello(ClientRole::Desktop);
+        request.grant = Some(grant.token().into());
+        let (desktop, _) = host.hello(request).unwrap();
+        let (cli, _) = host.hello(hello(ClientRole::Cli)).unwrap();
+        let epoch = host.snapshot().unwrap().privacy_epoch;
+        let input = |hotkeys: &str, expected_epoch| serde_json::json!({"service_instance_id":host.instance_id(),"expected_epoch":expected_epoch,"hotkeys":hotkeys});
+        assert!(dispatch(&host, &cli, Method::DesktopHotkeyMainSet, input("Ctrl+Alt+F22", epoch)).error.is_some());
+        assert!(dispatch(&host, &desktop, Method::DesktopHotkeyMainSet, input("Control+Alt+F22\nCtrl+Alt+F21", epoch)).error.is_none());
+        let saved = "Ctrl+Alt+F22\nCtrl+Alt+F21";
+        for (value, expected_epoch, code) in [
+            ("Ctrl+Shift+V", epoch, WireErrorCode::Busy),
+            ("Ctrl+Alt+F23", epoch, WireErrorCode::Busy),
+            ("Ctrl+Alt+F22\nControl+Alt+F22", epoch, WireErrorCode::InvalidRequest),
+            ("not-a-key", epoch, WireErrorCode::InvalidRequest),
+            ("Ctrl+Alt+F20", epoch + 1, WireErrorCode::PrivacyEpochChanged),
+        ] {
+            assert_eq!(dispatch(&host, &desktop, Method::DesktopHotkeyMainSet, input(value, expected_epoch)).error.unwrap().code, code);
+            assert_eq!(host.history.desktop_preferences().unwrap()["app.hotkey"], saved);
+        }
+        assert!(dispatch(&host, &desktop, Method::DesktopHotkeyMainSet, input("", epoch)).error.is_none());
+        assert_eq!(host.history.desktop_preferences().unwrap()["app.hotkey"], "");
     }
 
     #[test]

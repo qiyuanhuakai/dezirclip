@@ -2,6 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dezirclip.local/protocol/v1/desktop.schema.json",
   "$defs": {
+    "MainHotkeyParams": {
+      "type": "object", "properties": {
+        "service_instance_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "expected_epoch": { "type": "integer", "minimum": 0, "maximum": 9007199254740991, "x-rust-type": "u64" },
+        "hotkeys": { "type": "string", "maxLength": 2064 }
+      }, "required": ["service_instance_id", "expected_epoch", "hotkeys"], "additionalProperties": false
+    },
     "RecordingParams": {
       "type": "object", "properties": {
         "service_instance_id": { "type": "string", "minLength": 1, "maxLength": 64 },

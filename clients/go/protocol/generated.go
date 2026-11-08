@@ -99,6 +99,12 @@ type SurfaceActionParams struct {
     ServiceInstanceId *string `json:"service_instance_id,omitempty"`
 }
 
+type MainHotkeyParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Hotkeys string `json:"hotkeys"`
+}
+
 type RecordingParams struct {
     ServiceInstanceId string `json:"service_instance_id"`
     ExpectedEpoch uint64 `json:"expected_epoch"`
@@ -397,6 +403,7 @@ const (
     MethodDesktopSettingsPreferences Method = "desktop.settings.preferences"
     MethodDesktopSettingsViewSet Method = "desktop.settings.view.set"
     MethodDesktopHotkeyRecording Method = "desktop.hotkey.recording"
+    MethodDesktopHotkeyMainSet Method = "desktop.hotkey.main.set"
     MethodDesktopSettingsCaptureGet Method = "desktop.settings.capture.get"
     MethodDesktopSettingsCaptureSet Method = "desktop.settings.capture.set"
     MethodDesktopScreenBegin Method = "desktop.screen.begin"

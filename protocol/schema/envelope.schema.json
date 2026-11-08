@@ -93,6 +93,7 @@
         "desktop.settings.preferences",
         "desktop.settings.view.set",
         "desktop.hotkey.recording",
+        "desktop.hotkey.main.set",
         "desktop.settings.capture.get",
         "desktop.settings.capture.set",
         "desktop.screen.begin",
@@ -1248,6 +1249,10 @@
               }
             }
           }
+        },
+        {
+          "if": { "properties": { "method": { "const": "desktop.hotkey.main.set" } }, "required": ["method"] },
+          "then": { "properties": { "params": { "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/MainHotkeyParams" } } }
         },
         {
           "if": { "properties": { "method": { "const": "desktop.hotkey.recording" } }, "required": ["method"] },

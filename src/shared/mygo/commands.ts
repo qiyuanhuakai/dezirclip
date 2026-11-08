@@ -39,6 +39,7 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   test_hotkey_available: args => shellCall("TestHotkeyAvailable", args.hotkey),
+  register_hotkey: args => shellCall("SetMainHotkeys", args.hotkey, currentEpoch()),
   set_recording_mode: args => shellCall("SetRecordingMode", args.enabled, args.enabled ? currentEpoch() : 0),
   set_edge_docking: args => shellCall("SetEdgeDocking", args.enabled, currentEpoch()),
   set_tray_visible: args => shellCall("SetTrayVisible", args.visible, currentEpoch()),
@@ -140,6 +141,7 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   export_custom_theme: args => library("ExportTheme", args.id, args.path, currentEpoch()),
   delete_custom_theme: args => library("RemoveTheme", args.id, currentEpoch()),
   save_setting: args => {
+    if (args.key === "app.hotkey") return shellCall("SetMainHotkeys", args.value, currentEpoch());
     if (args.key === "app.quick_paste_enabled" || args.key === "app.screenshot_enabled") {
       if (args.value !== "true" && args.value !== "false") throw new Error("ViewSettingInvalid");
       return shellCall("SetNativePanelEnabled", args.key === "app.quick_paste_enabled" ? "quick-paste" : "screenshot", args.value === "true", currentEpoch());

@@ -109,7 +109,7 @@ func (c *residentBridge) send(ctx context.Context, request residentRequest, dead
 			return errReconnect
 		}
 		if !reply.Success {
-			if request.Operation == "recording" || request.Operation == "native-panel" || request.Operation == "test-hotkey" {
+			if request.Operation == "recording" || request.Operation == "native-panel" || request.Operation == "test-hotkey" || request.Operation == "main-hotkeys" {
 				if reply.Error != "" {
 					return errors.New(reply.Error)
 				}

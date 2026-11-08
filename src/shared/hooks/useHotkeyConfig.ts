@@ -69,6 +69,11 @@ export const useHotkeyConfig = ({
   const persistMainHotkeys = useCallback(
     async (items: string[]) => {
       const serialized = serializeMainHotkeys(items);
+      if (import.meta.env.MODE === "mygo") {
+        await invoke("register_hotkey", { hotkey: serialized });
+        setHotkey(serialized);
+        return;
+      }
       setHotkey(serialized);
       saveAppSetting("hotkey", serialized);
       await invoke("register_hotkey", { hotkey: serialized }).catch((err) => {

@@ -2,6 +2,12 @@ use super::{CoreResult, HistoryService};
 use crate::capture::CaptureSettings;
 
 impl HistoryService {
+    pub fn set_main_hotkeys(&self, hotkeys: &[String], epoch: u64) -> CoreResult<()> {
+        if hotkeys.len() > 16 || hotkeys.iter().any(|key| key.is_empty() || key.len() > 128 || key.chars().any(char::is_control)) {
+            return Err(super::CoreError::validation("MainHotkeysInvalid"));
+        }
+        self.repository.set_setting_at_epoch("app.hotkey", &hotkeys.join("\n"), epoch)
+    }
     pub fn default_application(&self, kind: &str) -> CoreResult<Option<String>> {
         self.repository.default_application(kind)
     }
