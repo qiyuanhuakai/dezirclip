@@ -1,6 +1,6 @@
 //! Tauri commands for clipboard content classification.
 //!
-//! Thin wrapper over [`crate::services::classification`]. Two commands are
+//! Thin wrapper over [`dzc_core::classification`]. Two commands are
 //! exposed:
 //!
 //! - [`classify_text`] — run the heuristic dispatcher over an arbitrary
@@ -14,7 +14,7 @@
 //! therefore both commands return their result directly and never need
 //! `Result<_, String>`.
 
-use crate::services::classification::{classify, CONTENT_KINDS};
+use dzc_core::classification::{classify, CONTENT_KINDS};
 
 /// Run every classifier in dispatcher order and return the names of all
 /// matches. Empty input yields an empty vector; the frontend renders an

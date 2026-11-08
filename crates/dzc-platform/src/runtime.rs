@@ -17,6 +17,8 @@ pub use windows_bound_paste::WindowsBoundPaste;
 #[cfg(target_os = "linux")]
 mod x11;
 #[cfg(target_os = "linux")]
+pub use x11::{focused_window as x11_paste_focus, paste_queue_bound as x11_paste_queue};
+#[cfg(target_os = "linux")]
 use self::linux as native;
 #[cfg(target_os = "windows")]
 use self::windows as native;
@@ -1151,4 +1153,49 @@ pub fn prepare_private_files(
     crate::private_files::BoundExport::readonly(files, authorization)
         .map(PrivateFileExport)
         .map_err(|_| clipboard_failure(Capability::Write))
+}
+
+#[cfg(feature = "ipc")]
+mod quick_focus;
+#[cfg(feature = "ipc")]
+pub use quick_focus::RememberedFocus;
+
+#[cfg(feature = "ipc")]
+pub struct QueueInputTarget {
+    #[cfg(target_os = "windows")]
+    bound: WindowsBoundPaste,
+    #[cfg(target_os = "linux")]
+    focus: u32,
+}
+
+#[cfg(feature = "ipc")]
+impl QueueInputTarget {
+    pub fn foreground() -> PlatformResult<dzc_protocol::wire::QueueTarget> {
+        #[cfg(target_os = "windows")]
+        { Ok(dzc_protocol::wire::QueueTarget { windows: Some(WindowsBoundPaste::foreground()?), x11: None }) }
+        #[cfg(target_os = "linux")]
+        { Ok(dzc_protocol::wire::QueueTarget { windows: None, x11: Some(x11_paste_focus()?) }) }
+    }
+
+    pub fn prepare(target: &dzc_protocol::wire::QueueTarget) -> PlatformResult<Self> {
+        let invalid = || PlatformError::failed(Capability::AutoPaste);
+        #[cfg(target_os = "windows")]
+        {
+            if target.x11.is_some() { return Err(invalid()); }
+            Ok(Self { bound: WindowsBoundPaste::prepare(target.windows.as_ref().ok_or_else(invalid)?)? })
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let focus = target.x11.ok_or_else(invalid)?;
+            if target.windows.is_some() || x11_paste_focus()? != focus { return Err(invalid()); }
+            Ok(Self { focus })
+        }
+    }
+
+    pub fn send(&self, method: &str, text: Option<&str>, kind: &str, current: impl Fn() -> bool) -> PlatformResult<()> {
+        #[cfg(target_os = "windows")]
+        { self.bound.send_queue(method, text, kind, &current) }
+        #[cfg(target_os = "linux")]
+        { let _ = text; x11_paste_queue(self.focus, method, kind, current) }
+    }
 }

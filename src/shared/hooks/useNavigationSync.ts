@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "../lib/desktopInvoke";
+import { getCurrentWindow } from "../lib/desktopWindow";
 import { hideCompactPreviewGlobal } from "../../features/clipboard/components/compactPreviewController";
 
 interface UseNavigationSyncOptions {
@@ -18,6 +18,8 @@ export const useNavigationSync = ({
 }: UseNavigationSyncOptions) => {
   useEffect(() => {
     void hideCompactPreviewGlobal();
+    // MyGo focuses the WebView; its DOM keyboard handler owns navigation.
+    if (import.meta.env.MODE === "mygo") return;
     const shouldDisableNavigation = showSettings || showTagManager || showEmojiPanel || searchTagPickerOpen;
     if (shouldDisableNavigation) {
       invoke("set_navigation_enabled", { enabled: false }).catch(console.error);

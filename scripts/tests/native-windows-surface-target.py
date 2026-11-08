@@ -326,6 +326,34 @@ class Native:
         require(self.target_text() == '', 'Calibration text remained in the product target')
         return receipt
 
+    def candidate_query_diagnostic(self, pid):
+        # A separate read-only query is evidence only, never an owned handle.
+        access = 0x1000
+        handle = self.kernel.OpenProcess(access, False, pid)
+        result = {'requested_access': hex(access), 'opened': bool(handle), 'ownership_granted': False}
+        if not handle:
+            result['winerror'] = ctypes.get_last_error()
+            return result
+        try:
+            created, exited, kernel, user = W.FILETIME(), W.FILETIME(), W.FILETIME(), W.FILETIME()
+            if self.kernel.GetProcessTimes(handle, ctypes.byref(created), ctypes.byref(exited), ctypes.byref(kernel), ctypes.byref(user)):
+                result['creation_time_100ns'] = str((created.dwHighDateTime << 32) | created.dwLowDateTime)
+            else:
+                result['times_winerror'] = ctypes.get_last_error()
+            size = W.DWORD(32768)
+            name = ctypes.create_unicode_buffer(size.value)
+            if self.kernel.QueryFullProcessImageNameW(handle, 0, name, ctypes.byref(size)):
+                result['image'] = name.value[:512]
+            else:
+                result['image_winerror'] = ctypes.get_last_error()
+        except BaseException as error:
+            result['query_error'] = str(error)[:256]
+        finally:
+            result['close_confirmed'] = bool(self.kernel.CloseHandle(handle))
+            if not result['close_confirmed']:
+                result['close_winerror'] = ctypes.get_last_error()
+        return result
+
     def process(self, pid, phase='observation'):
         had_retained_handle = pid in self.handles
         if pid not in self.handles:
@@ -477,7 +505,18 @@ class Native:
             owned |= more
             scope_limit(len(owned) <= MAX_SCOPE_CANDIDATES, 'Candidate scope exceeds the audit bound')
         for pid in sorted(owned - set(certificates)):
-            observations[pid] = self.process(pid, phase='tree')
+            try:
+                observations[pid] = self.process(pid, phase='tree')
+            except RuntimeError as error:
+                # Preserve failure; this graph explains which ancestry edge led
+                # to the candidate without granting it cleanup ownership.
+                raise RuntimeError(str(error) + '; candidate ancestry: ' + json.dumps({
+                    'pid': pid, 'parent_pid': parents.get(pid),
+                    'read_only_query': self.candidate_query_diagnostic(pid) if pid not in self.handles else None,
+                    'candidate_parent_graph': [(item, parents.get(item)) for item in sorted(owned)],
+                    'authenticated_pids': sorted(certificates),
+                    'root_floor_creation_time_100ns': str(root_floor),
+                    'negative_floor_creation_time_100ns': str(negative_floor)})) from error
         candidates = {pid: {'handle': self.handles[pid], 'identity': dict(self.identities[pid])}
                       for pid in observations}
         require(set(candidates) == owned, 'Candidate tree identities are incomplete')

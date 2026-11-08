@@ -63,6 +63,10 @@ pub fn resolved_path(path: &Path) -> Result<PathBuf, String> {
 }
 
 pub fn write_backup(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    write_backup_checked(path, bytes, || Ok(()))
+}
+
+pub(crate) fn write_backup_checked(path: &Path, bytes: &[u8], before_publish: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -84,6 +88,7 @@ pub fn write_backup(path: &Path, bytes: &[u8]) -> Result<(), String> {
             .and_then(|()| file.sync_all())
             .map_err(|error| error.to_string())?;
         drop(file);
+        before_publish()?;
         std::fs::rename(&temporary, path).map_err(|error| error.to_string())
     })();
     if result.is_err() {

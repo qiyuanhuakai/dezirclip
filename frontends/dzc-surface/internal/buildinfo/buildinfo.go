@@ -16,7 +16,7 @@ var ToolkitPatch = "unknown"
 
 const MyGoVersion = "v0.6.4"
 const MyGoSource = "6255ea40139d06e0762a7c4a32626148ba410478"
-const RequiredToolkitPatch = "mygo-v0.6.4-no-startup-cleanup-v1"
+const RequiredToolkitPatch = "mygo-v0.6.4-native-alpha-v5"
 
 func Identity() protocol.SurfaceBuildIdentity {
 	return protocol.SurfaceBuildIdentity{ComponentVersion: Version, SourceRevision: SourceRevision, BuildId: BuildID, Target: Target}
@@ -27,6 +27,14 @@ func Valid() bool {
 }
 
 func Report() any {
+	return componentReport("surface")
+}
+
+func DesktopReport() any {
+	return componentReport("mygo-desktop")
+}
+
+func componentReport(component string) any {
 	return struct {
 		Component        string                   `json:"component"`
 		ComponentVersion string                   `json:"component_version"`
@@ -38,5 +46,5 @@ func Report() any {
 		MyGoSource       string                   `json:"mygo_source_revision"`
 		Target           string                   `json:"target"`
 		ToolkitPatchID   string                   `json:"toolkit_patch_id"`
-	}{"surface", Version, SourceRevision, SourceState, BuildID, protocol.Version, MyGoVersion, MyGoSource, Target, ToolkitPatch}
+	}{component, Version, SourceRevision, SourceState, BuildID, protocol.Version, MyGoVersion, MyGoSource, Target, ToolkitPatch}
 }

@@ -1,6 +1,5 @@
-use crate::domain::update::{expected_asset_name, summarize_channel_versions, UpdateChannel, UpdateCheckStatus, UpdateSupport, RELEASES_URL};
+use crate::domain::update::{expected_asset_name, summarize_channel_versions, validate_signature_metadata, AvailableUpdate, UpdateChannel, UpdateCheck, UpdateSupport, RELEASES_URL};
 use crate::infrastructure::update_support::installation_support;
-use base64::Engine;
 use semver::Version;
 use serde::Serialize;
 use std::time::Duration;
@@ -24,27 +23,6 @@ impl UpdaterState {
 struct PendingUpdate {
     id: String,
     update: Update,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AvailableUpdate {
-    id: String,
-    version: String,
-    notes: Option<String>,
-    release_url: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateCheck {
-    current_version: String,
-    channel: UpdateChannel,
-    channel_version: Option<String>,
-    status: UpdateCheckStatus,
-    support: UpdateSupport,
-    available: Option<AvailableUpdate>,
-    unpublished_channels: Vec<UpdateChannel>,
 }
 
 #[derive(Clone, Serialize)]
@@ -179,19 +157,7 @@ fn validate_download(update: &Update) -> Result<(), String> {
     {
         return Err("update_untrusted_download".into());
     }
-    let signature = base64::engine::general_purpose::STANDARD.decode(update.signature.trim())
-        .map_err(|_| "update_invalid_signature")?;
-    let signature = std::str::from_utf8(&signature).map_err(|_| "update_invalid_signature")?;
-    let signed_version = signature.lines().find_map(|line| line.strip_prefix("trusted comment: "))
-        .and_then(|comment| comment.split('\t').find_map(|field| field.strip_prefix("version:")))
-        .and_then(|value| Version::parse(value.trim_start_matches('v')).ok());
-    if signed_version.as_ref() != Some(&version) {
-        return Err("update_signature_version_mismatch".into());
-    }
-    let signed_file = signature.lines().find_map(|line| line.strip_prefix("trusted comment: "))
-        .and_then(|comment| comment.split('\t').find_map(|field| field.strip_prefix("file:")));
-    if signed_file != Some(expected.as_str()) { return Err("update_invalid_signature".into()); }
-    Ok(())
+    validate_signature_metadata(&version, &expected, &update.signature)
 }
 
 #[tauri::command]

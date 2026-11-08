@@ -23,7 +23,7 @@ impl Client {
         let mut stream = endpoint.connect(Duration::from_secs(3)).await?;
         let peer = stream.authenticate_after_read()?;
         let hello = HelloParams { protocol_version: wire::VERSION, client_version: env!("CARGO_PKG_VERSION").into(), client_role: role,
-            capabilities: vec![], required_capabilities: vec![], grant };
+            capabilities: if role == ClientRole::Desktop { vec!["desktop.extended_methods".into()] } else { vec![] }, required_capabilities: vec![], grant };
         let request = Request { request_id: "1".into(), method: Method::Hello, params: serde_json::to_value(hello)? };
         let value = exchange(&mut stream, request, "HelloResult", wire::MAX_FRAME_BYTES).await?;
         let hello: HelloResult = serde_json::from_value(value)?;
@@ -116,7 +116,11 @@ async fn exchange(stream: &mut Stream, request: Request, schema: &str, send_limi
         return Err(io::Error::new(io::ErrorKind::InvalidData, "NegotiatedFrameLimitExceeded"));
     }
     ipc::write_frame(stream, &bytes, Duration::from_secs(5)).await?;
-    let bytes = ipc::read_frame(stream, Duration::from_secs(15)).await?;
+    let timeout = match request.method {
+        Method::DesktopProfileMove | Method::DesktopQueueNext | Method::DesktopOcrRecognize | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview => Duration::from_secs(600),
+        _ => Duration::from_secs(15),
+    };
+    let bytes = ipc::read_frame(stream, timeout).await?;
     let response: Response = wire::decode("Response", &bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "InvalidLocalResponse"))?;
     if response.request_id != request.request_id { return Err(io::Error::new(io::ErrorKind::InvalidData, "ResponseCorrelationFailed")); }
     if let Some(error) = response.error { return Err(io::Error::new(io::ErrorKind::PermissionDenied, serde_json::to_string(&error.code)?)); }

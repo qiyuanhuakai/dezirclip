@@ -125,6 +125,13 @@ fn parse(value: &str) -> PlatformResult<Chord> {
 }
 
 /// Canonicalization validates a supported chord; it does not register or reserve it.
+pub fn normalize_main_shortcut(value: &str) -> PlatformResult<String> {
+    if value.eq_ignore_ascii_case("MouseMiddle") || value.eq_ignore_ascii_case("MButton") {
+        return Ok("MouseMiddle".into());
+    }
+    normalize_shortcut(value)
+}
+
 pub fn normalize_shortcut(value: &str) -> PlatformResult<String> {
     let chord = parse(value)?;
     let mut parts = Vec::new();
@@ -381,6 +388,17 @@ impl ShortcutProvider for NativeShortcutProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn middle_button_aliases_are_only_valid_for_main_shortcuts() {
+        for value in ["MouseMiddle", "MButton", "mousemiddle", "mbutton"] {
+            assert_eq!(normalize_main_shortcut(value).unwrap(), "MouseMiddle");
+            assert!(normalize_shortcut(value).is_err());
+        }
+        assert_eq!(normalize_main_shortcut("Alt+C").unwrap(), "Alt+C");
+        for value in ["Ctrl+MouseMiddle", "MouseMiddle\n", "MouseLeft"] {
+            assert!(normalize_main_shortcut(value).is_err());
+        }
+    }
     #[test]
     fn canonical_shortcuts_are_strict_and_do_not_register() {
         assert_eq!(

@@ -22,6 +22,17 @@
         "service"
       ]
     },
+    "DesktopPlatformReport": {
+      "type": "object",
+      "properties": {
+        "report": {
+          "type": "object",
+          "required": ["native_wayland", "read", "write", "monitor", "auto_paste", "global_shortcut", "resolve_source", "read_privacy_hints"]
+        }
+      },
+      "required": ["report"],
+      "additionalProperties": false
+    },
     "CapabilityReport": {
       "type": "object",
       "properties": {
@@ -31,7 +42,7 @@
             "type": "string",
             "maxLength": 128
           },
-          "maxItems": 64
+          "maxItems": 256
         },
         "permissions": {
           "type": "array",

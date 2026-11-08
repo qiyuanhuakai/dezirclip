@@ -4,6 +4,28 @@ use dzc_platform::{ipc::CaptureLease, shortcut::{NativeShortcutProvider, normali
 use dzc_protocol::wire::WireErrorCode;
 use std::{sync::{Arc, Weak, mpsc, atomic::{AtomicBool, Ordering}}, thread::JoinHandle, time::{Duration, Instant}};
 
+impl Host {
+    pub(crate) fn check_shortcut_conflicts(&self, setting: &str, keys: &[String]) -> Result<(), WireErrorCode> {
+        let settings = self.history.desktop_preferences().map_err(|_| WireErrorCode::Unavailable)?;
+        let privacy = self.history.privacy().hotkey().map_err(crate::router::privacy_error)?;
+        let mut reserved = vec![privacy];
+        for (key, fallback) in [
+            ("app.hotkey", ""), ("app.quick_paste_hotkey", "Ctrl+Shift+V"),
+            ("app.screenshot_hotkey", "Ctrl+Shift+A"), ("app.screenshot_full_hotkey", "Ctrl+Shift+F"),
+            ("app.sequential_hotkey", ""), ("app.rich_paste_hotkey", ""), ("app.search_hotkey", ""),
+        ] {
+            if key != setting {
+                reserved.extend(settings.get(key).map(String::as_str).unwrap_or(fallback)
+                    .split(['\r', '\n']).map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned));
+            }
+        }
+        if reserved.iter().filter_map(|key| dzc_platform::shortcut::normalize_main_shortcut(key).ok()).any(|key| keys.contains(&key)) {
+            return Err(WireErrorCode::Busy);
+        }
+        Ok(())
+    }
+}
+
 struct Registration {
     native: Box<dyn ShortcutRegistration>,
     cancel: Arc<AtomicBool>,

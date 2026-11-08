@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dezirclip.local/protocol/v1/settings.schema.json",
+  "$defs": {
+    "WindowsSettingParams": {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"], "additionalProperties": false},
+    "WindowsSettingFinishParams": {"type": "object", "properties": {"token": {"type": "string", "minLength": 36, "maxLength": 36}, "rollback": {"type": "boolean"}}, "required": ["token", "rollback"], "additionalProperties": false},
+    "WindowsSettingResult": {"type": "object", "properties": {"value": {"type": "boolean"}, "token": {"type": "string", "maxLength": 36}}, "required": ["value", "token"], "additionalProperties": false},
+    "ViewSettingParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "expected_epoch": { "type": "integer", "minimum": 0, "maximum": 9007199254740991, "x-rust-type": "u64" },
+        "key": { "type": "string", "enum": ["app.use_win_v_shortcut", "app.theme", "app.color_mode", "app.language", "app.compact_mode", "app.show_app_border", "app.show_scroll_top_button", "app.show_search_box", "app.tag_manager_enabled", "app.rich_text_snapshot_preview", "app.rich_text_snapshot_cache_limit", "app.arrow_key_selection", "app.preview_keyboard_enabled", "app.update_auto_check", "app.update_channel", "app.silent_start", "app.hide_tray_icon", "app.edge_docking", "app.follow_mouse", "app.disable_webview_gpu", "app.idle_destroy_enabled", "app.idle_destroy_seconds", "app.quick_paste_enabled", "app.screenshot_enabled", "app.sound_enabled", "app.sound_paste_enabled", "app.sound_volume", "app.clipboard_item_font_size", "app.clipboard_tag_font_size", "app.surface_opacity", "app.preview_opacity", "app.font_main", "app.font_mono", "app.emoji_panel_enabled", "app.emoji_panel_tab", "app.emoji_favorites", "app.custom_background", "app.custom_background_opacity"] },
+        "value": { "type": "string", "maxLength": 131072 }
+      },
+      "if": { "properties": { "key": { "enum": ["app.font_main", "app.font_mono"] } } },
+      "then": { "properties": { "value": { "maxLength": 256 } } },
+      "else": { "if": { "properties": { "key": { "const": "app.custom_background" } } },
+        "then": { "properties": { "value": { "maxLength": 32768 } } },
+      "else": { "if": { "properties": { "key": { "const": "app.emoji_favorites" } } },
+        "else": { "properties": { "value": { "minLength": 1, "maxLength": 64 } } } } },
+      "required": ["service_instance_id", "expected_epoch", "key", "value"],
+      "additionalProperties": false
+    },
+    "DesktopPreferences": {
+      "type": "object",
+      "properties": { "values": { "type": "object", "additionalProperties": { "type": "string" } } },
+      "required": ["values"],
+      "additionalProperties": false
+    },
+    "WindowSizeParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "expected_epoch": { "type": "integer", "minimum": 0, "maximum": 9007199254740991, "x-rust-type": "u64" },
+        "width": { "type": "integer", "minimum": 200, "maximum": 32768, "x-rust-type": "u32" },
+        "height": { "type": "integer", "minimum": 200, "maximum": 32768, "x-rust-type": "u32" }
+      },
+      "required": ["service_instance_id", "expected_epoch", "width", "height"],
+      "additionalProperties": false
+    },
+    "WindowPinParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "expected_epoch": { "type": "integer", "minimum": 0, "maximum": 9007199254740991, "x-rust-type": "u64" },
+        "pinned": { "type": "boolean" }
+      },
+      "required": ["service_instance_id", "expected_epoch", "pinned"],
+      "additionalProperties": false
+    },
+    "CaptureSettingParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "key": {
+          "type": "string",
+          "enum": [
+            "app.persistent",
+            "app.persistent_limit_enabled",
+            "app.persistent_limit",
+            "app.deduplicate",
+            "app.capture_files",
+            "app.capture_rich_text",
+            "app.ocr_enabled",
+            "app.privacy_protection",
+            "app.privacy_protection_kinds",
+            "app.privacy_protection_custom_rules",
+            "app.excluded_source_apps"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "key",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "CaptureSettingValues": {
+      "type": "object",
+      "properties": {
+        "persistent": {
+          "type": "boolean"
+        },
+        "deduplicate": {
+          "type": "boolean"
+        },
+        "capture_files": {
+          "type": "boolean"
+        },
+        "capture_rich_text": {
+          "type": "boolean"
+        },
+        "ocr_enabled": {
+          "type": "boolean"
+        },
+        "privacy_protection": {
+          "type": "boolean"
+        },
+        "privacy_kinds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "maxItems": 65536
+        },
+        "privacy_custom_rules": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "maxItems": 65536
+        },
+        "excluded_source_apps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "maxItems": 65536
+        }
+      },
+      "required": [
+        "persistent",
+        "deduplicate",
+        "capture_files",
+        "capture_rich_text",
+        "ocr_enabled",
+        "privacy_protection",
+        "privacy_kinds",
+        "privacy_custom_rules",
+        "excluded_source_apps"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

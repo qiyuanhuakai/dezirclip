@@ -10,9 +10,21 @@ enum ServiceCommand {
     /// Start the optional service, acknowledging any existing embedded capture handoff.
     Start { #[arg(long)] no_capture: bool, #[arg(long)] json: bool },
     /// Stop and drain the current Host; a failed stop remains a failure.
-    Stop,
+    Stop { #[arg(long)] from_instance: Option<String> },
+    /// Restart the observed standalone Service from an already elevated Windows process.
+    RestartElevated { #[arg(long)] from_instance: String, #[arg(long)] database: PathBuf, #[arg(long)] json: bool },
     /// Query the current Host without starting one.
     Status { #[arg(long)] json: bool },
+    /// Move an installed profile offline or through the identified standalone Service.
+    MoveData { directory: PathBuf,
+        #[arg(long, requires = "epoch")] from_instance: Option<String>,
+        #[arg(long, requires = "from_instance")] epoch: Option<u64>,
+        #[arg(long, requires = "from_instance")] json: bool },
+    /// Reconnect a committed installed-profile move without copying any files.
+    RecoverMove { directory: PathBuf, #[arg(long)] previous_directory: PathBuf,
+        #[arg(long)] from_instance: String, #[arg(long)] no_capture: bool },
+    /// Resolve the authenticated desktop Host. Prints connection metadata only.
+    DesktopEndpoint { #[arg(long)] start_if_missing: bool },
     /// Explicitly grant a Surface bounded access. The token is printed once.
     GrantSurface { #[arg(long)] copy: bool, #[arg(long)] paste: bool,
         #[arg(long,default_value_t=3600,value_parser=clap::value_parser!(u64).range(1..=86400))] seconds: u64 },
@@ -32,7 +44,10 @@ enum PrivacyCommand {
 fn runtime() -> Result<tokio::runtime::Runtime,String> { tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_| "LocalHostRuntimeUnavailable".into()) }
 fn database() -> Result<PathBuf,String> { dzc_host::data::database_path() }
 pub fn run(args: ServiceArgs) -> Result<(),String> {
-    let database = database()?;
+    let database = match &args.command {
+        ServiceCommand::RestartElevated { database, .. } => database.clone(),
+        _ => database()?,
+    };
     runtime()?.block_on(async {
         match args.command {
             ServiceCommand::Start { no_capture, json } => {
@@ -40,7 +55,39 @@ pub fn run(args: ServiceArgs) -> Result<(),String> {
                 status_output(status,json)
             }
             ServiceCommand::Status { json } => status_output(controller::status(&database).await.map_err(|e|e.to_string())?,json),
-            ServiceCommand::Stop => controller::stop(&database).await.map_err(|e|e.to_string()),
+            ServiceCommand::RestartElevated { from_instance, json, .. } => {
+                let status = controller::restart_elevated(&database, &controller::sibling_executable().map_err(|e|e.to_string())?, &from_instance).await.map_err(|e|e.to_string())?;
+                status_output(status,json)
+            }
+            ServiceCommand::MoveData { directory, from_instance, epoch, json } => {
+                if cfg!(feature = "portable") {
+                    return Err("Move the complete portable directory to relocate its data".into());
+                }
+                if let (Some(instance), Some(epoch)) = (from_instance, epoch) {
+                    let recovery = controller::move_active_profile(&database, &directory, &instance, epoch).await.map_err(|e| e.to_string())?;
+                    if json {
+                        println!("{}", serde_json::json!({"recovery":recovery}));
+                    } else if let Some(pending) = recovery {
+                        return Err(pending.detail);
+                    }
+                    Ok(())
+                } else {
+                    controller::move_profile_offline(&database, &directory).map_err(|e| e.to_string())
+                }
+            }
+            ServiceCommand::RecoverMove { directory, previous_directory, from_instance, no_capture } => {
+                if cfg!(feature = "portable") { return Err("Portable profile recovery is unsupported".into()); }
+                controller::recover_profile(&directory, &previous_directory, &from_instance, no_capture).await.map_err(|e| e.to_string())
+            }
+            ServiceCommand::DesktopEndpoint { start_if_missing } => {
+                let descriptor = controller::desktop_endpoint(&database, start_if_missing).await.map_err(|error| error.to_string())?;
+                println!("{}", descriptor);
+                Ok(())
+            }
+            ServiceCommand::Stop { from_instance } => match from_instance {
+                Some(instance) => controller::stop_instance(&database, &instance).await,
+                None => controller::stop(&database).await,
+            }.map_err(|e|e.to_string()),
             ServiceCommand::GrantSurface { copy,paste,seconds } => {
                 let mut client = Client::control(&controller::endpoint(&database).map_err(|e|e.to_string())?,ClientRole::Cli).await.map_err(|e|e.to_string())?;
                 let mut permissions = vec!["history_read", "surface_control"];

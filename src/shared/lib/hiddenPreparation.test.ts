@@ -19,6 +19,18 @@ describe("hidden preparation ownership", () => {
     current = true;
     expect(gate.current()).toBeNull();
   });
+  it("only the main window preparation that verified its Host can yield to focus", () => {
+    const gate = createHiddenPreparationGate();
+    const old = gate.begin("main", () => true);
+    const current = gate.begin("main", () => true);
+    old.allowFocusRelease();
+    expect(gate.current()?.releaseOnFocus).toBe(false);
+    current.allowFocusRelease();
+    expect(gate.current()?.releaseOnFocus).toBe(true);
+    gate.revoke();
+    current.allowFocusRelease();
+    expect(gate.current()).toBeNull();
+  });
   it("releasing an old request cannot release its replacement", () => {
     const gate = createHiddenPreparationGate();
     const old = gate.begin("main", () => true);

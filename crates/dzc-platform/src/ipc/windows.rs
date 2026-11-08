@@ -149,6 +149,29 @@ impl AsyncWrite for Stream {
 mod tests {
     use super::*;
     #[test]
+    fn abandoned_client_before_accept_does_not_retire_listener() {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            let directory = tempfile::tempdir().unwrap();
+            let endpoint = Endpoint::for_current_session(directory.path()).unwrap();
+            let mut listener = endpoint.bind().unwrap();
+            for _ in 0..8 {
+                drop(ClientOptions::new().open(&endpoint.address).unwrap());
+                match tokio::time::timeout(Duration::from_millis(20), listener.accept()).await {
+                    Err(_) | Ok(Ok(_)) => (),
+                    Ok(Err(error)) => panic!("An abandoned client retired the listener: {error}"),
+                }
+            }
+            let mut client = ClientOptions::new().open(&endpoint.address).unwrap();
+            let mut server = tokio::time::timeout(Duration::from_secs(2), listener.accept()).await.unwrap().unwrap();
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            client.write_all(b"alive").await.unwrap();
+            let mut bytes = [0; 5];
+            tokio::time::timeout(Duration::from_secs(2), server.read_exact(&mut bytes)).await.unwrap().unwrap();
+            assert_eq!(&bytes, b"alive");
+        });
+    }
+
+    #[test]
     fn identity_comparison_does_not_accept_another_user_or_session() {
         let current = current_identity().unwrap();
         let mut other = current.clone(); other.user.push('0');

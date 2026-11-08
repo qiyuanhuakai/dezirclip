@@ -6,7 +6,11 @@ authors.workspace = true
 description = "Authenticated local Host shared by DezirClip embedded and service modes"
 publish = false
 
+[features]
+native-screen = ["dzc-platform/native-screen", "dzc-platform/native-fonts", "dep:zeroize"]
+
 [dependencies]
+zeroize = { workspace = true, optional = true }
 dzc-core.workspace = true
 dzc-platform = { workspace = true, features = ["ipc", "native-ocr"] }
 dzc-protocol = { workspace = true, features = ["wire"] }
@@ -17,3 +21,6 @@ rand.workspace = true
 uuid.workspace = true
 dirs.workspace = true
 base64.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+dzc-platform = { workspace = true, features = ["native-fonts"] }

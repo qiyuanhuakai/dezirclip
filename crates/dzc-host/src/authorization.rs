@@ -51,11 +51,12 @@ impl GrantAuthority {
         Ok(())
     }
     pub(crate) fn accept(&self, hello: &HelloParams) -> Result<Session, WireErrorCode> {
-        let Some(token) = &hello.grant else { return Ok(Session { id: uuid::Uuid::new_v4().simple().to_string(), role: hello.client_role, permissions: vec![Permission::HistoryRead], grant: None }); };
+        let extended_methods = hello.capabilities.iter().any(|cap| cap == "desktop.extended_methods");
+        let Some(token) = &hello.grant else { return Ok(Session { system_change: Default::default(), window_target: Default::default(), quick:Default::default(), peer:None, extended_methods, id: uuid::Uuid::new_v4().simple().to_string(), role: hello.client_role, permissions: vec![Permission::HistoryRead], grant: None }); };
         let grants = self.grants.lock().map_err(|_| WireErrorCode::Unavailable)?;
         let grant = grants.iter().find(|grant| grant.token == *token && grant.role == hello.client_role
             && grant.expires.is_none_or(|expiry| expiry > Instant::now())).ok_or(WireErrorCode::PermissionDenied)?;
-        Ok(Session { id: uuid::Uuid::new_v4().simple().to_string(), role: hello.client_role, permissions: grant.permissions.clone(), grant: Some(grant.clone()) })
+        Ok(Session { system_change: Default::default(), window_target: Default::default(), quick:Default::default(), peer:None, extended_methods, id: uuid::Uuid::new_v4().simple().to_string(), role: hello.client_role, permissions: grant.permissions.clone(), grant: Some(grant.clone()) })
     }
     pub(crate) fn still_valid(&self, session: &Session) -> bool {
         let Some(grant) = &session.grant else { return true; };
@@ -64,13 +65,20 @@ impl GrantAuthority {
     }
 }
 
-pub struct Session { id: String, role: ClientRole, permissions: Vec<Permission>, grant: Option<Grant> }
+pub struct Session {
+    pub(crate) system_change: Mutex<Option<dzc_platform::desktop_system::WinVChange>>,
+    pub(crate) window_target: Mutex<Option<dzc_platform::runtime::RememberedFocus>>,
+    pub(crate) quick: crate::quick::FocusSlot,
+    pub(crate) peer: Option<dzc_platform::ipc::PeerIdentity>,
+    pub(crate) extended_methods: bool, id: String, role: ClientRole, permissions: Vec<Permission>, grant: Option<Grant> }
 impl Session {
     pub(crate) fn id(&self) -> &str { &self.id }
     pub fn role(&self) -> ClientRole { self.role }
     pub fn permissions(&self) -> &[Permission] { &self.permissions }
     pub(crate) fn surface_reader(&self) -> bool {
-        self.role == ClientRole::Surface && self.grant.is_some() && self.permissions.contains(&Permission::HistoryRead)
+        self.grant.is_some() && self.permissions.contains(&Permission::HistoryRead) &&
+            (self.role == ClientRole::Surface ||
+                (self.extended_methods && self.role == ClientRole::Desktop && self.permissions.contains(&Permission::DesktopHistory)))
     }
     pub(crate) fn require(&self, permission: Permission) -> Result<(), WireErrorCode> {
         if self.permissions.contains(&permission) { Ok(()) } else { Err(WireErrorCode::PermissionDenied) }

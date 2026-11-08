@@ -144,6 +144,26 @@ impl Host {
         if request.service_instance_id != self.snapshot()?.service_instance_id { return Err(WireErrorCode::PrivacyBlocked); }
         let permit = self.history.privacy().authorize_read(api::PrivacyAccessIntent::InteractiveRead,
             if request.reveal { api::SensitiveAccess::ExplicitUserAction } else { api::SensitiveAccess::Denied }, Some(request.expected_epoch), now).map_err(blocked)?;
+        if method == Method::DesktopHistorySourceIcon {
+            if request.reveal || request.thumbnail_dimension.is_some() {
+                return Err(WireErrorCode::InvalidRequest);
+            }
+            let row = if request.id < 0 {
+                let entries = self.session.lock().map_err(|_| WireErrorCode::Unavailable)?;
+                let entry = entries.iter().find(|entry| entry.id == request.id).ok_or(WireErrorCode::NotFound)?;
+                self.history.authorize_session_entry(entry, &permit, now).map_err(blocked)?
+            } else {
+                self.history.get_entry_authorized(request.id, &permit, now).map_err(blocked)?.ok_or(WireErrorCode::NotFound)?
+            };
+            let src = match row.source_app_path {
+                Some(path) => dzc_platform::apps::get_source_app_icon(path).map_err(|_| WireErrorCode::Unavailable)?,
+                None => None,
+            };
+            self.history.privacy().check_read(&permit, crate::router::now_ms()?).map_err(blocked)?;
+            let icon = SourceAppIcon { src };
+            value("SourceAppIcon", &icon)?;
+            return self.authorized_snapshot(session, &permit, &icon);
+        }
         let row = if request.id < 0 {
             let session = self.session.lock().map_err(|_| WireErrorCode::Unavailable)?;
             let row = session.iter().find(|row| row.id == request.id).ok_or(WireErrorCode::NotFound)?;
@@ -268,6 +288,34 @@ mod tests {
         assert!(entry.get("source_app_path").is_none());
         assert!(!String::from_utf8(bytes).unwrap().contains("process.exe"));
     }
+    #[test]
+    fn source_icons_require_desktop_authority_and_never_reveal_protected_rows_or_paths() {
+        let host = crate::router::tests::synthetic_host();
+        let ordinary = insert(&host, "ordinary icon fixture", false);
+        let sensitive = insert(&host, "protected icon fixture", true);
+        let desktop = session(&host, ClientRole::Desktop, true);
+        let cli = session(&host, ClientRole::Cli, true);
+        let state = host.snapshot().unwrap();
+        let params = |id, reveal| serde_json::json!({
+            "id": id, "reveal": reveal, "expected_epoch": state.privacy_epoch,
+            "service_instance_id": state.service_instance_id
+        });
+        assert_eq!(call(&host, &cli, Method::DesktopHistorySourceIcon, params(ordinary, false)).error.unwrap().code, WireErrorCode::PermissionDenied);
+        assert_eq!(call(&host, &desktop, Method::DesktopHistorySourceIcon, params(sensitive, false)).error.unwrap().code, WireErrorCode::NotFound);
+        assert_eq!(call(&host, &desktop, Method::DesktopHistorySourceIcon, params(sensitive, true)).error.unwrap().code, WireErrorCode::InvalidRequest);
+        let response = call(&host, &desktop, Method::DesktopHistorySourceIcon, params(ordinary, false));
+        let snapshot: BodySnapshot = serde_json::from_value(response.result.unwrap()).unwrap();
+        let chunk = host.snapshots.read(&desktop, state.clone(), SnapshotReadParams {
+            snapshot_id: snapshot.snapshot_id, offset: 0,
+            expected_epoch: state.privacy_epoch, service_instance_id: state.service_instance_id.clone()
+        }).unwrap();
+        let bytes = base64::engine::general_purpose::STANDARD.decode(chunk.data_base64).unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), serde_json::json!({"src": null}));
+        let mut stale = params(ordinary, false);
+        stale["expected_epoch"] = serde_json::json!(state.privacy_epoch + 1);
+        assert_eq!(call(&host, &desktop, Method::DesktopHistorySourceIcon, stale).error.unwrap().code, WireErrorCode::PrivacyBlocked);
+    }
+
     #[test]
     fn completed_snapshots_release_quota_while_incomplete_snapshots_remain_bounded() {
         let host=crate::router::tests::synthetic_host();

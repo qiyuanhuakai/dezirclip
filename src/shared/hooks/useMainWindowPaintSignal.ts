@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 
 /**
  * Tell the backend the main window has drawn a frame worth showing.
@@ -19,6 +19,8 @@ import { invoke } from "@tauri-apps/api/core";
  */
 export const useMainWindowPaintSignal = (settingsLoaded: boolean) => {
   useEffect(() => {
+    // The MyGo resident owns its WebView show/recreate lifecycle directly.
+    if (import.meta.env.MODE === "mygo") return;
     if (!settingsLoaded) return;
 
     let cancelled = false;

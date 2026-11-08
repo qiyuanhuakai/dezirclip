@@ -1,6 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./desktopInvoke";
 import { emit, listen } from "@tauri-apps/api/event";
-import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
+import { getAllWindows, getCurrentWindow } from "./desktopWindow";
 import { createPrivacyFence, parsePrivacySnapshot } from "./privacyRuntime";
 import type { PrivacyRuntimeSnapshot } from "./privacyRuntime";
 import type { ClipboardEntry } from "../types";
@@ -128,6 +128,9 @@ const onFocus = () => {
   if (document.hidden) { onDomHidden(); return; }
   const preparing = hiddenPreparation.current();
   if (preparing) {
+    // A native show/focus pair can arrive while the resumed main window is
+    // still reading its Host identity. Its owner finishes that check first.
+    if (!preparing.releaseOnFocus) return;
     const started = lifecycle;
     void getCurrentWindow().isVisible().then(visible => {
       if (started !== lifecycle || revision !== visibilityRevision || !visible || document.hidden
@@ -300,13 +303,15 @@ export async function invokePrivacyBound<T>(command: string, args?: Record<strin
   const publicRead = publicReadCommands.has(command) || (command === "get_privacy_entry" && args?.reveal === false);
   const guard = publicRead ? listFence : fence;
   const token = guard.capture();
-  const result = await invoke<T>(command, args);
+  const boundArgs = import.meta.env.MODE === "mygo" && publicReadCommands.has(command)
+    ? { expectedEpoch: model.snapshot?.privacy_epoch, ...args } : args;
+  const result = await invoke<T>(command, boundArgs);
   if (!guard.isCurrent(token) || model.phase !== "ready") throw new Error("PrivacyEpochChanged");
   return result;
 }
 
 const publicReadCommands = new Set(["get_clipboard_history", "search_clipboard_history", "get_tag_items_page",
-  "get_captured_entry_summary", "get_history_resource_preview", "get_all_tags_info"]);
+  "get_captured_entry_summary", "get_history_resource_preview", "get_all_tags_info", "get_source_app_icon"]);
 
 export const privacyListGeneration = () => listFence.current();
 
@@ -368,6 +373,7 @@ export async function prepareMainWindowResume(requestIsCurrent: () => boolean) {
   const { snapshot, stamp } = await readMainStatus();
   if (!lease.isCurrent() || !requestIsCurrent()) throw new Error("PrivacyEpochChanged");
   acceptMainStatus(snapshot, stamp);
+  lease.allowFocusRelease();
   await releaseVisiblePreparation(lease);
   if (!requestIsCurrent() || started !== lifecycle || !listFence.isCurrent(token) || viewSuspended || model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
   const access = beginPrivacyAccess("list");

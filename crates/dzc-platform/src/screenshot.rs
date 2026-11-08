@@ -53,7 +53,9 @@ impl FrozenScreenFrame {
     pub fn png_bytes(&self) -> Result<Vec<u8>, ScreenshotError> {
         encode_png(&self.pixels)
     }
-    pub(crate) fn from_pixels(rect: MonitorRect, pixels: xcap::image::RgbaImage) -> Result<Self, ScreenshotError> {
+    pub fn bounds(&self) -> MonitorRect { self.rect }
+
+    pub fn from_pixels(rect: MonitorRect, pixels: xcap::image::RgbaImage) -> Result<Self, ScreenshotError> {
         if rect.width == 0 || rect.height == 0 || pixels.dimensions() != (rect.width, rect.height) {
             return Err(ScreenshotError::RegionOutOfBounds);
         }
@@ -82,6 +84,16 @@ impl Drop for FrozenScreenFrame {
     }
 }
 
+pub fn freeze_at(cursor: Option<(i32, i32)>) -> Result<FrozenScreenFrame, ScreenshotError> {
+    let monitors = Monitor::all().map_err(map_monitor_enumeration_error)?;
+    let rects = read_monitor_rects(&monitors)?;
+    let index = pick_capture_monitor(&rects, cursor).ok_or(ScreenshotError::NoMonitor)?;
+    let rect = rects[index];
+    // Bound the native read before allocating the full RGBA image.
+    if u64::from(rect.width) * u64::from(rect.height) > 40_000_000 { return Err(ScreenshotError::RegionOutOfBounds); }
+    FrozenScreenFrame::from_pixels(rect, monitors[index].capture_image().map_err(map_xcap)?)
+}
+
 pub fn freeze_monitor(rect: MonitorRect) -> Result<FrozenScreenFrame, ScreenshotError> {
     let monitors = Monitor::all().map_err(map_monitor_enumeration_error)?;
     let rects = read_monitor_rects(&monitors)?;
@@ -102,11 +114,9 @@ pub fn freeze_monitor(rect: MonitorRect) -> Result<FrozenScreenFrame, Screenshot
 /// Origins are frequently negative -- a display left of the primary sits at
 /// `x = -1920` -- so the arithmetic is signed throughout.
 pub fn rect_holds_cursor(rect: MonitorRect, cursor_x: i32, cursor_y: i32) -> bool {
-    let (width, height) = (rect.width as i32, rect.height as i32);
-    cursor_x >= rect.x
-        && cursor_x < rect.x + width
-        && cursor_y >= rect.y
-        && cursor_y < rect.y + height
+    let x = i64::from(cursor_x) - i64::from(rect.x);
+    let y = i64::from(cursor_y) - i64::from(rect.y);
+    (0..i64::from(rect.width)).contains(&x) && (0..i64::from(rect.height)).contains(&y)
 }
 
 /// Pick which display a whole-screen capture should photograph.

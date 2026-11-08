@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 import type { MutableRefObject } from "react";
 import { resolveRichTextSnapshotCacheLimit } from "../lib/richTextSnapshotCache";
 import { setRichTextSnapshotCacheLimit as setRichTextSnapshotCacheLimitInModule } from "../lib/richTextSnapshot";
@@ -190,11 +190,11 @@ export const useSettingsPostInit = ({
     if (settings["app.arrow_key_selection"] === "false") setArrowKeySelection(false);
     setRegistryWinVEnabled(settings["app.use_win_v_shortcut"] === "true");
 
-    if (settings["app.sequential_hotkey"]) setSequentialHotkey(settings["app.sequential_hotkey"]);
-    if (settings["app.rich_paste_hotkey"]) setRichPasteHotkey(settings["app.rich_paste_hotkey"]);
+    if (settings["app.sequential_hotkey"] !== undefined) setSequentialHotkey(settings["app.sequential_hotkey"]);
+    if (settings["app.rich_paste_hotkey"] !== undefined) setRichPasteHotkey(settings["app.rich_paste_hotkey"]);
     if (settings["app.search_hotkey"] !== undefined) setSearchHotkey(settings["app.search_hotkey"]);
     if (settings["app.sequential_mode"] === "true") setSequentialModeState(true);
-    if (settings["app.sound_enabled"] === "true") setSoundEnabled(true);
+    setSoundEnabled(settings["app.sound_enabled"] === "true");
     if (settings["app.sound_volume"]) {
       const next = parseInt(settings["app.sound_volume"], 10);
       if (Number.isFinite(next)) setSoundVolume(Math.min(100, Math.max(0, next)));
@@ -204,7 +204,7 @@ export const useSettingsPostInit = ({
 
     if (settings["app.window_pinned"] === "true") {
       setIsWindowPinned(true);
-      invoke("set_window_pinned", { pinned: true }).catch(console.error);
+      invoke(import.meta.env.MODE === "mygo" ? "restore_window_pinned" : "set_window_pinned", { pinned: true }).catch(console.error);
     }
 
     setSettingsLoaded(true);

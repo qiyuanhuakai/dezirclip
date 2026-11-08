@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import ThemedSelect, { type ThemedSelectOption } from "../ThemedSelect";
 import type { DefaultAppsMap, InstalledAppOption } from "../../../app/types";
@@ -31,6 +31,7 @@ const DefaultAppsSettingsGroup = ({
     saveAppSetting
 }: DefaultAppsSettingsGroupProps) => {
     const APP_TYPES = ['text', 'rich_text', 'image', 'video', 'code', 'url'] as const;
+    const [saving, setSaving] = useState(false);
 
     const optionsByType = useMemo(() => {
         const map: Record<string, ThemedSelectOption[]> = {};
@@ -79,17 +80,20 @@ const DefaultAppsSettingsGroup = ({
                                     </span>
                                 </div>
                                 <ThemedSelect
+                                    ariaLabel={getClipboardTypeName(type, t)}
+                                    isDisabled={saving}
                                     options={options}
                                     value={value}
                                     width="100%"
                                     placeholder={!systemDefault ? t('not_configured') : undefined}
                                     searchable
                                     noOptionsMessage={t('no_matching_apps') || '无匹配应用'}
-                                    onChange={(val) => {
-                                        if (val.startsWith(SYSTEM_DEFAULT_VALUE)) {
-                                            saveAppSetting(type, '');
-                                        } else {
-                                            saveAppSetting(type, val);
+                                    onChange={async (val) => {
+                                        setSaving(true);
+                                        try {
+                                            await saveAppSetting(type, val === `${SYSTEM_DEFAULT_VALUE}::${type}` ? '' : val);
+                                        } finally {
+                                            setSaving(false);
                                         }
                                     }}
                                 />

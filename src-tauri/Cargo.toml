@@ -15,11 +15,12 @@ desktop = [
     "dep:tauri-plugin-dialog", "dep:tauri-plugin-global-shortcut",
     "dep:tauri-plugin-single-instance", "dep:tauri-plugin-window-state",
     "dep:window-vibrancy", "dep:machine-uid",
-    "dep:dotenvy", "dep:qrcode2", "dep:xcap", "dep:font-kit",
+    "dep:dotenvy", "native-screen",
     "dep:windows-core", "dep:windows-future", "dep:windows-version",
-    "dep:winreg", "dep:webview2-com", "dep:x11-clipboard", "dep:ksni", "dep:gtk",
+    "dep:webview2-com", "dep:x11-clipboard", "dep:ksni", "dep:gtk",
     "dep:tauri-plugin-updater", "dep:reqwest", "dep:rustls",
 ]
+native-screen = ["dzc-host/native-screen"]
 portable = ["dzc-core/portable", "dzc-platform/portable"]
 
 [build-dependencies]
@@ -68,11 +69,9 @@ hex = { workspace = true }
 dotenvy = { workspace = true, optional = true }
 
 dirs = { workspace = true }
-qrcode2 = { workspace = true, optional = true }
+tempfile = "3"
 rand = { workspace = true }
-xcap = { workspace = true, optional = true }
 zeroize = { workspace = true }
-font-kit = { workspace = true, optional = true }
 clap = { workspace = true }
 ctrlc = { workspace = true }
 
@@ -94,7 +93,7 @@ windows = { workspace = true }
 windows-core = { workspace = true, optional = true }
 windows-future = { workspace = true, optional = true }
 windows-version = { workspace = true, optional = true }
-winreg = { workspace = true, optional = true }
+winreg.workspace = true
 webview2-com = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

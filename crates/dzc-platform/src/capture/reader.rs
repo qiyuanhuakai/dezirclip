@@ -89,6 +89,18 @@ fn html(clipboard: &mut arboard::Clipboard) -> Option<String> {
     }
 }
 
+fn text(clipboard: &mut arboard::Clipboard) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = clipboard;
+        super::windows_clipboard::get_clipboard_text()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        clipboard.get_text().ok()
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn gif() -> Option<Vec<u8>> {
     for name in [
@@ -524,7 +536,7 @@ impl CaptureReader for NativeCaptureReader {
                 stage: CaptureStage::Read,
                 code: "ClipboardReadUnavailable".into(),
             })?;
-            text = clipboard.get_text().ok().filter(|text| !text.is_empty());
+            text = self::text(&mut clipboard).filter(|text| !text.is_empty());
             if text.as_ref().is_some_and(|text| !text.is_empty()) {
                 if let Some(mut html) = html(&mut clipboard) {
                     if let Some(fallback) = image_fallback() {
@@ -567,7 +579,7 @@ impl CaptureReader for NativeCaptureReader {
                 stage: CaptureStage::Read,
                 code: "ClipboardReadUnavailable".into(),
             })?;
-            text = clipboard.get_text().ok().filter(|text| !text.is_empty());
+            text = self::text(&mut clipboard).filter(|text| !text.is_empty());
         }
         if let Some(text) = text {
             let hash = fingerprint(&text);

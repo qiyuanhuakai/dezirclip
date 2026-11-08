@@ -38,7 +38,17 @@ impl ProcessExit {
             Ok(Self { pidfd: unsafe { std::os::fd::OwnedFd::from_raw_fd(descriptor as i32) } })
         }
     }
-    pub fn wait(self, timeout: std::time::Duration) -> io::Result<()> {
+    pub fn wait(self, timeout: std::time::Duration) -> io::Result<()> { self.observe(timeout) }
+
+    pub fn is_running(&self) -> io::Result<bool> {
+        match self.observe(std::time::Duration::ZERO) {
+            Ok(()) => Ok(false),
+            Err(error) if error.kind() == io::ErrorKind::TimedOut => Ok(true),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn observe(&self, timeout: std::time::Duration) -> io::Result<()> {
         #[cfg(target_os="windows")]
         {
             use windows::Win32::{Foundation::{WAIT_OBJECT_0, WAIT_TIMEOUT}, System::Threading::WaitForSingleObject};

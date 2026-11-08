@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { emit } from "@tauri-apps/api/event";
 import { usePrivacySession } from "../../../../shared/hooks/usePrivacySession";
 import { refreshPrivacyState, setPrivacySession } from "../../../../shared/lib/privacySession";

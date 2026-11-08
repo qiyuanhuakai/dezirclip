@@ -1,4 +1,4 @@
-use crate::services::qr;
+use dzc_core::qr;
 use base64::Engine;
 
 /// Generate a QR code PNG for `content` at the given pixel size and return

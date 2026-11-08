@@ -234,191 +234,194 @@ pub fn save_image_to_file(data_url: &str, data_dir: &std::path::Path) -> Option<
 // delete_entry_db, delete_entry, enforce_storage_limit, clear_history removed (migrated to repository)
 
 pub fn seed_defaults(conn: &Connection) -> Result<()> {
+    seed_preference_defaults(conn)?;
+    crate::infrastructure::repository::sensitive_tags::ensure_tags_if_protected(conn)
+}
+
+pub(crate) fn seed_preference_defaults(conn: &Connection) -> Result<()> {
     // App settings
-    let _ = conn.execute(
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.theme', 'mica')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.color_mode', 'system')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.show_app_border', 'true')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.persistent', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.capture_files', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.capture_rich_text', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.rich_text_snapshot_preview', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.deduplicate', 'true')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.silent_start', 'true')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.delete_after_paste', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.move_to_top_after_paste', 'true')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.privacy_protection', 'true')",
         [],
-    );
-    let _ = conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('app.privacy_protection_kinds', 'phone,idcard,email,secret,password')", []);
-    let _ = conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('app.privacy_protection_custom_rules', '')", []);
-    let _ = conn.execute(
+    )?;
+    conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('app.privacy_protection_kinds', 'phone,idcard,email,secret,password')", [])?;
+    conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('app.privacy_protection_custom_rules', '')", [])?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.excluded_source_apps', '')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.use_win_v_shortcut', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.sequential_mode', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.sequential_hotkey', 'Alt+V')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.rich_paste_hotkey', 'Ctrl+Shift+Z')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.search_hotkey', 'Alt+F')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.screenshot_enabled', 'true')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.screenshot_hotkey', 'Ctrl+Shift+A')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.screenshot_full_hotkey', 'Ctrl+Shift+F')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.quick_paste_enabled', 'true')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.quick_paste_hotkey', 'Ctrl+Shift+V')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.ocr_enabled', 'true')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.sound_enabled', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.sound_paste_enabled', 'true')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.hide_tray_icon', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.edge_docking', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.follow_mouse', 'true')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.disable_webview_gpu', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.arrow_key_selection', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.window_pinned', 'false')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.hotkey', 'Alt+C')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.autostart', 'true')",
         [],
-    );
-    let _ = conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('app.win_clipboard_disabled', 'false')", []);
-    let _ = conn.execute(
+    )?;
+    conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('app.win_clipboard_disabled', 'false')", [])?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.custom_background', '')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.custom_background_opacity', '45')",
         [],
-    );
+    )?;
     // Absolute shell alpha (percent), not a multiplier on a per-theme base, so
     // the same value reads identically in every theme and colour mode.
-    let _ = conn.execute(
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.surface_opacity', '65')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.notice_v028_shown', 'true')",
         [],
-    );
+    )?;
 
     // Paste method setting: "shift_insert" (default) or "ctrl_v"
-    let _ = conn.execute(
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.paste_method', 'shift_insert')",
         [],
-    );
+    )?;
 
     // Storage limit settings
-    let _ = conn.execute(
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.persistent_limit_enabled', 'true')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.persistent_limit', '500')",
         [],
-    );
+    )?;
 
-    let _ = conn.execute(
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.font_main', '')",
         [],
-    );
-    let _ = conn.execute(
+    )?;
+    conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.font_mono', '')",
         [],
-    );
-
-    crate::infrastructure::repository::sensitive_tags::ensure_tags_if_protected(conn)?;
+    )?;
 
     Ok(())
 }

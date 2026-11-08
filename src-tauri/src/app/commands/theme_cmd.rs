@@ -98,27 +98,9 @@ pub async fn export_custom_theme(
     if !valid_theme_id(&id) {
         return Err(theme_error("invalid custom theme id"));
     }
-    let theme = {
-        let conn = state.conn.lock().map_err(theme_error)?;
-        custom_themes::load(&conn)
-            .map_err(theme_error)?
-            .into_iter()
-            .find(|theme| theme.id == id)
-            .ok_or_else(|| theme_error("custom theme not found"))?
-    };
-    let repository =
-        crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository::new(
-            state.conn.clone(),
-        );
+    let history = dzc_core::api::HistoryService::from_legacy_connection(state.conn.clone());
     tauri::async_runtime::spawn_blocking(move || {
-        let target = std::path::Path::new(&path);
-        repository
-            .ensure_export_destination(target)
-            .map_err(theme_error)?;
-        crate::infrastructure::local_file::ensure_regular_destination(target)
-            .map_err(theme_error)?;
-        let bytes = theme.export_bytes().map_err(theme_error)?;
-        crate::infrastructure::attachments::write_backup(target, &bytes).map_err(theme_error)
+        history.export_theme_file(&id, std::path::Path::new(&path)).map_err(theme_error)
     })
     .await
     .map_err(|error| AppError::Internal(error.to_string()))?

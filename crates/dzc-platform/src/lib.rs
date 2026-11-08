@@ -1,10 +1,16 @@
 //! OS adapters depend on Core's ports; Core never depends on this crate.
+pub mod apps;
+pub mod desktop_system;
+pub mod sound;
 pub mod encryption;
 pub mod capture;
 pub mod local_file;
+pub mod user_resource;
 pub mod runtime_display;
 pub mod native_clipboard;
 pub mod runtime;
+#[cfg(any(feature = "native-fonts", all(feature = "ipc", target_os = "linux")))]
+pub mod fonts;
 #[cfg(feature = "ipc")]
 pub mod ipc;
 pub mod shortcut;
@@ -37,3 +43,14 @@ pub fn set_diagnostic_sink(sink: fn(&str)) {
 }
 
 mod private_files;
+
+#[cfg(feature = "native-screen")]
+pub mod screenshot;
+
+pub mod paste_input;
+#[cfg(target_os = "windows")]
+pub mod windows_input;
+#[cfg(target_os = "windows")]
+pub mod system_settings;
+
+pub mod image_png;

@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../shared/lib/desktopInvoke";
 import Select from "react-select";
 import type { FilterOptionOption, SingleValue } from "react-select";
 import { FuzzyIndex } from "../../../shared/lib/fuzzy";
@@ -20,6 +20,7 @@ interface ThemedSelectProps {
   noOptionsMessage?: string;
   isDisabled?: boolean;
   inputId?: string;
+  ariaLabel?: string;
 }
 
 const ThemedSelect = ({
@@ -31,7 +32,8 @@ const ThemedSelect = ({
   searchable = false,
   noOptionsMessage,
   isDisabled = false,
-  inputId
+  inputId,
+  ariaLabel
 }: ThemedSelectProps) => {
   const selected = options.find((option) => option.value === value) ?? null;
 
@@ -84,6 +86,7 @@ const ThemedSelect = ({
       }}
     >
       <Select
+        aria-label={ariaLabel}
         inputId={inputId}
         classNamePrefix="dezirclip-select"
         options={options}

@@ -45,7 +45,7 @@ class PerformanceDerivationTests(unittest.TestCase):
             native = next(node for node in ast.parse(source).body if isinstance(node, ast.ClassDef) and node.name == 'Native')
             return {node.name: ast.dump(node) for node in native.body if isinstance(node, ast.FunctionDef)}
         original, generated = methods(self.target), methods(result)
-        for name in ('__init__', 'install_window_procedure', 'focus_snapshot', 'keyboard_snapshot', 'target_preflight', 'activate', 'process', 'bind', 'parent_snapshot', 'authoritative_product_roots', 'tree', 'cleanup', 'click_window_metadata', 'click_alternate'):
+        for name in ('__init__', 'install_window_procedure', 'focus_snapshot', 'keyboard_snapshot', 'target_preflight', 'activate', 'candidate_query_diagnostic', 'process', 'bind', 'parent_snapshot', 'authoritative_product_roots', 'tree', 'cleanup', 'click_window_metadata', 'click_alternate'):
             with self.subTest(method=name):
                 self.assertEqual(original[name], generated[name])
         for name in ('alternate_click_candidates', 'plan_alternate_click', 'send_planned_click'):
@@ -150,7 +150,7 @@ class PerformanceDerivationTests(unittest.TestCase):
             self.assertEqual(proof['functional_lifecycle_provenance']['reviewed_lf_sha256'], derivation.REVIEWED_LIFECYCLE_LF_SHA256)
             self.assertEqual(proof['functional_target_provenance']['reviewed_lf_sha256'], derivation.REVIEWED_TARGET_LF_SHA256)
             self.assertEqual(proof['functional_controller_provenance']['diagnostic_delta'], 'bounded-original-child-and-socket-finalization-with-explicit-native-error-envelope-rejection')
-            self.assertEqual(proof['functional_target_provenance']['diagnostic_delta'], 'bounded-key-state-owned-message-timing-predeclared-click-planning-generation-verified-handle-cleanup-lifetime-owned-closure-certified-output-failure-only-parent-diagnostics-checked-snapshot-eof-and-bounded-pre-root-negative-classification-and-explicit-no-visible-uia-window-error-and-minimal-process-access-rights')
+            self.assertEqual(proof['functional_target_provenance']['diagnostic_delta'], 'bounded-key-state-owned-message-timing-predeclared-click-planning-generation-verified-handle-cleanup-lifetime-owned-closure-certified-output-failure-only-parent-diagnostics-checked-snapshot-eof-and-bounded-pre-root-negative-classification-and-explicit-no-visible-uia-window-error-and-minimal-process-access-rights-and-failed-candidate-read-only-identity-diagnostics')
             self.assertEqual(proof['functional_target_provenance']['original_target_reference']['lf_sha256'], 'cf3ad99a1c21a1267dd3011567a9a9bc434baa8d7214f7e1c8c730bdc30c5780')
             self.assertFalse(proof['native_runtime_executed_by_generator'])
             self.assertEqual(proof['native_log_policy']['combined_disk_bytes'], 128 * 1024 * 1024)

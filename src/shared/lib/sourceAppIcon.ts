@@ -1,4 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./desktopInvoke";
+import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from "./privacySession";
+import type { ClipboardEntry } from "../types";
 
 const sourceAppIconCache = new Map<string, string | null>();
 const sourceAppIconRequests = new Map<string, Promise<string | null>>();
@@ -56,3 +58,34 @@ export const getSourceAppIcon = async (sourceAppPath?: string | null): Promise<s
   sourceAppIconRequests.set(cacheKey, request);
   return request;
 };
+
+
+// The Host keeps executable paths private. A row identity is sufficient to request its icon.
+const historyIcons = new Map<string, Promise<string | null>>();
+let historyIconQueue: Promise<unknown> = Promise.resolve();
+subscribePrivacyInvalidation(() => historyIcons.clear());
+
+export function getHistorySourceAppIcon(entry: Pick<ClipboardEntry, "id" | "host_instance_id" | "timestamp">): Promise<string | null> {
+  const access = beginPrivacyAccess("list");
+  if (!access || !entry.host_instance_id) return Promise.resolve(null);
+  const key = JSON.stringify([entry.host_instance_id, entry.id, entry.timestamp, access.epoch]);
+  const cached = historyIcons.get(key);
+  if (cached) return cached;
+  const request = historyIconQueue.then(async () => {
+    if (!access.isCurrent()) return null;
+    const icon = await invokePrivacyBound<string | null>("get_source_app_icon", {
+      id: entry.id, expectedHostInstanceId: entry.host_instance_id, expectedEpoch: access.epoch
+    });
+    return access.isCurrent() ? icon : null;
+  }).catch(() => {
+    if (historyIcons.get(key) === request) historyIcons.delete(key);
+    return null;
+  });
+  historyIconQueue = request;
+  historyIcons.set(key, request);
+  if (historyIcons.size > SOURCE_APP_ICON_CACHE_LIMIT) {
+    const oldest = historyIcons.keys().next().value;
+    if (oldest !== undefined) historyIcons.delete(oldest);
+  }
+  return request;
+}

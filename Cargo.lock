@@ -1244,7 +1244,7 @@ dependencies = [
 
 [[package]]
 name = "dezirclip"
-version = "0.2.0-alpha.8"
+version = "0.2.0-alpha.9"
 dependencies = [
  "aes-gcm",
  "arboard",
@@ -1261,7 +1261,6 @@ dependencies = [
  "dzc-host",
  "dzc-platform",
  "dzc-service",
- "font-kit",
  "gtk",
  "hex",
  "image",
@@ -1269,7 +1268,6 @@ dependencies = [
  "ksni",
  "libc",
  "machine-uid",
- "qrcode2",
  "rand 0.8.6",
  "ratatui",
  "regex",
@@ -1288,6 +1286,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
+ "tempfile",
  "tokio",
  "unicode-segmentation",
  "unicode-width",
@@ -1302,7 +1301,6 @@ dependencies = [
  "winreg",
  "x11-clipboard",
  "x11rb",
- "xcap",
  "zeroize",
 ]
 
@@ -1549,7 +1547,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "dzc-core"
-version = "0.2.0-alpha.8"
+version = "0.2.0-alpha.9"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -1561,6 +1559,7 @@ dependencies = [
  "dzc-protocol",
  "image",
  "libc",
+ "qrcode2",
  "rand 0.8.6",
  "regex",
  "rusqlite",
@@ -1574,7 +1573,7 @@ dependencies = [
 
 [[package]]
 name = "dzc-host"
-version = "0.2.0-alpha.8"
+version = "0.2.0-alpha.9"
 dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",
@@ -1586,27 +1585,35 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
 name = "dzc-platform"
-version = "0.2.0-alpha.8"
+version = "0.2.0-alpha.9"
 dependencies = [
  "aes-gcm",
  "arboard",
  "base64 0.22.1",
+ "clipboard-win",
  "dbus",
+ "dirs 5.0.1",
+ "dunce",
  "dzc-core",
  "dzc-protocol",
+ "font-kit",
  "image",
  "keyring",
  "libc",
+ "libloading 0.8.9",
  "rand 0.8.6",
  "serde",
  "serde_json",
  "sha2",
  "socket2",
+ "tempfile",
  "tokio",
+ "url",
  "urlencoding",
  "uuid",
  "wayland-client",
@@ -1614,13 +1621,16 @@ dependencies = [
  "wayland-protocols-wlr",
  "windows 0.62.2",
  "windows-core 0.62.2",
+ "winreg",
  "x11-clipboard",
  "x11rb",
+ "xcap",
+ "zeroize",
 ]
 
 [[package]]
 name = "dzc-protocol"
-version = "0.2.0-alpha.8"
+version = "0.2.0-alpha.9"
 dependencies = [
  "jsonschema",
  "serde",
@@ -1629,7 +1639,7 @@ dependencies = [
 
 [[package]]
 name = "dzc-service"
-version = "0.2.0-alpha.8"
+version = "0.2.0-alpha.9"
 dependencies = [
  "clap",
  "ctrlc",
@@ -3447,9 +3457,9 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "1.2.1"
+version = "1.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02bd0af71c67b473010cbbc60715ee815645a4dc942899111f494b4b737d6fda"
+checksum = "1788edb87fdc09c7e26304471e2f5be8cdefb1b6930d6e3985fc02ff53bf86ee"
 dependencies = [
  "libc",
  "log",

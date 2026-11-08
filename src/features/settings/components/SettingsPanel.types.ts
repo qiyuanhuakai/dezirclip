@@ -105,7 +105,7 @@ export interface SettingsPanelProps {
     readonly setRichTextSnapshotCacheLimit: (val: number) => void;
     readonly setDeleteAfterPaste: (val: boolean) => void;
     readonly setMoveToTopAfterPaste: (val: boolean) => void;
-    readonly saveAppSetting: (key: string, val: string) => void;
+    readonly saveAppSetting: (key: string, val: string) => void | Promise<boolean | void>;
     readonly setSequentialModeState: (val: boolean) => void;
     readonly setIsRecordingSequential: (val: boolean) => void;
     readonly updateSequentialHotkey: (key: string) => void;

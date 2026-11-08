@@ -4,7 +4,7 @@ default-members = ["src-tauri"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0-alpha.8"
+version = "0.2.0-alpha.9"
 edition = "2021"
 authors = ["qiyuanhuakai"]
 
@@ -64,7 +64,7 @@ windows-version = { version = "0.1.1" }
 winreg = { version = "0.55.0" }
 webview2-com = { version = "0.39.1" }
 libc = "0.2"
-x11rb = { version = "0.13", features = ["xtest", "xfixes", "allow-unsafe-code"] }
+x11rb = { version = "0.13", features = ["xtest", "xfixes", "allow-unsafe-code", "res"] }
 x11-clipboard = { version = "0.9" }
 keyring = { version = "3", features = ["linux-native-sync-persistent"] }
 ksni = { version = "0.3", features = ["blocking"] }

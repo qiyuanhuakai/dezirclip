@@ -311,6 +311,7 @@ fn main() {
             app::commands::open_install_folder,
             app::commands::open_agent_skill_folder,
             app::commands::import_cmd::import_from_file,
+            app::commands::import_cmd::preview_backup_file,
             app::commands::screenshot_cmd::capture_full_screen,
             app::commands::screenshot_cmd::capture_region,
             app::commands::screenshot_cmd::get_region_capture_session,

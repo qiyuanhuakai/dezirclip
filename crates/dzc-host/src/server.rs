@@ -89,7 +89,7 @@ async fn read_request(stream: &mut Stream, stopped: &mut watch::Receiver<bool>, 
 async fn connection(host: Arc<Host>, mut stream: Stream, state: Arc<Connections>) -> io::Result<()> {
     let mut stopped = state.draining.subscribe();
     let bytes = read_request(&mut stream, &mut stopped, Duration::from_secs(5)).await?;
-    let _peer = stream.authenticate_after_read()?;
+    let peer = stream.authenticate_after_read()?;
     let request: Request = wire::decode("Request", &bytes).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
     if request.method != Method::Hello {
         send(&mut stream, Response::failure(request.request_id, WireErrorCode::HandshakeRequired)).await?;
@@ -97,21 +97,29 @@ async fn connection(host: Arc<Host>, mut stream: Stream, state: Arc<Connections>
     }
     let id = request.request_id;
     let hello = serde_json::from_value(request.params).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
-    let (session, hello) = match host.hello(hello) {
+    let (session, hello) = match host.hello_with_peer(hello, Some(peer)) {
         Ok(accepted) => accepted,
         Err(code) => { send(&mut stream, Response::failure(id, code)).await?; return Ok(()); },
     };
     send(&mut stream, Response::success(id, serde_json::to_value(hello)?)).await?;
-    requests(host, session, stream, state, stopped).await
+    let screen_owner = session.id().to_owned();
+    let result = requests(host.clone(), session, stream, state, stopped).await;
+    host.recording.disconnect(&screen_owner);
+    #[cfg(feature = "native-screen")]
+    host.screen.disconnect(&screen_owner);
+    result
 }
 
 async fn requests(host: Arc<Host>, session: Session, mut stream: Stream, state: Arc<Connections>, mut stopped: watch::Receiver<bool>) -> io::Result<()> {
     let session = Arc::new(session);
     loop {
-        let bytes = read_request(&mut stream, &mut stopped, Duration::from_secs(30)).await?;
+        let timeout = if session.quick.active() { crate::quick::TIMEOUT } else { Duration::from_secs(30) };
+        #[cfg(feature = "native-screen")]
+        let timeout = if host.screen.owns(session.id()) { crate::screen::SELECTION_TIMEOUT } else { timeout };
+        let bytes = read_request(&mut stream, &mut stopped, timeout).await?;
         let request: Request = wire::decode("Request", &bytes).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
         let method = request.method;
-        let permit = if method == Method::EventsSubscribe { None } else {
+        let permit = if method == Method::EventsSubscribe || Host::independent_dispatch(method) { None } else {
             match tokio::time::timeout(Duration::from_secs(5), state.dispatch_slots.clone().acquire_owned()).await {
                 Ok(Ok(permit)) => Some(permit),
                 _ => { send(&mut stream, Response::failure(request.request_id, WireErrorCode::Busy)).await?; continue; },
@@ -219,6 +227,123 @@ mod tests {
                 drop(credentials);
                 std::fs::remove_dir_all(directory).unwrap();
             }
+        });
+    }
+
+    #[test]
+    fn blocked_system_fonts_leave_privacy_and_other_connections_responsive() {
+        struct SlowFonts {
+            entered: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+            resume: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+        }
+        impl crate::HostActions for SlowFonts {
+            fn system_fonts(&self) -> Vec<DesktopFont> {
+                self.entered.lock().unwrap().take().unwrap().send(()).unwrap();
+                self.resume.lock().unwrap().recv_timeout(Duration::from_secs(8)).unwrap();
+                vec![DesktopFont { family: "Fixture".into(), is_mono: false, path: "fixture.ttf".into() }]
+            }
+            fn platform_capabilities(&self) -> serde_json::Value { serde_json::json!({}) }
+            fn can_copy(&self) -> bool { false }
+            fn copy(&self, _: dzc_core::ports::ClipboardPayload) -> Result<(), WireErrorCode> { unreachable!() }
+            fn can_paste(&self) -> bool { false }
+            fn paste(&self) -> Result<(), WireErrorCode> { unreachable!() }
+            fn stop_helpers(&self) -> Result<(), WireErrorCode> { Ok(()) }
+        }
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            let directory = directory();
+            let original = crate::router::tests::synthetic_host();
+            let (entered, waiting) = tokio::sync::oneshot::channel();
+            let (resume, paused) = std::sync::mpsc::channel();
+            let host = Host::new(crate::HostOptions { mode: HostMode::Service, history: original.history.clone(),
+                directory: directory.clone(), actions: Arc::new(SlowFonts { entered: Some(entered).into(), resume: paused.into() }) }).unwrap();
+            let endpoint = Endpoint::in_directory(&directory).unwrap();
+            let listener = endpoint.bind().unwrap();
+            let credentials = ControlFile::publish(&host, &endpoint).unwrap();
+            let (shutdown, receiver) = watch::channel(false);
+            let server = tokio::spawn(serve_listener(host.clone(), listener, receiver));
+            let mut desktop = Client::control(&endpoint, ClientRole::Desktop).await.unwrap();
+            let mut second = Client::control(&endpoint, ClientRole::Desktop).await.unwrap();
+            let scan = tokio::spawn(async move { desktop.call::<DesktopFontList>(Method::DesktopSettingsFonts, serde_json::json!({}), "DesktopFontList").await });
+            tokio::time::timeout(Duration::from_secs(3), waiting).await.unwrap().unwrap();
+            let busy = tokio::time::timeout(Duration::from_secs(1), second.call::<DesktopFontList>(
+                Method::DesktopSettingsFonts, serde_json::json!({}), "DesktopFontList")).await.unwrap().unwrap_err();
+            assert_eq!(serde_json::from_str::<WireErrorCode>(&busy.to_string()).unwrap(), WireErrorCode::Busy);
+            let privacy = tokio::time::timeout(Duration::from_secs(1), second.call::<PrivacyState>(
+                Method::PrivacySet, serde_json::json!({"active":true}), "PrivacyState")).await.unwrap().unwrap();
+            assert!(privacy.active);
+            assert!(host.try_toggle_privacy().unwrap());
+            resume.send(()).unwrap();
+            assert_eq!(scan.await.unwrap().unwrap().fonts[0].family, "Fixture");
+            shutdown.send(true).unwrap();
+            server.await.unwrap().unwrap();
+            drop(credentials);
+            std::fs::remove_dir_all(directory).unwrap();
+        });
+    }
+
+    #[test]
+    fn explorer_restart_does_not_block_transaction_heartbeat() {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            let directory = directory();
+            let host = crate::router::tests::synthetic_host();
+            let endpoint = Endpoint::in_directory(&directory).unwrap();
+            let listener = endpoint.bind().unwrap();
+            let credentials = ControlFile::publish(&host, &endpoint).unwrap();
+            let (shutdown, receiver) = watch::channel(false);
+            let server = tokio::spawn(serve_listener(host.clone(), listener, receiver));
+            let mut desktop = Client::control(&endpoint, ClientRole::Desktop).await.unwrap();
+            let mut transaction = Client::control(&endpoint, ClientRole::Desktop).await.unwrap();
+            let (entered, waiting) = tokio::sync::oneshot::channel();
+            let (resume, paused) = std::sync::mpsc::channel();
+            *host.explorer_restart_pause.lock().unwrap() = Some((entered, paused));
+            let restart = tokio::spawn(async move {
+                desktop.call::<WindowsSettingResult>(Method::DesktopSystemExplorerRestart, serde_json::json!({}), "WindowsSettingResult").await
+            });
+            tokio::time::timeout(Duration::from_secs(3), waiting).await.unwrap().unwrap();
+            let heartbeat = tokio::time::timeout(Duration::from_secs(1), transaction.call::<RuntimeState>(
+                Method::Health, serde_json::json!({}), "RuntimeState")).await;
+            resume.send(()).unwrap();
+            assert_eq!(heartbeat.unwrap().unwrap().service_instance_id, host.instance_id());
+            assert!(restart.await.unwrap().unwrap().value);
+            let next: RuntimeState = transaction.call(Method::Health, serde_json::json!({}), "RuntimeState").await.unwrap();
+            assert_eq!(next.service_instance_id, host.instance_id());
+            shutdown.send(true).unwrap();
+            server.await.unwrap().unwrap();
+            drop(credentials);
+            std::fs::remove_dir_all(directory).unwrap();
+        });
+    }
+
+    #[test]
+    fn privacy_switch_on_second_connection_invalidates_inflight_backup() {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            let directory = directory();
+            let host = crate::router::tests::synthetic_host();
+            let endpoint = Endpoint::in_directory(&directory).unwrap();
+            let listener = endpoint.bind().unwrap();
+            let credentials = ControlFile::publish(&host, &endpoint).unwrap();
+            let (shutdown, receiver) = watch::channel(false);
+            let server = tokio::spawn(serve_listener(host.clone(), listener, receiver));
+            let mut desktop = Client::control(&endpoint, ClientRole::Desktop).await.unwrap();
+            let mut control = Client::control(&endpoint, ClientRole::Cli).await.unwrap();
+            let initial = host.snapshot().unwrap();
+            let (reached, waiting) = tokio::sync::oneshot::channel();
+            let (resume, paused) = std::sync::mpsc::channel();
+            *host.after_backup_ticket.lock().unwrap() = Some((reached, paused));
+            let request = BackupPreviewParams { service_instance_id: initial.service_instance_id,
+                expected_epoch: initial.privacy_epoch, path: directory.join("backup.json").to_str().unwrap().into() };
+            let preview = tokio::spawn(async move { desktop.call::<BackupPreview>(Method::DesktopBackupPreview, request, "BackupPreview").await });
+            tokio::time::timeout(Duration::from_secs(3), waiting).await.unwrap().unwrap();
+            let privacy = tokio::time::timeout(Duration::from_secs(1), control.call::<PrivacyState>(
+                Method::PrivacySet, serde_json::json!({"active":true}), "PrivacyState")).await.unwrap().unwrap();
+            assert!(privacy.active && privacy.privacy_epoch > initial.privacy_epoch);
+            resume.send(()).unwrap();
+            let err = preview.await.unwrap().unwrap_err();
+            assert_eq!(serde_json::from_str::<WireErrorCode>(&err.to_string()).unwrap(), WireErrorCode::PrivacySessionActive);
+            shutdown.send(true).unwrap();
+            server.await.unwrap().unwrap();
+            drop(credentials);
+            std::fs::remove_dir_all(directory).unwrap();
         });
     }
 

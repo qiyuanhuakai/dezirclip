@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 import type { Dispatch, SetStateAction } from "react";
 import type { ClipboardEntry } from "../types";
 

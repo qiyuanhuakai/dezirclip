@@ -1331,5 +1331,37 @@ class AccessibilityDiagnosticsTests(unittest.TestCase):
             self.assertEqual(observed, [True])
 
 
+class CandidateQueryDiagnosticTests(unittest.TestCase):
+    def test_read_only_query_closes_without_retaining_or_granting_ownership(self):
+        native = TARGET.Native.__new__(TARGET.Native)
+        native.handles, native.identities, native.validated_owned_handles = {}, {}, {}
+        calls = []
+        def times(handle, created, *rest):
+            created._obj.dwLowDateTime = 123
+            return True
+        def image(handle, flags, name, size):
+            name.value = 'synthetic-candidate'
+            return True
+        native.kernel = SimpleNamespace(
+            OpenProcess=lambda access, inherit, pid: calls.append(('open', access, inherit, pid)) or 900,
+            GetProcessTimes=times, QueryFullProcessImageNameW=image,
+            CloseHandle=lambda handle: calls.append(('close', handle)) or True)
+        result = native.candidate_query_diagnostic(8123)
+        self.assertEqual(calls, [('open', 0x1000, False, 8123), ('close', 900)])
+        self.assertEqual(result['creation_time_100ns'], '123')
+        self.assertEqual(result['image'], 'synthetic-candidate')
+        self.assertTrue(result['close_confirmed'])
+        self.assertFalse(result['ownership_granted'])
+        self.assertEqual((native.handles, native.identities, native.validated_owned_handles), ({}, {}, {}))
+
+    def test_denied_read_only_query_preserves_error_without_a_handle(self):
+        native = TARGET.Native.__new__(TARGET.Native)
+        native.kernel = SimpleNamespace(OpenProcess=lambda *args: 0)
+        with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
+            result = native.candidate_query_diagnostic(8123)
+        self.assertEqual(result, {'requested_access': '0x1000', 'opened': False,
+                                 'ownership_granted': False, 'winerror': 5})
+
+
 if __name__ == '__main__':
     unittest.main()

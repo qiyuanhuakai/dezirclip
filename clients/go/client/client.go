@@ -9,6 +9,7 @@ import (
     "io"
     "net"
     "strconv"
+    "slices"
     "sync"
     "time"
 
@@ -19,10 +20,13 @@ var ErrProtocol = errors.New("invalid local protocol response")
 type RemoteError struct { Code protocol.WireErrorCode }
 func (err *RemoteError) Error() string { return string(err.Code) }
 
-type Client struct { conn net.Conn; mu sync.Mutex; sequence uint64; hello protocol.HelloResult }
+type Client struct { conn net.Conn; mu sync.Mutex; sequence uint64; hello protocol.HelloResult; desktop *desktopEndpoint }
 
 func Dial(ctx context.Context, address string, hello protocol.HelloParams) (*Client, error) {
-    conn, err := dialLocal(ctx, address)
+    if hello.ClientRole == protocol.ClientRoleDesktop && !slices.Contains(hello.Capabilities, "desktop.extended_methods") && len(hello.Capabilities) < 64 {
+        hello.Capabilities = append(slices.Clone(hello.Capabilities), "desktop.extended_methods")
+    }
+    conn, err := dialLocal(ctx, address, 0)
     if err != nil { return nil, err }
     return handshake(ctx, conn, hello)
 }
@@ -44,7 +48,14 @@ func (client *Client) Call(ctx context.Context, method protocol.Method, params a
     defer client.mu.Unlock()
     if err := ctx.Err(); err != nil { return err }
     deadline, ok := ctx.Deadline()
-    if maximum := time.Now().Add(5 * time.Second); !ok || deadline.After(maximum) { deadline = maximum }
+    limitDuration := 5 * time.Second
+    switch method {
+    case protocol.MethodDesktopSystemExplorerRestart, protocol.MethodDesktopApplicationsSelect, protocol.MethodDesktopHistoryOpen:
+        limitDuration = 15 * time.Second
+    case protocol.MethodDesktopQueueNext, protocol.MethodDesktopOcrRecognize, protocol.MethodDesktopBackupImport, protocol.MethodDesktopBackupExport, protocol.MethodDesktopBackupPreview, protocol.MethodDesktopProfileMove:
+        limitDuration = 10 * time.Minute
+    }
+    if maximum := time.Now().Add(limitDuration); !ok || deadline.After(maximum) { deadline = maximum }
     if err := client.conn.SetDeadline(deadline); err != nil { return err }
     cancellationDone := make(chan struct{})
     stop := context.AfterFunc(ctx, func() { client.conn.SetDeadline(time.Now()); close(cancellationDone) })

@@ -4,6 +4,65 @@ use serde::{Deserialize, Serialize};
 pub const MAX_FRAME_BYTES: usize = 1048576;
 pub const MAX_JSON_DEPTH: usize = 64;
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupPreviewParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupImportParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub path: String,
+    pub mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passphrase: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupExportParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub path: String,
+    pub format: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passphrase: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupPreviewRow {
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupPreview {
+    pub entries: Vec<BackupPreviewRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupImportResult {
+    pub imported: u64,
+    pub skipped: u64,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupExportResult {
+    pub count: u64,
+    pub format: String,
+    pub encrypted: bool,
+    pub path: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Permission {
     #[serde(rename = "history_read")]
@@ -30,6 +89,12 @@ pub enum HostMode {
     Embedded,
     #[serde(rename = "service")]
     Service,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopPlatformReport {
+    pub report: serde_json::Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -67,6 +132,93 @@ pub struct SurfaceActionParams {
     pub entry_id: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_instance_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ActionHotkeyParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub key: String,
+    pub hotkey: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PanelHotkeyParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub key: String,
+    pub hotkey: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MainHotkeyParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub hotkeys: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordingParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceAppIcon {
+    pub src: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExternalOpenParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub id: i64,
+    pub reveal: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApplicationSelection {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub expected_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundResource {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub src: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileMoveResult {
+    pub moved: bool,
+    pub service_stopped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopProfileInfo {
+    pub data_directory: String,
+    pub database_schema_version: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -202,6 +354,35 @@ pub struct CaptureFinishParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmojiFavoritesParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mutation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmojiFavoritesResult {
+    pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowEmojiParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub kind: String,
+    pub content: String,
+    pub paste: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneratedBody {
     pub kind: String,
     pub text: String,
@@ -224,6 +405,22 @@ pub struct DesktopMutationParams {
     pub content: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confirm_persistence: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManualEntryParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub content_type: String,
+    pub tags: Vec<String>,
+    pub confirm_persistence: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManualEntryFinish {
+    pub capture_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -339,6 +536,8 @@ pub enum Method {
     DesktopTagsPage,
     #[serde(rename = "desktop.history.get")]
     DesktopHistoryGet,
+    #[serde(rename = "desktop.history.source_icon")]
+    DesktopHistorySourceIcon,
     #[serde(rename = "desktop.snapshot.read")]
     DesktopSnapshotRead,
     #[serde(rename = "desktop.capture.begin")]
@@ -349,8 +548,150 @@ pub enum Method {
     DesktopCaptureFinish,
     #[serde(rename = "desktop.history.summary")]
     DesktopHistorySummary,
+    #[serde(rename = "desktop.platform.probe")]
+    DesktopPlatformProbe,
+    #[serde(rename = "desktop.profile.info")]
+    DesktopProfileInfo,
+    #[serde(rename = "desktop.profile.move")]
+    DesktopProfileMove,
+    #[serde(rename = "desktop.appearance.background")]
+    DesktopAppearanceBackground,
+    #[serde(rename = "desktop.history.open")]
+    DesktopHistoryOpen,
+    #[serde(rename = "desktop.applications.select")]
+    DesktopApplicationsSelect,
+    #[serde(rename = "desktop.window.target")]
+    DesktopWindowTarget,
+    #[serde(rename = "desktop.window.pin")]
+    DesktopWindowPin,
+    #[serde(rename = "desktop.window.resize")]
+    DesktopWindowResize,
+    #[serde(rename = "desktop.tools.catalog")]
+    DesktopToolsCatalog,
+    #[serde(rename = "desktop.settings.fonts")]
+    DesktopSettingsFonts,
+    #[serde(rename = "desktop.tools.classify")]
+    DesktopToolsClassify,
+    #[serde(rename = "desktop.tools.transform")]
+    DesktopToolsTransform,
+    #[serde(rename = "desktop.tools.qr")]
+    DesktopToolsQr,
+    #[serde(rename = "desktop.backup.preview")]
+    DesktopBackupPreview,
+    #[serde(rename = "desktop.backup.import")]
+    DesktopBackupImport,
+    #[serde(rename = "desktop.backup.export")]
+    DesktopBackupExport,
+    #[serde(rename = "desktop.ocr.recognize")]
+    DesktopOcrRecognize,
+    #[serde(rename = "desktop.ocr.status")]
+    DesktopOcrStatus,
+    #[serde(rename = "desktop.ocr.engine")]
+    DesktopOcrEngine,
+    #[serde(rename = "desktop.settings.preferences")]
+    DesktopSettingsPreferences,
+    #[serde(rename = "desktop.settings.view.set")]
+    DesktopSettingsViewSet,
+    #[serde(rename = "desktop.settings.reset")]
+    DesktopSettingsReset,
+    #[serde(rename = "desktop.system.win_v.get")]
+    DesktopSystemWinVGet,
+    #[serde(rename = "desktop.system.explorer.restart")]
+    DesktopSystemExplorerRestart,
+    #[serde(rename = "desktop.system.admin.get")]
+    DesktopSystemAdminGet,
+    #[serde(rename = "desktop.system.win_v.begin")]
+    DesktopSystemWinVBegin,
+    #[serde(rename = "desktop.system.win_v.finish")]
+    DesktopSystemWinVFinish,
+    #[serde(rename = "desktop.system.clipboard_history.set")]
+    DesktopSystemClipboardHistorySet,
+    #[serde(rename = "desktop.hotkey.recording")]
+    DesktopHotkeyRecording,
+    #[serde(rename = "desktop.hotkey.main.set")]
+    DesktopHotkeyMainSet,
+    #[serde(rename = "desktop.hotkey.panel.set")]
+    DesktopHotkeyPanelSet,
+    #[serde(rename = "desktop.hotkey.action.set")]
+    DesktopHotkeyActionSet,
+    #[serde(rename = "desktop.settings.capture.get")]
+    DesktopSettingsCaptureGet,
+    #[serde(rename = "desktop.settings.capture.set")]
+    DesktopSettingsCaptureSet,
+    #[serde(rename = "desktop.screen.begin")]
+    DesktopScreenBegin,
+    #[serde(rename = "desktop.screen.read")]
+    DesktopScreenRead,
+    #[serde(rename = "desktop.screen.crop")]
+    DesktopScreenCrop,
+    #[serde(rename = "desktop.screen.finish")]
+    DesktopScreenFinish,
+    #[serde(rename = "desktop.screen.cancel")]
+    DesktopScreenCancel,
+    #[serde(rename = "desktop.tags.counts")]
+    DesktopTagsCounts,
+    #[serde(rename = "desktop.tags.colors")]
+    DesktopTagsColors,
+    #[serde(rename = "desktop.tags.color")]
+    DesktopTagsColor,
+    #[serde(rename = "desktop.tags.delete_contents")]
+    DesktopTagsDeleteContents,
+    #[serde(rename = "desktop.tags.delete_entries")]
+    DesktopTagsDeleteEntries,
+    #[serde(rename = "desktop.history.count")]
+    DesktopHistoryCount,
+    #[serde(rename = "desktop.paste.target")]
+    DesktopPasteTarget,
+    #[serde(rename = "desktop.queue.get")]
+    DesktopQueueGet,
+    #[serde(rename = "desktop.queue.set")]
+    DesktopQueueSet,
+    #[serde(rename = "desktop.queue.next")]
+    DesktopQueueNext,
+    #[serde(rename = "desktop.queue.configure")]
+    DesktopQueueConfigure,
+    #[serde(rename = "desktop.screen.preferences")]
+    DesktopScreenPreferences,
+    #[serde(rename = "desktop.quick.preferences")]
+    DesktopQuickPreferences,
+    #[serde(rename = "desktop.quick.begin")]
+    DesktopQuickBegin,
+    #[serde(rename = "desktop.quick.dismiss")]
+    DesktopQuickDismiss,
+    #[serde(rename = "desktop.quick.paste")]
+    DesktopQuickPaste,
+    #[serde(rename = "desktop.themes.list")]
+    DesktopThemesList,
+    #[serde(rename = "desktop.themes.get")]
+    DesktopThemesGet,
+    #[serde(rename = "desktop.themes.import")]
+    DesktopThemesImport,
+    #[serde(rename = "desktop.themes.export")]
+    DesktopThemesExport,
+    #[serde(rename = "desktop.themes.remove")]
+    DesktopThemesRemove,
+    #[serde(rename = "desktop.history.clear")]
+    DesktopHistoryClear,
+    #[serde(rename = "desktop.history.reorder")]
+    DesktopHistoryReorder,
+    #[serde(rename = "desktop.tags.create")]
+    DesktopTagsCreate,
+    #[serde(rename = "desktop.tags.rename")]
+    DesktopTagsRename,
+    #[serde(rename = "desktop.tags.remove")]
+    DesktopTagsRemove,
     #[serde(rename = "desktop.history.mutate")]
     DesktopHistoryMutate,
+    #[serde(rename = "desktop.history.manual.begin")]
+    DesktopHistoryManualBegin,
+    #[serde(rename = "desktop.history.manual.finish")]
+    DesktopHistoryManualFinish,
+    #[serde(rename = "desktop.window.paste")]
+    DesktopWindowPaste,
+    #[serde(rename = "desktop.window.emoji")]
+    DesktopWindowEmoji,
+    #[serde(rename = "desktop.emoji.favorites")]
+    DesktopEmojiFavorites,
     #[serde(rename = "desktop.clipboard.copy")]
     DesktopClipboardCopy,
     #[serde(rename = "desktop.privacy.rules")]
@@ -597,6 +938,116 @@ pub struct EntryResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryStateParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryTagParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryRenameParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub name: String,
+    pub new_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryPinOrder {
+    pub id: i64,
+    pub order: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryOrderParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub orders: Vec<LibraryPinOrder>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryColorParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryTagBatchParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub name: String,
+    pub scope: String,
+    pub ids: Vec<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryDeleted {
+    pub deleted_count: u64,
+    pub cleanup_failed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryCount {
+    pub count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryCounts {
+    pub values: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryColors {
+    pub values: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManualOcrParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub id: i64,
+    pub reveal: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManualOcrText {
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OcrEngineInfo {
+    pub available: bool,
+    pub engine_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesktopPolicyParams {
     pub service_instance_id: String,
     pub expected_epoch: u64,
@@ -658,6 +1109,253 @@ pub struct PrivacySetParams {
     pub active: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueTarget {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub windows: Option<WindowsPasteTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x11: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueuePreferences {
+    pub sequential: bool,
+    pub delete_after_paste: bool,
+    pub paste_method: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueState {
+    pub ids: Vec<i64>,
+    pub revision: String,
+    pub preferences: QueuePreferences,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueReplaceParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueNextParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub expected_revision: String,
+    pub target: QueueTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueStepResult {
+    pub status: String,
+    pub remaining: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueSettingParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuickTicket {
+    pub token: String,
+    pub state: RuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuickDismissParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub token: String,
+    pub restore: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuickPasteParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub token: String,
+    pub id: i64,
+    pub expected_history_revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuickPreferences {
+    pub enabled: bool,
+    pub hotkey: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenPoint {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenBeginParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<ScreenPoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenImage {
+    pub token: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub png_bytes: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenSessionParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub token: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenReadParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub token: String,
+    pub offset: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenCropParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub token: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenChunk {
+    pub data_base64: String,
+    pub next_offset: u32,
+    pub finished: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenFinishResult {
+    pub copied: bool,
+    pub recorded: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenPreferences {
+    pub enabled: bool,
+    pub region: String,
+    pub full: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowsSettingParams {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowsSettingFinishParams {
+    pub token: String,
+    pub rollback: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowsSettingResult {
+    pub value: bool,
+    pub token: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ViewSettingParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopPreferences {
+    pub values: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowSizeParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowPinParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub pinned: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureSettingParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureSettingValues {
+    pub persistent: bool,
+    pub deduplicate: bool,
+    pub capture_files: bool,
+    pub capture_rich_text: bool,
+    pub ocr_enabled: bool,
+    pub privacy_protection: bool,
+    pub privacy_kinds: Vec<String>,
+    pub privacy_custom_rules: Vec<String>,
+    pub excluded_source_apps: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -870,4 +1568,124 @@ pub struct SurfaceControlMessage {
 pub struct DesktopSurfaceCopyParams {
     pub entry_id: i64,
     pub state: RuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeIdParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeImportParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeExportParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub path: String,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeIndex {
+    pub ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeRemoved {
+    pub active_reset: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopThemePackage {
+    pub id: String,
+    pub version: u32,
+    pub format: String,
+    pub base: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub css: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopFont {
+    pub family: String,
+    pub is_mono: bool,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopFontList {
+    pub fonts: Vec<DesktopFont>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolCatalogParams {
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolClassifyParams {
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolTransformParams {
+    pub text: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolQrParams {
+    pub content: String,
+    pub format: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_px: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolTransformKind {
+    pub id: String,
+    pub label_zh: String,
+    pub label_en: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolCatalog {
+    pub content_kinds: Vec<String>,
+    pub transforms: Vec<ToolTransformKind>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolClassification {
+    pub kinds: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolText {
+    pub text: String,
 }

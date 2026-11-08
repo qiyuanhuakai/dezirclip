@@ -16,19 +16,27 @@ pub struct InvalidMessage;
 
 /// Validators have only local fragment references. Network and file resolvers are
 /// disabled in the dependency, and no peer-supplied schema is ever compiled.
-fn validators() -> &'static Result<HashMap<String, jsonschema::Validator>, InvalidMessage> {
-    static VALIDATORS: OnceLock<Result<HashMap<String, jsonschema::Validator>, InvalidMessage>> = OnceLock::new();
-    VALIDATORS.get_or_init(|| {
-        let schema: Value = serde_json::from_str(SCHEMA).map_err(|_| InvalidMessage)?;
-        let definitions = schema["$defs"].as_object().ok_or(InvalidMessage)?;
-        let mut validators = HashMap::new();
-        for name in definitions.keys() {
-            let mut root = schema.clone();
+struct LocalSchemas {
+    document: Value,
+    compiled: HashMap<String, OnceLock<Result<jsonschema::Validator, InvalidMessage>>>,
+}
+
+impl LocalSchemas {
+    fn bundled() -> Result<Self, InvalidMessage> {
+        let document: Value = serde_json::from_str(SCHEMA).map_err(|_| InvalidMessage)?;
+        let compiled = document["$defs"].as_object().ok_or(InvalidMessage)?.keys()
+            .map(|name| (name.clone(), OnceLock::new())).collect();
+        Ok(Self { document, compiled })
+    }
+
+    fn validator(&self, name: &str) -> Result<&jsonschema::Validator, InvalidMessage> {
+        let slot = self.compiled.get(name).ok_or(InvalidMessage)?;
+        slot.get_or_init(|| {
+            let mut root = self.document.clone();
             root["$ref"] = Value::String(format!("#/$defs/{name}"));
-            validators.insert(name.clone(), jsonschema::validator_for(&root).map_err(|_| InvalidMessage)?);
-        }
-        Ok(validators)
-    })
+            jsonschema::validator_for(&root).map_err(|_| InvalidMessage)
+        }).as_ref().map_err(|_| InvalidMessage)
+    }
 }
 
 pub fn validate(name: &str, value: &Value) -> Result<(), InvalidMessage> {
@@ -41,7 +49,9 @@ pub fn validate(name: &str, value: &Value) -> Result<(), InvalidMessage> {
         }
     }
     if !within_depth(value, MAX_JSON_DEPTH) { return Err(InvalidMessage); }
-    let validator = validators().as_ref().map_err(|_| InvalidMessage)?.get(name).ok_or(InvalidMessage)?;
+    static SCHEMAS: OnceLock<Result<LocalSchemas, InvalidMessage>> = OnceLock::new();
+    let schemas = SCHEMAS.get_or_init(LocalSchemas::bundled).as_ref().map_err(|_| InvalidMessage)?;
+    let validator = schemas.validator(name)?;
     if validator.is_valid(value) { Ok(()) } else { Err(InvalidMessage) }
 }
 
@@ -78,6 +88,18 @@ impl Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validation_compiles_only_requested_local_schemas() {
+        let schemas = LocalSchemas::bundled().unwrap();
+        assert!(schemas.validator("unknown").is_err());
+        let request = schemas.validator("Request").unwrap();
+        assert!(std::ptr::eq(request, schemas.validator("Request").unwrap()));
+        assert_eq!(schemas.compiled.values().filter(|slot| slot.get().is_some()).count(), 1);
+        for name in schemas.compiled.keys() {
+            assert!(schemas.validator(name).is_ok(), "{name}");
+        }
+    }
 
     #[test]
     fn shared_rust_go_fixtures_obey_schema_and_round_trip() {

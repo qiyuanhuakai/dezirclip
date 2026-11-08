@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "../lib/desktopWindow";
 import type { RefObject } from "react";
 import { matchesHotkey } from "./useHotkeyMatching";
 import { useWindowVisibility } from "./useWindowVisibility";
@@ -85,6 +85,7 @@ export const useKeyboardNavigation = ({
   useEffect(() => { copyToClipboardRef.current = copyToClipboard; }, [copyToClipboard]);
   useEffect(() => { richPasteHotkeyRef.current = richPasteHotkey; }, [richPasteHotkey]);
   useEffect(() => {
+    if (import.meta.env.MODE === "mygo") return;
     invoke("set_navigation_mode", { active: isKeyboardMode }).catch(console.error);
   }, [isKeyboardMode]);
 
@@ -217,6 +218,7 @@ export const useKeyboardNavigation = ({
   }, [searchInputRef, setIsKeyboardMode, setSelectedIndex]);
 
   useEffect(() => {
+    if (import.meta.env.MODE === "mygo") return;
     const unlisten = listen<string>("navigation-action", async (event) => {
       try {
         const isVisible = await getCurrentWindow().isVisible();

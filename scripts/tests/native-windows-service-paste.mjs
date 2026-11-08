@@ -62,7 +62,8 @@ class Managed {
     this.ready = new Promise((resolve, reject) => { this.onReady = resolve; this.rejectReady = reject; });
     this.ready.catch(() => {});
     this.closed = trackManagedChild(this.child, this.record, () => {
-      this.cancelPending(new Error('Original child closed'));
+      const operations = [...this.pending.values()].map(request => request.operation);
+      this.cancelPending(new Error(`${this.label} closed while waiting for ${operations.join(', ') || 'startup'}`));
       if (this.finishRequested) { try { this.finish(); } catch (error) { this.error = String(error); this.record.log_finalization_error = String(error); } }
     }, undefined,
       error => { this.error = String(error); this.cancelPending(error); });
@@ -90,7 +91,7 @@ class Managed {
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('Service gate request deadline: ' + operation)); }, milliseconds);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { operation, resolve, reject, timer });
       this.child.stdin.write(JSON.stringify({ id, operation, ...args }) + '\n');
     });
   }
@@ -317,7 +318,7 @@ export async function runServicePaste(args, env = process.env) {
     for (const name of ['native-windows-service-paste.mjs', 'native-windows-service-paste-target.py', 'native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-lifecycle.mjs']) {
       const source = path.join(repository, 'scripts/tests', name); report.inputs.push({ source, ...regular(source) }); startupBudget(startupDeadline);
     }
-    for (const name of ['crates/dzc-service/examples/windows_service_paste_acceptance.rs', '.github/workflows/ci.yml']) {
+    for (const name of ['crates/dzc-service/examples/windows_service_paste_acceptance.rs', 'scripts/tests/fixtures/windows-quick-panel.rs', '.github/workflows/ci.yml']) {
       const source = path.join(repository, name); report.inputs.push({ source, ...regular(source) }); startupBudget(startupDeadline);
     }
     const childEnv = environment(root), database = path.join(root, 'profile/clipboard.db');
@@ -428,6 +429,58 @@ export async function runServicePaste(args, env = process.env) {
         unique_synthetic_payload: generatedText, actual_unique_generated_clipboard_copy: true,
         input: assertNoFixtureInput(before, after), history_before: historyBefore, history_after: historyAfter };
     });
+    const queueEpoch = await native.request('begin-observation-epoch', { label: 'queue_delivery' });
+    assert.equal(queueEpoch.observation_epoch, 4); assert.equal(queueEpoch.observation_label, 'queue_delivery');
+    await native.request('clear-target'); await native.request('activate-target');
+    const queueTarget = await native.request('snapshot');
+    await client.request('queue-prepare', { target: queueTarget.target, entry_id: seeded.seeded_ids[0] });
+    await native.request('activate-alternate');
+    const refused = await client.request('queue-step', { expect_refused: true });
+    const untouched = await native.request('snapshot');
+    assert.deepEqual(refused, { refused: true, remaining: 1 });
+    assert.equal(untouched.target_text, ''); assert.equal(untouched.alternate_text, '');
+    await native.request('activate-target');
+    const delivered = await client.request('queue-step');
+    const queueAfter = await pollRead('Service queue delivered complete target text', async remaining => {
+      const snapshot = await native.request('snapshot', {}, Math.max(1, remaining));
+      return snapshot.target_text === seedText ? snapshot : null;
+    });
+    assert.equal(queueAfter.alternate_text, '');
+    assert.equal(delivered.id, seeded.seeded_ids[0]); assert.equal(delivered.remaining, 0);
+    report.queue_acceptance = { refused, delivered, observation_epoch: queueEpoch, after: queueAfter, original_target_received_full_text: true };
+    const quickEpoch = await native.request('begin-observation-epoch', { label: 'quick_panel_delivery' });
+    assert.equal(quickEpoch.observation_epoch, 5); assert.equal(quickEpoch.observation_label, 'quick_panel_delivery');
+    await native.request('clear-target'); await native.request('activate-target');
+    const quickTarget = (await native.request('snapshot')).target;
+    await client.request('quick-begin', { target: quickTarget });
+    await native.request('activate-alternate');
+    const quickRefusal = await client.request('quick-select', { entry_id: seeded.seeded_ids[0], expect_refused: true });
+    assert.equal(quickRefusal.refused, true);
+    const decoy = await native.request('snapshot');
+    assert.equal(decoy.target_text, ''); assert.equal(decoy.alternate_text, '');
+    await native.request('activate-target');
+    await client.request('quick-begin', { target: quickTarget });
+    const grant = await native.request('grant-quick-panel', { pid: client.child.pid });
+    assert.equal(grant.granted_pid, client.child.pid);
+    const panel = await client.request('quick-show');
+    assert.equal(panel.own_panel_focused, true);
+    let selection;
+    try {
+      selection = await client.request('quick-select', { entry_id: seeded.seeded_ids[0] });
+    } catch (error) {
+      // Preserve the synthetic target's Win32 input messages before fixture cleanup.
+      try { report.quick_failure_observation = await native.request('snapshot', {}, 2000); }
+      catch (snapshotError) { report.quick_failure_observation = { error: String(snapshotError) }; }
+      throw error;
+    }
+    assert.equal(selection.pasted, true);
+    const quickAfter = await pollRead('Independent panel restored original target and pasted complete text', async remaining => {
+      const snapshot = await native.request('snapshot', {}, Math.max(1, remaining));
+      return snapshot.target_text === seedText ? snapshot : null;
+    });
+    assert.equal(quickAfter.alternate_text, '');
+    assert.equal(quickAfter.focus.foreground_hwnd, Number(quickTarget.hwnd));
+    report.quick_acceptance = { observation_epoch: quickEpoch, after: quickAfter, unrelated_focus_refused: true, own_panel_focused: true, original_target_received_full_text: true };
     report.status = 'passed';
   } catch (error) { report.status = 'failed'; report.error = String(error.stack ?? error); }
   finally {

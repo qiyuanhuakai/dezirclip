@@ -1,4 +1,8 @@
 /* Header - Retro Control Panel */
+[data-tauri-drag-region]:not([data-tauri-drag-region="false"]) {
+  --app-region: drag;
+}
+
 header {
   padding: var(--spacing-md) 0;
   background: var(--bg-toolbar);

@@ -9,8 +9,8 @@ import re
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 FUNCTIONAL_CONTROLLER_BASE_COMMIT = 'c5083f9849d9543f81d71f0b57ce49522a51e9e4'
-REVIEWED_TARGET_LF_SHA256 = 'cb72351a1e690cc3c4776fe6ba5b8b924d0b14a66d789c19c121e2aae2a201ab'
-REVIEWED_CONTROLLER_LF_SHA256 = 'cb43b44d4278d18b6d3a5b9ea704a3b945863859694fb13759de41e22efc1313'
+REVIEWED_TARGET_LF_SHA256 = '7cb2934f7a4b8d9e47a6a498ab768802cd2ce62e5174aab25dc6356c20d1d429'
+REVIEWED_CONTROLLER_LF_SHA256 = '1f6f54f1324e1afa37f66e60f91960a8faacb4d54281a7a2120e254ccacc68d9'
 REVIEWED_LIFECYCLE_LF_SHA256 = '88a38835a31e00e5f767b3bc928ca8cd53a0c7f5d9d2cd4cdad6568dda7f3a15'
 
 
@@ -233,7 +233,7 @@ def generate(repository, destination):
                      'scope': 'Prior reference only; the current controller has additional bounded failure cleanup.'}},
              'functional_lifecycle_provenance': {'reviewed_lf_sha256': REVIEWED_LIFECYCLE_LF_SHA256},
              'functional_target_provenance': {'reviewed_lf_sha256': REVIEWED_TARGET_LF_SHA256,
-                   'diagnostic_delta': 'bounded-key-state-owned-message-timing-predeclared-click-planning-generation-verified-handle-cleanup-lifetime-owned-closure-certified-output-failure-only-parent-diagnostics-checked-snapshot-eof-and-bounded-pre-root-negative-classification-and-explicit-no-visible-uia-window-error-and-minimal-process-access-rights',
+                   'diagnostic_delta': 'bounded-key-state-owned-message-timing-predeclared-click-planning-generation-verified-handle-cleanup-lifetime-owned-closure-certified-output-failure-only-parent-diagnostics-checked-snapshot-eof-and-bounded-pre-root-negative-classification-and-explicit-no-visible-uia-window-error-and-minimal-process-access-rights-and-failed-candidate-read-only-identity-diagnostics',
                   'ownership_scope_audit': {'candidate_pid_limit': 2048, 'excluded_identity_limit': 64,
                       'close_attempt_limit': 65536, 'per_scope_and_aggregate_json_byte_limit': 256 * 1024,
                       'creation_time_ordering': 'UTC FILETIME under the existing nondecreasing authenticated parent-chain rule; not a monotonic clock or proof that the host clock was not adjusted',

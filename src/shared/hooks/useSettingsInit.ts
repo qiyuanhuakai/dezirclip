@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 import { listen } from "@tauri-apps/api/event";
 import type { Locale } from "../types";
 import { getCustomThemes, loadCustomThemesFromSettings, replaceCustomThemes } from "../lib/themeCatalog";
@@ -37,7 +37,7 @@ export const useSettingsInit = ({
 
         if (catalog === getCustomThemes()) loadCustomThemesFromSettings(result);
         setAppSettings(result);
-        if (result["app.hotkey"]) setHotkey(result["app.hotkey"]);
+        if (result["app.hotkey"] !== undefined) setHotkey(result["app.hotkey"]);
 
         const loadedTheme = result["app.theme"] || "mica";
         const loadedColorMode = result["app.color_mode"] || "system";

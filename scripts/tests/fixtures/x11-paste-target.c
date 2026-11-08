@@ -7,10 +7,22 @@
 #include <time.h>
 #include <unistd.h>
 
-int main(void) {
-    const char text[] = "DezirClip\r\n中文🙂\n";
+int main(int argc, char **argv) {
+    if (argc != 1 && argc != 3) return 1;
+    int queue = argc == 3;
+    int shift = queue && strcmp(argv[1], "shift_insert") == 0;
+    const char *text = queue ? argv[2] : "DezirClip\r\n中文🙂\n";
     Display *display = XOpenDisplay(NULL);
     if (!display) return 2;
+    if (queue && strcmp(argv[1], "--focus") == 0) {
+        char *end = NULL;
+        unsigned long xid = strtoul(argv[2], &end, 10);
+        if (!xid || !end || *end) return 1;
+        XSetInputFocus(display, (Window)xid, RevertToParent, CurrentTime);
+        XSync(display, False);
+        XCloseDisplay(display);
+        return 0;
+    }
     Window root = DefaultRootWindow(display);
     Window owner = XCreateSimpleWindow(display, root, 0, 0, 1, 1, 0, 0, 0);
     Window target = XCreateSimpleWindow(display, root, 0, 0, 320, 160, 0, 0, 0);
@@ -19,11 +31,11 @@ int main(void) {
     Atom result = XInternAtom(display, "DEZIRCLIP_TEST_RESULT", False);
     XSelectInput(display, target, KeyPressMask | PropertyChangeMask);
     XMapWindow(display, target);
-    XSetSelectionOwner(display, clipboard, owner, CurrentTime);
+    if (!queue) XSetSelectionOwner(display, clipboard, owner, CurrentTime);
     XSetInputFocus(display, target, RevertToParent, CurrentTime);
     XSync(display, False);
-    if (XGetSelectionOwner(display, clipboard) != owner) return 3;
-    puts("READY");
+    if (!queue && XGetSelectionOwner(display, clipboard) != owner) return 3;
+    if (queue) printf("READY %lu\n", target); else puts("READY");
     fflush(stdout);
     time_t deadline = time(NULL) + 15;
     int requested = 0;
@@ -38,8 +50,8 @@ int main(void) {
         }
         XEvent event;
         XNextEvent(display, &event);
-        if (event.type == KeyPress && (event.xkey.state & ControlMask)
-            && XLookupKeysym(&event.xkey, 0) == XK_v) {
+        if (event.type == KeyPress && (event.xkey.state & (shift ? ShiftMask : ControlMask))
+            && XLookupKeysym(&event.xkey, 0) == (shift ? XK_Insert : XK_v)) {
             requested = 1;
             XConvertSelection(display, clipboard, utf8, result, target, CurrentTime);
             XFlush(display);
@@ -74,7 +86,7 @@ int main(void) {
             if (value) XFree(value);
             XCloseDisplay(display);
             if (!matches) return 5;
-            puts("PASS Ctrl+V clipboard roundtrip");
+            puts(shift ? "PASS Shift+Insert clipboard roundtrip" : "PASS Ctrl+V clipboard roundtrip");
             return 0;
         }
     }

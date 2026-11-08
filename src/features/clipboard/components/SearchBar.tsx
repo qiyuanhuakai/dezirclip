@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../shared/lib/desktopInvoke";
 import { useSearch } from "../../../shared/hooks/useSearch";
 import type { SearchMode } from "../../../shared/hooks/useSearch";
 
