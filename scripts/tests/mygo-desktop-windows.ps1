@@ -5,6 +5,7 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hoste
     [Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
     throw 'The clipboard and foreground-window test requires a disposable GitHub-hosted Windows STA session'
 }
+. (Join-Path $PSScriptRoot 'service-process-receipt.ps1')
 Add-Type -AssemblyName System.Windows.Forms, UIAutomationClient, UIAutomationTypes
 Add-Type @'
 using System;
@@ -528,7 +529,26 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         Remove-Item Env:TIEZ_DB_PATH -ErrorAction SilentlyContinue
     }
     if ($Emoji -or $Elevation) {
-        $startedService = & $cli service start --json | ConvertFrom-Json
+        if ($env:DZC_SERVICE_CRASH_ROOT) {
+            $recorded = Start-RecordedService (Join-Path (Split-Path $exe) 'dzc-service.exe') ('--database "' + $fixtureDatabase + '"') $env:DZC_SERVICE_CRASH_ROOT
+            $startedServiceProcess = $recorded.Process
+            $serviceCrashReceipt = $recorded.Receipt
+            $startedService = Wait-Until {
+                if ($startedServiceProcess.HasExited) { throw 'Recorded Service exited before readiness' }
+                $preference = $ErrorActionPreference
+                try {
+                    $ErrorActionPreference = 'Continue'
+                    $json = & $cli service status --json 2>$null
+                    $statusExit = $LASTEXITCODE
+                } finally { $ErrorActionPreference = $preference }
+                if ($statusExit -eq 0) {
+                    $status = $json | ConvertFrom-Json
+                    if ($status.capture_owner -and $status.state.service_instance_id) { return $status }
+                }
+            } 'Recorded Service did not become ready'
+        } else {
+            $startedService = & $cli service start --json | ConvertFrom-Json
+        }
         if ($LASTEXITCODE -or $startedService.mode -ne 'service' -or !$startedService.capture_owner -or !$startedService.state.service_instance_id) {
             throw 'Could not start the independent capture Service before MyGo'
         }
@@ -536,23 +556,13 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         if ($LASTEXITCODE -or !$serviceEndpoint.pid -or $serviceEndpoint.instance -cne $startedService.state.service_instance_id) {
             throw 'Could not identify the original capture Service process'
         }
-        $startedServiceProcess = Get-Process -Id $serviceEndpoint.pid
-        if ($startedServiceProcess.Path -ne (Join-Path (Split-Path $exe) 'dzc-service.exe')) {
+        if (!$startedServiceProcess) { $startedServiceProcess = Get-Process -Id $serviceEndpoint.pid }
+        if ($startedServiceProcess.Id -ne $serviceEndpoint.pid -or $startedServiceProcess.Path -ne (Join-Path (Split-Path $exe) 'dzc-service.exe')) {
             throw 'Original capture Service used an unexpected executable'
         }
         # Retain the kernel handle before a possible exit; a later PID lookup
         # cannot distinguish a crashed Service from a reused process ID.
         $null = $startedServiceProcess.Handle
-        if ($env:DZC_SERVICE_CRASH_ROOT) {
-            $serviceCrashReceipt = Join-Path $env:DZC_SERVICE_CRASH_ROOT ("service-{0}.json" -f $startedServiceProcess.Id)
-            [pscustomobject]@{
-                pid = $startedServiceProcess.Id
-                executable = $startedServiceProcess.Path
-                sha256 = (Get-FileHash -LiteralPath $startedServiceProcess.Path -Algorithm SHA256).Hash
-                crashed = $false
-                exit = $null
-            } | ConvertTo-Json | Set-Content -LiteralPath $serviceCrashReceipt -Encoding UTF8
-        }
     }
     [Windows.Forms.Clipboard]::SetText('Before ' + $marker)
     $form.Show()
@@ -869,6 +879,11 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         if ($null -ne $redirectBackup) { [IO.File]::WriteAllBytes($installedRedirect, $redirectBackup) }
         else { Remove-Item -LiteralPath $installedRedirect -ErrorAction SilentlyContinue }
     }
-    if ($startedServiceProcess) { $startedServiceProcess.Dispose() }
+    if ($startedServiceProcess) {
+        if ($serviceCrashReceipt -and !$startedServiceProcess.HasExited) {
+            $startedServiceProcess.Kill(); $startedServiceProcess.WaitForExit()
+        }
+        $startedServiceProcess.Dispose()
+    }
     $form.Dispose()
 }

@@ -5,6 +5,7 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hoste
     [Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
     throw 'Service crash diagnostics require a disposable GitHub-hosted Windows STA session'
 }
+. (Join-Path $PSScriptRoot 'service-process-receipt.ps1')
 $binary = (Resolve-Path -LiteralPath $Desktop).Path
 $binaryDirectory = Split-Path $binary
 $service = Join-Path $binaryDirectory 'dzc-service.exe'
@@ -38,6 +39,15 @@ try {
     $null = New-ItemProperty -LiteralPath $registry -Name DumpType -Value 1 -PropertyType DWord
     $null = New-ItemProperty -LiteralPath $registry -Name DumpCount -Value 1 -PropertyType DWord
     $env:DZC_SERVICE_CRASH_ROOT = $root
+    $probe = Start-RecordedService $service '--build-info' $root
+    try {
+        if (!$probe.Process.WaitForExit(5000)) { $probe.Process.Kill(); $probe.Process.WaitForExit(); throw 'Service identity probe did not exit' }
+        $receipt = Get-Content -LiteralPath $probe.Receipt -Raw | ConvertFrom-Json
+        if ($probe.Process.ExitCode -ne 0 -or $receipt.pid -ne $probe.Process.Id -or $receipt.executable -cne $service -or !$receipt.created_at) {
+            throw 'Fast-exit Service process lost its launch identity'
+        }
+        Write-Host 'Verified launch receipt survives a Service exit without waiting for readiness'
+    } finally { $probe.Process.Dispose() }
     for ($cycle = 1; $cycle -le 32; $cycle++) {
         Write-Host "Service stack diagnostic cycle $cycle of 32"
         powershell -NoProfile -NonInteractive -STA -ExecutionPolicy Bypass -File ./scripts/tests/mygo-desktop-windows.ps1 -Desktop $binary -Emoji
