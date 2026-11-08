@@ -10,6 +10,14 @@ Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class MyGoInput {
+    [DllImport("user32.dll", SetLastError=true)] static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint key);
+    [DllImport("user32.dll", SetLastError=true)] static extern bool UnregisterHotKey(IntPtr window, int id);
+    public static bool MainTestShortcutAvailable() {
+        const int id = 0xD2C;
+        if (!RegisterHotKey(IntPtr.Zero, id, 2 | 4, 0x78)) return false; // Ctrl+Shift+F9
+        if (!UnregisterHotKey(IntPtr.Zero, id)) throw new System.ComponentModel.Win32Exception();
+        return true;
+    }
     [DllImport("advapi32.dll", SetLastError=true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
     [DllImport("advapi32.dll", SetLastError=true)] static extern bool GetTokenInformation(IntPtr token, int kind, IntPtr buffer, int size, out int needed);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
@@ -103,8 +111,12 @@ function Wait-Until([scriptblock]$Check, [string]$Failure, [int]$Seconds = 30) {
     throw $Failure
 }
 
-function Get-ControlPoint($root, [string]$Name) {
+function Get-ControlPoint($root, [string]$Name, [Windows.Automation.ControlType]$Type = $null) {
     $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $Name, [Windows.Automation.PropertyConditionFlags]::IgnoreCase)
+    if ($Type) {
+        $condition = [Windows.Automation.AndCondition]::new($condition,
+            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, $Type))
+    }
     return Wait-Until {
         $row = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
         if ($row -and $row.Current.IsOffscreen) {
@@ -227,6 +239,56 @@ function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Edito
     $panel = Get-ResidentPanel $Resident $Title
     [Windows.Forms.SendKeys]::SendWait('{ESC}')
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } "Resident did not dismiss $Title" 8
+}
+
+function Get-SavedMainHotkeys {
+    $value = 'import os, json, sqlite3; print(json.dumps(sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]).execute("SELECT value FROM settings WHERE key=?", ("app.hotkey",)).fetchone()[0]))' | python -
+    if ($LASTEXITCODE) { throw 'Cannot read saved main shortcut list' }
+    return ($value | ConvertFrom-Json)
+}
+
+function Test-MainHotkeys($Main, $Root, $Resident, [string]$Executable, $Editor, $Form) {
+    $original = Get-SavedMainHotkeys
+    if (![MyGoInput]::MainTestShortcutAvailable()) { throw 'Test shortcut was occupied before editing' }
+    Click-Control $Main (Get-ControlPoint $Root 'Clipboard')
+    Click-Control $Main (Get-ControlPoint $Root 'Global Hotkey' ([Windows.Automation.ControlType]::Button))
+    $name = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Global Hotkey')
+    $type = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Button)
+    $condition = [Windows.Automation.AndCondition]::new($type, $name)
+    $null = Wait-Until {
+        $button = $Root.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
+        if (!$button) { return $false }
+        $pattern = $null
+        $button.TryGetCurrentPattern([Windows.Automation.TogglePattern]::Pattern, [ref]$pattern) -and
+            $pattern.Current.ToggleState -eq [Windows.Automation.ToggleState]::On
+    } 'Main shortcut editor did not enter recording mode'
+    [Windows.Forms.SendKeys]::SendWait('^+{F9}')
+    $null = Get-ControlPoint $Root 'Delete Ctrl+Shift+F9'
+    $expected = if ($original) { $original + "`nCtrl+Shift+F9" } else { 'Ctrl+Shift+F9' }
+    if ((Get-SavedMainHotkeys) -cne $expected) { throw 'Main shortcut was shown without persisting the complete list' }
+    if ([MyGoInput]::MainTestShortcutAvailable()) { throw 'Saved main shortcut has no native registration' }
+    $Form.Activate()
+    $null = $Editor.Focus()
+    $null = Wait-Until { $Editor.Focused -and [MyGoInput]::GetForegroundWindow() -eq $Form.Handle } 'Editor did not regain foreground before shortcut activation'
+    [Windows.Forms.SendKeys]::SendWait('^+{F9}')
+    $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $Main.MainWindowHandle } 'New main shortcut did not activate the WebView'
+    [Windows.Forms.SendKeys]::SendWait('^+{F9}')
+    $null = Wait-Until { $Main.HasExited } 'New main shortcut did not close the foreground WebView'
+    [Windows.Forms.SendKeys]::SendWait('^+{F9}')
+    $reopened = Wait-Until {
+        if ($Resident.HasExited) { throw 'Main shortcut closed the resident' }
+        Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
+            $_.Id -ne $Resident.Id -and $_.Path -eq $Executable -and $_.MainWindowTitle -eq 'DezirClip'
+        } | Select-Object -First 1
+    } 'Saved shortcut did not recreate the main WebView'
+    $newRoot = [Windows.Automation.AutomationElement]::FromHandle($reopened.MainWindowHandle)
+    Click-Control $reopened (Get-ControlPoint $newRoot 'Settings')
+    Click-Control $reopened (Get-ControlPoint $newRoot 'Clipboard')
+    Click-Control $reopened (Get-ControlPoint $newRoot 'Delete Ctrl+Shift+F9')
+    $null = Wait-Until { (Get-SavedMainHotkeys) -ceq $original } 'Removing the new shortcut did not preserve original bindings'
+    if (![MyGoInput]::MainTestShortcutAvailable()) { throw 'Removed main shortcut was not released at the OS level' }
+    Write-Host 'Verified WebView2 shortcut editing, persistence, native registration, activation, WebView recreation and removal'
+    return $reopened
 }
 
 function Open-HoverPreview($root, $main, [string]$marker) {
@@ -548,6 +610,8 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         }
         Write-Output 'Verified both GPU changes on replacement WebView2 browsers with the same native resident and Rust Service'
         Test-EdgeDocking $main $root
+        $main = Test-MainHotkeys $main $root $resident $exe $edit $form
+        $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
         Click-Control $main (Get-ControlPoint $root 'Tools')
         Test-RegisteredCli $root $cli
         $point = Get-ControlPoint $root 'Full Screen Capture'
