@@ -34,9 +34,9 @@ func (c *Client) DesktopDatabase() (string, error) {
 	return c.desktop.Database, nil
 }
 
-func RestartElevatedService(ctx context.Context, instance string) (protocol.ServiceStatus, error) {
+func RestartElevatedService(ctx context.Context, instance, database string) (protocol.ServiceStatus, error) {
 	var status protocol.ServiceStatus
-	output, err := relocationCommand(ctx, "restart-elevated", "--from-instance", instance, "--json")
+	output, err := relocationCommand(ctx, "restart-elevated", "--from-instance", instance, "--database", database, "--json")
 	if err == nil {
 		err = json.Unmarshal(output, &status)
 	}

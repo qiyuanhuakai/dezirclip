@@ -129,8 +129,10 @@ pub fn get_registry_win_v_optimized_status() -> bool {
 }
 
 #[tauri::command]
-pub fn restart_explorer() -> AppResult<()> {
-    dzc_platform::desktop_system::restart_explorer().map_err(Into::into)
+pub async fn restart_explorer() -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(dzc_platform::desktop_system::restart_explorer)
+        .await.map_err(|error| AppError::Internal(error.to_string()))?
+        .map_err(Into::into)
 }
 
 #[tauri::command]

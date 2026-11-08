@@ -353,6 +353,9 @@ func run() error {
 					continue
 				}
 				if command == "show" || command == "toggle" || command == "settings" || command == "search" {
+					// Accept the wake before any Host read can outlive the old idle
+					// deadline. The UI-thread generation also invalidates a queued timer.
+					shell.idle.acceptWake(mygo.RunOnMain)
 					position := false
 					if !win.IsFocused() {
 						history.rememberTarget(ctx)

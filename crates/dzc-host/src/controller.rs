@@ -168,6 +168,9 @@ pub async fn restart_elevated(database: &Path, executable: &Path, instance: &str
     if !dzc_platform::desktop_system::supported() || !dzc_platform::desktop_system::is_admin()? {
         return Err(io::Error::new(io::ErrorKind::PermissionDenied, "ElevatedWindowsProcessRequired"));
     }
+    if data::database_path().map_err(io::Error::other)?.canonicalize()? != database.canonicalize()? {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "ProfileChangedBeforeElevation"));
+    }
     let original = status(database).await?;
     if original.mode != HostMode::Service || original.state.service_instance_id != instance {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "ServiceChangedBeforeElevation"));

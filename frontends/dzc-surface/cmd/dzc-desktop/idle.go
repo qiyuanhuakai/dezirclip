@@ -16,6 +16,12 @@ type hiddenWebView struct {
 	timer      *time.Timer
 }
 
+func (idle *hiddenWebView) acceptWake(dispatch func(func())) {
+	accepted := make(chan struct{})
+	dispatch(func() { idle.cancel(); close(accepted) })
+	<-accepted
+}
+
 func (idle *hiddenWebView) cancel() {
 	idle.generation++
 	if idle.timer != nil {

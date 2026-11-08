@@ -12,7 +12,7 @@ enum ServiceCommand {
     /// Stop and drain the current Host; a failed stop remains a failure.
     Stop { #[arg(long)] from_instance: Option<String> },
     /// Restart the observed standalone Service from an already elevated Windows process.
-    RestartElevated { #[arg(long)] from_instance: String, #[arg(long)] json: bool },
+    RestartElevated { #[arg(long)] from_instance: String, #[arg(long)] database: PathBuf, #[arg(long)] json: bool },
     /// Query the current Host without starting one.
     Status { #[arg(long)] json: bool },
     /// Move an installed profile offline or through the identified standalone Service.
@@ -44,7 +44,10 @@ enum PrivacyCommand {
 fn runtime() -> Result<tokio::runtime::Runtime,String> { tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_| "LocalHostRuntimeUnavailable".into()) }
 fn database() -> Result<PathBuf,String> { dzc_host::data::database_path() }
 pub fn run(args: ServiceArgs) -> Result<(),String> {
-    let database = database()?;
+    let database = match &args.command {
+        ServiceCommand::RestartElevated { database, .. } => database.clone(),
+        _ => database()?,
+    };
     runtime()?.block_on(async {
         match args.command {
             ServiceCommand::Start { no_capture, json } => {
@@ -52,7 +55,7 @@ pub fn run(args: ServiceArgs) -> Result<(),String> {
                 status_output(status,json)
             }
             ServiceCommand::Status { json } => status_output(controller::status(&database).await.map_err(|e|e.to_string())?,json),
-            ServiceCommand::RestartElevated { from_instance, json } => {
+            ServiceCommand::RestartElevated { from_instance, json, .. } => {
                 let status = controller::restart_elevated(&database, &controller::sibling_executable().map_err(|e|e.to_string())?, &from_instance).await.map_err(|e|e.to_string())?;
                 status_output(status,json)
             }

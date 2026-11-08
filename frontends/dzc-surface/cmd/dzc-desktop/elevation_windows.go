@@ -49,12 +49,24 @@ func elevateDesktop(instance, database string) error {
 	if err != nil {
 		return err
 	}
-	parameters, err := windows.UTF16PtrFromString(strings.Join([]string{"--elevate-helper", windows.EscapeArg(instance), strconv.Itoa(os.Getpid()), windows.EscapeArg(database)}, " "))
+	profile, err := encodeElevationProfile()
+	if err != nil {
+		return err
+	}
+	parameters, err := windows.UTF16PtrFromString(strings.Join([]string{"--elevate-helper", windows.EscapeArg(instance), strconv.Itoa(os.Getpid()), windows.EscapeArg(database), profile}, " "))
 	if err != nil {
 		return err
 	}
 	verb, _ := windows.UTF16PtrFromString("runas")
-	info := shellExecuteInfo{Mask: 0x40 | 0x100, Verb: verb, File: file, Parameters: parameters, Show: 0}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	directory, err := windows.UTF16PtrFromString(cwd)
+	if err != nil {
+		return err
+	}
+	info := shellExecuteInfo{Mask: 0x40 | 0x100, Verb: verb, File: file, Parameters: parameters, Directory: directory, Show: 0}
 	info.Size = uint32(unsafe.Sizeof(info))
 	ok, _, callErr := windows.NewLazySystemDLL("shell32.dll").NewProc("ShellExecuteExW").Call(uintptr(unsafe.Pointer(&info)))
 	runtime.KeepAlive(info)
@@ -131,7 +143,7 @@ func prepareElevation() (bool, error) {
 	if len(os.Args) < 2 || (os.Args[1] != "--elevate-helper" && os.Args[1] != "--after-elevation") {
 		return false, nil
 	}
-	if len(os.Args) != 5 || !windows.GetCurrentProcessToken().IsElevated() || !filepath.IsAbs(os.Args[4]) {
+	if len(os.Args) != 6 || !windows.GetCurrentProcessToken().IsElevated() || !filepath.IsAbs(os.Args[4]) {
 		return true, errors.New("InvalidElevatedDesktopArguments")
 	}
 	helper := os.Args[1] == "--elevate-helper"
@@ -147,13 +159,13 @@ func prepareElevation() (bool, error) {
 	if parent != 0 {
 		defer windows.CloseHandle(parent)
 	}
-	if err := os.Setenv("DEZIRCLIP_DB_PATH", database); err != nil {
+	if err := applyElevationProfile(os.Args[5]); err != nil {
 		return true, err
 	}
 	if helper {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
-		status, err := client.RestartElevatedService(ctx, instance)
+		status, err := client.RestartElevatedService(ctx, instance, database)
 		if err != nil {
 			return true, err
 		}
@@ -161,7 +173,7 @@ func prepareElevation() (bool, error) {
 		if err != nil {
 			return true, err
 		}
-		child := exec.Command(executable, "--after-elevation", status.State.ServiceInstanceId, strconv.FormatUint(pid, 10), database)
+		child := exec.Command(executable, "--after-elevation", status.State.ServiceInstanceId, strconv.FormatUint(pid, 10), database, os.Args[5])
 		stdout, err := child.StdoutPipe()
 		if err != nil {
 			return true, err

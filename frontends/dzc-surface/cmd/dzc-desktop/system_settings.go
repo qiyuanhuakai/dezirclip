@@ -17,11 +17,16 @@ type SystemSettings struct {
 }
 
 type systemChange struct {
-	host  *client.Client
+	host  systemSettingsConnection
 	token string
 	stop  chan struct{}
 	done  chan struct{}
 	once  sync.Once
+}
+
+type systemSettingsConnection interface {
+	Call(context.Context, protocol.Method, any, string, any) error
+	Close() error
 }
 
 func (c *systemChange) stopPolling() {
@@ -65,6 +70,7 @@ func (s *SystemSettings) BeginWinV(ctx context.Context, enabled bool) (protocol.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var result protocol.WindowsSettingResult
+	s.discardDisconnectedChange()
 	if s.pending != nil {
 		return result, errors.New("WindowsSettingsBusy")
 	}
@@ -104,6 +110,7 @@ func (s *SystemSettings) BeginWinV(ctx context.Context, enabled bool) (protocol.
 func (s *SystemSettings) FinishWinV(ctx context.Context, token string, rollback bool) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.discardDisconnectedChange()
 	if s.pending == nil || s.pending.token != token {
 		return false, errors.New("WindowsSettingsTokenUnavailable")
 	}
@@ -114,6 +121,27 @@ func (s *SystemSettings) FinishWinV(ctx context.Context, token string, rollback 
 		change.stopPolling()
 		change.host.Close()
 		s.pending = nil
+	} else {
+		var remote *client.RemoteError
+		if !errors.As(err, &remote) {
+			change.stopPolling()
+			change.host.Close()
+			s.pending = nil
+		}
 	}
 	return result.Value, err
+}
+
+// Called with mu held. The polling worker closes done after closing a failed
+// connection; it never needs mu, so a foreground finish cannot deadlock it.
+func (s *SystemSettings) discardDisconnectedChange() {
+	if s.pending == nil {
+		return
+	}
+	select {
+	case <-s.pending.done:
+		s.pending.host.Close()
+		s.pending = nil
+	default:
+	}
 }

@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -443,6 +443,10 @@ $exe = (Resolve-Path -LiteralPath $Desktop).Path
 $cli = Join-Path (Split-Path $exe) 'dzc.exe'
 $dir = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString()))
 $env:DEZIRCLIP_DB_PATH = Join-Path $dir.FullName 'clipboard.db'
+$fixtureDatabase = $env:DEZIRCLIP_DB_PATH
+$installedRedirect = $null
+$redirectBackup = $null
+if ($InstalledElevation) { $Elevation = $true }
 $marker = 'MyGo desktop fixture ' + [guid]::NewGuid().ToString('N')
 $form = New-Object Windows.Forms.Form
 $form.Text = 'Independent MyGo paste target'
@@ -494,6 +498,15 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     db.execute("UPDATE settings SET value='true' WHERE key='app.silent_start'")
 '@ | python - $fixtureEditor
         if ($LASTEXITCODE) { throw 'Could not select the isolated external editor' }
+    }
+    if ($InstalledElevation) {
+        $config = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'io.github.qiyuanhuakai.dezirclip'
+        $null = New-Item -ItemType Directory -Force -Path $config
+        $installedRedirect = Join-Path $config 'datapath.txt'
+        if (Test-Path -LiteralPath $installedRedirect) { $redirectBackup = [IO.File]::ReadAllBytes($installedRedirect) }
+        [IO.File]::WriteAllText($installedRedirect, $dir.FullName, [Text.UTF8Encoding]::new($false))
+        Remove-Item Env:DEZIRCLIP_DB_PATH -ErrorAction SilentlyContinue
+        Remove-Item Env:TIEZ_DB_PATH -ErrorAction SilentlyContinue
     }
     if ($Emoji -or $Elevation) {
         $startedService = & $cli service start --json | ConvertFrom-Json
@@ -559,7 +572,10 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
     if ($Elevation) {
         $helperLog = Join-Path $dir.FullName 'elevation.log'
-        $helper = Start-Process -FilePath $exe -ArgumentList @('--elevate-helper', $startedService.state.service_instance_id, $resident.Id, ('"' + $env:DEZIRCLIP_DB_PATH + '"')) -WindowStyle Hidden -PassThru -RedirectStandardError $helperLog
+        $profileJson = @{ dezirclip = $env:DEZIRCLIP_DB_PATH; tiez = $env:TIEZ_DB_PATH } | ConvertTo-Json -Compress
+        $profile = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($profileJson)).TrimEnd('=').Replace('+','-').Replace('/','_')
+        $helper = Start-Process -FilePath $exe -ArgumentList @('--elevate-helper', $startedService.state.service_instance_id, $resident.Id, ('"' + $fixtureDatabase + '"'), $profile) -WindowStyle Hidden -PassThru -RedirectStandardError $helperLog
+        $null = $helper.Handle
         $null = Wait-Until { $helper.HasExited } 'Elevated handoff helper did not finish' 60
         $helper.WaitForExit()
         if ($helper.ExitCode -ne 0) {
@@ -588,6 +604,17 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
         $null = Wait-Until { Get-ControlPoint $root $marker } 'Elevated desktop did not retain the original history'
         Write-Output 'Verified elevated Service replacement, capture preservation, parent-exit ordering and reopened MyGo history'
+        if ($InstalledElevation) {
+            $destination = New-Item -ItemType Directory -Path ($dir.FullName + '-moved')
+            $status = & $cli service status --json | ConvertFrom-Json
+            if ($LASTEXITCODE) { throw 'Could not inspect elevated installed Host' }
+            $moved = & $cli service move-data $destination.FullName --from-instance $status.state.service_instance_id --epoch $status.state.privacy_epoch --json | ConvertFrom-Json
+            if ($LASTEXITCODE -or $moved.recovery) { throw 'Installed profile could not migrate after elevation' }
+            if (!(Test-Path -LiteralPath (Join-Path $destination.FullName 'clipboard.db'))) { throw 'Migrated database missing' }
+            $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
+            if ($LASTEXITCODE -or $endpoint.database.Replace('\\?\','') -ne (Join-Path $destination.FullName 'clipboard.db')) { throw 'Elevated Host did not follow the installed redirect' }
+            Write-Output 'Verified installed profile migration after elevation without database overrides'
+        }
         return
     }
     $webProcesses = @(Wait-Until {
@@ -745,6 +772,27 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
             $startedServiceProcess.Refresh()
             if ($startedServiceProcess.HasExited) {
                 Write-Host ("Original Service exited: pid={0}, exit={1}" -f $startedServiceProcess.Id, $startedServiceProcess.ExitCode)
+                try {
+                    $reported = $false
+                    foreach ($event in @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = 1000; StartTime = (Get-Date).AddMinutes(-5) } -MaxEvents 20 -ErrorAction Stop)) {
+                        $fields = @{}
+                        foreach ($field in ([xml]$event.ToXml()).Event.EventData.Data) { $fields[$field.Name] = $field.'#text' }
+                        if ($fields['AppName'] -ne 'dzc-service.exe') { continue }
+                        # Restrict diagnostics to module identity and exception location;
+                        # do not publish process memory or captured clipboard contents.
+                        [pscustomobject]@{
+                            time = $event.TimeCreated.ToUniversalTime().ToString('o')
+                            application = $fields['AppName']
+                            module = $fields['ModuleName']
+                            module_version = $fields['ModuleVersion']
+                            exception = $fields['ExceptionCode']
+                            offset = $fields['FaultingOffset']
+                            process = $fields['ProcessId']
+                        } | ConvertTo-Json -Compress | Write-Host
+                        $reported = $true
+                    }
+                    if (!$reported) { Write-Host 'No matching Service fault module event was available' }
+                } catch { Write-Host ("Service fault event unavailable: " + $_.Exception.Message) }
             } else {
                 Write-Host ("Original Service is still running: pid={0}" -f $startedServiceProcess.Id)
             }
@@ -760,6 +808,10 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     if ($resident -and !$resident.HasExited) { $resident.Kill(); $resident.WaitForExit() }
     if ($main -and !$main.HasExited) { $main.Kill(); $main.WaitForExit() }
     & $cli service stop | Out-Null
+    if ($installedRedirect) {
+        if ($null -ne $redirectBackup) { [IO.File]::WriteAllBytes($installedRedirect, $redirectBackup) }
+        else { Remove-Item -LiteralPath $installedRedirect -ErrorAction SilentlyContinue }
+    }
     if ($startedServiceProcess) { $startedServiceProcess.Dispose() }
     $form.Dispose()
 }
