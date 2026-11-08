@@ -232,6 +232,14 @@ export const useHotkeyConfig = ({
         }
       }
 
+      if (import.meta.env.MODE === "mygo") {
+        try {
+          await invoke("set_sequential_hotkey", { hotkey: newHotkey });
+          setSequentialHotkey(newHotkey);
+        } catch (error) { pushToast(resolveHotkeyErrorMessage(error), 5000); }
+        setIsRecordingSequential(false);
+        return;
+      }
       setSequentialHotkey(newHotkey);
       saveAppSetting("sequential_hotkey", newHotkey);
       await invoke("set_sequential_hotkey", { hotkey: newHotkey }).catch(console.error);
@@ -266,6 +274,14 @@ export const useHotkeyConfig = ({
         }
       }
 
+      if (import.meta.env.MODE === "mygo") {
+        try {
+          await invoke("set_rich_paste_hotkey", { hotkey: newHotkey });
+          setRichPasteHotkey(newHotkey);
+        } catch (error) { pushToast(resolveHotkeyErrorMessage(error), 5000); }
+        setIsRecordingRich(false);
+        return;
+      }
       setRichPasteHotkey(newHotkey);
       saveAppSetting("rich_paste_hotkey", newHotkey);
       await invoke("set_rich_paste_hotkey", { hotkey: newHotkey }).catch(console.error);

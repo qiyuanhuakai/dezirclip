@@ -85,6 +85,41 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		reopen := ""
 		registered := make(map[string]bool)
 		searchKeys := make(map[string]bool)
+		pasteKeys := map[string]map[string]bool{"app.sequential_hotkey": {}, "app.rich_paste_hotkey": {}}
+		pasteBusy := false
+		registerPaste := func(setting, key string) error {
+			return mygo.GlobalShortcut.Register(key, func() {
+				if recorder.offer(key) || pasteBusy || stopping || migrating || moved || pending != nil {
+					return
+				}
+				work, err := prepareShortcutPaste(owner, setting == "app.rich_paste_hotkey")
+				if err != nil {
+					log.Printf("Paste shortcut target unavailable: %v", err)
+					return
+				}
+				pasteBusy = true
+				go func() {
+					if err := work(); err != nil {
+						log.Printf("Paste shortcut failed: %v", err)
+					}
+					mygo.RunOnMain(func() { pasteBusy = false })
+				}()
+			})
+		}
+		refreshPaste := func(settings map[string]string) {
+			if settings == nil {
+				return
+			}
+			for setting, fallback := range map[string]string{"app.sequential_hotkey": "Alt+V", "app.rich_paste_hotkey": "Ctrl+Shift+Z"} {
+				key, found := settings[setting]
+				if !found {
+					key = fallback
+				}
+				if err := changeMainHotkeys(pasteKeys[setting], key, func(key string) error { return registerPaste(setting, key) }, mygo.GlobalShortcut.Unregister, func() error { return nil }); err != nil {
+					log.Printf("Paste shortcut unavailable: %v", err)
+				}
+			}
+		}
 		reachable := func() bool {
 			return len(registered) > 0 || len(searchKeys) > 0 || (tray != nil && trayHostAvailable(tray))
 		}
@@ -219,6 +254,15 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 									return
 								}
 								switch request.Operation {
+								case "paste-hotkey":
+									keys, ok := pasteKeys[request.Panel]
+									if !ok {
+										reply(fmt.Errorf("InvalidActionHotkey"))
+										break
+									}
+									reply(changeMainHotkeys(keys, request.Hotkey, func(key string) error { return registerPaste(request.Panel, key) }, mygo.GlobalShortcut.Unregister, func() error {
+										return persistActionHotkey(owner, request.Panel, request.Hotkey, request.Epoch)
+									}))
 								case "search-hotkey":
 									reply(changeMainHotkeys(searchKeys, request.Hotkey, registerSearch, mygo.GlobalShortcut.Unregister, func() error {
 										return persistActionHotkey(owner, "app.search_hotkey", request.Hotkey, request.Epoch)
@@ -397,7 +441,9 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 							if !stopping && !migrating && !moved && pending == nil {
 								panel.RefreshShortcut()
 								selector.Refresh()
-								refreshSearch(refreshMainShortcuts(owner, registered, toggle, recorder.offer))
+								settings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
+								refreshSearch(settings)
+								refreshPaste(settings)
 							}
 						})
 					}
@@ -429,6 +475,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		open := func() { present("show") }
 		startupSettings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
 		refreshSearch(startupSettings)
+		refreshPaste(startupSettings)
 		setTrayVisible = func(visible bool) error {
 			if (tray != nil) == visible {
 				return nil

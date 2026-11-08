@@ -19,6 +19,10 @@ func (s *DesktopShell) SetSearchHotkey(ctx context.Context, hotkey string, epoch
 	return s.resident.send(ctx, residentRequest{Operation: "search-hotkey", Hotkey: hotkey, Epoch: epoch}, 10*time.Second)
 }
 
+func (s *DesktopShell) SetPasteHotkey(ctx context.Context, key, hotkey string, epoch uint64) error {
+	return s.resident.send(ctx, residentRequest{Operation: "paste-hotkey", Panel: key, Hotkey: hotkey, Epoch: epoch}, 10*time.Second)
+}
+
 func persistActionHotkey(owner *client.Client, key, hotkey string, epoch uint64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()

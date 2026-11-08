@@ -41,6 +41,8 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   test_hotkey_available: args => shellCall("TestHotkeyAvailable", args.hotkey),
   register_hotkey: args => shellCall("SetMainHotkeys", args.hotkey, currentEpoch()),
   set_search_hotkey: args => shellCall("SetSearchHotkey", args.hotkey, currentEpoch()),
+  set_sequential_hotkey: args => shellCall("SetPasteHotkey", "app.sequential_hotkey", args.hotkey, currentEpoch()),
+  set_rich_paste_hotkey: args => shellCall("SetPasteHotkey", "app.rich_paste_hotkey", args.hotkey, currentEpoch()),
   set_recording_mode: args => shellCall("SetRecordingMode", args.enabled, args.enabled ? currentEpoch() : 0),
   set_edge_docking: args => shellCall("SetEdgeDocking", args.enabled, currentEpoch()),
   set_tray_visible: args => shellCall("SetTrayVisible", args.visible, currentEpoch()),
@@ -143,6 +145,7 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   delete_custom_theme: args => library("RemoveTheme", args.id, currentEpoch()),
   save_setting: args => {
     if (args.key === "app.search_hotkey") return shellCall("SetSearchHotkey", args.value, currentEpoch());
+    if (args.key === "app.sequential_hotkey" || args.key === "app.rich_paste_hotkey") return shellCall("SetPasteHotkey", args.key, args.value, currentEpoch());
     if (["app.quick_paste_hotkey", "app.screenshot_hotkey", "app.screenshot_full_hotkey"].includes(String(args.key))) {
       return shellCall("SetPanelHotkey", args.key, args.value, currentEpoch());
     }

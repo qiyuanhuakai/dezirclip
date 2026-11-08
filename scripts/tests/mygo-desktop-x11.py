@@ -1334,6 +1334,90 @@ def check(desktop, pinned, audio, pin_preview=False):
     check_storage_limit(cli)
 
 
+def check_paste_hotkeys(desktop):
+    import gi
+    gi.require_version('Gtk', '3.0')
+    gi.require_version('Atspi', '2.0')
+    from gi.repository import Gtk, Gdk, Atspi
+    cli = desktop.with_name('dzc')
+    subprocess.run([cli, 'add', 'shortcut seed'], check=True, stdout=subprocess.DEVNULL)
+    with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+        db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', [
+            ('app.persistent', 'true'), ('app.sequential_mode', 'true'), ('app.silent_start', 'true'),
+            ('app.hotkey', 'Ctrl+Shift+F8'), ('app.delete_after_paste', 'false')])
+    subprocess.run([cli, 'service', 'start', '--json'], check=True, stdout=subprocess.DEVNULL)
+    resident = subprocess.Popen([desktop, '--minimized'], stdout=subprocess.DEVNULL)
+    window = Gtk.Window(title='Independent shortcut paste target')
+    editor = Gtk.Entry()
+    window.add(editor)
+    window.show_all()
+    window.present()
+    editor.grab_focus()
+    def wait(check, message):
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            while Gtk.events_pending(): Gtk.main_iteration_do(False)
+            assert resident.poll() is None, 'Native resident exited'
+            if check(): return
+            time.sleep(.04)
+        raise AssertionError(message)
+    def shortcut(keys):
+        keymap = Gdk.Keymap.get_for_display(Gdk.Display.get_default())
+        for pressed in (True, False):
+            for sym in keys if pressed else reversed(keys):
+                mapped, entries = keymap.get_entries_for_keyval(sym)
+                assert mapped and entries
+                assert Atspi.generate_keyboard_event(entries[0].keycode, None,
+                    Atspi.KeySynthType.PRESS if pressed else Atspi.KeySynthType.RELEASE)
+    try:
+        wait(lambda: tray_item(resident.pid, '退出', activate=False), 'Resident shortcut registration did not finish')
+        wait(window.is_active, 'Editor did not acquire focus')
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            markers = ['queue-first-' + secrets.token_hex(6), 'queue-second-' + secrets.token_hex(6)]
+            for marker in markers:
+                subprocess.run(['xclip', '-selection', 'clipboard', '-i'], input=marker.encode(), check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                wait(lambda: db.execute('SELECT 1 FROM clipboard_history WHERE content=?', (marker,)).fetchone(),
+                     'Service did not capture the next queue fixture')
+            # The first captured row proves the Service was ready; both rows must
+            # be delivered from its queue without opening the main renderer.
+            for expected in (markers[0], ''.join(markers)):
+                shortcut((Gdk.KEY_Alt_L, Gdk.KEY_v))
+                try:
+                    wait(lambda: editor.get_text() == expected, 'Resident sequential shortcut did not deliver the ordered queue')
+                except AssertionError:
+                    print(f'Expected queue text={expected!r}; actual={editor.get_text()!r}; focused={window.is_active()}', flush=True)
+                    raise
+            editor.set_text('')
+            shortcut((Gdk.KEY_Alt_L, Gdk.KEY_v))
+            deadline = time.monotonic() + .3
+            while time.monotonic() < deadline:
+                while Gtk.events_pending(): Gtk.main_iteration_do(False)
+                time.sleep(.02)
+            assert editor.get_text() == '', 'An empty queue replayed an item'
+            rich_text = 'formatted-' + secrets.token_hex(6)
+            rich_html = '<b>' + rich_text + '</b>'
+            backup = Path(os.environ['HOME'])/'shortcut-rich.json'
+            stamp = int(time.time() * 1000)
+            backup.write_text(json.dumps({'version': 'dezirclip-export-v2', 'exported_at': stamp, 'entries': [
+                {'id': 9001, 'content_type': 'rich_text', 'content': rich_text, 'html_content': rich_html,
+                 'created_at': stamp, 'updated_at': stamp, 'is_pinned': False, 'tags': []}]}))
+            subprocess.run([cli, 'import', backup, '--mode', 'merge'], check=True, stdout=subprocess.DEVNULL)
+            shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_z))
+            wait(lambda: editor.get_text() == rich_text, 'Resident rich shortcut did not paste the latest entry')
+            html = subprocess.check_output(['xclip', '-selection', 'clipboard', '-t', 'text/html', '-o']).decode()
+            assert rich_html in html, 'Rich paste shortcut discarded the HTML format'
+        assert not visible_main_window(resident.pid, desktop), 'Paste shortcut created a main WebView'
+        children = Path(f'/proc/{resident.pid}/task/{resident.pid}/children').read_text().split()
+        assert not any(Path(f'/proc/{pid}/exe').resolve() == desktop for pid in children), 'Paste shortcut spawned a hidden main WebView'
+        print('Verified resident sequential queue order, empty queue and latest-entry HTML paste without a main WebView', flush=True)
+    finally:
+        window.destroy()
+        resident.terminate()
+        resident.wait(timeout=10)
+        subprocess.run([cli, 'service', 'stop'], check=True)
+
+
 def check_storage_limit(cli):
     rows = [{'id': 10000+i, 'content_type': 'text', 'content': f'Old test row {i}',
              'created_at': i+1, 'updated_at': i+1, 'is_pinned': i == 0,
@@ -1721,7 +1805,7 @@ def check_profile_move(executable, home):
 
 if __name__ == '__main__':
     desktop = Path(sys.argv[1]).resolve(strict=True)
-    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview', '--idle'):
+    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview', '--idle', '--paste-hotkeys'):
         with tempfile.TemporaryDirectory(prefix='dzc-mygo-') as path:
             home = Path(path)
             for name in ('runtime', 'data', 'config', 'cache'):
@@ -1799,7 +1883,9 @@ with open(sys.argv[1], 'r+') as document:
                 assert wm.poll() is None and time.monotonic() < deadline, 'Window manager failed to start'
                 time.sleep(.05)
             pinned = '--pinned' in sys.argv[3:]
-            if '--idle' in sys.argv[3:]:
+            if '--paste-hotkeys' in sys.argv[3:]:
+                check_paste_hotkeys(desktop)
+            elif '--idle' in sys.argv[3:]:
                 check_idle(desktop)
             elif '--move-profile' in sys.argv[3:]:
                 check_profile_move(desktop, home)
