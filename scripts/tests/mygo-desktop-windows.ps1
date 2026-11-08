@@ -83,8 +83,12 @@ public static class MyGoInput {
     [DllImport("kernel32.dll")] static extern IntPtr GlobalLock(IntPtr memory);
     [DllImport("kernel32.dll")] static extern bool GlobalUnlock(IntPtr memory);
 
-    public static bool CheckClipboardText(string expected, uint sequence) {
-        if (!OpenClipboard(IntPtr.Zero)) return false;
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    public static bool CheckClipboardText(string expected, uint sequence, IntPtr readerWindow) {
+        uint readerPid;
+        if (readerWindow == IntPtr.Zero || GetWindowThreadProcessId(readerWindow, out readerPid) != GetCurrentThreadId())
+            throw new InvalidOperationException("Clipboard verification requires a window on the calling thread");
+        if (!OpenClipboard(readerWindow)) return false;
         try {
             if (sequence != GetClipboardSequenceNumber()) throw new InvalidOperationException("Clipboard sequence changed before verification");
             IntPtr handle = GetClipboardData(13); // CF_UNICODETEXT
@@ -776,7 +780,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         $edit.Text -ceq $marker -and $edit.Focused -and [MyGoInput]::GetForegroundWindow() -eq $form.Handle
     } 'Click did not paste the exact history text into the original editor'
     $clipboardSequence = [MyGoInput]::GetClipboardSequenceNumber()
-    $null = Wait-Until { [MyGoInput]::CheckClipboardText($marker, $clipboardSequence) } 'Clipboard remained locked after delivery' 3
+    $null = Wait-Until { [MyGoInput]::CheckClipboardText($marker, $clipboardSequence, $form.Handle) } 'Clipboard remained locked after delivery' 3
     if ($Emoji) {
         $afterPaste = & $cli service status --json | ConvertFrom-Json
         if ($LASTEXITCODE -or $afterPaste.state.service_instance_id -cne $startedService.state.service_instance_id -or !$afterPaste.capture_owner) {
@@ -792,7 +796,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     Test-ResidentPanel $resident '^+v' ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34')) $edit $form
     Test-ResidentPanel $resident '^+a' ([regex]::Unescape('DezirClip \u622a\u56fe')) $edit $form
     if ($edit.Text -cne $marker) { throw 'Cancelled native panel changed the editor' }
-    $null = Wait-Until { [MyGoInput]::CheckClipboardText($marker, $clipboardSequence) } 'Clipboard remained locked after panel cancellation' 3
+    $null = Wait-Until { [MyGoInput]::CheckClipboardText($marker, $clipboardSequence, $form.Handle) } 'Clipboard remained locked after panel cancellation' 3
     $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
     if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot locate the isolated Rust Service' }
     $service = Get-Process -Id $endpoint.pid
