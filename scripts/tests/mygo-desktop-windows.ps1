@@ -7,9 +7,40 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hoste
 }
 . (Join-Path $PSScriptRoot 'service-process-receipt.ps1')
 Add-Type -AssemblyName System.Windows.Forms, UIAutomationClient, UIAutomationTypes
-Add-Type @'
+Add-Type -ReferencedAssemblies System.Windows.Forms, System.Drawing @'
 using System;
 using System.Runtime.InteropServices;
+public sealed class MyGoPasteTargetTextBox : System.Windows.Forms.TextBox {
+    readonly System.Collections.Generic.Queue<string> messages = new System.Collections.Generic.Queue<string>();
+    [DllImport("user32.dll")] static extern short GetKeyState(int key);
+    [DllImport("user32.dll")] static extern IntPtr GetFocus();
+    [DllImport("user32.dll")] static extern IntPtr GetOpenClipboardWindow();
+    void Record(string phase, int message, IntPtr parameter) {
+        IntPtr clipboardWindow = GetOpenClipboardWindow();
+        uint clipboardPid;
+        MyGoInput.GetWindowThreadProcessId(clipboardWindow, out clipboardPid);
+        if (messages.Count == 128) messages.Dequeue();
+        messages.Enqueue(String.Format(
+            "tick={0} phase={1} msg=0x{2:x} key=0x{3:x} ctrl={4} shift={5} alt={6} focus={7} foreground={8} clipboardWindow={9} clipboardPid={10} length={11}",
+            System.Diagnostics.Stopwatch.GetTimestamp(), phase, message, parameter.ToInt64(),
+            GetKeyState(0x11) < 0, GetKeyState(0x10) < 0, GetKeyState(0x12) < 0,
+            GetFocus(), MyGoInput.GetForegroundWindow(), clipboardWindow, clipboardPid, TextLength));
+    }
+    public override bool PreProcessMessage(ref System.Windows.Forms.Message message) {
+        bool tracked = message.Msg == 0x100 || message.Msg == 0x101 || message.Msg == 0x104 || message.Msg == 0x105;
+        if (tracked) Record("preprocess-before", message.Msg, message.WParam);
+        bool handled = base.PreProcessMessage(ref message);
+        if (tracked) Record(handled ? "preprocess-handled" : "preprocess-unhandled", message.Msg, message.WParam);
+        return handled;
+    }
+    protected override void WndProc(ref System.Windows.Forms.Message message) {
+        bool tracked = message.Msg == 0x7 || message.Msg == 0x8 || message.Msg == 0x100 || message.Msg == 0x101 || message.Msg == 0x302;
+        if (tracked) Record("dispatch-before", message.Msg, message.WParam);
+        base.WndProc(ref message);
+        if (tracked) Record("dispatch-after", message.Msg, message.WParam);
+    }
+    public string InputDiagnostics() { return String.Join(Environment.NewLine, messages.ToArray()); }
+}
 public static class MyGoInput {
     [DllImport("user32.dll", SetLastError=true)] static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint key);
     [DllImport("user32.dll", SetLastError=true)] static extern bool UnregisterHotKey(IntPtr window, int id);
@@ -465,7 +496,7 @@ if ($InstalledElevation) { $Elevation = $true }
 $marker = 'MyGo desktop fixture ' + [guid]::NewGuid().ToString('N')
 $form = New-Object Windows.Forms.Form
 $form.Text = 'Independent MyGo paste target'
-$edit = New-Object Windows.Forms.TextBox
+$edit = New-Object MyGoPasteTargetTextBox
 $form.Controls.Add($edit)
 $resident = $null
 $startedService = $null
@@ -839,6 +870,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     catch { Write-Host ("Service exit receipt failed: " + $_.Exception.Message) }
     Write-Host ("Editor length={0}, exact={1}, focused={2}, foreground={3}, editor window={4}" -f
         $edit.Text.Length, ($edit.Text -ceq $marker), $edit.Focused, [MyGoInput]::GetForegroundWindow(), $form.Handle)
+    Write-Host ("Synthetic editor input diagnostics:`n" + $edit.InputDiagnostics())
     try {
       if ($main -and !$main.HasExited -and $root) {
         $names = $root.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) |
