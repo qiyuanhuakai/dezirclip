@@ -208,6 +208,7 @@ pub async fn desktop_endpoint(database: &Path, start_if_missing: bool) -> io::Re
         "pid": client.peer.pid().ok_or_else(|| io::Error::other("HostPidUnavailable"))?,
         "instance": client.hello.state.service_instance_id,
         "version": client.hello.core_version,
+        "database": std::fs::canonicalize(database)?,
     }))
 }
 

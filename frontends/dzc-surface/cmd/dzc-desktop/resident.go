@@ -262,6 +262,31 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 									return
 								}
 								switch request.Operation {
+								case "restart-admin":
+									if pasteBusy {
+										reply(fmt.Errorf("PasteBusy"))
+										break
+									}
+									database, err := owner.DesktopDatabase()
+									if err != nil {
+										reply(err)
+										break
+									}
+									if err := recorder.stop(); err != nil {
+										reply(err)
+										break
+									}
+									migrating = true
+									go func() {
+										err := elevateDesktop(owner.Hello().State.ServiceInstanceId, database)
+										mygo.RunOnMain(func() {
+											migrating = false
+											reply(err)
+											if err == nil {
+												mygo.App.Quit()
+											}
+										})
+									}()
 								case "reset-settings":
 									if pasteBusy {
 										reply(fmt.Errorf("PasteBusy"))

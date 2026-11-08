@@ -101,7 +101,11 @@ func (c *residentBridge) send(ctx context.Context, request residentRequest, dead
 	if err := json.NewEncoder(c.output).Encode(request); err != nil {
 		return err
 	}
-	timeout, cancel := context.WithTimeout(ctx, deadline)
+	timeout, cancel := context.WithCancel(ctx)
+	if deadline > 0 {
+		cancel()
+		timeout, cancel = context.WithTimeout(ctx, deadline)
+	}
 	defer cancel()
 	select {
 	case reply := <-done:
@@ -109,6 +113,12 @@ func (c *residentBridge) send(ctx context.Context, request residentRequest, dead
 			return errReconnect
 		}
 		if !reply.Success {
+			if request.Operation == "restart-admin" {
+				if reply.Error != "" {
+					return errors.New(reply.Error)
+				}
+				return errors.New("ElevationUnavailable")
+			}
 			if request.Operation == "recording" || request.Operation == "native-panel" || request.Operation == "test-hotkey" || request.Operation == "main-hotkeys" || request.Operation == "panel-hotkey" || request.Operation == "search-hotkey" || request.Operation == "paste-hotkey" {
 				if reply.Error != "" {
 					return errors.New(reply.Error)

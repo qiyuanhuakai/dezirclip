@@ -19,11 +19,28 @@ import (
 )
 
 type desktopEndpoint struct {
+	Database    string `json:"database"`
 	Address     string
 	ControlPath string `json:"control_path"`
 	PID         uint32
 	Instance    string
 	Version     string
+}
+
+func (c *Client) DesktopDatabase() (string, error) {
+	if c.desktop == nil || !filepath.IsAbs(c.desktop.Database) {
+		return "", ErrProtocol
+	}
+	return c.desktop.Database, nil
+}
+
+func RestartElevatedService(ctx context.Context, instance string) (protocol.ServiceStatus, error) {
+	var status protocol.ServiceStatus
+	output, err := relocationCommand(ctx, "restart-elevated", "--from-instance", instance, "--json")
+	if err == nil {
+		err = json.Unmarshal(output, &status)
+	}
+	return status, err
 }
 
 type MoveRecovery struct {

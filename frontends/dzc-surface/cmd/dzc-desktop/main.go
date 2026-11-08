@@ -185,6 +185,9 @@ func (h *History) SendEmoji(ctx context.Context, kind, content string, epoch uin
 }
 
 func run() error {
+	if handled, err := prepareElevation(); handled || err != nil {
+		return err
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--build-info" {
 		return json.NewEncoder(os.Stdout).Encode(buildinfo.DesktopReport())
 	}
@@ -219,13 +222,16 @@ func run() error {
 	// The Desktop always loads the packaged local UI even in a developer shell.
 	os.Unsetenv("MYGO_DEV_URL")
 	ctx := context.Background()
-	actions, err := client.OpenDesktop(ctx, buildinfo.Version, !mainWindow)
+	actions, err := client.OpenDesktop(ctx, buildinfo.Version, !mainWindow && elevatedInstance == "")
 	if err != nil {
 		return fmt.Errorf("open desktop Host: %w", err)
 	}
 	// Retain the authenticated endpoint identity only. Each action or visible
 	// session opens its own stream, so idle panels need no keepalive requests.
 	actions.Close()
+	if elevatedInstance != "" && actions.Hello().State.ServiceInstanceId != elevatedInstance {
+		return client.ErrProtocol
+	}
 	mygo.App.SetName("DezirClip MyGo")
 	if !mainWindow {
 		return runResident(actions, minimized, forceShow)

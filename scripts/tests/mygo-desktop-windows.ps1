@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -495,7 +495,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
 '@ | python - $fixtureEditor
         if ($LASTEXITCODE) { throw 'Could not select the isolated external editor' }
     }
-    if ($Emoji) {
+    if ($Emoji -or $Elevation) {
         $startedService = & $cli service start --json | ConvertFrom-Json
         if ($LASTEXITCODE -or $startedService.mode -ne 'service' -or !$startedService.capture_owner -or !$startedService.state.service_instance_id) {
             throw 'Could not start the independent capture Service before MyGo'
@@ -557,6 +557,39 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
             [Math]::Abs($clientRect.right - 670) -le 1 -and [Math]::Abs($clientRect.bottom - 608) -le 1
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+    if ($Elevation) {
+        $helperLog = Join-Path $dir.FullName 'elevation.log'
+        $helper = Start-Process -FilePath $exe -ArgumentList @('--elevate-helper', $startedService.state.service_instance_id, $resident.Id, ('"' + $env:DEZIRCLIP_DB_PATH + '"')) -WindowStyle Hidden -PassThru -RedirectStandardError $helperLog
+        $null = Wait-Until { $helper.HasExited } 'Elevated handoff helper did not finish' 60
+        $helper.WaitForExit()
+        if ($helper.ExitCode -ne 0) {
+            Get-Content -LiteralPath $helperLog | Write-Host
+            throw "Elevated handoff helper failed: $($helper.ExitCode)"
+        }
+        $afterElevation = & $cli service status --json | ConvertFrom-Json
+        if ($LASTEXITCODE -or !$afterElevation.capture_owner -or $afterElevation.state.service_instance_id -ceq $startedService.state.service_instance_id) {
+            throw 'Elevation did not replace the capture Service'
+        }
+        $waiting = @(Get-CimInstance Win32_Process -Filter "Name='dzc-desktop.exe'" | Where-Object {
+            $_.ExecutablePath -eq $exe -and $_.CommandLine -match '--after-elevation'
+        })
+        if ($waiting.Count -ne 1 -or $resident.HasExited) { throw 'Elevated desktop did not wait for its original resident' }
+        $replacement = Get-Process -Id $waiting[0].ProcessId
+        if ($replacement.MainWindowHandle -ne 0) { throw 'Elevated desktop opened before the previous resident exited' }
+        $resident.Kill(); $resident.WaitForExit()
+        if (!$main.HasExited) { $main.Kill(); $main.WaitForExit() }
+        $resident = $replacement
+        $main = Wait-Until {
+            if ($resident.HasExited) { throw 'Replacement desktop exited before showing its window' }
+            Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
+                $_.Id -ne $resident.Id -and $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip'
+            } | Select-Object -First 1
+        } 'Elevated main window did not appear'
+        $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+        $null = Wait-Until { Get-ControlPoint $root $marker } 'Elevated desktop did not retain the original history'
+        Write-Output 'Verified elevated Service replacement, capture preservation, parent-exit ordering and reopened MyGo history'
+        return
+    }
     $webProcesses = @(Wait-Until {
         Get-DesktopProcesses @($main.Id) | Where-Object { $_.Name -eq 'msedgewebview2.exe' }
     } 'No WebView2 descendants found for the shared main window')
@@ -707,7 +740,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     } catch { Write-Host ("Diagnostic query failed: " + $_.Exception.Message) }
     $log = Join-Path $dir.FullName 'desktop.log'
     if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 12 | Write-Host }
-    if ($Emoji -and $startedService) {
+    if (($Emoji -or $Elevation) -and $startedService) {
         if ($startedServiceProcess) {
             $startedServiceProcess.Refresh()
             if ($startedServiceProcess.HasExited) {
