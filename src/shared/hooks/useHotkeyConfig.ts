@@ -176,9 +176,8 @@ export const useHotkeyConfig = ({
           await invoke<boolean>("test_hotkey_available", { hotkey: value });
         } catch (err) {
           const errorMsg = `${value}: ${resolveHotkeyErrorMessage(err)}`;
-          pushToast(errorMsg, 5000);
           setIsRecording(false);
-          return false;
+          throw new Error(errorMsg);
         }
       }
 

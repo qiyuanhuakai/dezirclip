@@ -792,6 +792,17 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
                      'Confirmed import did not persist the previewed entry')
         print('Verified choosing a backup file in the native dialog, previewing its text and importing it through the shared React settings')
         custom_rules = open_settings_group('Clipboard', 'Custom Rules')
+        main_recorder = wait_for(lambda: find_item('Global Hotkey'), 'Main shortcut recorder unavailable')
+        atspi.Component.scroll_to(main_recorder, atspi.ScrollType.ANYWHERE)
+        assert atspi.Action.do_action(main_recorder, 0)
+        wait_for(lambda: main_recorder.get_state_set().contains(atspi.StateType.PRESSED)
+                 and not main_recorder.get_state_set().contains(atspi.StateType.BUSY),
+                 'Main shortcut recorder did not acquire its recording connection')
+        shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_v))
+        wait_for(lambda: any('already registered' in name + text for _, name, _, text in mygo_nodes(atspi, executable)),
+                 'Availability probe did not reject the resident quick-paste shortcut')
+        assert find_item('Delete Ctrl+Shift+V') is None
+        print('Verified the resident availability probe rejects its existing shortcut without adding a main binding', flush=True)
         def begin_privacy_recording():
             button = wait_for(lambda: find_item('Toggle privacy session shortcut'), 'Privacy shortcut recorder unavailable')
             atspi.Component.scroll_to(button, atspi.ScrollType.ANYWHERE)

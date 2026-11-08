@@ -17,6 +17,7 @@ type residentRequest struct {
 	Operation string             `json:"operation"`
 	Directory string             `json:"directory,omitempty"`
 	Panel     string             `json:"panel,omitempty"`
+	Hotkey    string             `json:"hotkey,omitempty"`
 	Disabled  bool               `json:"disabled,omitempty"`
 	Full      bool               `json:"full,omitempty"`
 	Visible   bool               `json:"visible,omitempty"`
@@ -68,6 +69,11 @@ func (s *DesktopShell) SetNativePanelEnabled(ctx context.Context, panel string, 
 	return s.resident.send(ctx, residentRequest{Operation: "native-panel", Panel: panel, Disabled: !enabled, Epoch: epoch}, 15*time.Second)
 }
 
+func (s *DesktopShell) TestHotkeyAvailable(ctx context.Context, hotkey string) (bool, error) {
+	err := s.resident.send(ctx, residentRequest{Operation: "test-hotkey", Hotkey: hotkey}, 6*time.Second)
+	return err == nil, err
+}
+
 func (c *residentBridge) send(ctx context.Context, request residentRequest, deadline time.Duration) error {
 	c.mu.Lock()
 	if c.pending != nil {
@@ -103,7 +109,7 @@ func (c *residentBridge) send(ctx context.Context, request residentRequest, dead
 			return errReconnect
 		}
 		if !reply.Success {
-			if request.Operation == "recording" || request.Operation == "native-panel" {
+			if request.Operation == "recording" || request.Operation == "native-panel" || request.Operation == "test-hotkey" {
 				if reply.Error != "" {
 					return errors.New(reply.Error)
 				}

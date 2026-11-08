@@ -11,13 +11,25 @@ interface RecordingOwner {
 
 let activeOwner: RecordingOwner | null = null;
 let modeQueue = Promise.resolve();
+let nativeMode: boolean | undefined;
+
+async function applyNativeMode(enabled: boolean) {
+  if (nativeMode === enabled) return;
+  try {
+    await invoke<void>("set_recording_mode", { enabled });
+    nativeMode = enabled;
+  } catch (error) {
+    nativeMode = undefined;
+    throw error;
+  }
+}
 
 function synchronizeNativeMode() {
   modeQueue = modeQueue.catch(() => undefined).then(async () => {
     const owner = activeOwner;
     const enabled = owner?.ready === true;
     try {
-      await invoke("set_recording_mode", { enabled });
+      await applyNativeMode(enabled);
       if (activeOwner === owner) owner?.activated(enabled);
     }
     catch (error) {
@@ -52,7 +64,7 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
     consumed.current = true;
     const handler = callbacks.current;
     // Release temporary recording grabs before the shortcut owner registers the chosen chord.
-    modeQueue = modeQueue.catch(() => undefined).then(() => invoke<void>("set_recording_mode", { enabled: false }));
+    modeQueue = modeQueue.catch(() => undefined).then(() => applyNativeMode(false));
     void modeQueue.then(() => {
       handler.onCancelled();
       handler.onRecorded(hotkey);
@@ -81,7 +93,7 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
     void (async () => {
       const results = await Promise.allSettled([
         listen<string>("hotkey-recorded", event => { if (activeOwner === current) record(event.payload); }),
-        listen("recording-cancelled", () => { if (activeOwner === current) cancel(); }),
+        listen("recording-cancelled", () => { if (activeOwner === current) { nativeMode = false; cancel(); } }),
       ]);
       for (const result of results) if (result.status === "fulfilled") cleanups.push(result.value);
       if (disposed || activeOwner !== current) { cleanups.splice(0).forEach(stop => stop()); return; }

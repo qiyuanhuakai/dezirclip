@@ -38,6 +38,7 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  test_hotkey_available: args => shellCall("TestHotkeyAvailable", args.hotkey),
   set_recording_mode: args => shellCall("SetRecordingMode", args.enabled, args.enabled ? currentEpoch() : 0),
   set_edge_docking: args => shellCall("SetEdgeDocking", args.enabled, currentEpoch()),
   set_tray_visible: args => shellCall("SetTrayVisible", args.visible, currentEpoch()),

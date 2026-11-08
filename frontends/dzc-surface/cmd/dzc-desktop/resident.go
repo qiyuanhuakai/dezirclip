@@ -199,6 +199,12 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 									return
 								}
 								switch request.Operation {
+								case "test-hotkey":
+									err := testNativeHotkey(request.Hotkey)
+									if err != nil {
+										log.Printf("Shortcut availability check failed: %v", err)
+									}
+									reply(err)
 								case "move-profile":
 									migrating = true
 									go func() {

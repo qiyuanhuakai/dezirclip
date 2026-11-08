@@ -21,7 +21,7 @@ export default function HotkeyListEditor({ t, labelKey, hotkeys, recording, setR
     pending.current = true;
     setSaving(true);
     setError(null);
-    try { await change(); }
+    try { if (!await change()) setError(t("hotkey_unavailable")); }
     catch (failure) { setError(t("hotkey_register_failed") + String(failure)); }
     finally { pending.current = false; setSaving(false); }
   };
