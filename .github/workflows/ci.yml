@@ -449,10 +449,14 @@ jobs:
           Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe
 
-      - name: Verify MyGo emoji paste through an already-running Windows Service
+      - name: Verify repeated MyGo emoji paste and Windows Service startup
         if: runner.os == 'Windows' && matrix.can_test
         shell: powershell
-        run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Emoji
+        run: |
+          1..8 | ForEach-Object {
+            Write-Host "Isolated Service startup and emoji paste cycle $_ of 8"
+            ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Emoji
+          }
 
       - name: Verify MyGo elevated Service and desktop handoff
         if: runner.os == 'Windows' && matrix.can_test
