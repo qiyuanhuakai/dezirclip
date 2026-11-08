@@ -667,7 +667,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
     if ($RichPaste) {
-        Click-Control $main (Get-ControlPoint $root 'Search clipboard...' ([Windows.Automation.ControlType]::Edit))
+        Click-Control $main (Get-ControlPoint $root 'Search clipboard...' ([Windows.Automation.ControlType]::ComboBox))
         $search = $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
             [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Search clipboard...'))
         $value = $search.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern)
