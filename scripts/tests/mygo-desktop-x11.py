@@ -18,6 +18,29 @@ import time
 
 
 @contextlib.contextmanager
+def held_x11_keyboard():
+    x = ctypes.CDLL('libX11.so.6')
+    x.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x.XOpenDisplay.restype = ctypes.c_void_p
+    x.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    x.XDefaultRootWindow.restype = ctypes.c_ulong
+    x.XGrabKeyboard.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_ulong]
+    x.XUngrabKeyboard.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+    x.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    x.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    display = x.XOpenDisplay(None)
+    assert display, 'Could not connect the isolated keyboard grab'
+    try:
+        assert x.XGrabKeyboard(display, x.XDefaultRootWindow(display), False, 1, 1, 0) == 0
+        x.XSync(display, False)
+        yield
+    finally:
+        x.XUngrabKeyboard(display, 0)
+        x.XSync(display, False)
+        x.XCloseDisplay(display)
+
+
+@contextlib.contextmanager
 def private_audio(home):
     socket = home / 'audio.sock'
     os.environ.update(PULSE_SERVER=f'unix:{socket}', PULSE_RUNTIME_PATH=str(home/'runtime/pulse'))
@@ -849,6 +872,26 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         wait_for(alternate.is_active, 'Independent editor did not regain focus before cold search')
         shortcut((Gdk.KEY_Alt_L, Gdk.KEY_f))
         wait_for(focused_search, 'Search shortcut did not recreate the WebView with a focused search input')
+        grabbed_window = settings_window().get_xid()
+        grabbed_pid = wait_for(main_pid, 'No main process for the keyboard grab regression')
+        assert Path(f'/proc/{grabbed_pid}/exe').resolve() == executable
+        assert int(next(line.split()[1] for line in Path(f'/proc/{grabbed_pid}/status').read_text().splitlines()
+                        if line.startswith('PPid:'))) == resident
+        wait_for(lambda: int(subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1], 16) == grabbed_window,
+                 'Cold search did not activate its native window')
+        # Force the cross-process focus-loss ordering, then deliver the same
+        # private resident command. Actual keyboard routing is checked above.
+        with held_x11_keyboard():
+            time.sleep(.3)
+            assert int(subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1], 16) == grabbed_window
+            with open(f'/proc/{grabbed_pid}/fd/0', 'wb', buffering=0) as commands:
+                commands.write(b'toggle\n')
+            wait_for(lambda: subprocess.run(['xwininfo', '-id', str(grabbed_window)], capture_output=True).returncode != 0,
+                     'Active main window did not close while another client held the keyboard')
+        alternate.present()
+        wait_for(alternate.is_active, 'Editor did not regain focus after the keyboard grab')
+        shortcut((Gdk.KEY_Alt_L, Gdk.KEY_f))
+        wait_for(focused_search, 'Search did not recreate the window after closing during a keyboard grab')
         custom_rules = open_appearance('Settings', 'Clipboard', 'Custom Rules')
         print('Verified resident search shortcut focuses shared React search from Settings and after WebView recreation', flush=True)
         def begin_privacy_recording():

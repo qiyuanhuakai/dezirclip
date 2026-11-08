@@ -348,7 +348,7 @@ func run() error {
 					shell.resident.accept(command)
 					continue
 				}
-				if command == "rebuild" || command == "toggle" && win.IsFocused() {
+				if command == "rebuild" || command == "toggle" && mainWindowFocused(win) {
 					mygo.RunOnMain(func() { win.Close() })
 					continue
 				}
@@ -357,7 +357,7 @@ func run() error {
 					// deadline. The UI-thread generation also invalidates a queued timer.
 					shell.idle.acceptWake(mygo.RunOnMain)
 					position := false
-					if !win.IsFocused() {
+					if !mainWindowFocused(win) {
 						history.rememberTarget(ctx)
 						position = library.windowPreferences(ctx).FollowMouse != "false"
 					}
