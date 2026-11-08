@@ -100,6 +100,20 @@ impl SqliteClipboardRepository {
     pub(crate) fn set_setting_at_epoch(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
         self.set_settings_at_epoch(&[(key, value)], epoch)
     }
+    pub(crate) fn reset_application_preferences(&self, epoch: u64) -> CoreResult<()> {
+        let database = |error: rusqlite::Error| CoreError::from(error.to_string());
+        let mut connection = self.conn.lock().map_err(|_| CoreError::from("SettingsUnavailable".to_owned()))?;
+        let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(database)?;
+        let state = crate::api::privacy_session::snapshot_with_conn(&transaction, chrono::Utc::now().timestamp_millis())
+            .map_err(|error| CoreError::from(error.to_string()))?;
+        if state.privacy_epoch != epoch { return Err(CoreError::from("PrivacyEpochChanged".to_owned())); }
+        // The Host owns the privacy shortcut registration; identity and internal
+        // state are not appearance or behavior preferences.
+        transaction.execute("DELETE FROM settings WHERE substr(key,1,4)='app.' AND key NOT IN ('app.anon_id','app.privacy_session_hotkey')", []).map_err(database)?;
+        crate::database::seed_preference_defaults(&transaction).map_err(database)?;
+        super::sensitive_tags::ensure_system_tags(&transaction).map_err(database)?;
+        transaction.commit().map_err(database)
+    }
     pub(crate) fn set_settings_at_epoch(&self, settings: &[(&str, &str)], epoch: u64) -> CoreResult<()> {
         let database = |error: rusqlite::Error| CoreError::from(error.to_string());
         let mut connection = self.conn.lock().map_err(|_| CoreError::from("CaptureSettingsUnavailable".to_owned()))?;
@@ -169,6 +183,45 @@ impl SqliteClipboardRepository {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+    #[test]
+    fn reset_preferences_is_atomic_and_preserves_host_identity_and_privacy() {
+        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
+        connection.execute_batch("INSERT OR REPLACE INTO settings(key,value) VALUES
+            ('app.theme','retro'), ('app.hotkey','Ctrl+Shift+F8'), ('app.custom_themes','[]'),
+            ('app.anon_id','stable-identity'), ('app.privacy_session_hotkey','Ctrl+Alt+P'), ('internal.fixture','keep');
+            UPDATE privacy_runtime_state SET session_enabled=1,session_expires_at_ms=NULL;
+            CREATE TRIGGER reject_default_font BEFORE INSERT ON settings
+            WHEN NEW.key='app.font_main' BEGIN SELECT RAISE(ABORT,'rejected default'); END;").unwrap();
+        let before = crate::api::privacy_session::snapshot_with_conn(&connection, 0).unwrap();
+        let shared = Arc::new(Mutex::new(connection));
+        let repository = SqliteClipboardRepository::new(shared.clone());
+        let values = || {
+            let conn = shared.lock().unwrap();
+            let mut query = conn.prepare("SELECT key,value FROM settings ORDER BY key").unwrap();
+            query.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))).unwrap()
+                .collect::<Result<Vec<_>, _>>().unwrap()
+        };
+        let original = values();
+        assert!(repository.reset_application_preferences(before.privacy_epoch).is_err());
+        assert_eq!(values(), original, "a failed default insert must roll back the delete and earlier inserts");
+        assert_eq!(crate::api::privacy_session::snapshot_with_conn(&shared.lock().unwrap(), 0).unwrap().privacy_epoch, before.privacy_epoch);
+        shared.lock().unwrap().execute_batch("DROP TRIGGER reject_default_font").unwrap();
+        assert!(repository.reset_application_preferences(before.privacy_epoch + 1).is_err());
+        assert_eq!(values(), original, "an obsolete renderer must not reset preferences");
+        repository.reset_application_preferences(before.privacy_epoch).unwrap();
+        let settings: HashMap<_, _> = values().into_iter().collect();
+        assert_eq!(settings["app.theme"], "mica");
+        assert_eq!(settings["app.hotkey"], "Alt+C");
+        assert!(!settings.contains_key("app.custom_themes"));
+        assert_eq!(settings["app.anon_id"], "stable-identity");
+        assert_eq!(settings["app.privacy_session_hotkey"], "Ctrl+Alt+P");
+        assert_eq!(settings["internal.fixture"], "keep");
+        let after = crate::api::privacy_session::snapshot_with_conn(&shared.lock().unwrap(), 0).unwrap();
+        assert!(after.privacy_epoch > before.privacy_epoch, "resetting privacy preferences invalidates old permits");
+        assert_eq!(after.session, before.session);
+    }
+
     #[test]
     fn rejected_height_rolls_back_width_in_the_same_transaction() {
         let mut connection = rusqlite::Connection::open_in_memory().unwrap();

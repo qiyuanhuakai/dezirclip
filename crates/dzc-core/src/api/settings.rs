@@ -2,6 +2,10 @@ use super::{CoreResult, HistoryService};
 use crate::capture::CaptureSettings;
 
 impl HistoryService {
+    pub fn reset_application_preferences(&self, epoch: u64) -> CoreResult<()> {
+        self.repository.reset_application_preferences(epoch)
+    }
+
     pub fn set_action_hotkey(&self, key: &str, hotkey: &str, epoch: u64) -> CoreResult<()> {
         if !matches!(key, "app.sequential_hotkey" | "app.rich_paste_hotkey" | "app.search_hotkey")
             || hotkey.len() > 128 || hotkey.chars().any(char::is_control) {
