@@ -455,7 +455,8 @@ jobs:
         run: |
           1..8 | ForEach-Object {
             Write-Host "Isolated Service startup and emoji paste cycle $_ of 8"
-            ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Emoji
+            powershell -NoProfile -NonInteractive -STA -ExecutionPolicy Bypass -File ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Emoji
+            if ($LASTEXITCODE) { throw "Service startup and emoji paste cycle $_ failed: $LASTEXITCODE" }
           }
 
       - name: Verify MyGo elevated Service and desktop handoff
