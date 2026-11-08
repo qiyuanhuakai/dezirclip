@@ -1463,7 +1463,13 @@ def check_paste_hotkeys(desktop, middle=False):
                  'created_at': stamp, 'updated_at': stamp, 'is_pinned': False, 'tags': []}]}))
             subprocess.run([cli, 'import', backup, '--mode', 'merge'], check=True, stdout=subprocess.DEVNULL)
             if middle:
-                assert Atspi.generate_mouse_event(0, 0, 'b2c')
+                assert Atspi.generate_mouse_event(0, 0, 'b2p')
+                deadline = time.monotonic() + .25
+                while time.monotonic() < deadline:
+                    while Gtk.events_pending(): Gtk.main_iteration_do(False)
+                    time.sleep(.02)
+                assert editor.get_text() == '', 'Middle paste started before the trigger was released'
+                assert Atspi.generate_mouse_event(0, 0, 'b2r')
             else:
                 shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_z))
             wait(lambda: editor.get_text() == rich_text, 'Resident rich shortcut did not paste the latest entry')
@@ -1711,7 +1717,11 @@ def check_idle(executable):
         assert Atspi.Action.do_action(control, 0)
         wait(lambda: not visible(), 'Manual hide did not hide the main WebView')
     def show():
-        assert Atspi.generate_mouse_event(0, 0, 'b2c')
+        assert Atspi.generate_mouse_event(0, 0, 'b2p')
+        assert Atspi.generate_mouse_event(0, 0, 'b1c')
+        time.sleep(.25)
+        assert not visible(), 'Middle hold or unrelated button woke the WebView'
+        assert Atspi.generate_mouse_event(0, 0, 'b2r')
         return wait(visible, 'Main window did not return')
     try:
         xid = wait(visible, 'Initial WebView missing')

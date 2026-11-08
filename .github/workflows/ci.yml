@@ -474,6 +474,14 @@ jobs:
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -MiddleShortcut
 
+      - name: Verify middle-button hook survives a blocked resident UI
+        if: runner.os == 'Windows' && matrix.can_test
+        working-directory: frontends/dzc-surface
+        env:
+          DZC_TEST_MIDDLE_HOOK: '1'
+          CGO_ENABLED: '0'
+        run: go test ./cmd/dzc-desktop -run '^TestMiddleHookSurvivesBlockedResident$' -count=1 -timeout=30s
+
       - name: Verify MyGo WebView2 screenshot buttons on the Windows desktop
         if: runner.os == 'Windows' && matrix.can_test
         shell: powershell

@@ -114,7 +114,7 @@ func registerMiddleShortcut(pressed func()) error {
 	}
 	root := *(*uint32)(unsafe.Pointer(screens.Data))
 	// Checked grabs report conflicts without a process-wide Xlib error handler.
-	cookie := x.grab(connection, 0, root, 4, 1, 1, 0, 0, 2, 32768)
+	cookie := x.grab(connection, 0, root, 4|8, 1, 1, 0, 0, 2, 32768)
 	if nativeError := x.check(connection, cookie); nativeError != 0 {
 		x.free(nativeError)
 		return errors.New("MiddleShortcutUnavailable")
@@ -134,7 +134,8 @@ func registerMiddleShortcut(pressed func()) error {
 		poll := []unix.PollFd{{Fd: x.fd(connection), Events: unix.POLLIN}, {Fd: int32(fds[0]), Events: unix.POLLIN}}
 		for {
 			for event := x.event(connection); event != 0; event = x.event(connection) {
-				button := *(*uint8)(unsafe.Pointer(event))&127 == 4
+				header := (*[2]byte)(unsafe.Pointer(event))
+				button := middleButtonReleased(header[0], header[1])
 				x.free(event)
 				if button {
 					select {
