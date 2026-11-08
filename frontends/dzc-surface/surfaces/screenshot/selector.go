@@ -76,18 +76,24 @@ func (s *Selector) prepareWindow() {
 
 func (s *Selector) preferences() (protocol.ScreenPreferences, error) {
 	var pref protocol.ScreenPreferences
-	err := s.owner.DesktopCall(context.Background(), protocol.MethodDesktopScreenPreferences, protocol.EmptyParams{}, "ScreenPreferences", &pref)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := s.owner.DesktopCall(ctx, protocol.MethodDesktopScreenPreferences, protocol.EmptyParams{}, "ScreenPreferences", &pref)
 	return pref, err
 }
 
-func (s *Selector) Refresh() {
+func (s *Selector) Refresh() error {
 	if s.window == nil || s.stopping {
-		return
+		return errors.New("ScreenshotUnavailable")
 	}
 	pref, err := s.preferences()
 	if err != nil {
-		return
+		return err
 	}
+	if !pref.Enabled {
+		s.clear()
+	}
+	var registrationErrors error
 	for full, key := range map[bool]string{false: pref.Region, true: pref.Full} {
 		if !pref.Enabled {
 			key = ""
@@ -102,11 +108,13 @@ func (s *Selector) Refresh() {
 		if key != "" {
 			if err := mygo.GlobalShortcut.Register(key, func() { s.begin(full) }); err != nil {
 				log.Printf("Screenshot shortcut unavailable: %v", err)
+				registrationErrors = errors.Join(registrationErrors, err)
 			} else {
 				s.hotkeys[full] = key
 			}
 		}
 	}
+	return registrationErrors
 }
 
 func (s *Selector) begin(full bool) {

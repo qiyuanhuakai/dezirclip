@@ -16,6 +16,7 @@ type residentRequest struct {
 	Epoch     uint64             `json:"epoch"`
 	Operation string             `json:"operation"`
 	Directory string             `json:"directory,omitempty"`
+	Panel     string             `json:"panel,omitempty"`
 	Disabled  bool               `json:"disabled,omitempty"`
 	Full      bool               `json:"full,omitempty"`
 	Visible   bool               `json:"visible,omitempty"`
@@ -58,6 +59,13 @@ func (s *DesktopShell) SetWebviewGpuDisabled(ctx context.Context, disabled bool,
 
 func (s *DesktopShell) SetTrayVisible(ctx context.Context, visible bool, epoch uint64) error {
 	return s.resident.send(ctx, residentRequest{Operation: "tray", Visible: visible, Epoch: epoch}, 10*time.Second)
+}
+
+func (s *DesktopShell) SetNativePanelEnabled(ctx context.Context, panel string, enabled bool, epoch uint64) error {
+	if panel != "quick-paste" && panel != "screenshot" {
+		return errors.New("InvalidNativePanel")
+	}
+	return s.resident.send(ctx, residentRequest{Operation: "native-panel", Panel: panel, Disabled: !enabled, Epoch: epoch}, 15*time.Second)
 }
 
 func (c *residentBridge) send(ctx context.Context, request residentRequest, deadline time.Duration) error {

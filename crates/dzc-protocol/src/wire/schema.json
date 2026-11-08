@@ -5264,6 +5264,8 @@
             "app.disable_webview_gpu",
             "app.idle_destroy_enabled",
             "app.idle_destroy_seconds",
+            "app.quick_paste_enabled",
+            "app.screenshot_enabled",
             "app.sound_enabled",
             "app.sound_paste_enabled",
             "app.sound_volume",

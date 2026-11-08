@@ -230,6 +230,37 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 									reply(err)
 								case "capture":
 									selector.Capture(request.Full, request.Epoch, reply)
+								case "native-panel":
+									key := ""
+									switch request.Panel {
+									case "quick-paste":
+										key = "app.quick_paste_enabled"
+									case "screenshot":
+										key = "app.screenshot_enabled"
+									default:
+										reply(fmt.Errorf("invalid native panel"))
+										return
+									}
+									ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+									library := &Library{owner}
+									preferences, err := library.Preferences(ctx)
+									var values map[string]string
+									if err == nil {
+										err = json.Unmarshal(preferences, &values)
+									}
+									if err == nil {
+										refresh := panel.RefreshShortcut
+										if request.Panel == "screenshot" {
+											refresh = selector.Refresh
+										}
+										err = changeNativePanel(values[key] != "false", !request.Disabled, func(enabled bool) error {
+											saveCtx, stop := context.WithTimeout(context.Background(), 2*time.Second)
+											defer stop()
+											return library.SetSetting(saveCtx, key, strconv.FormatBool(enabled), request.Epoch)
+										}, refresh)
+									}
+									cancel()
+									reply(err)
 								case "webview-gpu":
 									ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 									err := (&Library{owner}).SetSetting(ctx, "app.disable_webview_gpu", strconv.FormatBool(request.Disabled), request.Epoch)

@@ -61,21 +61,24 @@ func (p *Panel) preferences() (protocol.QuickPreferences, error) {
 
 func (p *Panel) HasShortcut() bool { return p.local != nil && p.local.shortcut != "" }
 
-func (p *Panel) RefreshShortcut() {
+func (p *Panel) RefreshShortcut() error {
 	if p.stopping {
-		return
+		return errors.New("QuickPasteStopping")
 	}
 	pref, err := p.preferences()
 	if err != nil {
 		log.Print("Quick paste settings unavailable")
-		return
+		return err
 	}
 	hotkey := pref.Hotkey
 	if !pref.Enabled {
 		hotkey = ""
+		if p.model.Visible {
+			p.dismiss("cancel")
+		}
 	}
 	if hotkey == p.local.shortcut {
-		return
+		return nil
 	}
 	if p.local.shortcut != "" {
 		mygo.GlobalShortcut.Unregister(p.local.shortcut)
@@ -84,10 +87,11 @@ func (p *Panel) RefreshShortcut() {
 	if hotkey != "" {
 		if err := mygo.GlobalShortcut.Register(hotkey, p.toggleDesktop); err != nil {
 			log.Printf("Quick paste shortcut unavailable: %v", err)
-			return
+			return err
 		}
 		p.local.shortcut = hotkey
 	}
+	return nil
 }
 
 func (p *Panel) toggleDesktop() {

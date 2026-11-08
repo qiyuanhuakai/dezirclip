@@ -47,6 +47,7 @@ impl HistoryService {
         matches!(key, "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
             | "app.show_scroll_top_button" | "app.show_search_box" | "app.tag_manager_enabled" | "app.rich_text_snapshot_preview" | "app.rich_text_snapshot_cache_limit" | "app.arrow_key_selection" | "app.preview_keyboard_enabled" | "app.update_auto_check" | "app.update_channel" | "app.silent_start" | "app.hide_tray_icon" | "app.edge_docking" | "app.follow_mouse" | "app.disable_webview_gpu"
             | "app.idle_destroy_enabled" | "app.idle_destroy_seconds"
+            | "app.quick_paste_enabled" | "app.screenshot_enabled"
             | "app.sound_enabled" | "app.sound_paste_enabled" | "app.sound_volume"
             | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.preview_opacity" | "app.font_main" | "app.font_mono"
             | "app.custom_background" | "app.custom_background_opacity" | "app.emoji_panel_enabled" | "app.emoji_panel_tab" | "app.emoji_favorites")
@@ -122,6 +123,20 @@ impl HistoryService {
 #[cfg(test)]
 mod tests {
     use super::HistoryService;
+    #[test]
+    fn native_panel_switches_validate_values_and_epoch() {
+        let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
+        let epoch = history.runtime_snapshot(0).unwrap().privacy_epoch;
+        for key in ["app.quick_paste_enabled", "app.screenshot_enabled"] {
+            assert!(HistoryService::is_view_setting(key));
+            history.update_view_setting(key, "false", epoch).unwrap();
+            assert_eq!(history.desktop_preferences().unwrap().get(key).map(String::as_str), Some("false"));
+            assert!(history.update_view_setting(key, "1", epoch).is_err());
+            assert!(history.update_view_setting(key, "true", epoch + 1).is_err());
+            assert_eq!(history.desktop_preferences().unwrap().get(key).map(String::as_str), Some("false"));
+            history.update_view_setting(key, "true", epoch).unwrap();
+        }
+    }
     #[test]
     fn storage_limit_validates_bounds_and_epoch() {
         let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();

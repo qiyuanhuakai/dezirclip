@@ -138,6 +138,10 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   export_custom_theme: args => library("ExportTheme", args.id, args.path, currentEpoch()),
   delete_custom_theme: args => library("RemoveTheme", args.id, currentEpoch()),
   save_setting: args => {
+    if (args.key === "app.quick_paste_enabled" || args.key === "app.screenshot_enabled") {
+      if (args.value !== "true" && args.value !== "false") throw new Error("ViewSettingInvalid");
+      return shellCall("SetNativePanelEnabled", args.key === "app.quick_paste_enabled" ? "quick-paste" : "screenshot", args.value === "true", currentEpoch());
+    }
     if (args.key !== "app.disable_webview_gpu") return library("SetSetting", args.key, args.value, currentEpoch());
     if (args.value !== "true" && args.value !== "false") throw new Error("ViewSettingInvalid");
     return shellCall("SetWebviewGpuDisabled", args.value === "true", currentEpoch());

@@ -309,6 +309,7 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	viewSettings := map[string]string{
 		"app.idle_destroy_enabled": "true", "app.idle_destroy_seconds": "5",
+		"app.quick_paste_enabled": "false", "app.screenshot_enabled": "false",
 		"app.theme": "retro", "app.color_mode": "dark", "app.language": "en", "app.compact_mode": "true",
 		"app.clipboard_item_font_size": "18", "app.clipboard_tag_font_size": "8", "app.surface_opacity": "0", "app.preview_opacity": "100"}
 	fonts, err := library.SystemFonts(ctx)

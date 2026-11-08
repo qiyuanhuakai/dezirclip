@@ -564,6 +564,16 @@ const App = () => {
   const saveAppSetting = useCallback(async (type: string, path: string) => {
     const key = `app.${type}`;
     if (appSettingsRef.current[key] === path) return;
+    if (type === "quick_paste_enabled" || type === "screenshot_enabled") {
+      try {
+        await invoke("save_setting", { key, value: path });
+        setAppSettings(prev => ({ ...prev, [key]: path }));
+        return true;
+      } catch (error) {
+        pushToast(t("common_error") + " · " + String(error));
+        return false;
+      }
+    }
     if (["text", "rich_text", "image", "video", "code", "url"].includes(type)) {
       try {
         await invoke("save_setting", { key, value: path });

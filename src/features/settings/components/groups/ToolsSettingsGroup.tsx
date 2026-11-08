@@ -24,7 +24,7 @@ interface ToolsSettingsGroupProps {
     readonly quickPasteRenderer: string;
     readonly ocrEnabled: boolean;
     readonly setOcrEnabled: (val: boolean) => void;
-    readonly saveAppSetting: (key: string, val: string) => void;
+    readonly saveAppSetting: (key: string, val: string) => void | Promise<boolean | void>;
 }
 
 const ToolsSettingsGroup = ({

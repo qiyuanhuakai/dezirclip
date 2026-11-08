@@ -939,6 +939,22 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         wait_for(lambda: any('MyGo Native' in text for _, _, _, text in mygo_nodes(atspi, executable)),
                  'Tools did not identify the resident Quick Paste renderer')
         print('Verified the real tray Settings action in both a new and an existing MyGo WebView')
+        def saved_panel(key):
+            connection = sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH'])
+            try:
+                return connection.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+            finally:
+                connection.close()
+        for label, key in [('Screenshot', 'app.screenshot_enabled'), ('Quick Paste', 'app.quick_paste_enabled')]:
+            for enabled in (False, True):
+                control = wait_for(lambda: find_item(label), f'{label} switch unavailable')
+                wait_for(lambda: control.get_state_set().contains(atspi.StateType.SENSITIVE), f'{label} switch busy')
+                assert atspi.Action.do_action(control, 0)
+                wait_for(lambda: saved_panel(key) == ('true' if enabled else 'false',), f'{label} switch did not persist')
+                wait_for(lambda: control.get_state_set().contains(atspi.StateType.CHECKED) == enabled,
+                         f'{label} switch did not acknowledge the saved state')
+        full = wait_for(lambda: action('Full Screen Capture'), 'Screenshot controls did not return after enabling')
+        print('Verified native panel switches persist and acknowledge changes in the shared MyGo WebView')
         clipboard.set_text('waiting for explicit capture', -1)
         assert atspi.Action.do_action(full, 0)
         screen = Gdk.get_default_root_window()
