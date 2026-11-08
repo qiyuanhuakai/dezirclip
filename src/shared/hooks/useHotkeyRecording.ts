@@ -4,6 +4,7 @@ import { completeRecording } from "../lib/recordingCompletion";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 interface RecordingOwner {
+  readonly sessionKey: string | undefined;
   readonly completion: AbortController;
   readonly cancel: () => void;
   readonly fail: (error: unknown) => void;
@@ -41,8 +42,9 @@ function synchronizeNativeMode() {
   });
 }
 
-export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError }: {
+export function useHotkeyRecording({ recording, sessionKey, onRecorded, onCancelled, onError }: {
   readonly recording: boolean;
+  readonly sessionKey?: string;
   readonly onRecorded: (hotkey: string) => void;
   readonly onCancelled: () => void;
   readonly onError?: (error: unknown) => void;
@@ -53,7 +55,9 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
   const wasRecording = useRef(false);
   const consumed = useRef(false);
   const owner = useRef<RecordingOwner | null>(null);
-  if (recording && !wasRecording.current) consumed.current = false;
+  const currentKey = useRef(sessionKey);
+  if (recording && (!wasRecording.current || currentKey.current !== sessionKey)) consumed.current = false;
+  currentKey.current = sessionKey;
   wasRecording.current = recording;
 
   const cancel = useCallback(() => {
@@ -64,13 +68,13 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
   const record = useCallback((hotkey: string) => {
     if (!wasRecording.current || consumed.current || !hotkey) return;
     const current = owner.current;
-    if (!current || activeOwner !== current || current.completion.signal.aborted) return;
+    if (!current || activeOwner !== current || current.sessionKey !== currentKey.current || current.completion.signal.aborted) return;
     consumed.current = true;
     const handler = callbacks.current;
     // Release temporary recording grabs before the shortcut owner registers the chosen chord.
     modeQueue = modeQueue.catch(() => undefined).then(() => applyNativeMode(false));
     void completeRecording(modeQueue, current.completion.signal,
-      () => wasRecording.current && owner.current === current && activeOwner === current, () => {
+      () => wasRecording.current && owner.current === current && activeOwner === current && current.sessionKey === currentKey.current, () => {
       handler.onCancelled();
       handler.onRecorded(hotkey);
     }, error => {
@@ -84,6 +88,7 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
     let disposed = false;
     const cleanups: UnlistenFn[] = [];
     const current: RecordingOwner = {
+      sessionKey,
       completion: new AbortController(),
       cancel, ready: false,
       activated: setNativeReady,
@@ -116,7 +121,7 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
       if (owner.current === current) owner.current = null;
       if (activeOwner === current) { activeOwner = null; synchronizeNativeMode(); }
     };
-  }, [cancel, record, recording]);
+  }, [cancel, record, recording, sessionKey]);
 
   return { record, cancel, nativeReady: recording && nativeReady };
 }

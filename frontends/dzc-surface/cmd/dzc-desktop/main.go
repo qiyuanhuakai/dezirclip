@@ -269,7 +269,11 @@ func run() error {
 			history.targetInvalid.Store(true)
 			preview.clear()
 			focusChanged.Emit(win, false)
-			fmt.Fprintln(os.Stdout, "recording-cancel")
+			// X11 passive shortcut grabs briefly blur GTK without switching apps.
+			// Only an actual active-window loss cancels the native recording.
+			if !mainWindowFocused(win) {
+				fmt.Fprintln(os.Stdout, "recording-cancel")
+			}
 		})
 		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus"); focusChanged.Emit(win, true) })
 		win.OnShow(func() {
