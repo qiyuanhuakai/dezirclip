@@ -9,14 +9,14 @@ import (
 )
 
 // Keep the cursor across reconnects: a failed reset may complete on a later request.
-func watchSettingsReset(ctx context.Context, owner *client.Client, reset func()) {
+func watchSettingsReset(ctx context.Context, owner *client.Client, reset, refresh func()) {
 	state := owner.Hello().State
 	for ctx.Err() == nil {
 		poll, cancel := context.WithTimeout(ctx, 7*time.Second)
 		host, err := owner.DesktopConnection(poll)
 		cancel()
 		if err == nil {
-			err = followSettingsReset(ctx, host, &state, reset)
+			err = followSettingsReset(ctx, host, &state, reset, refresh)
 			host.Close()
 		}
 		if err == client.ErrProtocol {
@@ -38,7 +38,7 @@ type settingsEventSource interface {
 	Call(context.Context, protocol.Method, any, string, any) error
 }
 
-func followSettingsReset(ctx context.Context, host settingsEventSource, state *protocol.RuntimeState, reset func()) error {
+func followSettingsReset(ctx context.Context, host settingsEventSource, state *protocol.RuntimeState, reset, refresh func()) error {
 	for ctx.Err() == nil {
 		poll, cancel := context.WithTimeout(ctx, 3*time.Second)
 		wait := uint16(1000)
@@ -51,7 +51,7 @@ func followSettingsReset(ctx context.Context, host settingsEventSource, state *p
 		if result.State.ServiceInstanceId != state.ServiceInstanceId {
 			return client.ErrProtocol
 		}
-		changed := result.ResyncRequired
+		changed := false
 		for _, event := range result.Events {
 			if event.Event == protocol.EventKindServiceStateChanged && event.Data.Status != nil && *event.Data.Status == "application_settings_reset" {
 				changed = true
@@ -60,6 +60,8 @@ func followSettingsReset(ctx context.Context, host settingsEventSource, state *p
 		*state = result.State
 		if changed && ctx.Err() == nil {
 			reset()
+		} else if result.ResyncRequired && ctx.Err() == nil {
+			refresh()
 		}
 	}
 	return ctx.Err()

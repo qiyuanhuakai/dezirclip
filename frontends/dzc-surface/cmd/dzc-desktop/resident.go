@@ -570,6 +570,20 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 					_, _ = io.WriteString(commands, "rebuild\n")
 				}
 			})
+		}, func() {
+			mygo.RunOnMain(func() {
+				if resetContext.Err() != nil || stopping || migrating || moved || pending != nil || relaunch {
+					return
+				}
+				panel.RefreshShortcut()
+				selector.Refresh()
+				settings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
+				refreshSearch(settings)
+				refreshPaste(settings)
+				if settings != nil {
+					_ = setTrayVisible(settings["app.hide_tray_icon"] != "true")
+				}
+			})
 		})
 		mygo.App.OnBeforeQuit(func(event *mygo.QuitEvent) {
 			if migrating {
