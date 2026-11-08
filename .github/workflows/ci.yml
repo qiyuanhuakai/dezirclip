@@ -914,13 +914,13 @@ jobs:
         if: matrix.scenario == 'LegacyUninstall' || matrix.scenario == 'OldToNew'
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri 'https://github.com/qiyuanhuakai/dezirclip/releases/download/v0.1.20/DezirClip_0.1.20_x64-setup.exe' -OutFile "$env:RUNNER_TEMP/legacy-setup.exe"
+          Invoke-WebRequest -Uri 'https://github.com/qiyuanhuakai/dezirclip/releases/download/v0.1.20/DezirClip_0.1.20_x64-setup.exe' -OutFile "$env:RUNNER_TEMP/legacy-setup.exe" -MaximumRetryCount 3 -RetryIntervalSec 5
 
       - name: Download pinned published alpha.1 installer
         if: matrix.scenario == 'PublishedAlphaToAlpha'
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri 'https://github.com/qiyuanhuakai/dezirclip/releases/download/v0.2.0-alpha.1/DezirClip_0.2.0-alpha.1_x64-setup.exe' -OutFile "$env:RUNNER_TEMP/legacy-setup.exe"
+          Invoke-WebRequest -Uri 'https://github.com/qiyuanhuakai/dezirclip/releases/download/v0.2.0-alpha.1/DezirClip_0.2.0-alpha.1_x64-setup.exe' -OutFile "$env:RUNNER_TEMP/legacy-setup.exe" -MaximumRetryCount 3 -RetryIntervalSec 5
 
       - name: Build previous unpublished fixture package
         if: matrix.scenario == 'OwnedUpgrade'
