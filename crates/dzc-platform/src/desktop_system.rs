@@ -2,6 +2,13 @@ use std::io;
 
 pub fn supported() -> bool { cfg!(target_os = "windows") }
 
+pub fn restart_explorer() -> io::Result<()> {
+    #[cfg(target_os = "windows")]
+    { crate::system_settings::restart_explorer() }
+    #[cfg(target_os = "linux")]
+    { Err(io::ErrorKind::Unsupported.into()) }
+}
+
 pub fn win_v_optimized() -> io::Result<bool> {
     #[cfg(target_os = "windows")]
     { crate::system_settings::win_v_optimized() }

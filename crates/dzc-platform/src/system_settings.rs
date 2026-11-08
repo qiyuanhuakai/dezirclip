@@ -1,4 +1,81 @@
 //! Changes to Windows settings carry an exact-value, write-ahead restoration receipt.
+
+/// Restart only the shell attached to this desktop, retaining a handle to its
+/// process throughout validation and termination so a reused PID cannot target
+/// another process.
+pub fn restart_explorer() -> std::io::Result<()> {
+    static RESTART: Mutex<()> = Mutex::new(());
+    let _restart = RESTART.try_lock().map_err(|_| io::Error::new(io::ErrorKind::WouldBlock, "Explorer restart is already running"))?;
+    use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::process::CommandExt;
+    use windows::Win32::System::SystemInformation::GetWindowsDirectoryW;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, TerminateProcess,
+        PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetShellWindow, GetWindowThreadProcessId};
+
+    let mut directory = vec![0u16; 32768];
+    // All buffers and handles remain owned here for the duration of the calls.
+    let count = unsafe { GetWindowsDirectoryW(Some(&mut directory)) } as usize;
+    if count == 0 || count >= directory.len() { return Err(io::Error::last_os_error()); }
+    let explorer = std::path::PathBuf::from(std::ffi::OsString::from_wide(&directory[..count])).join("explorer.exe");
+    let expected = std::fs::canonicalize(&explorer)?;
+    let shell = unsafe { GetShellWindow() };
+    if shell.0.is_null() { return Err(io::Error::new(io::ErrorKind::NotFound, "Desktop shell is unavailable")); }
+    let mut pid = 0;
+    unsafe { GetWindowThreadProcessId(shell, Some(&mut pid)); }
+    if pid == 0 { return Err(io::Error::last_os_error()); }
+    let handle = unsafe { OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE, false, pid) }.map_err(io::Error::other)?;
+    let result = (|| {
+        let mut path = vec![0u16; 32768];
+        let mut length = path.len() as u32;
+        unsafe { QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, PWSTR(path.as_mut_ptr()), &mut length) }.map_err(io::Error::other)?;
+        let actual = std::fs::canonicalize(std::path::PathBuf::from(std::ffi::OsString::from_wide(&path[..length as usize])))?;
+        if !actual.to_string_lossy().eq_ignore_ascii_case(&expected.to_string_lossy()) {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "Desktop shell is not Windows Explorer"));
+        }
+        unsafe { TerminateProcess(handle, 0) }.map_err(io::Error::other)?;
+        if unsafe { WaitForSingleObject(handle, 5000) } != WAIT_OBJECT_0 {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "Explorer did not exit"));
+        }
+        Ok(())
+    })();
+    unsafe { let _ = CloseHandle(handle); }
+    result?;
+    // Windows may restart its shell automatically; avoid launching an extra
+    // file browser if a replacement shell has already appeared.
+    for _ in 0..20 {
+        if !unsafe { GetShellWindow() }.0.is_null() { return Ok(()); }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    std::process::Command::new(explorer).creation_flags(0x08000000).spawn()?;
+    for _ in 0..50 {
+        if !unsafe { GetShellWindow() }.0.is_null() { return Ok(()); }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    Err(io::Error::new(io::ErrorKind::TimedOut, "Explorer did not restart"))
+}
+
+#[cfg(test)]
+#[test]
+#[ignore = "restarts the desktop shell on a disposable GitHub Windows runner"]
+fn explorer_restart_on_disposable_runner() {
+    assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
+    assert_eq!(std::env::var("RUNNER_ENVIRONMENT").as_deref(), Ok("github-hosted"));
+    assert_eq!(std::env::var("DZC_TEST_RESTART_EXPLORER").as_deref(), Ok("1"));
+    use windows::Win32::UI::WindowsAndMessaging::{GetShellWindow, GetWindowThreadProcessId};
+    let shell = unsafe { GetShellWindow() };
+    assert!(!shell.0.is_null(), "Disposable runner must have a desktop shell");
+    let mut before = 0;
+    unsafe { GetWindowThreadProcessId(shell, Some(&mut before)); }
+    restart_explorer().expect("restart current desktop Explorer");
+    let mut after = 0;
+    unsafe { GetWindowThreadProcessId(GetShellWindow(), Some(&mut after)); }
+    assert_ne!(after, 0);
+    assert_ne!(before, after);
+}
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io;

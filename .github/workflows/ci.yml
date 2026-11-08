@@ -359,6 +359,13 @@ jobs:
         run: |
           cargo test --locked -p dzc-platform system_settings::
 
+      - name: Verify shared Explorer restart on disposable Windows desktop
+        if: matrix.can_test && runner.os == 'Windows'
+        env:
+          DZC_TEST_RESTART_EXPLORER: '1'
+        run: |
+          cargo test --locked -p dzc-platform system_settings::explorer_restart_on_disposable_runner -- --ignored --exact
+
       - name: Verify native Rust and Go protocol compatibility
         if: matrix.can_test
         shell: python

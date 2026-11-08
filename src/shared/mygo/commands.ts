@@ -38,6 +38,7 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  restart_explorer: () => window.mygo.call("SystemSettings.RestartExplorer"),
   is_registry_win_v_optimized: () => window.mygo.call("SystemSettings.WinVStatus"),
   begin_registry_win_v_change: async args => {
     const result = await window.mygo.call<{value: boolean; token: string}>("SystemSettings.BeginWinV", args.enable);

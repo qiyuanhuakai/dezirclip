@@ -45,6 +45,11 @@ func (s *SystemSettings) WinVStatus(ctx context.Context) (bool, error) {
 	return result.Value, err
 }
 
+func (s *SystemSettings) RestartExplorer(ctx context.Context) error {
+	var result protocol.WindowsSettingResult
+	return s.owner.DesktopCall(ctx, protocol.MethodDesktopSystemExplorerRestart, struct{}{}, "WindowsSettingResult", &result)
+}
+
 func (s *SystemSettings) SetClipboardHistory(ctx context.Context, enabled bool) error {
 	var result protocol.WindowsSettingResult
 	return s.owner.DesktopCall(ctx, protocol.MethodDesktopSystemClipboardHistorySet, protocol.WindowsSettingParams{Enabled: enabled}, "WindowsSettingResult", &result)

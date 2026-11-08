@@ -8,6 +8,10 @@ impl Host {
         session.require(Permission::PrivacyWrite)?;
         let mut pending = session.system_change.lock().map_err(|_| WireErrorCode::Unavailable)?;
         let value = match method {
+            Method::DesktopSystemExplorerRestart => {
+                dzc_platform::desktop_system::restart_explorer().map_err(system_error)?;
+                true
+            }
             Method::DesktopSystemWinVGet => dzc_platform::desktop_system::win_v_optimized().map_err(system_error)?,
             Method::DesktopSystemWinVBegin => {
                 if pending.is_some() { return Err(WireErrorCode::Busy); }
@@ -40,6 +44,7 @@ fn system_error(error: std::io::Error) -> WireErrorCode {
     match error.kind() {
         std::io::ErrorKind::Unsupported => WireErrorCode::UnsupportedCapability,
         std::io::ErrorKind::PermissionDenied => WireErrorCode::PermissionDenied,
+        std::io::ErrorKind::WouldBlock => WireErrorCode::Busy,
         _ => WireErrorCode::Unavailable,
     }
 }

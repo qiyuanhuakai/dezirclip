@@ -66,6 +66,14 @@ and sends health requests while the confirmation dialog is open, including after
 a failed finish so that the caller can retry rollback. Successful confirmation
 or cancellation closes the connection; closing the WebView also releases it.
 
+`desktop.system.explorer.restart` uses the same desktop permissions. The shared
+platform implementation validates the current desktop Shell process against
+Windows' own Explorer executable and retains its process handle while stopping
+it. It waits for shell recovery, starts Explorer only if Windows has not already
+restarted it, and returns errors to the confirmation flow. It never terminates
+other Explorer processes by executable name. Its native restart test is opt-in
+and restricted to disposable GitHub-hosted Windows runners.
+
 Confirming finishes the token with `finish_registry_win_v_change(token, false)`.
 Canceling or failing after begin uses the same command with `rollback: true`.
 Rollback restores only values and receipts actually changed by that request,

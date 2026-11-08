@@ -418,6 +418,7 @@ const (
     MethodDesktopSettingsViewSet Method = "desktop.settings.view.set"
     MethodDesktopSettingsReset Method = "desktop.settings.reset"
     MethodDesktopSystemWinVGet Method = "desktop.system.win_v.get"
+    MethodDesktopSystemExplorerRestart Method = "desktop.system.explorer.restart"
     MethodDesktopSystemWinVBegin Method = "desktop.system.win_v.begin"
     MethodDesktopSystemWinVFinish Method = "desktop.system.win_v.finish"
     MethodDesktopSystemClipboardHistorySet Method = "desktop.system.clipboard_history.set"

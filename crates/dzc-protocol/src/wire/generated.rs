@@ -596,6 +596,8 @@ pub enum Method {
     DesktopSettingsReset,
     #[serde(rename = "desktop.system.win_v.get")]
     DesktopSystemWinVGet,
+    #[serde(rename = "desktop.system.explorer.restart")]
+    DesktopSystemExplorerRestart,
     #[serde(rename = "desktop.system.win_v.begin")]
     DesktopSystemWinVBegin,
     #[serde(rename = "desktop.system.win_v.finish")]

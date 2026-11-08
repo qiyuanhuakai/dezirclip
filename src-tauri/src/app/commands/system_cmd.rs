@@ -130,16 +130,7 @@ pub fn get_registry_win_v_optimized_status() -> bool {
 
 #[tauri::command]
 pub fn restart_explorer() -> AppResult<()> {
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        use std::process::Command;
-        let _ = Command::new("cmd")
-            .args(["/C", "taskkill /F /IM explorer.exe & start explorer.exe"])
-            .creation_flags(0x08000000)
-            .spawn();
-    }
-    Ok(())
+    dzc_platform::desktop_system::restart_explorer().map_err(Into::into)
 }
 
 #[tauri::command]

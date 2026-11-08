@@ -94,6 +94,7 @@
         "desktop.settings.view.set",
         "desktop.settings.reset",
         "desktop.system.win_v.get",
+        "desktop.system.explorer.restart",
         "desktop.system.win_v.begin",
         "desktop.system.win_v.finish",
         "desktop.system.clipboard_history.set",
@@ -1274,6 +1275,7 @@
           "then": { "properties": { "params": { "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/RecordingParams" } } }
         },
           {"if": {"properties": {"method": {"const": "desktop.system.win_v.get"}}, "required": ["method"]}, "then": {"properties": {"params": {"type": "object", "properties": {}, "additionalProperties": false}}}},
+          {"if": {"properties": {"method": {"const": "desktop.system.explorer.restart"}}, "required": ["method"]}, "then": {"properties": {"params": {"type": "object", "properties": {}, "additionalProperties": false}}}},
           {"if": {"properties": {"method": {"const": "desktop.system.win_v.begin"}}, "required": ["method"]}, "then": {"properties": {"params": {"$ref": "https://dezirclip.local/protocol/v1/settings.schema.json#/$defs/WindowsSettingParams"}}}},
           {"if": {"properties": {"method": {"const": "desktop.system.win_v.finish"}}, "required": ["method"]}, "then": {"properties": {"params": {"$ref": "https://dezirclip.local/protocol/v1/settings.schema.json#/$defs/WindowsSettingFinishParams"}}}},
           {"if": {"properties": {"method": {"const": "desktop.system.clipboard_history.set"}}, "required": ["method"]}, "then": {"properties": {"params": {"$ref": "https://dezirclip.local/protocol/v1/settings.schema.json#/$defs/WindowsSettingParams"}}}},
