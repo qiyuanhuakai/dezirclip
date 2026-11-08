@@ -10,7 +10,7 @@ impl Host {
         let value = match method {
             Method::DesktopSystemAdminGet => dzc_platform::desktop_system::is_admin().map_err(system_error)?,
             Method::DesktopSystemExplorerRestart => {
-                dzc_platform::desktop_system::restart_explorer().map_err(system_error)?;
+                self.restart_desktop_explorer()?;
                 true
             }
             Method::DesktopSystemWinVGet => dzc_platform::desktop_system::win_v_optimized().map_err(system_error)?,
@@ -38,6 +38,16 @@ impl Host {
             _ => return Err(WireErrorCode::InvalidRequest),
         };
         serde_json::to_value(WindowsSettingResult { value, token: String::new() }).map_err(|_| WireErrorCode::Unavailable)
+    }
+
+    fn restart_desktop_explorer(&self) -> Result<(), WireErrorCode> {
+        #[cfg(test)]
+        if let Some((entered, resume)) = self.explorer_restart_pause.lock().unwrap().take() {
+            entered.send(()).map_err(|_| WireErrorCode::Unavailable)?;
+            resume.recv_timeout(std::time::Duration::from_secs(8)).map_err(|_| WireErrorCode::Unavailable)?;
+            return Ok(());
+        }
+        dzc_platform::desktop_system::restart_explorer().map_err(system_error)
     }
 }
 

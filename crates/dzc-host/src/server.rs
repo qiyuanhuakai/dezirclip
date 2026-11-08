@@ -282,6 +282,39 @@ mod tests {
     }
 
     #[test]
+    fn explorer_restart_does_not_block_transaction_heartbeat() {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            let directory = directory();
+            let host = crate::router::tests::synthetic_host();
+            let endpoint = Endpoint::in_directory(&directory).unwrap();
+            let listener = endpoint.bind().unwrap();
+            let credentials = ControlFile::publish(&host, &endpoint).unwrap();
+            let (shutdown, receiver) = watch::channel(false);
+            let server = tokio::spawn(serve_listener(host.clone(), listener, receiver));
+            let mut desktop = Client::control(&endpoint, ClientRole::Desktop).await.unwrap();
+            let mut transaction = Client::control(&endpoint, ClientRole::Desktop).await.unwrap();
+            let (entered, waiting) = tokio::sync::oneshot::channel();
+            let (resume, paused) = std::sync::mpsc::channel();
+            *host.explorer_restart_pause.lock().unwrap() = Some((entered, paused));
+            let restart = tokio::spawn(async move {
+                desktop.call::<WindowsSettingResult>(Method::DesktopSystemExplorerRestart, serde_json::json!({}), "WindowsSettingResult").await
+            });
+            tokio::time::timeout(Duration::from_secs(3), waiting).await.unwrap().unwrap();
+            let heartbeat = tokio::time::timeout(Duration::from_secs(1), transaction.call::<RuntimeState>(
+                Method::Health, serde_json::json!({}), "RuntimeState")).await;
+            resume.send(()).unwrap();
+            assert_eq!(heartbeat.unwrap().unwrap().service_instance_id, host.instance_id());
+            assert!(restart.await.unwrap().unwrap().value);
+            let next: RuntimeState = transaction.call(Method::Health, serde_json::json!({}), "RuntimeState").await.unwrap();
+            assert_eq!(next.service_instance_id, host.instance_id());
+            shutdown.send(true).unwrap();
+            server.await.unwrap().unwrap();
+            drop(credentials);
+            std::fs::remove_dir_all(directory).unwrap();
+        });
+    }
+
+    #[test]
     fn privacy_switch_on_second_connection_invalidates_inflight_backup() {
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
             let directory = directory();

@@ -67,6 +67,9 @@ export function useInputFocus<T extends HTMLElement = HTMLInputElement>(
   };
 
   useEffect(() => {
+    // MyGo's main window owns normal keyboard focus. Tauri alone temporarily
+    // activates its otherwise non-activating window while the input is edited.
+    if (import.meta.env.MODE === "mygo") return;
     const element = inputRef.current;
     if (!element) return;
 

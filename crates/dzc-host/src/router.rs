@@ -68,6 +68,8 @@ pub struct Host {
     pub(crate) backup_operation: Mutex<()>,
     #[cfg(test)]
     pub(crate) after_backup_ticket: Mutex<Option<(tokio::sync::oneshot::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
+    #[cfg(test)]
+    pub(crate) explorer_restart_pause: Mutex<Option<(tokio::sync::oneshot::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
     pub(crate) manual_ocr_operation: Mutex<()>,
     font_scan: Mutex<()>,
     background_read: Mutex<()>,
@@ -118,6 +120,7 @@ impl Host {
         let host = Arc::new_cyclic(|owner| Self { external: crate::external::ExternalEdits::new(owner.clone()), history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
             #[cfg(test)] after_backup_ticket: Mutex::new(None),
+            #[cfg(test)] explorer_restart_pause: Mutex::new(None),
             stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), font_scan: Mutex::new(()), background_read: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
             application_selection: Mutex::new(()),
             #[cfg(feature = "native-screen")]
@@ -419,7 +422,8 @@ impl Host {
         if request.method == Method::EventsSubscribe {
             return match self.subscribe(session, request.params) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) };
         }
-        // File IO and key derivation can take seconds. Keep privacy controls responsive.
+        // File IO, key derivation and Explorer restart can take seconds. Keep
+        // privacy controls and transaction heartbeat connections responsive.
         if Self::independent_dispatch(request.method) {
             return match self.route(session, request) {
                 Ok(value) => Response::success(id, value),
@@ -432,7 +436,7 @@ impl Host {
     pub(crate) fn independent_dispatch(method: Method) -> bool {
         matches!(method, Method::DesktopHistoryOpen | Method::DesktopApplicationsSelect | Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
             Method::DesktopWindowPaste | Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
-            Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview)
+            Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview | Method::DesktopSystemExplorerRestart)
     }
     fn subscribe(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
         if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }

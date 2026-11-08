@@ -879,6 +879,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                     if (registryWinVChanging) return;
                                     setRegistryWinVChanging(true);
                                     let rollbackToken: string | undefined;
+                                    let explorerRestarted = false;
                                     const enabled = e.target.checked;
                                     const previousEnabled = props.registryWinVEnabled;
                                     const matchedWinV = props.mainHotkeys.find((item) => isWinVHotkey(item));
@@ -913,23 +914,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                             );
                                             if (confirmed) {
                                                 await invoke("restart_explorer");
-                                                if (enabled) {
-                                                    setTimeout(() => {
-                                                        props.addMainHotkey("Win+V", { skipAvailabilityCheck: true });
-                                                    }, 1500);
-                                                }
-
-                                                setTimeout(async () => {
-                                                    try {
-                                                        await invoke("set_theme", {
-                                                            theme: props.theme,
-                                                            color_mode: props.colorMode,
-                                                            show_app_border: props.appSettings["app.show_app_border"] !== "false"
-                                                        });
-                                                    } catch (e) {
-                                                        console.error("Failed to restore theme:", e);
-                                                    }
-                                                }, 2500);
+                                                explorerRestarted = true;
                                             } else {
                                                 if (enabled && !hasWinV) {
                                                     await props.removeMainHotkey("Win+V");
@@ -946,6 +931,24 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         if (rollbackToken !== undefined) {
                                             await invoke("finish_registry_win_v_change", { token: rollbackToken, rollback: false });
                                             rollbackToken = undefined;
+                                            if (explorerRestarted) {
+                                                if (enabled) {
+                                                    setTimeout(() => {
+                                                        props.addMainHotkey("Win+V", { skipAvailabilityCheck: true });
+                                                    }, 1500);
+                                                }
+                                                setTimeout(async () => {
+                                                    try {
+                                                        await invoke("set_theme", {
+                                                            theme: props.theme,
+                                                            color_mode: props.colorMode,
+                                                            show_app_border: props.appSettings["app.show_app_border"] !== "false"
+                                                        });
+                                                    } catch (e) {
+                                                        console.error("Failed to restore theme:", e);
+                                                    }
+                                                }, 2500);
+                                            }
                                         }
                                     } catch (err) {
                                         try {

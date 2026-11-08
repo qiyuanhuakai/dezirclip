@@ -840,6 +840,8 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         shortcut((Gdk.KEY_Alt_L, Gdk.KEY_f))
         wait_for(focused_search, 'Search shortcut did not leave Settings and focus the search input')
         search_window = settings_window().get_xid()
+        wait_for(lambda: int(subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1], 16) == search_window,
+                 'Search shortcut focused the input but did not activate its native window')
         shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F8))
         wait_for(lambda: subprocess.run(['xwininfo', '-id', str(search_window)], capture_output=True).returncode != 0,
                  'Main shortcut did not close the search WebView')
@@ -1461,7 +1463,7 @@ def check_paste_hotkeys(desktop, middle=False):
                  'created_at': stamp, 'updated_at': stamp, 'is_pinned': False, 'tags': []}]}))
             subprocess.run([cli, 'import', backup, '--mode', 'merge'], check=True, stdout=subprocess.DEVNULL)
             if middle:
-                subprocess.run(['xdotool','click','2'],check=True)
+                assert Atspi.generate_mouse_event(0, 0, 'b2c')
             else:
                 shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_z))
             wait(lambda: editor.get_text() == rich_text, 'Resident rich shortcut did not paste the latest entry')
@@ -1709,7 +1711,7 @@ def check_idle(executable):
         assert Atspi.Action.do_action(control, 0)
         wait(lambda: not visible(), 'Manual hide did not hide the main WebView')
     def show():
-        subprocess.run(['xdotool','click','2'],check=True)
+        assert Atspi.generate_mouse_event(0, 0, 'b2c')
         return wait(visible, 'Main window did not return')
     try:
         xid = wait(visible, 'Initial WebView missing')
