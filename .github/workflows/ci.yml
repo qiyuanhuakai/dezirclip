@@ -356,7 +356,8 @@ jobs:
 
       - name: Test shared Windows settings ownership and rollback
         if: matrix.can_test && runner.os == 'Windows'
-        run: cargo test --locked -p dzc-platform system_settings::
+        run: |
+          cargo test --locked -p dzc-platform system_settings::
 
       - name: Verify native Rust and Go protocol compatibility
         if: matrix.can_test
