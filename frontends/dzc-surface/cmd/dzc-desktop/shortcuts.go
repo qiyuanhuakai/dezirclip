@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
@@ -74,7 +73,7 @@ func persistPanelHotkey(owner *client.Client, key, hotkey string, epoch uint64) 
 func changeMainHotkeys(registered map[string]bool, raw string, register func(string) error, unregister func(string), save func() error) error {
 	wanted := make(map[string]bool)
 	for _, key := range strings.FieldsFunc(raw, func(r rune) bool { return r == '\r' || r == '\n' }) {
-		key = strings.TrimSpace(key)
+		key = mainShortcutName(key)
 		if key != "" {
 			wanted[key] = true
 		}
@@ -136,9 +135,9 @@ func testNativeHotkey(hotkey string) error {
 	}
 	// Register rejects an existing local claim without changing its callback.
 	// Only a claim created by this probe may be released here.
-	if err := mygo.GlobalShortcut.Register(hotkey, func() {}); err != nil {
+	if err := registerMainShortcut(hotkey, func() {}); err != nil {
 		return err
 	}
-	mygo.GlobalShortcut.Unregister(hotkey)
+	unregisterMainShortcut(hotkey)
 	return nil
 }

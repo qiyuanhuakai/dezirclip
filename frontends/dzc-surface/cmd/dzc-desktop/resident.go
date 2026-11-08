@@ -31,20 +31,20 @@ func refreshMainShortcuts(owner *client.Client, registered map[string]bool, togg
 	}
 	wanted := make(map[string]bool)
 	for _, line := range strings.FieldsFunc(values["app.hotkey"], func(r rune) bool { return r == '\r' || r == '\n' }) {
-		key := strings.TrimSpace(line)
-		if key != "" && !strings.EqualFold(key, "MouseMiddle") && !strings.EqualFold(key, "MButton") {
+		key := mainShortcutName(line)
+		if key != "" {
 			wanted[key] = true
 		}
 	}
 	for key := range registered {
 		if !wanted[key] {
-			mygo.GlobalShortcut.Unregister(key)
+			unregisterMainShortcut(key)
 			delete(registered, key)
 		}
 	}
 	for key := range wanted {
 		if !registered[key] {
-			if err := mygo.GlobalShortcut.Register(key, func() {
+			if err := registerMainShortcut(key, func() {
 				if !record(key) {
 					toggle()
 				}
@@ -89,7 +89,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		pasteKeys := map[string]map[string]bool{"app.sequential_hotkey": {}, "app.rich_paste_hotkey": {}}
 		pasteBusy := false
 		registerPaste := func(setting, key string) error {
-			return mygo.GlobalShortcut.Register(key, func() {
+			return registerMainShortcut(key, func() {
 				if recorder.offer(key) || pasteBusy || stopping || migrating || moved || pending != nil {
 					return
 				}
@@ -116,7 +116,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				if !found {
 					key = fallback
 				}
-				if err := changeMainHotkeys(pasteKeys[setting], key, func(key string) error { return registerPaste(setting, key) }, mygo.GlobalShortcut.Unregister, func() error { return nil }); err != nil {
+				if err := changeMainHotkeys(pasteKeys[setting], key, func(key string) error { return registerPaste(setting, key) }, unregisterMainShortcut, func() error { return nil }); err != nil {
 					log.Printf("Paste shortcut unavailable: %v", err)
 				}
 			}
@@ -127,7 +127,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		var toggle func()
 		var present func(string)
 		registerSearch := func(key string) error {
-			return mygo.GlobalShortcut.Register(key, func() {
+			return registerMainShortcut(key, func() {
 				if !recorder.offer(key) {
 					present("search")
 				}
@@ -141,7 +141,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 			if !found {
 				key = "Alt+F"
 			}
-			if err := changeMainHotkeys(searchKeys, key, registerSearch, mygo.GlobalShortcut.Unregister, func() error { return nil }); err != nil {
+			if err := changeMainHotkeys(searchKeys, key, registerSearch, unregisterMainShortcut, func() error { return nil }); err != nil {
 				log.Printf("Search shortcut unavailable: %v", err)
 			}
 		}
@@ -309,11 +309,11 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 										reply(fmt.Errorf("InvalidActionHotkey"))
 										break
 									}
-									reply(changeMainHotkeys(keys, request.Hotkey, func(key string) error { return registerPaste(request.Panel, key) }, mygo.GlobalShortcut.Unregister, func() error {
+									reply(changeMainHotkeys(keys, request.Hotkey, func(key string) error { return registerPaste(request.Panel, key) }, unregisterMainShortcut, func() error {
 										return persistActionHotkey(owner, request.Panel, request.Hotkey, request.Epoch)
 									}))
 								case "search-hotkey":
-									reply(changeMainHotkeys(searchKeys, request.Hotkey, registerSearch, mygo.GlobalShortcut.Unregister, func() error {
+									reply(changeMainHotkeys(searchKeys, request.Hotkey, registerSearch, unregisterMainShortcut, func() error {
 										return persistActionHotkey(owner, "app.search_hotkey", request.Hotkey, request.Epoch)
 									}))
 								case "panel-hotkey":
@@ -346,12 +346,12 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 									}, refresh))
 								case "main-hotkeys":
 									reply(changeMainHotkeys(registered, request.Hotkey, func(key string) error {
-										return mygo.GlobalShortcut.Register(key, func() {
+										return registerMainShortcut(key, func() {
 											if !recorder.offer(key) {
 												toggle()
 											}
 										})
-									}, mygo.GlobalShortcut.Unregister, func() error { return persistMainHotkeys(owner, request.Hotkey, request.Epoch) }))
+									}, unregisterMainShortcut, func() error { return persistMainHotkeys(owner, request.Hotkey, request.Epoch) }))
 								case "test-hotkey":
 									err := testNativeHotkey(request.Hotkey)
 									if err != nil {
@@ -563,8 +563,9 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 			}
 			_ = recorder.stop()
 			stopping = true
+			unregisterMiddleShortcut()
 			for key := range registered {
-				mygo.GlobalShortcut.Unregister(key)
+				unregisterMainShortcut(key)
 			}
 			if commands != nil {
 				commands.Close()

@@ -19,7 +19,7 @@ impl Host {
                     .split(['\r', '\n']).map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned));
             }
         }
-        if reserved.iter().filter_map(|key| normalize_shortcut(key).ok()).any(|key| keys.contains(&key)) {
+        if reserved.iter().filter_map(|key| dzc_platform::shortcut::normalize_main_shortcut(key).ok()).any(|key| keys.contains(&key)) {
             return Err(WireErrorCode::Busy);
         }
         Ok(())

@@ -612,7 +612,7 @@ impl Host {
             Method::DesktopHotkeyMainSet => {
                 let input: MainHotkeyParams = params(request.params)?;
                 self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
-                let normalize = dzc_platform::shortcut::normalize_shortcut;
+                let normalize = dzc_platform::shortcut::normalize_main_shortcut;
                 let keys = input.hotkeys.split(['\r', '\n']).map(str::trim).filter(|key| !key.is_empty())
                     .map(normalize).collect::<Result<Vec<_>, _>>().map_err(|_| WireErrorCode::InvalidRequest)?;
                 if keys.len() > 16 || keys.iter().collect::<std::collections::HashSet<_>>().len() != keys.len() {
@@ -652,7 +652,7 @@ impl Host {
                     return Err(WireErrorCode::InvalidRequest);
                 }
                 let key = if input.hotkey.is_empty() { String::new() } else {
-                    dzc_platform::shortcut::normalize_shortcut(&input.hotkey).map_err(|_| WireErrorCode::InvalidRequest)?
+                    dzc_platform::shortcut::normalize_main_shortcut(&input.hotkey).map_err(|_| WireErrorCode::InvalidRequest)?
                 };
                 self.check_shortcut_conflicts(&input.key, std::slice::from_ref(&key))?;
                 self.history.set_action_hotkey(&input.key, &key, input.expected_epoch).map_err(|error| match error.code {
@@ -1070,6 +1070,15 @@ pub(crate) mod tests {
         }
         assert!(dispatch(&host, &desktop, Method::DesktopHotkeyMainSet, input("", epoch)).error.is_none());
         assert_eq!(host.history.desktop_preferences().unwrap()["app.hotkey"], "");
+        assert!(dispatch(&host, &desktop, Method::DesktopHotkeyMainSet, input("MButton", epoch)).error.is_none());
+        assert_eq!(host.history.desktop_preferences().unwrap()["app.hotkey"], "MouseMiddle");
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopHotkeyMainSet, input("MButton\nMouseMiddle", epoch)).error.unwrap().code, WireErrorCode::InvalidRequest);
+        let action = serde_json::json!({"service_instance_id":host.instance_id(),"expected_epoch":epoch,"key":"app.search_hotkey","hotkey":"mbutton"});
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopHotkeyActionSet, action.clone()).error.unwrap().code, WireErrorCode::Busy);
+        assert!(dispatch(&host, &desktop, Method::DesktopHotkeyMainSet, input("", epoch)).error.is_none());
+        assert!(dispatch(&host, &desktop, Method::DesktopHotkeyActionSet, action).error.is_none());
+        assert_eq!(host.history.desktop_preferences().unwrap()["app.search_hotkey"], "MouseMiddle");
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopHotkeyMainSet, input("MButton", epoch)).error.unwrap().code, WireErrorCode::Busy);
     }
 
     #[test]

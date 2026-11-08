@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+func TestMainShortcutAliasesShareOneNativeClaim(t *testing.T) {
+	registered := map[string]bool{}
+	claims := 0
+	err := changeMainHotkeys(registered, "MButton\nmousemiddle", func(key string) error {
+		if key != "MouseMiddle" {
+			t.Fatal(key)
+		}
+		claims++
+		return nil
+	}, func(string) { t.Fatal("unexpected release") }, func() error { return nil })
+	if err != nil || claims != 1 || !registered["MouseMiddle"] {
+		t.Fatalf("claims=%d err=%v", claims, err)
+	}
+}
+
 func TestMainHotkeysPreserveOldClaimsOnRegistrationOrSaveFailure(t *testing.T) {
 	for _, failRegister := range []bool{true, false} {
 		registered := map[string]bool{"Alt+C": true}

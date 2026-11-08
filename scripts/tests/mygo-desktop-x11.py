@@ -1389,7 +1389,7 @@ def check_reset_settings(desktop):
         subprocess.run([cli, 'service', 'stop'], check=True)
 
 
-def check_paste_hotkeys(desktop):
+def check_paste_hotkeys(desktop, middle=False):
     import gi
     gi.require_version('Gtk', '3.0')
     gi.require_version('Atspi', '2.0')
@@ -1400,6 +1400,8 @@ def check_paste_hotkeys(desktop):
         db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', [
             ('app.persistent', 'true'), ('app.sequential_mode', 'true'), ('app.silent_start', 'true'),
             ('app.hotkey', 'Ctrl+Shift+F8'), ('app.delete_after_paste', 'false')])
+        if middle:
+            db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.rich_paste_hotkey','MButton')")
     subprocess.run([cli, 'service', 'start', '--json'], check=True, stdout=subprocess.DEVNULL)
     resident = subprocess.Popen([desktop, '--minimized'], stdout=subprocess.DEVNULL)
     window = Gtk.Window(title='Independent shortcut paste target')
@@ -1458,7 +1460,10 @@ def check_paste_hotkeys(desktop):
                 {'id': 9001, 'content_type': 'rich_text', 'content': rich_text, 'html_content': rich_html,
                  'created_at': stamp, 'updated_at': stamp, 'is_pinned': False, 'tags': []}]}))
             subprocess.run([cli, 'import', backup, '--mode', 'merge'], check=True, stdout=subprocess.DEVNULL)
-            shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_z))
+            if middle:
+                subprocess.run(['xdotool','click','2'],check=True)
+            else:
+                shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_z))
             wait(lambda: editor.get_text() == rich_text, 'Resident rich shortcut did not paste the latest entry')
             html = subprocess.check_output(['xclip', '-selection', 'clipboard', '-t', 'text/html', '-o']).decode()
             assert rich_html in html, 'Rich paste shortcut discarded the HTML format'
@@ -1687,7 +1692,7 @@ def check_idle(executable):
     db = sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH'])
     with db:
         db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
-                       [('app.language','en'), ('app.idle_destroy_enabled','false'), ('app.idle_destroy_seconds','5')])
+                       [('app.language','en'), ('app.hotkey','MButton'), ('app.idle_destroy_enabled','false'), ('app.idle_destroy_seconds','5')])
     subprocess.run([cli, 'service', 'start', '--no-capture', '--json'], check=True)
     process = subprocess.Popen([executable, '--show'])
     def wait(probe, message):
@@ -1704,7 +1709,7 @@ def check_idle(executable):
         assert Atspi.Action.do_action(control, 0)
         wait(lambda: not visible(), 'Manual hide did not hide the main WebView')
     def show():
-        wait(lambda: tray_item(process.pid, '打开剪贴板'), 'Resident tray could not reopen history')
+        subprocess.run(['xdotool','click','2'],check=True)
         return wait(visible, 'Main window did not return')
     try:
         xid = wait(visible, 'Initial WebView missing')
@@ -1724,7 +1729,7 @@ def check_idle(executable):
         replacement = show()
         next_pid = int(subprocess.check_output(['xprop','-id',str(replacement),'_NET_WM_PID'],text=True).split()[-1])
         assert process.poll() is None and next_pid != pid, 'Resident did not recreate the main WebView'
-        print('Verified idle release off, cancel on reopen, expiration and recreation with the same resident')
+        print('Verified middle-button wake, idle release off, cancel on reopen, expiration and recreation with the same resident')
     finally:
         db.close()
         process.terminate()
@@ -1860,7 +1865,7 @@ def check_profile_move(executable, home):
 
 if __name__ == '__main__':
     desktop = Path(sys.argv[1]).resolve(strict=True)
-    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview', '--idle', '--paste-hotkeys', '--reset-settings'):
+    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview', '--idle', '--paste-hotkeys', '--middle-paste-hotkeys', '--reset-settings'):
         with tempfile.TemporaryDirectory(prefix='dzc-mygo-') as path:
             home = Path(path)
             for name in ('runtime', 'data', 'config', 'cache'):
@@ -1940,8 +1945,8 @@ with open(sys.argv[1], 'r+') as document:
             pinned = '--pinned' in sys.argv[3:]
             if '--reset-settings' in sys.argv[3:]:
                 check_reset_settings(desktop)
-            elif '--paste-hotkeys' in sys.argv[3:]:
-                check_paste_hotkeys(desktop)
+            elif '--paste-hotkeys' in sys.argv[3:] or '--middle-paste-hotkeys' in sys.argv[3:]:
+                check_paste_hotkeys(desktop, middle='--middle-paste-hotkeys' in sys.argv[3:])
             elif '--idle' in sys.argv[3:]:
                 check_idle(desktop)
             elif '--move-profile' in sys.argv[3:]:
