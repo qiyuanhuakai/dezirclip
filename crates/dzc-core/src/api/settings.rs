@@ -2,6 +2,13 @@ use super::{CoreResult, HistoryService};
 use crate::capture::CaptureSettings;
 
 impl HistoryService {
+    pub fn set_panel_hotkey(&self, key: &str, hotkey: &str, epoch: u64) -> CoreResult<()> {
+        if !matches!(key, "app.quick_paste_hotkey" | "app.screenshot_hotkey" | "app.screenshot_full_hotkey")
+            || hotkey.len() > 128 || hotkey.chars().any(char::is_control) {
+            return Err(super::CoreError::validation("PanelHotkeyInvalid"));
+        }
+        self.repository.set_setting_at_epoch(key, hotkey, epoch)
+    }
     pub fn set_main_hotkeys(&self, hotkeys: &[String], epoch: u64) -> CoreResult<()> {
         if hotkeys.len() > 16 || hotkeys.iter().any(|key| key.is_empty() || key.len() > 128 || key.chars().any(char::is_control)) {
             return Err(super::CoreError::validation("MainHotkeysInvalid"));

@@ -104,10 +104,6 @@ func (s *Selector) Refresh() error {
 		if s.hotkeys[full] == key {
 			continue
 		}
-		if old := s.hotkeys[full]; old != "" {
-			mygo.GlobalShortcut.Unregister(old)
-			delete(s.hotkeys, full)
-		}
 		if key != "" {
 			if err := mygo.GlobalShortcut.Register(key, func() {
 				if s.record == nil || !s.record(key) {
@@ -116,9 +112,16 @@ func (s *Selector) Refresh() error {
 			}); err != nil {
 				log.Printf("Screenshot shortcut unavailable: %v", err)
 				registrationErrors = errors.Join(registrationErrors, err)
-			} else {
-				s.hotkeys[full] = key
+				continue
 			}
+		}
+		if old := s.hotkeys[full]; old != "" {
+			mygo.GlobalShortcut.Unregister(old)
+		}
+		if key == "" {
+			delete(s.hotkeys, full)
+		} else {
+			s.hotkeys[full] = key
 		}
 	}
 	return registrationErrors

@@ -83,10 +83,6 @@ func (p *Panel) RefreshShortcut() error {
 	if hotkey == p.local.shortcut {
 		return nil
 	}
-	if p.local.shortcut != "" {
-		mygo.GlobalShortcut.Unregister(p.local.shortcut)
-		p.local.shortcut = ""
-	}
 	if hotkey != "" {
 		if err := mygo.GlobalShortcut.Register(hotkey, func() {
 			if p.local.record == nil || !p.local.record(hotkey) {
@@ -96,8 +92,11 @@ func (p *Panel) RefreshShortcut() error {
 			log.Printf("Quick paste shortcut unavailable: %v", err)
 			return err
 		}
-		p.local.shortcut = hotkey
 	}
+	if p.local.shortcut != "" {
+		mygo.GlobalShortcut.Unregister(p.local.shortcut)
+	}
+	p.local.shortcut = hotkey
 	return nil
 }
 

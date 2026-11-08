@@ -338,6 +338,7 @@ impl Host {
             if session.extended_methods {
                 methods.push("desktop.hotkey.recording");
                 methods.push("desktop.hotkey.main.set");
+                methods.push("desktop.hotkey.panel.set");
                 methods.push("desktop.settings.view.set");
                 methods.push("desktop.settings.fonts");
                 methods.extend(["desktop.window.pin", "desktop.window.resize"]);
@@ -612,21 +613,26 @@ impl Host {
                 if keys.len() > 16 || keys.iter().collect::<std::collections::HashSet<_>>().len() != keys.len() {
                     return Err(WireErrorCode::InvalidRequest);
                 }
-                let settings = self.history.desktop_preferences().map_err(unavailable)?;
-                let privacy = self.history.privacy().hotkey().map_err(privacy_error)?;
-                let reserved = [
-                    settings.get("app.quick_paste_hotkey").map(String::as_str).unwrap_or("Ctrl+Shift+V"),
-                    settings.get("app.screenshot_hotkey").map(String::as_str).unwrap_or("Ctrl+Shift+A"),
-                    settings.get("app.screenshot_full_hotkey").map(String::as_str).unwrap_or("Ctrl+Shift+F"),
-                    settings.get("app.sequential_hotkey").map(String::as_str).unwrap_or(""),
-                    settings.get("app.rich_paste_hotkey").map(String::as_str).unwrap_or(""),
-                    settings.get("app.search_hotkey").map(String::as_str).unwrap_or(""),
-                    privacy.as_str(),
-                ];
-                if reserved.iter().filter_map(|key| normalize(key).ok()).any(|key| keys.contains(&key)) {
-                    return Err(WireErrorCode::Busy);
-                }
+                self.check_shortcut_conflicts("app.hotkey", &keys)?;
                 self.history.set_main_hotkeys(&keys, input.expected_epoch).map_err(|error| match error.code {
+                    dzc_core::api::CoreErrorCode::PrivacyEpochChanged => WireErrorCode::PrivacyEpochChanged,
+                    dzc_core::api::CoreErrorCode::Validation => WireErrorCode::InvalidRequest,
+                    _ => WireErrorCode::Unavailable,
+                })?;
+                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
+                result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopHotkeyPanelSet => {
+                let input: PanelHotkeyParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                if !matches!(input.key.as_str(), "app.quick_paste_hotkey" | "app.screenshot_hotkey" | "app.screenshot_full_hotkey") {
+                    return Err(WireErrorCode::InvalidRequest);
+                }
+                let key = if input.hotkey.is_empty() { String::new() } else {
+                    dzc_platform::shortcut::normalize_shortcut(&input.hotkey).map_err(|_| WireErrorCode::InvalidRequest)?
+                };
+                self.check_shortcut_conflicts(&input.key, std::slice::from_ref(&key))?;
+                self.history.set_panel_hotkey(&input.key, &key, input.expected_epoch).map_err(|error| match error.code {
                     dzc_core::api::CoreErrorCode::PrivacyEpochChanged => WireErrorCode::PrivacyEpochChanged,
                     dzc_core::api::CoreErrorCode::Validation => WireErrorCode::InvalidRequest,
                     _ => WireErrorCode::Unavailable,
@@ -870,6 +876,37 @@ pub(crate) mod tests {
             assert_eq!(report.methods.iter().any(|name|name == "desktop.queue.get"), extended);
             assert!(report.methods.iter().any(|name|name == "desktop.history.page"));
             assert!(report.methods.len() <= if extended {256} else {64});
+        }
+    }
+
+    #[test]
+    fn panel_hotkeys_preserve_settings_on_conflict_or_stale_epoch() {
+        let host = synthetic_host();
+        let grant = host.grants.issue_control(ClientRole::Desktop).unwrap();
+        let mut request = hello(ClientRole::Desktop);
+        request.grant = Some(grant.token().into());
+        let (desktop, _) = host.hello(request).unwrap();
+        let (cli, _) = host.hello(hello(ClientRole::Cli)).unwrap();
+        let epoch = host.snapshot().unwrap().privacy_epoch;
+        host.history.set_main_hotkeys(&["Ctrl+Alt+F21".into(), "Ctrl+Alt+F22".into()], epoch).unwrap();
+        host.history.privacy().set_registered_hotkey("Ctrl+Alt+F23").unwrap();
+        let input = |key: &str, hotkey: &str, expected_epoch| serde_json::json!({"service_instance_id":host.instance_id(),"expected_epoch":expected_epoch,"key":key,"hotkey":hotkey});
+        assert!(dispatch(&host, &cli, Method::DesktopHotkeyPanelSet, input("app.quick_paste_hotkey", "Ctrl+Shift+F9", epoch)).error.is_some());
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopHotkeyPanelSet, input("app.hotkey", "Ctrl+Shift+F9", epoch)).error.unwrap().code, WireErrorCode::InvalidRequest);
+        for key in ["app.quick_paste_hotkey", "app.screenshot_hotkey", "app.screenshot_full_hotkey"] {
+            assert!(dispatch(&host, &desktop, Method::DesktopHotkeyPanelSet, input(key, "Control+Shift+F9", epoch)).error.is_none());
+            assert!(dispatch(&host, &desktop, Method::DesktopHotkeyPanelSet, input(key, "Ctrl+Shift+F9", epoch)).error.is_none());
+            for (value, stamp, code) in [
+                ("Ctrl+Alt+F22", epoch, WireErrorCode::Busy),
+                ("Ctrl+Alt+F23", epoch, WireErrorCode::Busy),
+                ("Ctrl+Shift+F8", epoch + 1, WireErrorCode::PrivacyEpochChanged),
+                ("invalid-key", epoch, WireErrorCode::InvalidRequest),
+            ] {
+                assert_eq!(dispatch(&host, &desktop, Method::DesktopHotkeyPanelSet, input(key, value, stamp)).error.unwrap().code, code);
+                assert_eq!(host.history.desktop_preferences().unwrap()[key], "Ctrl+Shift+F9");
+            }
+            assert!(dispatch(&host, &desktop, Method::DesktopHotkeyPanelSet, input(key, "", epoch)).error.is_none());
+            assert_eq!(host.history.desktop_preferences().unwrap()[key], "");
         }
     }
 

@@ -136,6 +136,15 @@ pub struct SurfaceActionParams {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct PanelHotkeyParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub key: String,
+    pub hotkey: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MainHotkeyParams {
     pub service_instance_id: String,
     pub expected_epoch: u64,
@@ -578,6 +587,8 @@ pub enum Method {
     DesktopHotkeyRecording,
     #[serde(rename = "desktop.hotkey.main.set")]
     DesktopHotkeyMainSet,
+    #[serde(rename = "desktop.hotkey.panel.set")]
+    DesktopHotkeyPanelSet,
     #[serde(rename = "desktop.settings.capture.get")]
     DesktopSettingsCaptureGet,
     #[serde(rename = "desktop.settings.capture.set")]

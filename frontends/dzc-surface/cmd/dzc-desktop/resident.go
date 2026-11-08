@@ -199,10 +199,40 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 									return
 								}
 								switch request.Operation {
+								case "panel-hotkey":
+									fallback := map[string]string{"app.quick_paste_hotkey": "Ctrl+Shift+V", "app.screenshot_hotkey": "Ctrl+Shift+A", "app.screenshot_full_hotkey": "Ctrl+Shift+F"}
+									previous, ok := fallback[request.Panel]
+									if !ok {
+										reply(fmt.Errorf("InvalidPanelHotkey"))
+										return
+									}
+									ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+									settings, err := (&Library{owner}).Preferences(ctx)
+									cancel()
+									var values map[string]string
+									if err == nil {
+										err = json.Unmarshal(settings, &values)
+									}
+									if err != nil {
+										reply(err)
+										return
+									}
+									if saved, found := values[request.Panel]; found {
+										previous = saved
+									}
+									refresh := selector.Refresh
+									if request.Panel == "app.quick_paste_hotkey" {
+										refresh = panel.RefreshShortcut
+									}
+									reply(changeNativePanel(previous, request.Hotkey, func(value string) error {
+										return persistPanelHotkey(owner, request.Panel, value, request.Epoch)
+									}, refresh))
 								case "main-hotkeys":
 									reply(changeMainHotkeys(registered, request.Hotkey, func(key string) error {
 										return mygo.GlobalShortcut.Register(key, func() {
-											if !recorder.offer(key) { toggle() }
+											if !recorder.offer(key) {
+												toggle()
+											}
 										})
 									}, mygo.GlobalShortcut.Unregister, func() error { return persistMainHotkeys(owner, request.Hotkey, request.Epoch) }))
 								case "test-hotkey":
@@ -335,7 +365,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 					}
 					switch line {
 					case "recording-cancel":
-					mygo.RunOnMain(func() { recorder.abort() })
+						mygo.RunOnMain(func() { recorder.abort() })
 					case "closing":
 						mygo.RunOnMain(func() { closing = true })
 					case "focus":

@@ -81,6 +81,7 @@ const ToolsCaptureSection = ({
     const [ocrEngineInfo, setOcrEngineInfo] = useState<OcrEngineInfo | null>(null);
     const [ocrLoading, setOcrLoading] = useState(false);
     const [panelSaving, setPanelSaving] = useState(false);
+    const [hotkeyError, setHotkeyError] = useState<string | null>(null);
     const savePanelEnabled = async (key: string, enabled: boolean, apply: (value: boolean) => void) => {
         setPanelSaving(true);
         try {
@@ -105,20 +106,14 @@ const ToolsCaptureSection = ({
     useEffect(() => setScreenshotFullHotkey(initialScreenshotFullHotkey), [initialScreenshotFullHotkey]);
     useEffect(() => setQuickPasteHotkey(initialQuickPasteHotkey), [initialQuickPasteHotkey]);
 
-    const updateScreenshotHotkey = useCallback((newHotkey: string) => {
-        setScreenshotHotkey(newHotkey);
-        saveAppSetting("screenshot_hotkey", newHotkey);
-    }, [saveAppSetting]);
-
-    const updateScreenshotFullHotkey = useCallback((newHotkey: string) => {
-        setScreenshotFullHotkey(newHotkey);
-        saveAppSetting("screenshot_full_hotkey", newHotkey);
-    }, [saveAppSetting]);
-
-    const updateQuickPasteHotkey = useCallback((newHotkey: string) => {
-        setQuickPasteHotkey(newHotkey);
-        saveAppSetting("quick_paste_hotkey", newHotkey);
-    }, [saveAppSetting]);
+    const savePanelHotkey = useCallback(async (key: string, value: string, apply: (value: string) => void) => {
+        setPanelSaving(true);
+        setHotkeyError(null);
+        try {
+            if (await saveAppSetting(key, value) !== false) apply(value);
+            else setHotkeyError(t("hotkey_unavailable"));
+        } finally { setPanelSaving(false); }
+    }, [saveAppSetting, t]);
 
     return (
         <>
@@ -130,8 +125,8 @@ const ToolsCaptureSection = ({
             </div>
             {screenshotEnabled && (
                 <>
-                    <HotkeyRecorder t={t} labelKey="screenshot_hotkey" hotkey={screenshotHotkey} recording={isRecordingScreenshot} setRecording={setIsRecordingScreenshot} onHotkeyChange={updateScreenshotHotkey} />
-                    <HotkeyRecorder t={t} labelKey="screenshot_full_hotkey" hotkey={screenshotFullHotkey} recording={isRecordingScreenshotFull} setRecording={setIsRecordingScreenshotFull} onHotkeyChange={updateScreenshotFullHotkey} />
+                    <HotkeyRecorder t={t} labelKey="screenshot_hotkey" hotkey={screenshotHotkey} recording={isRecordingScreenshot} setRecording={setIsRecordingScreenshot} disabled={panelSaving} onHotkeyChange={value => { void savePanelHotkey("screenshot_hotkey", value, setScreenshotHotkey); }} />
+                    <HotkeyRecorder t={t} labelKey="screenshot_full_hotkey" hotkey={screenshotFullHotkey} recording={isRecordingScreenshotFull} setRecording={setIsRecordingScreenshotFull} disabled={panelSaving} onHotkeyChange={value => { void savePanelHotkey("screenshot_full_hotkey", value, setScreenshotFullHotkey); }} />
                     <div className="setting-item setting-item--detail">
                         <div className="item-label-group"><span className="item-label">{t("capture_now")}</span></div>
                         <div className="setting-btn-group">
@@ -145,7 +140,8 @@ const ToolsCaptureSection = ({
                 <LabelWithHint label={t("quick_paste_enabled")} hintKey="quick_paste_enabled" />
                 <label className="switch"><input className="cb" type="checkbox" aria-label={t("quick_paste_enabled")} checked={quickPasteEnabled} disabled={panelSaving} onChange={(e) => { void savePanelEnabled("quick_paste_enabled", e.target.checked, setQuickPasteEnabled); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
             </div>
-            {quickPasteEnabled && <HotkeyRecorder t={t} labelKey="quick_paste_hotkey_label" hotkey={quickPasteHotkey} recording={isRecordingQuickPaste} setRecording={setIsRecordingQuickPaste} onHotkeyChange={updateQuickPasteHotkey} />}
+            {quickPasteEnabled && <HotkeyRecorder t={t} labelKey="quick_paste_hotkey_label" hotkey={quickPasteHotkey} recording={isRecordingQuickPaste} setRecording={setIsRecordingQuickPaste} disabled={panelSaving} onHotkeyChange={value => { void savePanelHotkey("quick_paste_hotkey", value, setQuickPasteHotkey); }} />}
+            {hotkeyError && <p role="alert" className="hotkey-recording-error">{hotkeyError}</p>}
             {quickPasteEnabled && <QuickPasteRendererSetting t={t} renderer={quickPasteRenderer} />}
             </NativeFeatureBoundary>
             <div className="setting-item">

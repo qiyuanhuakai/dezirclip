@@ -141,6 +141,9 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   export_custom_theme: args => library("ExportTheme", args.id, args.path, currentEpoch()),
   delete_custom_theme: args => library("RemoveTheme", args.id, currentEpoch()),
   save_setting: args => {
+    if (["app.quick_paste_hotkey", "app.screenshot_hotkey", "app.screenshot_full_hotkey"].includes(String(args.key))) {
+      return shellCall("SetPanelHotkey", args.key, args.value, currentEpoch());
+    }
     if (args.key === "app.hotkey") return shellCall("SetMainHotkeys", args.value, currentEpoch());
     if (args.key === "app.quick_paste_enabled" || args.key === "app.screenshot_enabled") {
       if (args.value !== "true" && args.value !== "false") throw new Error("ViewSettingInvalid");

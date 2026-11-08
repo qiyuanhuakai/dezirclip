@@ -1020,6 +1020,56 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
                          f'{label} switch did not acknowledge the saved state')
         full = wait_for(lambda: action('Full Screen Capture'), 'Screenshot controls did not return after enabling')
         print('Verified native panel switches persist and acknowledge changes in the shared MyGo WebView')
+        def begin_panel_recording(label):
+            button = wait_for(lambda: find_item(label), f'{label} recorder unavailable')
+            atspi.Component.scroll_to(button, atspi.ScrollType.ANYWHERE)
+            assert atspi.Action.do_action(button, 0)
+            wait_for(lambda: button.get_state_set().contains(atspi.StateType.PRESSED)
+                     and not button.get_state_set().contains(atspi.StateType.BUSY), f'{label} recorder not ready')
+            return button
+        def active_native_panel(title):
+            window = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+            props = subprocess.run(['xprop', '-id', window, '_NET_WM_NAME', '_NET_WM_PID'], capture_output=True, text=True)
+            if title in props.stdout:
+                pid = props.stdout.split()[-1]
+                if pid.isdecimal() and Path(f'/proc/{pid}/exe').resolve() == executable:
+                    return int(pid)
+        previous_quick = saved_panel('app.quick_paste_hotkey')
+        begin_panel_recording('Quick Paste Hotkey')
+        shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_a))
+        wait_for(lambda: find_item('Hotkey is unavailable', text=True), 'Conflicting panel shortcut did not show a failure')
+        assert saved_panel('app.quick_paste_hotkey') == previous_quick
+        for label, key, original, original_sym, title in [
+            ('Quick Paste Hotkey', 'app.quick_paste_hotkey', 'Ctrl+Shift+V', Gdk.KEY_v, 'DezirClip 快速粘贴'),
+            ('Screenshot Hotkey', 'app.screenshot_hotkey', 'Ctrl+Shift+A', Gdk.KEY_a, 'DezirClip 截图'),
+            ('Full Screen Capture Hotkey', 'app.screenshot_full_hotkey', 'Ctrl+Shift+F', Gdk.KEY_f, None),
+        ]:
+            button = begin_panel_recording(label)
+            shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F9))
+            wait_for(lambda: saved_panel(key) == ('Ctrl+Shift+F9',) and button.get_state_set().contains(atspi.StateType.SENSITIVE)
+                     and not button.get_state_set().contains(atspi.StateType.PRESSED), f'{label} did not save its new binding')
+            clipboard.set_text('waiting for reassigned panel shortcut', -1)
+            alternate.present()
+            wait_for(alternate.is_active, f'Independent editor did not regain focus before {label}')
+            shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F9))
+            if title:
+                panel_pid = wait_for(lambda: active_native_panel(title), f'{label} did not open its native panel')
+                assert panel_pid == resident
+                shortcut((Gdk.KEY_Escape,))
+                wait_for(lambda: not active_native_panel(title), f'{label} panel did not dismiss')
+            else:
+                wait_for(lambda: clipboard.wait_for_image() is not None, 'Reassigned full-screen shortcut did not capture an image')
+            alternate.present()
+            wait_for(alternate.is_active, 'Independent editor did not regain focus after native panel use')
+            shortcut()
+            wait_for(lambda: int(subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1], 16) == settings_window().get_xid(),
+                     'Main window did not regain focus after native shortcut testing')
+            button = begin_panel_recording(label)
+            shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, original_sym))
+            wait_for(lambda: saved_panel(key) == (original,) and button.get_state_set().contains(atspi.StateType.SENSITIVE)
+                     and not button.get_state_set().contains(atspi.StateType.PRESSED), f'{label} did not restore its original binding')
+        print('Verified conflict rejection and live reassignment of quick-paste, region and full-screen native shortcuts', flush=True)
+        full = wait_for(lambda: action('Full Screen Capture'), 'Full-screen capture button unavailable after shortcut changes')
         clipboard.set_text('waiting for explicit capture', -1)
         assert atspi.Action.do_action(full, 0)
         screen = Gdk.get_default_root_window()
