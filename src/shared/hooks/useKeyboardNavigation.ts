@@ -85,6 +85,7 @@ export const useKeyboardNavigation = ({
   useEffect(() => { copyToClipboardRef.current = copyToClipboard; }, [copyToClipboard]);
   useEffect(() => { richPasteHotkeyRef.current = richPasteHotkey; }, [richPasteHotkey]);
   useEffect(() => {
+    if (import.meta.env.MODE === "mygo") return;
     invoke("set_navigation_mode", { active: isKeyboardMode }).catch(console.error);
   }, [isKeyboardMode]);
 
@@ -217,6 +218,7 @@ export const useKeyboardNavigation = ({
   }, [searchInputRef, setIsKeyboardMode, setSelectedIndex]);
 
   useEffect(() => {
+    if (import.meta.env.MODE === "mygo") return;
     const unlisten = listen<string>("navigation-action", async (event) => {
       try {
         const isVisible = await getCurrentWindow().isVisible();

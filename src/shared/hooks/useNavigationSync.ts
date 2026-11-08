@@ -18,6 +18,8 @@ export const useNavigationSync = ({
 }: UseNavigationSyncOptions) => {
   useEffect(() => {
     void hideCompactPreviewGlobal();
+    // MyGo focuses the WebView; its DOM keyboard handler owns navigation.
+    if (import.meta.env.MODE === "mygo") return;
     const shouldDisableNavigation = showSettings || showTagManager || showEmojiPanel || searchTagPickerOpen;
     if (shouldDisableNavigation) {
       invoke("set_navigation_enabled", { enabled: false }).catch(console.error);
