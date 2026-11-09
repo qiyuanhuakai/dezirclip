@@ -33,6 +33,7 @@ def verify(installer, stage):
             assert winreg.QueryValueEx(key, 'InstallLocation')[0] == str(root)
 
     assert_payload()
+    assert (root / 'mygo-installation.ini').read_bytes().startswith(b'\xff\xfe')
     shortcut = Path(os.environ['APPDATA']) / 'Microsoft/Windows/Start Menu/Programs/DezirClip MyGo/DezirClip MyGo.lnk'
     assert shortcut.is_file()
     subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-STA', '-File',

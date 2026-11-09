@@ -78,6 +78,11 @@ empty:
   !insertmacro Unlocked "dzc.exe"
   ClearErrors
   CreateDirectory "$INSTDIR"
+  ${IfNot} ${FileExists} "$INSTDIR\mygo-installation.ini"
+    FileOpen $0 "$INSTDIR\mygo-installation.ini" w
+    FileWriteWord $0 65279
+    FileClose $0
+  ${EndIf}
   WriteINIStr "$INSTDIR\mygo-installation.ini" "Installation" "Owner" "${OWNER}"
   WriteINIStr "$INSTDIR\mygo-installation.ini" "Installation" "Directory" "$INSTDIR"
   ${If} ${Errors}
