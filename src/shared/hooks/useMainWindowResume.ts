@@ -74,7 +74,12 @@ export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (rese
       }),
       currentWindow.listen("privacy-view-shown", shown),
       currentWindow.listen("clipboard-host-changed", () => {
-        if (!disposed) queryPending(true);
+        if (disposed) return;
+        controller.cancel();
+        nativeActiveRef.current = false;
+        visibleRecoveryPending.current = false;
+        setPrepared(null); setPhase("preparing");
+        queryPending(true);
       }),
       currentWindow.onFocusChanged(event => { if (event.payload) shown(); })
     ];
