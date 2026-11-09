@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -665,8 +665,8 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         if (![MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$frame)) { return $false }
         $width = $frame.right - $frame.left
         $height = $frame.bottom - $frame.top
-        $x = [Math]::Max($workArea.Left, $workArea.Right - $width - 16)
-        $y = [Math]::Max($workArea.Top, [Math]::Min($cursorY + 12, $workArea.Bottom - $height - 16))
+        $x = [Math]::Max($workArea.Left, $workArea.Right - $width - $ExpectedPointerMargin)
+        $y = [Math]::Max($workArea.Top, [Math]::Min($cursorY + 12, $workArea.Bottom - $height - $ExpectedPointerMargin))
         [Math]::Abs($frame.left - $x) -le 5 -and [Math]::Abs($frame.top - $y) -le 5
     } 'MyGo main window did not follow the pointer inside the Windows work area'
     $null = Wait-Until {

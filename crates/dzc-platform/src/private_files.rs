@@ -673,3 +673,70 @@ mod tests {
         assert!(!std::path::Path::new(&paths[0]).exists());
     }
 }
+
+#[cfg(all(test, target_os = "windows", not(feature = "portable")))]
+mod native_protected_resource_tests {
+    use dzc_core::api::{
+        HistoryService, PrivacySessionCommand, SensitiveAccess,
+    };
+    #[test]
+    fn native_dpapi_protected_files_remain_ciphertext_and_external_lease_revocation_closes_new_readers(
+    ) {
+        crate::install_default_key_provider();
+        let directory =
+            std::env::temp_dir().join(format!("dzc-native-private-{}", uuid::Uuid::new_v4()));
+        let database = directory.join("synthetic.db");
+        let history = HistoryService::open(&database).unwrap();
+        let source = directory.join("synthetic.txt");
+        std::fs::write(&source, b"qvxnativesyntheticfile").unwrap();
+        let entry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"file","content":source.to_string_lossy(),"preview":"synthetic","source_app":"Synthetic Native","timestamp":1,"is_pinned":false,"tags":["sensitive"]})).unwrap();
+        let id = history.save(&entry, Some(&directory)).unwrap();
+        let conn = rusqlite::Connection::open(&database).unwrap();
+        let raw: String = conn
+            .query_row(
+                "SELECT content FROM clipboard_history WHERE id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(raw.starts_with("dpapi:"));
+        assert!(!raw.contains("qvxnativesyntheticfile"));
+        assert!(!directory.join("attachments").exists());
+        let permit = history
+            .privacy()
+            .authorize_selected_copy(
+                id,
+                None,
+                SensitiveAccess::ExplicitUserAction,
+                None,
+                1,
+            )
+            .unwrap();
+        let preview = history
+            .get_entry_for_preview_authorized(id, &permit, 1)
+            .unwrap()
+            .unwrap();
+        assert!(preview.content.is_empty());
+        assert_eq!(preview.preview, "synthetic.txt");
+        let export = history.external_files_authorized(id, &permit, 1).unwrap();
+        let native = crate::runtime::private_file_export(export).unwrap();
+        let path = native.paths().unwrap().remove(0);
+        let mut reader = std::fs::File::open(&path).unwrap();
+        history
+            .privacy()
+            .set_session(PrivacySessionCommand::On { duration_ms: None }, 2)
+            .unwrap();
+        crate::runtime::revoke_private_exports().unwrap();
+        assert!(std::fs::File::open(&path).is_err());
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"qvxnativesyntheticfile");
+        drop(reader);
+        assert!(!std::path::Path::new(&path).exists());
+        assert!(native.paths().is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), b"qvxnativesyntheticfile");
+        drop((native, conn, history));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+}
