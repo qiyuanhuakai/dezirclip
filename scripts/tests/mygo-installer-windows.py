@@ -13,10 +13,18 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def verify(installer, stage):
+def verify(installer, stage, unicode_path_fixture=False):
     if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
         raise RuntimeError('Installer execution requires a disposable GitHub-hosted runner')
-    root = Path(os.environ['LOCALAPPDATA']) / 'Programs/DezirClip-MyGo'
+    folder = 'DezirClip-MyGo-测试-Ω' if unicode_path_fixture else 'DezirClip-MyGo'
+    if unicode_path_fixture:
+        try:
+            folder.encode('mbcs')
+        except UnicodeEncodeError:
+            pass
+        else:
+            raise RuntimeError('Unicode fixture must exercise characters outside the current ANSI code page')
+    root = Path(os.environ['LOCALAPPDATA']) / 'Programs' / folder
     if root.exists():
         raise RuntimeError('Refusing to modify a pre-existing MyGo installation')
     try:
@@ -89,5 +97,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--installer', type=Path, required=True)
     parser.add_argument('--stage', type=Path, required=True)
+    parser.add_argument('--unicode-path-fixture', action='store_true')
     args = parser.parse_args()
-    verify(args.installer.resolve(strict=True), args.stage.resolve(strict=True))
+    verify(args.installer.resolve(strict=True), args.stage.resolve(strict=True), args.unicode_path_fixture)

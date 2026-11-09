@@ -12,7 +12,12 @@ def nsis_string(value):
     return str(value).replace('$', '$$').replace('"', '$\\"')
 
 
-def build(stage, output, version):
+def build(stage, output, version, unicode_path_fixture=False):
+    extra = []
+    if unicode_path_fixture:
+        if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
+            raise RuntimeError('Unicode installation fixture requires a disposable GitHub runner')
+        extra = ['/DINSTALL_FOLDER=DezirClip-MyGo-测试-Ω']
     if not re.fullmatch(r"\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?", version):
         raise ValueError("Invalid version")
     stage = stage.resolve(strict=True)
@@ -46,7 +51,7 @@ def build(stage, output, version):
                 remove.append(f'RMDir "$INSTDIR\\{str(directory).replace(chr(47), chr(92))}"')
         (root / 'install.nsh').write_text('\n'.join(install), encoding='utf-8-sig')
         (root / 'remove.nsh').write_text('\n'.join(remove), encoding='utf-8-sig')
-        subprocess.run([compiler, '/V2', f'/DOUTPUT={output}', f'/DVERSION={version}',
+        subprocess.run([compiler, '/V2', *extra, f'/DOUTPUT={output}', f'/DVERSION={version}',
                         f'/DINSTALL_FILES={root / "install.nsh"}', f'/DREMOVE_FILES={root / "remove.nsh"}',
                         str(Path(__file__).with_name('mygo-installer.nsi'))], check=True)
     return output
@@ -57,5 +62,6 @@ if __name__ == '__main__':
     parser.add_argument('--stage', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--version', required=True)
+    parser.add_argument('--unicode-path-fixture', action='store_true')
     args = parser.parse_args()
-    build(args.stage, args.output, args.version)
+    build(args.stage, args.output, args.version, args.unicode_path_fixture)

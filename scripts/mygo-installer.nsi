@@ -2,7 +2,10 @@ Unicode true
 RequestExecutionLevel user
 Name "DezirClip MyGo"
 OutFile "${OUTPUT}"
-InstallDir "$LOCALAPPDATA\Programs\DezirClip-MyGo"
+!ifndef INSTALL_FOLDER
+!define INSTALL_FOLDER "DezirClip-MyGo"
+!endif
+InstallDir "$LOCALAPPDATA\Programs\${INSTALL_FOLDER}"
 SetCompressor /SOLID lzma
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
@@ -22,7 +25,7 @@ SetCompressor /SOLID lzma
 Function ${PREFIX}.onInit
   SetShellVarContext current
   SetRegView 64
-  StrCpy $INSTDIR "$LOCALAPPDATA\Programs\DezirClip-MyGo"
+  StrCpy $INSTDIR "$LOCALAPPDATA\Programs\${INSTALL_FOLDER}"
   ${IfNot} ${RunningX64}
     SetErrorLevel 1
     Abort "This installer requires 64-bit Windows."
