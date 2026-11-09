@@ -17,6 +17,17 @@ import tempfile
 import time
 
 
+def cleanup_stopped_desktop_service(cli):
+    # SIGTERM now follows the normal application quit path and drains Service.
+    # An already absent endpoint is expected only during fixture cleanup; tray
+    # acceptance separately confirms the original Service process using pidfd.
+    status = subprocess.run([cli, 'service', 'status', '--json'], capture_output=True, text=True)
+    if status.returncode:
+        assert 'No such file or directory (os error 2)' in status.stderr, status.stderr
+        return
+    subprocess.run([cli, 'service', 'stop'], check=True)
+
+
 @contextlib.contextmanager
 def held_x11_keyboard():
     x = ctypes.CDLL('libX11.so.6')
@@ -1376,7 +1387,7 @@ def check(desktop, pinned, audio, pin_preview=False):
         if process.poll() is None:
             process.terminate()
         process.wait(timeout=10)
-        subprocess.run([cli, 'service', 'stop'], check=True)
+        cleanup_stopped_desktop_service(cli)
     check_storage_limit(cli)
 
 
@@ -1431,8 +1442,13 @@ def check_reset_settings(desktop):
         if resident.poll() is None: resident.terminate()
         resident.wait(timeout=10)
         if replacement is not None:
-            os.kill(replacement, 15)
-        subprocess.run([cli, 'service', 'stop'], check=True)
+            process_exit = os.pidfd_open(replacement)
+            try:
+                os.kill(replacement, 15)
+                assert select.select([process_exit], [], [], 20)[0], 'Replacement resident did not exit'
+            finally:
+                os.close(process_exit)
+        cleanup_stopped_desktop_service(cli)
 
 
 def check_paste_hotkeys(desktop, middle=False):
@@ -1527,7 +1543,7 @@ def check_paste_hotkeys(desktop, middle=False):
         window.destroy()
         resident.terminate()
         resident.wait(timeout=10)
-        subprocess.run([cli, 'service', 'stop'], check=True)
+        cleanup_stopped_desktop_service(cli)
 
 
 def check_storage_limit(cli):
@@ -1790,7 +1806,7 @@ def check_idle(executable):
         db.close()
         process.terminate()
         process.wait(timeout=10)
-        subprocess.run([cli,'service','stop'],check=True)
+        cleanup_stopped_desktop_service(cli)
 
 
 def check_profile_move(executable, home):
