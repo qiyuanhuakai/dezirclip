@@ -978,9 +978,10 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             $null = Get-ControlPoint $root $marker
             if ($recoveryAction -eq 'search') {
                 $null = Wait-Until {
-                    $focused = $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
-                        [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::HasKeyboardFocusProperty, $true))
-                    $focused -and $focused.Current.Name -eq 'Search clipboard...'
+                    $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
+                        [Windows.Automation.AndCondition]::new(
+                            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Search clipboard...'),
+                            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::HasKeyboardFocusProperty, $true)))
                 } 'Service recovery did not focus the requested search input'
             }
         }
@@ -1153,6 +1154,12 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         $names = $root.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) |
             ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -Last 40
         Write-Host ("Synthetic main-window accessibility tree: " + ($names -join ' | '))
+        if ($RecoverService) {
+          $focused = $root.FindAll([Windows.Automation.TreeScope]::Descendants,
+            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::HasKeyboardFocusProperty, $true)) |
+            ForEach-Object { "$($_.Current.ControlType.ProgrammaticName): $($_.Current.Name)" }
+          Write-Host ("Recovery foreground={0}, main={1}, focused controls={2}" -f [MyGoInput]::GetForegroundWindow(), $main.MainWindowHandle, ($focused -join ' | '))
+        }
       }
       Write-Host ("Clipboard matches selected entry: " + ([Windows.Forms.Clipboard]::GetText() -ceq $marker))
     } catch { Write-Host ("Diagnostic query failed: " + $_.Exception.Message) }

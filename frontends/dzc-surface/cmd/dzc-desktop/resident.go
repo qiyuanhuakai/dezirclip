@@ -702,6 +702,9 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 		if err := child.Start(); err != nil {
 			return err
 		}
+		if err := grantMainFocus(child.Process.Pid); err != nil {
+			log.Printf("Replacement desktop activation permission unavailable: %v", err)
+		}
 		return child.Process.Release()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
