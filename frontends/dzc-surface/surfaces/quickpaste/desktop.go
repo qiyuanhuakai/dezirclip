@@ -25,15 +25,7 @@ type desktopPresenter struct {
 // this native window and the connection that identifies its process to Rust.
 func NewDesktopPanel(owner *client.Client) *Panel {
 	p := &Panel{local: &desktopPresenter{owner: owner}, mode: "light", locale: "zh-CN", opacity: 1}
-	p.window = mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip 快速粘贴", Width: 560, Height: 440,
-		Hidden: true, Panel: true, Frameless: true, DisableResize: true, Content: ui.View(p.view)})
-	p.window.OnClose(func(e *mygo.CloseEvent) {
-		if !p.stopping {
-			e.PreventDefault()
-			p.dismiss("cancel")
-		}
-	})
-	p.window.OnBlur(func() { p.dismiss("blur") })
+	p.prepareDesktopWindow()
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 		p.stopping = true
 		if p.local.shortcut != "" {
@@ -43,6 +35,18 @@ func NewDesktopPanel(owner *client.Client) *Panel {
 	})
 	p.RefreshShortcut()
 	return p
+}
+
+func (p *Panel) prepareDesktopWindow() {
+	p.window = mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip 快速粘贴", Width: 560, Height: 440,
+		Hidden: true, Panel: true, Frameless: true, DisableResize: true, Content: ui.View(p.view)})
+	p.window.OnClose(func(e *mygo.CloseEvent) {
+		if !p.stopping {
+			e.PreventDefault()
+			p.dismiss("cancel")
+		}
+	})
+	p.window.OnBlur(func() { p.dismiss("blur") })
 }
 
 func (p *Panel) preferences() (protocol.QuickPreferences, error) {
@@ -79,6 +83,10 @@ func (p *Panel) RefreshShortcut() error {
 		if p.model.Visible {
 			p.dismiss("cancel")
 		}
+		p.releaseDesktopDisplay()
+		p.window.Destroy()
+	} else if p.window.IsDestroyed() {
+		p.prepareDesktopWindow()
 	}
 	if hotkey == p.local.shortcut {
 		return nil

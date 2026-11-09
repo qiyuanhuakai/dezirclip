@@ -260,10 +260,14 @@ func run() error {
 	defer func() { close(sizes); <-sizeDone }()
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 352, Height: 380, MinWidth: 250, MinHeight: 300,
-			Hidden: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true})
+			Hidden: true, SkipTaskbar: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true})
+		if err := win.SetIcon(trayIcon); err != nil {
+			fmt.Fprintf(os.Stderr, "Window icon unavailable: %v\n", err)
+		}
 		preview.main = win
 		dock := &shell.dock
 		dock.window, dock.preview, dock.history = win, preview, history
+		dock.show = func() { shell.requestShow(win) }
 		dock.configure(settings.EdgeDocking == "true")
 		win.OnBlur(func() {
 			history.targetInvalid.Store(true)
@@ -317,8 +321,7 @@ func run() error {
 		// Creating a cold WebView can outlast the Host's idle session timeout.
 		// Sample the external foreground after initialization, immediately before we take focus.
 		history.rememberTarget(ctx)
-		win.Show()
-		win.Focus()
+		shell.requestShow(win)
 		physicalSize := func() mygo.Size {
 			width, height := win.ContentSize()
 			return scaledSize(width, height, mainWindowScale(win))
@@ -370,8 +373,7 @@ func run() error {
 							if position {
 								placeMainAtCursor(win)
 							}
-							win.Show()
-							win.Focus()
+							shell.requestShow(win)
 							if command == "settings" {
 								shell.settingsPending.Store(true)
 								settingsRequested.Emit(win, true)

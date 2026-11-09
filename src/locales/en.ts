@@ -33,6 +33,7 @@ export const en = {
         privacy_metadata_persist_confirm: "The privacy session is active. Pinning or changing tags saves this memory-only entry to disk history. Automatic capture stays paused. Save this entry?",
         privacy_rules_title: "Privacy rules",
         privacy_rules_manage: "Manage privacy rules…",
+        privacy_management: "Privacy management",
         privacy_source_unknown: "No source name",
         privacy_feedback_ignore_confirm: "Stop future automatic recording from sources named “{source}” and keep existing history. This replaces any ignore or protect menu rule for that name. Delete it in Settings → Clipboard settings → Privacy rules. Continue?",
         privacy_feedback_protect_confirm: "Protect this record and request protection for future records from sources named “{source}”; existing exact content exceptions still apply. Other history is not changed in bulk. This replaces any ignore or protect menu rule for that name. Deleting it does not decrypt protected records. Continue?",

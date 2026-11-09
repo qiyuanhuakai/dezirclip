@@ -14,6 +14,8 @@ import (
 )
 
 type DesktopShell struct {
+	resumeSequence  atomic.Uint64
+	resumePending   atomic.Bool
 	idle            hiddenWebView
 	dock            edgeDock
 	resident        residentBridge
@@ -23,6 +25,10 @@ type DesktopShell struct {
 
 var settingsRequested = mygo.NewEvent[bool]("settings-requested")
 var searchRequested = mygo.NewEvent[bool]("search-requested")
+
+func (shell *DesktopShell) SetIgnoreBlur(ignore bool) {
+	shell.dock.ignoreBlur.Store(ignore)
+}
 
 func (shell *DesktopShell) TakeSearchRequest() bool { return shell.searchPending.Swap(false) }
 

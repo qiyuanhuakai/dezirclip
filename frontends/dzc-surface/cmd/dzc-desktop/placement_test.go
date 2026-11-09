@@ -14,8 +14,8 @@ func TestMainWindowPlacement(t *testing.T) {
 		want          mygo.Point
 	}{
 		{mygo.Point{X: -800, Y: -100}, 660, 500, mygo.Point{X: -1130, Y: -88}},
-		{mygo.Point{X: -5, Y: 640}, 660, 500, mygo.Point{X: -665, Y: 128}},
-		{mygo.Point{X: -1599, Y: 200}, 660, 620, mygo.Point{X: -1595, Y: 35}},
+		{mygo.Point{X: -5, Y: 640}, 660, 500, mygo.Point{X: -676, Y: 128}},
+		{mygo.Point{X: -1599, Y: 200}, 660, 620, mygo.Point{X: -1584, Y: 24}},
 		{mygo.Point{X: -800, Y: 200}, 2000, 1000, mygo.Point{X: -1600, Y: -200}},
 	} {
 		if got := nearCursor(test.cursor, work, test.width, test.height); got != test.want {

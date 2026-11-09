@@ -52,6 +52,7 @@ def build(stage, output, version, unicode_path_fixture=False):
         (root / 'install.nsh').write_text('\n'.join(install), encoding='utf-8-sig')
         (root / 'remove.nsh').write_text('\n'.join(remove), encoding='utf-8-sig')
         subprocess.run([compiler, '/V2', *extra, f'/DOUTPUT={output}', f'/DVERSION={version}',
+                        f'/DAPP_ICON={Path(__file__).resolve().parents[1] / "src-tauri/icons/icon.ico"}',
                         f'/DINSTALL_FILES={root / "install.nsh"}', f'/DREMOVE_FILES={root / "remove.nsh"}',
                         str(Path(__file__).with_name('mygo-installer.nsi'))], check=True)
     return output

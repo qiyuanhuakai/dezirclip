@@ -20,8 +20,6 @@ impl Exports {
         Self::create_with_access(files, false)
     }
     fn create_with_access(files: Vec<ClipboardFile>, writable: bool) -> Result<Self, String> {
-        #[cfg(target_os = "windows")]
-        let _ = writable;
         if files.is_empty() || files.len() > 64 {
             return Err("PrivateExportRejected".into());
         }
@@ -82,9 +80,9 @@ impl Exports {
                     .write(true)
                     .read(true)
                     .create_new(true)
-                    .access_mode(0x80000000 | 0x40000000 | 0x00010000)
+                    .access_mode(0x80000000 | 0x40000000 | if writable { 0 } else { 0x00010000 })
                     .share_mode(7)
-                    .custom_flags(0x04000000)
+                    .custom_flags(if writable { 0 } else { 0x04000000 })
                     .open(&path)
                     .map_err(|_| "PrivateExportRejected")?;
                 (handle, path.to_string_lossy().into_owned())
@@ -129,6 +127,14 @@ impl Exports {
         Ok(exports)
     }
     pub(crate) fn stop(&mut self) -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        for path in &self.paths {
+            if let Err(error) = std::fs::remove_file(path) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    return Err("PrivateExportRevocationUnconfirmed".into());
+                }
+            }
+        }
         #[cfg(target_os = "linux")]
         if let Some(owner) = &mut self.owner {
             owner.stop()?;
@@ -459,6 +465,8 @@ impl Drop for Exports {
         #[cfg(target_os = "linux")]
         self.owner.take();
         self.handles.clear();
+        #[cfg(target_os = "windows")]
+        for path in &self.paths { let _ = std::fs::remove_file(path); }
         if let Some(directory) = self.directory.take() {
             if let Ok(children) = std::fs::read_dir(&directory) {
                 for child in children.flatten() {
@@ -475,6 +483,19 @@ mod linux_owner;
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn external_editor_without_delete_sharing_can_open_but_blocks_revocation_until_closed() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let mut export = Exports::create_with_access(vec![ClipboardFile { name: "editor.txt".into(), bytes: b"synthetic".to_vec() }], true).unwrap();
+        let path = export.paths()[0].clone();
+        let editor = std::fs::OpenOptions::new().read(true).write(true).share_mode(3).open(&path).unwrap();
+        assert!(export.stop().is_err());
+        drop(editor);
+        export.stop().unwrap();
+        drop(export);
+        assert!(!std::path::Path::new(&path).exists());
+    }
     use super::*;
     #[cfg(target_os = "linux")]
     #[test]

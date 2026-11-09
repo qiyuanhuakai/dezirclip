@@ -112,6 +112,7 @@ export async function listen<T>(event: string, receive: (message: DesktopEvent<T
     window.mygo.on<boolean>("window-focus", focused => dispatch("mygo-window-focus", focused));
     window.mygo.on<boolean>("window-visibility", visible => dispatch(visible ? "privacy-view-shown" : "privacy-view-hidden"));
     window.mygo.on("window-moved", () => dispatch("mygo-window-moved"));
+    window.mygo.on<number>("main-window-prepare-show", request => dispatch("main-window-prepare-show", request));
     window.mygo.on<boolean>("edge-pinned", pinned => dispatch("window-pinned-changed", pinned));
     window.mygo.on<string[]>("window-file-drop", paths => dispatch("tauri://drag-drop", { paths }));
     void watchHost();

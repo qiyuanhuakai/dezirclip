@@ -18,18 +18,46 @@ use windows_core::HSTRING;
 pub struct OcrService {
     #[cfg(target_os = "windows")]
     engine: OcrEngine,
+    #[cfg(target_os = "windows")]
+    _apartment: OcrApartment,
+}
+
+#[cfg(target_os = "windows")]
+struct OcrApartment {
+    initialized: bool,
+    _thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+#[cfg(target_os = "windows")]
+impl OcrApartment {
+    fn new() -> Result<Self, OcrError> {
+        use windows::Win32::{Foundation::RPC_E_CHANGED_MODE, System::Com::{CoInitializeEx, COINIT_MULTITHREADED}};
+        let result = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+        if result.is_err() && result != RPC_E_CHANGED_MODE {
+            return Err(OcrError::OcrFailed(format!("OCR apartment initialization failed: {result:?}")));
+        }
+        Ok(Self { initialized: result.is_ok(), _thread: std::marker::PhantomData })
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for OcrApartment {
+    fn drop(&mut self) {
+        if self.initialized { unsafe { windows::Win32::System::Com::CoUninitialize() }; }
+    }
 }
 
 impl OcrService {
     #[cfg(target_os = "windows")]
     pub fn new() -> Result<Self, OcrError> {
+        let apartment = OcrApartment::new()?;
         if let Ok(engine) = OcrEngine::TryCreateFromUserProfileLanguages() {
-            return Ok(Self { engine });
+            return Ok(Self { engine, _apartment: apartment });
         }
         let lang =
             Language::CreateLanguage(&HSTRING::from("en-US")).map_err(|_| OcrError::NoLanguages)?;
         let engine = OcrEngine::TryCreateFromLanguage(&lang).map_err(|_| OcrError::NoOcrEngine)?;
-        Ok(Self { engine })
+        Ok(Self { engine, _apartment: apartment })
     }
 
     #[cfg(not(target_os = "windows"))]

@@ -162,13 +162,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
         items.push({ key: "transforms", label: "文本转换 →", hasSubmenu: true });
       }
       if (entry && entry.id !== 0 && onPrivacyFeedback) {
-        for (const action of privacyActions) {
-          const key = `privacy_feedback_${action}` as keyof typeof translations.zh;
-          items.push({ key: `privacy:${action}`, label: translations[language][key] });
-        }
-      }
-      if (entry && entry.id !== 0 && onPrivacyFeedback) {
-        items.push({ key: "privacyManage", label: translations[language].privacy_rules_manage });
+        items.push({ key: "privacy", label: translations[language].privacy_management, hasSubmenu: true });
       }
       return items;
     }, [entry?.is_pinned, entry?.content_type, entry?.id, ocrRunning, ocrText, onEdit, editLabel, onPrivacyFeedback, language]);
@@ -176,9 +170,13 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
 	    const totalItems = menuItems.length;
 	    const menuHeight = totalItems * MENU_ITEM_HEIGHT + MENU_PADDING * 2;
 	    const pos = clampPosition(x, y, MENU_WIDTH, menuHeight);
-	    const transformIndex = menuItems.findIndex((item) => item.key === "transforms");
-	    const submenuPos = transformIndex >= 0
-	      ? submenuPosition(pos.left, pos.top, transformIndex, transformKinds.length)
+	    const privacySubmenu = menuItems[activeIndex]?.key === "privacy";
+        const submenuItems = privacySubmenu ? [
+          ...privacyActions.map(action => ({ id: `privacy:${action}`, label: translations[language][`privacy_feedback_${action}` as keyof typeof translations.zh] })),
+          { id: "privacyManage", label: translations[language].privacy_rules_manage }
+        ] : transformKinds.map(kind => ({ id: kind.id, label: language === "en" ? kind.label_en : kind.label_zh }));
+	    const submenuPos = menuItems[activeIndex]?.hasSubmenu
+	      ? submenuPosition(pos.left, pos.top, activeIndex, submenuItems.length)
 	      : { left: pos.left + MENU_WIDTH + SUBMENU_GAP, top: pos.top };
 
     const handleAction = useCallback(
@@ -232,10 +230,11 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
 
     const handleTransformSelect = useCallback(
       (kind: string) => {
-        onTransform?.(kind);
+        if (privacySubmenu) handleAction(kind);
+        else onTransform?.(kind);
         onClose();
       },
-      [onTransform, onClose]
+      [onTransform, onClose, privacySubmenu, handleAction]
     );
 
     const handleKeyDown = useCallback(
@@ -245,7 +244,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
             e.preventDefault();
             if (submenuOpen) {
               setSubmenuActiveIndex(
-                (prev) => (prev + 1) % Math.max(transformKinds.length, 1)
+                (prev) => (prev + 1) % Math.max(submenuItems.length, 1)
               );
             } else {
               setActiveIndex((prev) => (prev + 1) % totalItems);
@@ -256,8 +255,8 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
             if (submenuOpen) {
               setSubmenuActiveIndex(
                 (prev) =>
-                  (prev - 1 + Math.max(transformKinds.length, 1)) %
-                  Math.max(transformKinds.length, 1)
+                  (prev - 1 + Math.max(submenuItems.length, 1)) %
+                  Math.max(submenuItems.length, 1)
               );
             } else {
               setActiveIndex(
@@ -280,9 +279,9 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
             break;
           case "Enter":
             e.preventDefault();
-            if (submenuOpen && transformKinds.length > 0) {
+            if (submenuOpen && submenuItems.length > 0) {
               handleTransformSelect(
-                transformKinds[submenuActiveIndex]?.id ?? ""
+                submenuItems[submenuActiveIndex]?.id ?? ""
               );
             } else if (menuItems[activeIndex]?.hasSubmenu) {
               setSubmenuOpen(true);
@@ -303,7 +302,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
         submenuOpen,
         submenuActiveIndex,
         totalItems,
-        transformKinds,
+        submenuItems,
         menuItems,
         handleAction,
         handleTransformSelect,
@@ -387,7 +386,7 @@ return createPortal(
 	            </div>
 	          ))}
 	        </div>
-	        {submenuOpen && transformKinds.length > 0 && (
+	        {submenuOpen && submenuItems.length > 0 && (
 	          <div
 	            className="item-context-menu__submenu item-context-menu__submenu--open"
 	            style={{
@@ -396,10 +395,9 @@ return createPortal(
 	              width: SUBMENU_WIDTH,
 	              maxHeight: SUBMENU_MAX_HEIGHT,
 	            }}
-	            data-testid="transform-submenu"
+	            data-testid={privacySubmenu ? "privacy-submenu" : "transform-submenu"}
 	            onMouseEnter={() => {
 	              clearSubmenuCloseTimer();
-	              setActiveIndex(transformIndex);
 	              setSubmenuOpen(true);
 	            }}
 	            onMouseLeave={() => {
@@ -414,7 +412,7 @@ return createPortal(
 	              e.stopPropagation();
 	            }}
 	          >
-	            {transformKinds.map((kind, tIdx) => (
+	            {submenuItems.map((kind, tIdx) => (
 	              <div
 	                key={kind.id}
 	                role="menuitem"
@@ -431,7 +429,7 @@ return createPortal(
 	                  handleTransformSelect(kind.id);
 	                }}
 	              >
-	                {language === "en" ? kind.label_en : kind.label_zh}
+	                {kind.label}
 	              </div>
 	            ))}
 	          </div>
