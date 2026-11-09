@@ -1265,6 +1265,16 @@ def check(desktop, pinned, audio, pin_preview=False):
         raise AssertionError(f'Expected follow={follows}, work area={work}, window={geometry}')
     move_pointer()
     process = subprocess.Popen(launch, stdout=subprocess.DEVNULL)
+    def quit_resident():
+        endpoint = json.loads(subprocess.check_output([cli, 'service', 'desktop-endpoint']))
+        service = os.pidfd_open(endpoint['pid'])
+        try:
+            assert tray_item(process.pid, '退出')
+            assert process.wait(timeout=20) == 0
+            import select
+            assert select.select([service], [], [], 5)[0], 'Tray Exit left the Service running'
+        finally:
+            os.close(service)
     try:
         if not pinned:
             check_placement(True)
@@ -1306,8 +1316,7 @@ def check(desktop, pinned, audio, pin_preview=False):
             if filter_stage == 3 and row and has_marker:
                 if pinned:
                     check_pinned(row, Atspi, Gtk, marker, target, editor, desktop, process.pid)
-                    assert tray_item(process.pid, '退出')
-                    assert process.wait(timeout=15) == 0
+                    quit_resident()
                     # Launch normally from the same profile after changing the setting in the real UI.
                     process = subprocess.Popen([desktop], stdout=subprocess.DEVNULL)
                     deadline = time.monotonic() + 15
@@ -1329,8 +1338,7 @@ def check(desktop, pinned, audio, pin_preview=False):
                         GLib.Variant('(s)', ('org.kde.StatusNotifierWatcher',)), None, Gio.DBusCallFlags.NONE, 2000, None)
                     assert watcher.unpack() == (False,)
                     for args, key in [([], ''), (['--show'], 'Ctrl+Shift+F8')]:
-                        assert tray_item(process.pid, '退出')
-                        assert process.wait(timeout=15) == 0
+                        quit_resident()
                         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
                             db.execute("UPDATE settings SET value=? WHERE key='app.hotkey'", (key,))
                             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.search_hotkey','')")

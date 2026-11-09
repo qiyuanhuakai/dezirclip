@@ -517,6 +517,7 @@ $resident = $null
 $startedService = $null
 $startedServiceProcess = $null
 $serviceCrashReceipt = $null
+$quitVerified = $false
 try {
     & $cli add $marker | Out-Null
     if ($LASTEXITCODE) { throw 'Could not seed isolated clipboard history' }
@@ -867,6 +868,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             $null = Wait-Until { $resident.HasExited -and $serviceProcess.HasExited -and
                 @($children | Where-Object { !$_.HasExited }).Count -eq 0 } 'Tray Exit left Desktop, WebView or Service processes running'
             if ($resident.ExitCode -ne 0 -or $serviceProcess.ExitCode -ne 0) { throw 'Application exit was not clean' }
+            $quitVerified = $true
             Write-Output 'Verified tray Exit stopped the resident, main WebView process tree and authenticated Service without fixture cleanup'
         } finally {
             foreach ($process in $children) { $process.Dispose() }
@@ -1044,7 +1046,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     catch { Write-Host ("Service exit receipt failed before cleanup: " + $_.Exception.Message) }
     if ($resident -and !$resident.HasExited) { $resident.Kill(); $resident.WaitForExit() }
     if ($main -and !$main.HasExited) { $main.Kill(); $main.WaitForExit() }
-    & $cli service stop | Out-Null
+    if (!$quitVerified) { & $cli service stop | Out-Null }
     if ($installedRedirect) {
         if ($null -ne $redirectBackup) { [IO.File]::WriteAllBytes($installedRedirect, $redirectBackup) }
         else { Remove-Item -LiteralPath $installedRedirect -ErrorAction SilentlyContinue }
