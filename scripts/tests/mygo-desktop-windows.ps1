@@ -692,13 +692,15 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
     if ($DisabledPanels) {
-        foreach ($title in @('DezirClip 快速粘贴', 'DezirClip 截图')) {
+        $quickTitle = [regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34')
+        $screenTitle = [regex]::Unescape('DezirClip \u622a\u56fe')
+        foreach ($title in @($quickTitle, $screenTitle)) {
             if ([MyGoInput]::WindowWithTitle($title) -ne [IntPtr]::Zero) { throw 'Disabled panel retained a native window' }
         }
         Click-Control $main (Get-ControlPoint $root 'Settings')
         Click-Control $main (Get-ControlPoint $root 'Tools')
         foreach ($enabled in @($true, $false, $true)) {
-            foreach ($panel in @(@('Quick Paste', 'DezirClip 快速粘贴'), @('Screenshot', 'DezirClip 截图'))) {
+            foreach ($panel in @(@('Quick Paste', $quickTitle), @('Screenshot', $screenTitle))) {
                 $box = Wait-Until { Get-SettingsCheckbox $root $panel[0] } 'Native panel setting unavailable'
                 $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
                 $toggle.Toggle()
@@ -706,7 +708,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
                     if ($resident.HasExited) { throw 'Disabling the last native panel exited the resident' }
                     $exists = [MyGoInput]::WindowWithTitle($panel[1]) -ne [IntPtr]::Zero
                     $exists -eq $enabled
-                } 'Native panel window lifetime differs from its setting'
+                } ("Native panel window lifetime differs from its setting: {0}, enabled={1}" -f $panel[0], $enabled)
             }
         }
         Write-Output 'Verified predisabled startup, destroying both panels and recreating both panels'

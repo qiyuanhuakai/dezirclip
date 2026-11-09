@@ -350,6 +350,8 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
+          # Preserve compilation when a later native UI acceptance step fails.
+          cache-on-failure: true
 
       - name: Setup Go for local IPC compatibility
         uses: actions/setup-go@v6
