@@ -549,13 +549,21 @@ function Test-OcrAfterReopen($Main, $Resident, [string]$Executable, $Form, $Edit
 }
 
 function Get-DesktopProcesses([int[]]$RootIds) {
-    $processes = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,Name,WorkingSetSize,PrivatePageCount)
+    $processes = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate,Name,WorkingSetSize,PrivatePageCount)
+    $byId = @{}
+    foreach ($process in $processes) { $byId[[int]$process.ProcessId] = $process }
     $owned = [Collections.Generic.HashSet[int]]::new()
     foreach ($rootId in $RootIds) { $null = $owned.Add($rootId) }
     do {
         $count = $owned.Count
-        foreach ($p in $processes) {
-            if ($owned.Contains([int]$p.ParentProcessId)) { $null = $owned.Add([int]$p.ProcessId) }
+        foreach ($process in $processes) {
+            $parent = $byId[[int]$process.ParentProcessId]
+            # A surviving child can retain the PID of an exited parent. A new
+            # process reusing that PID did not create the older child.
+            if ($owned.Contains([int]$process.ParentProcessId) -and $parent -and
+                $process.CreationDate -and $parent.CreationDate -and $process.CreationDate -ge $parent.CreationDate) {
+                $null = $owned.Add([int]$process.ProcessId)
+            }
         }
     } while ($owned.Count -gt $count)
     $processes | Where-Object { $owned.Contains([int]$_.ProcessId) }
