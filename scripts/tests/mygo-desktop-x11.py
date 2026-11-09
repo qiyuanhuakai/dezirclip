@@ -397,16 +397,10 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
     sentinel = 'pending manual copy'
     clipboard.set_text(sentinel, -1)
     click()
-    cancel = wait_for(lambda: find_item('取消'), 'Missing explicit copy confirmation')
-    assert atspi.Action.do_action(cancel, 0)
-    wait_for(lambda: find_item('取消') is None, 'Cancel did not dismiss confirmation')
-    assert clipboard.wait_for_text() == sentinel and editor.get_text() == marker
-    click()
-    accept = wait_for(lambda: find_item('仅复制'), 'Missing copy-only action')
-    assert atspi.Action.do_action(accept, 0)
-    wait_for(lambda: clipboard.wait_for_text() == marker, 'Confirmed copy did not write selected content')
+    wait_for(lambda: clipboard.wait_for_text() == marker, 'Missing target did not fall back to copying selected content')
+    assert find_item('仅复制') is None and find_item('取消') is None
     assert editor.get_text() == marker
-    print('Verified native pinned window, first delivery, cancellation, and a separately confirmed copy without replay')
+    print('Verified native pinned window, first delivery, and automatic copy fallback without dialog or replay')
     alternate = gtk.Window(title='Second independent paste target')
     other = gtk.Entry()
     alternate.add(other)
@@ -440,9 +434,8 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         tagged = wait_for(lambda: find_item(marker, text=True), 'Tag row disappeared after delivery')
         bounds = atspi.Component.get_extents(tagged, atspi.CoordType.SCREEN)
         click()
-        accept = wait_for(lambda: find_item('仅复制'), 'Tag row omitted the copy-only confirmation')
-        assert atspi.Action.do_action(accept, 0)
         wait_for(lambda: clipboard.wait_for_text() == marker, 'Tag-row manual copy did not write its source')
+        assert find_item('仅复制') is None and find_item('取消') is None
         assert other.get_text() == marker and editor.get_text() == marker
         add = wait_for(lambda: find_item('添加条目'), 'Missing manual entry command')
         assert atspi.Action.do_action(add, 0)
