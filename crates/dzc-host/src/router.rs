@@ -295,11 +295,14 @@ impl Host {
         self.events.push(event, self.snapshot()?, data).map_err(unavailable)
     }
     pub(crate) fn copy_payload(&self,payload:dzc_core::ports::ClipboardPayload)->Result<(),WireErrorCode> {
-        let hint=dzc_platform::capture::clipboard_echo(&payload).map_err(|_|WireErrorCode::Unavailable)?;
+        let hint=dzc_platform::capture::clipboard_echo(&payload).map_err(|_| {
+            eprintln!("Clipboard copy failed while preparing echo fingerprint");
+            WireErrorCode::Unavailable
+        })?;
         let timestamp=now_ms()?;
         *self.copy_echo.lock().map_err(unavailable)?=hint.map(|hint|(hint,timestamp));
         let result=self.actions.copy(payload);
-        if result.is_err() {self.clear_copy_echo();}
+        if result.is_err() {eprintln!("Clipboard copy failed in platform writer");self.clear_copy_echo();}
         result
     }
     pub(crate) fn own_copy(&self,timestamp:i64)->dzc_core::capture::OwnClipboardCopy {

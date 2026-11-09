@@ -548,22 +548,15 @@ function Test-OcrAfterReopen($Main, $Resident, [string]$Executable, $Form, $Edit
     return $Main
 }
 
-function Get-DesktopProcesses([int[]]$RootIds) {
-    $processes = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate,Name,WorkingSetSize,PrivatePageCount)
-    $byId = @{}
-    foreach ($process in $processes) { $byId[[int]$process.ProcessId] = $process }
+function Get-DesktopProcesses([int[]]$RootIds, [datetime]$Since = [datetime]::MinValue) {
+    $processes = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate,Name,WorkingSetSize,PrivatePageCount |
+        Where-Object { !$_.CreationDate -or $_.CreationDate -ge $Since })
     $owned = [Collections.Generic.HashSet[int]]::new()
     foreach ($rootId in $RootIds) { $null = $owned.Add($rootId) }
     do {
         $count = $owned.Count
-        foreach ($process in $processes) {
-            $parent = $byId[[int]$process.ParentProcessId]
-            # A surviving child can retain the PID of an exited parent. A new
-            # process reusing that PID did not create the older child.
-            if ($owned.Contains([int]$process.ParentProcessId) -and $parent -and
-                $process.CreationDate -and $parent.CreationDate -and $process.CreationDate -ge $parent.CreationDate) {
-                $null = $owned.Add([int]$process.ProcessId)
-            }
+        foreach ($p in $processes) {
+            if ($owned.Contains([int]$p.ParentProcessId)) { $null = $owned.Add([int]$p.ProcessId) }
         }
     } while ($owned.Count -gt $count)
     $processes | Where-Object { $owned.Contains([int]$_.ProcessId) }
@@ -678,11 +671,17 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Remove-Item Env:DEZIRCLIP_DB_PATH -ErrorAction SilentlyContinue
         Remove-Item Env:TIEZ_DB_PATH -ErrorAction SilentlyContinue
     }
-    if ($Emoji -or $Elevation) {
-        if ($env:DZC_SERVICE_CRASH_ROOT -and $env:DZC_SERVICE_CRASH_LAUNCH -ne 'cli') {
-            $recorded = Start-RecordedService (Join-Path (Split-Path $exe) 'dzc-service.exe') ('--database "' + $fixtureDatabase + '"') $env:DZC_SERVICE_CRASH_ROOT
-            $startedServiceProcess = $recorded.Process
-            $serviceCrashReceipt = $recorded.Receipt
+    if ($Capture) { [Windows.Forms.Clipboard]::SetText('Before ' + $marker) }
+    if ($Emoji -or $Elevation -or $Capture) {
+        if ($Capture -or ($env:DZC_SERVICE_CRASH_ROOT -and $env:DZC_SERVICE_CRASH_LAUNCH -ne 'cli')) {
+            if ($Capture) {
+                $startedServiceProcess = Start-Process -FilePath (Join-Path (Split-Path $exe) 'dzc-service.exe') -ArgumentList ('--database "' + $fixtureDatabase + '"') -WindowStyle Hidden -RedirectStandardError (Join-Path $dir.FullName 'service.log') -PassThru
+                $null = $startedServiceProcess.Handle
+            } else {
+                $recorded = Start-RecordedService (Join-Path (Split-Path $exe) 'dzc-service.exe') ('--database "' + $fixtureDatabase + '"') $env:DZC_SERVICE_CRASH_ROOT
+                $startedServiceProcess = $recorded.Process
+                $serviceCrashReceipt = $recorded.Receipt
+            }
             $startedService = Wait-Until {
                 if ($startedServiceProcess.HasExited) { throw 'Recorded Service exited before readiness' }
                 $preference = $ErrorActionPreference
@@ -727,7 +726,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             } | ConvertTo-Json | Set-Content -LiteralPath $serviceCrashReceipt -Encoding UTF8
         }
     }
-    [Windows.Forms.Clipboard]::SetText('Before ' + $marker)
+    if (!$Capture) { [Windows.Forms.Clipboard]::SetText('Before ' + $marker) }
     $form.Show()
     $form.Activate()
     $null = $edit.Focus()
@@ -1002,7 +1001,10 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot identify Service before exit' }
         $serviceProcess = Get-Process -Id $endpoint.pid
         $null = $serviceProcess.Handle
-        $children = @(Get-DesktopProcesses @($resident.Id) | ForEach-Object {
+        # This root is still alive and its process handle is retained. An older
+        # process cannot be its child even if Windows has reused its parent's PID.
+        # Idle checks below keep tracking recorded roots after their parents exit.
+        $children = @(Get-DesktopProcesses @($resident.Id) -Since $resident.StartTime | ForEach-Object {
             $process = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
             if ($process) { $null = $process.Handle; $process }
         })
@@ -1174,6 +1176,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     }
     $log = Join-Path $dir.FullName 'desktop.log'
     if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 12 | Write-Host }
+    $serviceLog = Join-Path $dir.FullName 'service.log'
+    if (Test-Path -LiteralPath $serviceLog) { Get-Content -LiteralPath $serviceLog -Tail 12 | Write-Host }
     if (($Emoji -or $Elevation) -and ($startedService -or $startedServiceProcess)) {
         if ($startedServiceProcess) {
             $startedServiceProcess.Refresh()
