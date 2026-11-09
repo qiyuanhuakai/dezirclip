@@ -85,6 +85,14 @@ public static class MyGoInput {
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
+    [DllImport("user32.dll")] static extern bool GetMenuItemRect(IntPtr window, IntPtr menu, uint item, out Rect rect);
+    public static IntPtr ResidentTrayExit(int process, out Rect rect) {
+        rect = new Rect();
+        if (!ResidentTrayMenuVisible(process)) return IntPtr.Zero;
+        IntPtr popup = FindWindow("#32768", null);
+        IntPtr menu = SendMessage(popup, 0x1E1, IntPtr.Zero, IntPtr.Zero);
+        return GetMenuItemRect(IntPtr.Zero, menu, 2, out rect) ? popup : IntPtr.Zero;
+    }
     public static bool ResidentTrayMenuVisible(int process) {
         IntPtr popup = FindWindow("#32768", null);
         uint owner; GetWindowThreadProcessId(popup, out owner);
@@ -860,6 +868,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         return
     }
     if ($Quit) {
+        $null = Wait-Until { Get-ControlPoint $root $marker } 'History was not ready before tray Exit'
         $null = $main.Handle
         $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
         if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot identify Service before exit' }
@@ -872,9 +881,12 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         try {
             if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open the resident tray menu' }
             $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($resident.Id) } 'Resident tray menu did not open'
-            # MyGo owner-draws the three items; Exit is the last item in the
-            # production tray template. Use the real menu keyboard path.
-            [Windows.Forms.SendKeys]::SendWait('{END}{ENTER}')
+            # Click the real owner-drawn Exit item without relying on keyboard
+            # foreground permission for the synthetic notification callback.
+            $exitRect = [MyGoInput+Rect]::new()
+            $popup = [MyGoInput]::ResidentTrayExit($resident.Id, [ref]$exitRect)
+            if ($popup -eq [IntPtr]::Zero) { throw 'Cannot locate the actual tray Exit item' }
+            Click-WindowPoint $popup ([Drawing.Point]::new(($exitRect.left + $exitRect.right) / 2, ($exitRect.top + $exitRect.bottom) / 2))
             $null = Wait-Until { $resident.HasExited -and $serviceProcess.HasExited -and
                 @($children | Where-Object { !$_.HasExited }).Count -eq 0 } 'Tray Exit left Desktop, WebView or Service processes running'
             if ($resident.ExitCode -ne 0 -or $main.ExitCode -ne 0 -or $serviceProcess.ExitCode -ne 0) { throw 'Application exit was not clean' }
