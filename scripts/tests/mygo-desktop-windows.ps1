@@ -83,6 +83,15 @@ public static class MyGoInput {
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowCallback callback, IntPtr parameter);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int size);
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
+    [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
+    public static bool ResidentTrayMenuVisible(int process) {
+        IntPtr popup = FindWindow("#32768", null);
+        uint owner; GetWindowThreadProcessId(popup, out owner);
+        if (popup == IntPtr.Zero || owner != process || !IsWindowVisible(popup)) return false;
+        IntPtr menu = SendMessage(popup, 0x1E1, IntPtr.Zero, IntPtr.Zero); // MN_GETHMENU
+        return menu != IntPtr.Zero && GetMenuItemCount(menu) == 3;
+    }
     public static bool OpenResidentTrayMenu(int process) {
         IntPtr found = IntPtr.Zero;
         EnumWindows(delegate(IntPtr window, IntPtr unused) {
@@ -862,12 +871,10 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         })
         try {
             if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open the resident tray menu' }
-            $exitLabel = [regex]::Unescape('\u9000\u51fa')
-            $exitItem = Wait-Until {
-                [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Descendants,
-                    [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $exitLabel))
-            } 'Tray Exit item was not exposed'
-            $exitItem.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+            $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($resident.Id) } 'Resident tray menu did not open'
+            # MyGo owner-draws the three items; Exit is the last item in the
+            # production tray template. Use the real menu keyboard path.
+            [Windows.Forms.SendKeys]::SendWait('{END}{ENTER}')
             $null = Wait-Until { $resident.HasExited -and $serviceProcess.HasExited -and
                 @($children | Where-Object { !$_.HasExited }).Count -eq 0 } 'Tray Exit left Desktop, WebView or Service processes running'
             if ($resident.ExitCode -ne 0 -or $main.ExitCode -ne 0 -or $serviceProcess.ExitCode -ne 0) { throw 'Application exit was not clean' }
