@@ -682,6 +682,24 @@ mod native_protected_resource_tests {
     #[test]
     fn native_dpapi_protected_files_remain_ciphertext_and_external_lease_revocation_closes_new_readers(
     ) {
+        const CHILD: &str = "DZC_NATIVE_PROTECTED_EXPORT_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            use std::os::windows::process::CommandExt;
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "private_files::native_protected_resource_tests::native_dpapi_protected_files_remain_ciphertext_and_external_lease_revocation_closes_new_readers",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .creation_flags(0x08000000)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "isolated export scenario failed: {}\n{}",
+                String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+            return;
+        }
         crate::install_default_key_provider();
         let directory =
             std::env::temp_dir().join(format!("dzc-native-private-{}", uuid::Uuid::new_v4()));
