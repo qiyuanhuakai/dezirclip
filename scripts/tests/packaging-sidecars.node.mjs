@@ -219,8 +219,10 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(mygo, /python scripts\/tests\/mygo-installer-windows\.py/);
   assert.match(mygo, /!\$release\.isDraft.*\$release\.databaseId -ne \$env:DZC_RELEASE_ID/);
   assert.match(mygo, /gh release upload "\$env:GITHUB_REF_NAME" \$archive/);
-  assert.match(promotion, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade, windows-x64-mygo\]/);
-  assert.match(promotion, /github\.event_name == 'workflow_dispatch' \|\| \(needs\.publish-tauri\.result == 'success' && needs\.publish-standalone-cli\.result == 'success' && needs\.publish-flatpak\.result == 'success' && needs\.windows-x64-mygo\.result == 'success'\)/);
+  assert.match(promotion, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade, windows-x64-mygo, full-validation\]/);
+  assert.match(promotion, /needs\.full-validation\.result == 'success'/);
+  assert.match(releaseJob(workflow, 'full-validation'), /uses: \.\/\.github\/workflows\/ci\.yml/);
+  assert.match(releaseJob(workflow, 'full-validation'), /full_validation: true/);
 });
 
 test("release source routing rejects loss of the tag fallback, fixed recovery identity or independent tooling", () => {

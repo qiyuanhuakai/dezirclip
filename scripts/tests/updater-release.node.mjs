@@ -142,6 +142,12 @@ function publisherFixture(options = {}) {
       status: options.running ? 'in_progress' : 'completed', conclusion: options.running ? null : 'success' };
     const names = [
       'Create GitHub release', 'Publish verified standalone archives',
+      ...(compareVersions(version, '0.2.0-alpha.10') >= 0 ? [
+        'Full source acceptance / Frontend',
+        ...['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64'].map(platform => `Full source acceptance / Tauri backend (${platform})`),
+        ...['LegacyUninstall', 'OldToNew', 'PublishedAlphaToAlpha', 'OwnedUpgrade', 'OwnedExternalEdit', 'DeniedGuiUpgrade'].map(scenario => `Full source acceptance / Native NSIS (${scenario})`),
+        ...['linux-x86_64', 'linux-aarch64'].map(platform => `Full source acceptance / Verified Flatpak / Flatpak (${platform})`),
+      ] : []),
       ...(hasMyGo ? ['Windows x64 MyGo test download'] : []),
       ...['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64'].map(platform => `Tauri release (${platform})`),
       ...['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64']

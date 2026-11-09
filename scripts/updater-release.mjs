@@ -247,6 +247,13 @@ const releaseGateJobs = [
 ];
 const mygoJob = 'Windows x64 MyGo test download';
 const requiresMyGo = version => compareVersions(version, '0.2.0-alpha.9') >= 0;
+const requiresFullSourceAcceptance = version => compareVersions(version, '0.2.0-alpha.10') >= 0;
+const fullSourceJobs = [
+  'Full source acceptance / Frontend',
+  ...['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64'].map(platform => `Full source acceptance / Tauri backend (${platform})`),
+  ...['LegacyUninstall', 'OldToNew', 'PublishedAlphaToAlpha', 'OwnedUpgrade', 'OwnedExternalEdit', 'DeniedGuiUpgrade'].map(scenario => `Full source acceptance / Native NSIS (${scenario})`),
+  ...['linux-x86_64', 'linux-aarch64'].map(platform => `Full source acceptance / Verified Flatpak / Flatpak (${platform})`),
+];
 const nativeReleaseJobs = [
   'Create GitHub release', 'Publish verified standalone archives',
   ...Object.keys(expectedPlatforms).map(platform => `Tauri release (${platform})`),
@@ -295,8 +302,10 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
   }
   const publishers = jobs.filter(job => publisherJobs.includes(job.name));
   if (publishers.length !== 1 || (requiresMyGo(tag) && jobs.filter(job => job.name === mygoJob).length !== 1)
+      || (requiresFullSourceAcceptance(tag) && fullSourceJobs.some(name => !jobs.some(job => job.name === name && job.conclusion === 'success')))
       || jobs.some(job => !(job.status === 'completed' && job.conclusion === 'success')
-      && !(['Synchronize an already published update channel', 'Supplement published MyGo installer'].includes(job.name)
+      && !(['Synchronize an already published update channel', 'Supplement published MyGo installer',
+        'Full source acceptance / Optional Windows Surface comparison or crash diagnostics'].includes(job.name)
         && job.status === 'completed' && job.conclusion === 'skipped')
       && !(repair && job === publishers[0] && job.status === 'completed' && job.conclusion === 'failure')
       && !(job === publishers[0] && job.status === 'in_progress' && job.conclusion === null))

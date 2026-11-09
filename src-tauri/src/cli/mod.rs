@@ -29,6 +29,7 @@ pub mod pin;
 pub mod search;
 pub mod shell;
 pub mod service;
+pub mod help;
 pub mod stats;
 pub mod tag;
 pub mod tui;

@@ -85,17 +85,18 @@ class NativeTuiPasteTests(unittest.TestCase):
                                    [self.identifier]).fetchone()
             return None if row is None else (row[0], json.loads(row[1]))
 
-    def start(self, dimensions=(30, 110)):
+    def start(self, dimensions=(30, 110), bare=False):
         import pyte
         from winpty import PtyProcess
         self.screen = ""
         self.cells = pyte.Screen(dimensions[1], dimensions[0])
         self.stream = pyte.Stream(self.cells)
+        self.action_hint = "Enter copy" if bare else "Enter id"
         for artifact in (self.result, self.output, self.error):
             artifact.unlink(missing_ok=True)
         self.process = PtyProcess.spawn(
             [sys.executable, str(self.wrapper), str(self.output), str(self.error),
-             str(self.result), str(self.binary), "tui", "--action", "id"],
+             str(self.result), str(self.binary), *([] if bare else ["tui", "--action", "id"])],
             env=self.environment, dimensions=dimensions, backend="0")
         self.process.fileobj.settimeout(.1)
         self.addCleanup(self.close)
@@ -140,7 +141,7 @@ class NativeTuiPasteTests(unittest.TestCase):
         while time.monotonic() < deadline:
             visible = self.visible_screen()
             if ("History" in visible and "Preview" in visible
-                    and "Enter id" in visible and "Enter apply" not in visible):
+                    and self.action_hint in visible and "Enter apply" not in visible):
                 return
             self.read()
         self.fail("TUI did not return to the browser:\n" + self.visible_screen())
@@ -178,6 +179,12 @@ class NativeTuiPasteTests(unittest.TestCase):
             self.process.fileobj.close()
             self.process._server.close()
             self.process = None
+
+    def test_bare_command_opens_tui_and_restores_terminal_on_exit(self):
+        self.start(bare=True)
+        self.process.write("q")
+        self.finish()
+        self.assertEqual(self.row(), (0, []))
 
     def test_search_paste_cannot_submit_then_delete_the_matching_entry(self):
         self.start()
