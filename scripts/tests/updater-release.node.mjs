@@ -126,7 +126,7 @@ function publisherFixture(options = {}) {
   }
   if (options.sync) {
     const hasMyGo = compareVersions(version, '0.2.0-alpha.9') >= 0;
-    if (hasMyGo) state.product.assets.push(asset(`DezirClip-v${version}-windows-x64-MyGo.zip`, Buffer.from('standalone MyGo ZIP')));
+    if (hasMyGo) state.product.assets.push(asset(`DezirClip-v${version}-windows-x64-MyGo${version === '0.2.0-alpha.9' ? '.zip' : '-setup.exe'}`, Buffer.from('standalone MyGo package')));
     for (const arch of ['amd64', 'arm64']) {
       const name = `DezirClip_${version}_${arch}.deb`;
       state.product.assets.push(asset(name, Buffer.from('deb')), asset(`${name}.sig`, Buffer.from('signature')));
@@ -808,4 +808,32 @@ test('promotion rejects symbolic links for a gate report or the acceptance file'
     assert.deepEqual(fixture.state.calls, []);
     if (unsupported) { t.skip('Windows account cannot create file symbolic links; Linux runs this rejection check.'); return; }
   }
+});
+
+test('later MyGo releases require an installer rather than a ZIP', () => {
+  withSynchronization({ version: '0.2.0-alpha.10', running: true }, (fixture, gate, invoke) => {
+    assert.ok(fixture.state.product.assets.some(asset => asset.name.endsWith('MyGo-setup.exe')));
+    assert.equal(invoke().status, 'synchronized');
+  });
+  withSynchronization({ version: '0.2.0-alpha.10', running: true }, (fixture, gate, invoke) => {
+    fixture.state.product.assets.find(asset => asset.name.endsWith('MyGo-setup.exe')).name = 'DezirClip-v0.2.0-alpha.10-windows-x64-MyGo.zip';
+    assert.throws(() => invoke());
+  });
+});
+
+test('public alpha.9 can retain a later installer supplement without weakening original asset gates', () => {
+  withSynchronization({ version: '0.2.0-alpha.9', published: true }, (fixture, gate, invoke) => {
+    const original = fixture.state.product.assets.find(asset => asset.name.endsWith('MyGo.zip'));
+    fixture.state.product.assets.push({ ...original, id: 9999,
+      name: 'DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe', updated_at: '2026-11-09T12:00:00Z' });
+    assert.equal(invoke('sync-published').status, 'synchronized');
+  });
+});
+
+test('only the supplemental MyGo packaging job may additionally skip tag publication', () => {
+  withSynchronization({}, (fixture, gate, invoke) => {
+    fixture.state.jobs.push({ ...fixture.state.jobs[0], id: 9002,
+      name: 'Supplement published MyGo installer', conclusion: 'skipped' });
+    assert.equal(invoke().status, 'synchronized');
+  });
 });
