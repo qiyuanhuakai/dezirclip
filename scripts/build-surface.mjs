@@ -60,7 +60,8 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
   const fingerprint = () => {
     const paths = run('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--',
       'frontends/dzc-surface', 'clients/go', 'design', 'package.json', 'Cargo.toml', 'Cargo.lock', 'src-tauri/tauri.conf.json',
-      ...(component === 'mygo-desktop' ? ['src', 'public', 'index.html', 'vite.config.ts', 'pnpm-lock.yaml', 'tsconfig.json'] : []),
+      ...(component === 'mygo-desktop' ? ['src', 'public', 'index.html', 'vite.config.ts', 'pnpm-lock.yaml', 'tsconfig.json',
+        'src-tauri/icons/icon.ico', 'scripts/build-windows-icon.py'] : []),
       'scripts/set-release-version.mjs', 'scripts/updater-release.mjs', 'scripts/build-surface.mjs', 'scripts/mygo-surface-patch.mjs', 'scripts/generate-surface-tokens.mjs'])
       .split('\0').filter(Boolean).sort();
     return paths.map(path => ({ path, sha256: sha256(readFileSync(join(root, path))) }));
