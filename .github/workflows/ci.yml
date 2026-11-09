@@ -699,13 +699,22 @@ jobs:
           cargo build --locked --release --no-default-features --features native-screen --bin dzc --bin dzc-service
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/stage-mygo-windows.py --revision "$env:GITHUB_SHA" --output "$env:RUNNER_TEMP/mygo-test-package"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          choco install nsis --no-progress -y
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $installer = "$env:RUNNER_TEMP/mygo-test-installer/DezirClip-v$version-windows-x64-MyGo-setup.exe"
+          python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-test-package" --version "$version" --output "$installer"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-test-package" --installer "$installer" --pointer-margin 16
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
-      - name: Upload standalone Windows x64 MyGo test desktop
+      - name: Upload Windows x64 MyGo test installer
         if: matrix.name == 'windows-x86_64' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.windows_x64_mygo_test_package))
         uses: actions/upload-artifact@v4
         with:
           name: DezirClip-windows-x64-MyGo-${{ github.sha }}
-          path: ${{ runner.temp }}/mygo-test-package/
+          path: ${{ runner.temp }}/mygo-test-installer/*-setup.exe
           if-no-files-found: error
           retention-days: 30
 
