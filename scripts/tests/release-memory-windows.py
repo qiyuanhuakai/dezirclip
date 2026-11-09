@@ -15,8 +15,11 @@ import time
 import tempfile
 from urllib.request import ProxyHandler, build_opener
 
-import psutil
-import websocket
+try:
+    import psutil
+    import websocket
+except ModuleNotFoundError:
+    psutil = websocket = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlite_history_fixture import connect_fixture_database
@@ -24,9 +27,6 @@ import release_windows_webview as webview_policy
 from importlib.util import spec_from_file_location, module_from_spec
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = spec_from_file_location('seed', ROOT / 'scripts/seed-performance-history.py')
-seed = module_from_spec(spec)
-spec.loader.exec_module(seed)
 OUT = ROOT / '.harness/release-memory'
 HTTP = build_opener(ProxyHandler({}))
 POLICIES = []
@@ -50,6 +50,7 @@ def native_windows(pid):
     found = []
     user = ctypes.windll.user32
     user.IsWindowVisible.argtypes = [wintypes.HWND]
+    user.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
     user.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
     callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
@@ -58,7 +59,10 @@ def native_windows(pid):
         owner = wintypes.DWORD()
         user.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
         if owner.value == pid and user.IsWindowVisible(hwnd):
-            found.append(hwnd)
+            title = ctypes.create_unicode_buffer(256)
+            user.GetWindowTextW(hwnd, title, len(title))
+            if title.value == 'DezirClip':
+                found.append(hwnd)
         return True
     user.EnumWindows(visit, 0)
     return found
@@ -99,6 +103,9 @@ def wait_ready(port, process):
 
 
 def run_case(label, version, binaries):
+    spec = spec_from_file_location('seed', ROOT / 'scripts/seed-performance-history.py')
+    seed = module_from_spec(spec)
+    spec.loader.exec_module(seed)
     case = ROOT / '.harness/perf/cases' / label
     case.mkdir(parents=True, exist_ok=False)
     for source in binaries.glob('*.exe'):

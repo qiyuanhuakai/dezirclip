@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('memory_probe', Path(__file__).with_name('release-memory-windows.py'))
@@ -30,7 +31,7 @@ class Readiness(unittest.TestCase):
         for rows, visibility, accepted in [(3, 'visible', True), (0, 'visible', False), (3, 'hidden', False)]:
             socket = Socket(rows, visibility)
             targets = io.BytesIO(json.dumps([{'type': 'page', 'url': 'http://tauri.localhost/', 'webSocketDebuggerUrl': 'ws://127.0.0.1:9222/devtools/page/1'}]).encode())
-            with patch.object(probe.HTTP, 'open', return_value=targets), patch.object(probe.websocket, 'create_connection', return_value=socket):
+            with patch.object(probe.HTTP, 'open', return_value=targets), patch.object(probe, 'websocket', SimpleNamespace(create_connection=lambda *args, **kwargs: socket)):
                 if accepted:
                     self.assertEqual(probe.ready(9222)['rows'], rows)
                 else:
