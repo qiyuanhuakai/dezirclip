@@ -3,6 +3,10 @@ name: Standalone CLI
 on:
   workflow_call:
     inputs:
+      artifact-prefix:
+        description: Artifact namespace within the caller run
+        type: string
+        default: dzc
       version:
         description: Expected release version (empty for PR builds)
         required: false
@@ -154,6 +158,6 @@ jobs:
       - name: Upload standalone archive and checksum
         uses: actions/upload-artifact@v4
         with:
-          name: dzc-${{ matrix.name }}
+          name: ${{ inputs.artifact-prefix }}-${{ matrix.name }}
           path: artifacts/dzc/*
           if-no-files-found: error

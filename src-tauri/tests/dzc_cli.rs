@@ -1,6 +1,27 @@
 use std::path::Path;
 use std::process::Command;
 
+#[test]
+fn help_is_categorized_supports_color_and_does_not_open_history() {
+    let database = scratch_db("help-no-io");
+    for args in [vec!["--help"], vec!["help"], vec!["help", "search"], vec!["service", "--help"]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_dzc")).args(&args)
+            .env("DEZIRCLIP_DB_PATH", &database).env("NO_COLOR", "1").output().unwrap();
+        assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(text.contains("Usage:"));
+        assert!(!text.contains('\x1b'));
+        assert!(!database.exists(), "help must not initialize history");
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_dzc")).arg("--help")
+        .env("DEZIRCLIP_DB_PATH", &database).env_remove("NO_COLOR").env("CLICOLOR_FORCE", "1").output().unwrap();
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("\x1b[1;36m"));
+    assert!(text.contains("History & search"));
+    assert!(!database.exists());
+}
+
 /// A per-test database path, unique per process and clock reading so the
 /// parallel test runner cannot hand two tests the same file.
 fn scratch_db(label: &str) -> std::path::PathBuf {

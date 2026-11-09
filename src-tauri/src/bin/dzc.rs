@@ -20,7 +20,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum, CommandFactory, FromArgMatches};
 
 use dezirclip::cli;
 use dezirclip::cli::search::SearchMode;
@@ -30,10 +30,16 @@ const APP_IDENTIFIER: &str = "io.github.qiyuanhuakai.dezirclip";
 const LEGACY_APP_IDENTIFIER: &str = "com.tiez.clipboard";
 
 #[derive(Parser)]
-#[command(name = "dzc", version, about = "DezirClip CLI")]
+#[command(name = "dzc", version, about = "DezirClip — local clipboard history and automation")]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
+}
+
+impl Cli {
+    fn selected_command(self) -> Commands {
+        self.command.unwrap_or_else(|| Commands::Tui(BrowseCliArgs::default()))
+    }
 }
 
 #[derive(Subcommand)]
@@ -122,6 +128,13 @@ struct BrowseCliArgs {
     /// Explicit single-layer tmux wrapping; requires --action osc52.
     #[arg(long, value_enum, default_value_t = Osc52Passthrough::None)]
     osc52_passthrough: Osc52Passthrough,
+}
+
+impl Default for BrowseCliArgs {
+    fn default() -> Self {
+        Self { query: String::new(), kind: None, limit: 100, offset: 0,
+            action: cli::frontend::Action::Copy, osc52_passthrough: Osc52Passthrough::None }
+    }
 }
 
 impl BrowseCliArgs {
@@ -628,7 +641,16 @@ fn run_capabilities(json: bool) -> Result<(), String> {
 fn main() {
     dzc_platform::set_diagnostic_sink(dezirclip::logger::log_diagnostic);
     dzc_platform::install_default_key_provider();
-    let cli_args = Cli::parse();
+    use std::io::IsTerminal;
+    let color = std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty())
+        && (std::io::stdout().is_terminal() || std::env::var("CLICOLOR_FORCE").is_ok_and(|value| value != "0" && !value.is_empty()));
+    let width = crossterm::terminal::size().map(|(columns, _)| usize::from(columns)).unwrap_or(100);
+    let mut schema = Cli::command();
+    schema.build();
+    let schema = cli::help::decorate(schema, "dzc", width, color)
+        .color(if color { clap::ColorChoice::Always } else { clap::ColorChoice::Never });
+    let matches = schema.get_matches();
+    let cli_args = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     if let Err(e) = run(cli_args) {
         eprintln!("error: {e}");
         std::process::exit(1);
@@ -711,7 +733,7 @@ fn run_desktop_tool(action: DesktopTool) -> Result<(), String> {
 }
 
 fn run(args: Cli) -> Result<(), String> {
-    let command = match args.command {
+    let command = match args.selected_command() {
         Commands::DesktopTools { action } => return run_desktop_tool(action),
         Commands::BuildInfo { json } => {
             let info = dezirclip::protocol::build_info::BuildInfo::current_with_host(
@@ -1084,6 +1106,34 @@ fn legacy_data_dir() -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn no_arguments_select_the_same_tui_defaults_as_explicit_tui() {
+        let Commands::Tui(implicit) = Cli::try_parse_from(["dzc"]).unwrap().selected_command() else { panic!("default must be TUI") };
+        let Commands::Tui(explicit) = Cli::try_parse_from(["dzc", "tui"]).unwrap().selected_command() else { panic!("explicit TUI") };
+        assert_eq!(format!("{:?}", implicit.options().unwrap()), format!("{:?}", explicit.options().unwrap()));
+    }
+
+    #[test]
+    fn categorized_help_tracks_public_commands_and_keeps_hidden_commands_private() {
+        let mut command = Cli::command();
+        command.build();
+        let help = cli::help::render(&command, "dzc", 80, false);
+        for sub in command.get_subcommands().filter(|sub| !sub.is_hide_set()) {
+            assert!(help.contains(sub.get_name()), "missing {}", sub.get_name());
+        }
+        assert!(!help.contains("desktop-tools"));
+        assert!(!help.contains("clipboard-owner"));
+        assert!(help.contains("History & search"));
+        assert!(!help.contains('\x1b'));
+        assert!(cli::help::render(&command, "dzc", 80, true).contains("\x1b[1;36m"));
+        let search = command.find_subcommand("search").unwrap();
+        let detail = cli::help::render(search, "dzc search", 80, false);
+        assert!(detail.contains("<QUERY>"));
+        assert!(detail.contains("Arguments"));
+        let narrow = cli::help::render(&command, "dzc", 40, false);
+        for line in narrow.lines() { assert!(unicode_width::UnicodeWidthStr::width(line) <= 40, "{line}"); }
+    }
 
     #[test]
     fn test_parse_add_source_stdin() {

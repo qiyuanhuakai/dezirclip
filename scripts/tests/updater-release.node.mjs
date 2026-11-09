@@ -142,6 +142,12 @@ function publisherFixture(options = {}) {
       status: options.running ? 'in_progress' : 'completed', conclusion: options.running ? null : 'success' };
     const names = [
       'Create GitHub release', 'Publish verified standalone archives',
+      ...(compareVersions(version, '0.2.0-alpha.10') >= 0 ? [
+        'Full source acceptance / Frontend',
+        ...['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64'].map(platform => `Full source acceptance / Tauri backend (${platform})`),
+        ...['LegacyUninstall', 'OldToNew', 'PublishedAlphaToAlpha', 'OwnedUpgrade', 'OwnedExternalEdit', 'DeniedGuiUpgrade'].map(scenario => `Full source acceptance / Native NSIS (${scenario})`),
+        ...['linux-x86_64', 'linux-aarch64'].map(platform => `Full source acceptance / Verified Flatpak / Flatpak (${platform})`),
+      ] : []),
       ...(hasMyGo ? ['Windows x64 MyGo test download'] : []),
       ...['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64'].map(platform => `Tauri release (${platform})`),
       ...['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64']
@@ -837,3 +843,13 @@ test('only the supplemental MyGo packaging job may additionally skip tag publica
     assert.equal(invoke().status, 'synchronized');
   });
 });
+
+for (const missing of ['Full source acceptance / Tauri backend (windows-x86_64)', 'Full source acceptance / Native NSIS (OwnedUpgrade)', 'Full source acceptance / Verified Flatpak / Flatpak (linux-aarch64)']) {
+  test(`new releases refuse a missing full-source gate: ${missing}`, () => {
+    withSynchronization({ version: '0.2.0-alpha.10', running: true }, (fixture, gate, invoke) => {
+      fixture.state.jobs = fixture.state.jobs.filter(job => job.name !== missing);
+      assert.throws(() => invoke(), /gates/);
+      assert.deepEqual(fixture.state.mutations, []);
+    });
+  });
+}

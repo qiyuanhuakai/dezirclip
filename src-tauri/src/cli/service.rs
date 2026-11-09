@@ -37,8 +37,11 @@ enum ServiceCommand {
 pub struct PrivacyArgs { #[command(subcommand)] command: PrivacyCommand }
 #[derive(Subcommand)]
 enum PrivacyCommand {
+    /// Pause capture and revoke private exports, optionally for a limited time.
     On { #[arg(long,value_parser=clap::value_parser!(u64).range(1..=86400))] seconds: Option<u64>, #[arg(long)] json: bool },
+    /// End the shared privacy session.
     Off { #[arg(long)] json: bool },
+    /// Show the current shared privacy session state.
     Status { #[arg(long)] json: bool },
 }
 fn runtime() -> Result<tokio::runtime::Runtime,String> { tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_| "LocalHostRuntimeUnavailable".into()) }
