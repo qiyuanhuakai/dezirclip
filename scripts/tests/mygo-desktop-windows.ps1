@@ -533,6 +533,7 @@ function Test-OcrAfterReopen($Main, $Resident, [string]$Executable, $Form, $Edit
                 } | Select-Object -First 1
             } 'Main window did not reopen after automatic OCR'
         }
+        $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $Main.MainWindowHandle } 'OCR tray activation did not bring the main window to foreground'
         $tree = [Windows.Automation.AutomationElement]::FromHandle($Main.MainWindowHandle)
         $button = Wait-Until {
             $tree.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) |
