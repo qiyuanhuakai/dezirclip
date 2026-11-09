@@ -3,6 +3,10 @@ name: Flatpak
 on:
   workflow_call:
     inputs:
+      artifact-prefix:
+        description: Artifact namespace within the caller run
+        type: string
+        default: flatpak
       version:
         description: Release tag, empty to build and verify without publishing
         required: false
@@ -115,6 +119,6 @@ jobs:
       - name: Upload verified Flatpak artifact
         uses: actions/upload-artifact@v4
         with:
-          name: flatpak-${{ matrix.name }}
+          name: ${{ inputs.artifact-prefix }}-${{ matrix.name }}
           path: "*.flatpak"
           if-no-files-found: error

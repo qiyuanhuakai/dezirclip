@@ -40,6 +40,10 @@ dzc --help
 
 ## 命令速查
 
+直接运行 `dzc` 等同于 `dzc tui`，打开交互式历史列表；退出使用 `q` 或 Esc。查看帮助请显式运行 `dzc --help`、`dzc help` 或 `dzc help <子命令>`。
+
+帮助按历史查询、记录管理、剪贴板与交互、备份与主题、服务与诊断、Shell 与自动化分类，子命令帮助包含参数、默认值和可选值。终端中使用彩色边框；输出到管道或文件时默认不含 ANSI 颜色。设置非空 `NO_COLOR` 可关闭颜色，`CLICOLOR_FORCE=1` 可强制启用；`NO_COLOR` 优先。
+
 | 命令 | 用途 | 常用选项 |
 | --- | --- | --- |
 | `list [N]` | 列出历史，默认 20 条，`-1` 全部 | `--kind`、`--tag`、`--pinned`、`--offset`、`--json`、`--metadata`、`--tsv`、`--ids`、`--exclude-sensitive`、`-q` |

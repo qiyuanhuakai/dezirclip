@@ -182,6 +182,7 @@ jobs:
     needs: create-release
     uses: ./.github/workflows/standalone-cli.yml
     with:
+      artifact-prefix: release-cli
       version: ${{ github.ref_name }}
 
   publish-standalone-cli:
@@ -193,7 +194,7 @@ jobs:
       - name: Download independently built CLI archives
         uses: actions/download-artifact@v4
         with:
-          pattern: dzc-*
+          pattern: release-cli-*
           path: artifacts/dzc
           merge-multiple: true
 
@@ -427,6 +428,7 @@ jobs:
     needs: create-release
     uses: ./.github/workflows/flatpak.yml
     with:
+      artifact-prefix: release-flatpak
       version: ${{ github.ref_name }}
     secrets: inherit
 

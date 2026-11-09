@@ -30,7 +30,7 @@ const APP_IDENTIFIER: &str = "io.github.qiyuanhuakai.dezirclip";
 const LEGACY_APP_IDENTIFIER: &str = "com.tiez.clipboard";
 
 #[derive(Parser)]
-#[command(name = "dzc", version, about = "DezirClip CLI")]
+#[command(name = "dzc", version, about = "DezirClip — local clipboard history and automation")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,

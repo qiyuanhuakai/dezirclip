@@ -16,6 +16,29 @@ import { nativeWriterTimeoutMs, waitForNativeProcess } from "./native-process-de
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 
+test("nested acceptance and release artifacts have disjoint namespaces", () => {
+  const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+  const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
+  const names = [];
+  for (const [file, acceptanceJob, publishJob, platforms] of [
+    ["standalone-cli", "standalone-cli", "build-standalone-cli", ["windows-x86_64", "windows-aarch64", "linux-x86_64", "linux-aarch64"]],
+    ["flatpak", "flatpak", "publish-flatpak", ["linux-x86_64", "linux-aarch64"]],
+  ]) {
+    const child = readFileSync(join(root, `.github/workflows/${file}.yml`), "utf8");
+    assert.match(child, /name: \$\{\{ inputs\.artifact-prefix \}\}-\$\{\{ matrix\.name \}\}/);
+    for (const [workflow, job] of [[ci, acceptanceJob], [release, publishJob]]) {
+      const caller = releaseJob(workflow, job);
+      assert(caller.includes(`uses: ./.github/workflows/${file}.yml`));
+      const prefix = caller.match(/artifact-prefix: ([a-z-]+)/)?.[1];
+      assert(prefix, `${job} supplies an explicit artifact namespace`);
+      names.push(...platforms.map(platform => `${prefix}-${platform}`));
+    }
+  }
+  assert.equal(names.length, 12);
+  assert.equal(new Set(names).size, names.length, "nested calls must not overwrite another job's artifacts");
+  assert.match(releaseJob(release, "publish-standalone-cli"), /pattern: release-cli-\*/);
+});
+
 function releaseJob(workflow, name) {
   const text = workflow.replaceAll("\r\n", "\n");
   const section = text.split(`\n  ${name}:`);

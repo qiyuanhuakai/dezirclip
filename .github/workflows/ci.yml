@@ -140,7 +140,7 @@ jobs:
 
   tauri:
     if: inputs.full_validation || inputs.windows_x64_mygo_test_package || inputs.windows_service_crash_stacks || inputs.linux_release_inputs
-    name: Tauri backend (${{ matrix.name }})
+    name: ${{ matrix.name && format('Tauri backend ({0})', matrix.name) || 'Tauri backend (full validation only)' }}
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -932,10 +932,12 @@ jobs:
     if: inputs.full_validation
     name: Compatible standalone CLI
     uses: ./.github/workflows/standalone-cli.yml
+    with:
+      artifact-prefix: acceptance-cli
 
   native-windows-upgrade:
     if: inputs.full_validation
-    name: Native NSIS (${{ matrix.scenario }})
+    name: ${{ matrix.scenario && format('Native NSIS ({0})', matrix.scenario) || 'Native NSIS (full validation only)' }}
     runs-on: windows-latest
     timeout-minutes: 45
     strategy:
@@ -1035,6 +1037,8 @@ jobs:
     if: inputs.full_validation
     name: Verified Flatpak
     uses: ./.github/workflows/flatpak.yml
+    with:
+      artifact-prefix: acceptance-flatpak
 
   mygo-installer:
     name: MyGo installer acceptance
