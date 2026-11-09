@@ -83,7 +83,10 @@ jobs:
       - name: Measure original published executables
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/tests/release-memory-windows.py
+        run: |
+          python -m unittest discover -s scripts/tests -p test_release_memory_probe.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/tests/release-memory-windows.py
       - name: Preserve measurements and failures
         if: always()
         uses: actions/upload-artifact@v4
@@ -475,6 +478,10 @@ jobs:
                   log = evidence / name
                   if log.is_file(): print(log.read_text(encoding="utf-8"))
               result.check_returncode()
+
+      - name: Verify Windows executable icons
+        if: runner.os == 'Windows' && matrix.can_test
+        run: python scripts/tests/windows-executable-icons.py target/debug/dzc-service.exe artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe
 
       - name: Verify independent MyGo WebView history and native clipboard on X11
         if: runner.os == 'Linux' && matrix.can_test

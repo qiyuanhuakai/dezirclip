@@ -37,6 +37,7 @@ type Panel struct {
 	locale         string
 	mode           string
 	opacity        float64
+	appearance     *theme.Appearance
 	search         string
 	list           *ui.ListState
 	viewRows       *model.View
@@ -640,6 +641,7 @@ func (p *Panel) word(key string) string {
 
 func (p *Panel) view(c *ui.Context) {
 	tokens := theme.Select(p.mode)
+	if p.appearance != nil { tokens = p.appearance.Tokens }
 	t := ui.LightTheme()
 	if p.mode == "dark" {
 		t = ui.DarkTheme()

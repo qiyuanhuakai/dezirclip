@@ -67,6 +67,9 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 	}
 	relaunch := false
 	mygo.App.WhenReady(func() {
+		mygo.App.OnWindowAllClosed(func() {})
+		mainVisible := false
+		refreshMemory := installMemoryPolicy(func() bool { return mainVisible })
 		panel := quickpaste.NewDesktopPanel(owner)
 		selector := screenshot.New(owner)
 		var tray *mygo.Tray
@@ -303,6 +306,13 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 									relaunch, closing = true, true
 									reply(nil)
 									_, _ = io.WriteString(input, "rebuild\n")
+								case "appearance":
+									if request.Appearance == nil || !request.Appearance.Valid() {
+										reply(fmt.Errorf("InvalidNativeAppearance"))
+									} else {
+										saveNativeAppearance(owner, panel, *request.Appearance)
+										reply(nil)
+									}
 								case "paste-hotkey":
 									keys, ok := pasteKeys[request.Panel]
 									if !ok {
@@ -481,6 +491,8 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 						continue
 					}
 					switch line {
+					case "visible", "hidden":
+						mygo.RunOnMain(func() { mainVisible = line == "visible"; refreshMemory() })
 					case "recording-cancel":
 						mygo.RunOnMain(func() { recorder.abort() })
 					case "closing":
@@ -505,6 +517,8 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 					input.Close()
 					commands = nil
 					mainPID = 0
+					mainVisible = false
+					refreshMemory()
 					closing = false
 					if moved || relaunch {
 						relaunch = true
@@ -524,6 +538,17 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		toggle = func() { present("toggle") }
 		open := func() { present("show") }
 		startupSettings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
+		restoreNativeAppearance(owner, panel, startupSettings)
+		panel.SetAppearanceRefresher(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if encoded, err := (&Library{owner}).Preferences(ctx); err == nil {
+				var values map[string]string
+				if json.Unmarshal(encoded, &values) == nil {
+					restoreNativeAppearance(owner, panel, values)
+				}
+			}
+		})
 		refreshSearch(startupSettings)
 		refreshPaste(startupSettings)
 		setTrayVisible = func(visible bool) error {
@@ -604,6 +629,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		if forceShow || (!minimized && !silent) || !reachable() {
 			open()
 		}
+		refreshMemory()
 	})
 	if err := mygo.App.Run(); err != nil {
 		return fmt.Errorf("native desktop: %w", err)

@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
 )
 
 // Only the selection and its authority cross the pipe. Each pinned native window
@@ -30,6 +31,20 @@ type pinnedPreview struct {
 	opacity   previewOpacityControl
 }
 
+// Accessed only on the native event thread.
+var pinnedWindows = make(map[*pinnedPreview]struct{})
+
+func refreshPinnedAppearance(owner *client.Client, appearance theme.Appearance) {
+	for preview := range pinnedWindows {
+		if preview.owner == owner && !preview.window.IsDestroyed() {
+			preview.ticket.Appearance.Palette = &appearance
+			preview.ticket.Appearance.Background = nil
+			preview.ticket.Appearance.Dark = appearance.Mode == "dark"
+			preview.window.Update(func() {})
+		}
+	}
+}
+
 func openPinnedPreview(owner *client.Client, ticket *pinPreviewRequest, closed func()) error {
 	if ticket == nil || ticket.Params.Id <= 0 || ticket.Params.ServiceInstanceId != owner.Hello().State.ServiceInstanceId ||
 		ticket.Bounds.Width <= 0 || ticket.Bounds.Height <= 0 {
@@ -41,12 +56,13 @@ func openPinnedPreview(owner *client.Client, ticket *pinPreviewRequest, closed f
 	if area.Width < 1 || area.Height < 1 {
 		return errors.New("PreviewDisplayUnavailable")
 	}
-	width, height := min(360, area.Width), min(240, area.Height)
+	width, height := min(480, area.Width), min(360, area.Height)
 	p.window = mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip 固定预览", Width: width, Height: height, Hidden: true,
 		Frameless: true, SkipTaskbar: true, Transparent: true, Content: ui.View(p.view)})
 	p.opacity = previewOpacityControl{value: ticket.Appearance.Opacity, slider: float64(ticket.Appearance.Opacity), committed: ticket.Appearance.Opacity, epoch: ticket.Params.ExpectedEpoch, library: Library{owner}, window: p.window}
 	p.opacity.reload()
-	p.window.OnClosed(func() { p.conceal(); closed() })
+	pinnedWindows[p] = struct{}{}
+	p.window.OnClosed(func() { delete(pinnedWindows, p); p.conceal(); closed() })
 	p.window.OnBlur(func() {
 		if p.ticket.Params.Reveal {
 			p.conceal()

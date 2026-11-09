@@ -28,6 +28,7 @@ def icon_object(icon, arch):
         return offset
 
     def directory(entries):
+        allocate((-len(data)) % 4)
         offset = allocate(16 + 8 * entries)
         struct.pack_into("<HH", data, offset + 12, 0, entries)
         return offset

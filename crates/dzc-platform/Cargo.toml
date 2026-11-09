@@ -15,7 +15,7 @@ portable = ["dzc-core/portable"]
 ipc = ["dep:tokio", "dzc-protocol/wire", "dep:sha2"]
 native-screen = ["dep:xcap", "dep:zeroize"]
 native-fonts = ["dep:font-kit", "dzc-protocol/wire"]
-native-ocr = ["dep:windows-core"]
+native-ocr = ["dep:windows-core", "windows/Win32_System_WinRT"]
 
 [dependencies]
 tempfile = "3"

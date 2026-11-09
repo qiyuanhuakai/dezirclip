@@ -30,6 +30,7 @@ spec.loader.exec_module(seed)
 OUT = ROOT / '.harness/release-memory'
 HTTP = build_opener(ProxyHandler({}))
 POLICIES = []
+READY_EXPRESSION = "({rows:document.querySelectorAll('[data-test-clipboard-item]').length,images:[...document.images].filter(i=>i.complete&&i.naturalWidth>0).length,visible:document.visibilityState})"
 
 
 def restore_policies():
@@ -71,7 +72,7 @@ def ready(port):
         raise RuntimeError('Expected exactly one main WebView')
     with closing(websocket.create_connection(main[0]['webSocketDebuggerUrl'], timeout=3, suppress_origin=True)) as ws:
         ws.send(json.dumps({'id': 1, 'method': 'Runtime.evaluate', 'params': {
-            'expression': "({rows:document.querySelectorAll('.clipboard-item').length,images:[...document.images].filter(i=>i.complete&&i.naturalWidth>0).length,visible:document.visibilityState})",
+            'expression': READY_EXPRESSION,
             'returnByValue': True}}))
         while True:
             result = json.loads(ws.recv())

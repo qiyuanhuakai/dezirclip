@@ -7,10 +7,12 @@ import (
 	"io"
 	"sync"
 	"time"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
 )
 
 // The resident owns the tray and native selector. Only its original WebView child has these pipes.
 type residentRequest struct {
+	Appearance *theme.Appearance `json:"appearance,omitempty"`
 	Preview   *pinPreviewRequest `json:"preview,omitempty"`
 	ID        uint64             `json:"request_id"`
 	Epoch     uint64             `json:"epoch"`

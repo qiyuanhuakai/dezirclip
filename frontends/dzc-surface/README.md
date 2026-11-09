@@ -49,7 +49,7 @@ version, source, state, build ID and Rust target triple through `-ldflags`.
 The builder verifies the original module and patches an isolated copy.
 It removes MyGo's automatic updater-cleanup call and sets fixed software-rendering options through
 the WebView2 API when the main window starts with GPU rendering disabled. It also includes the native transparent-window composition fix from [MyGo PR #660](https://github.com/egoist/mygo/pull/660). Clicks on controls in a non-activating Windows flyout preserve keyboard focus in the main window. The patch ID is
-`mygo-v0.6.4-native-alpha-v5`; the module cache and committed `go.mod`
+`mygo-v0.6.4-native-alpha-v6`; the module cache and committed `go.mod`
 stay unchanged. A temporary modfile selects that verified copy. The helper
 requires that patch ID at runtime and reports it as `toolkit_patch_id`.
 `--build-info` prints this Go helper's own identity and fixed MyGo identity;

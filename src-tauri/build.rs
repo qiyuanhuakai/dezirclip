@@ -1,5 +1,16 @@
 #[cfg(not(feature = "desktop"))]
-fn main() {}
+fn main() {
+    let icon = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/icon.ico");
+    println!("cargo:rerun-if-changed={}", icon.display());
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        tauri_winres::WindowsResource::new()
+            .set_icon(icon.to_str().expect("icon path must be UTF-8"))
+            .set("ProductName", "DezirClip")
+            .set("FileDescription", "DezirClip")
+            .compile_for(&["dzc", "dzc-service"])
+            .expect("embed DezirClip Windows executable icons");
+    }
+}
 
 #[cfg(feature = "desktop")]
 fn main() {

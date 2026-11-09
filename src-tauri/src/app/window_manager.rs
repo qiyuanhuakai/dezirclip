@@ -515,6 +515,23 @@ pub fn toggle_window(app: &AppHandle) {
             }
         }
 
+        // Explicit activation starts inside the monitor, beyond the docking strip.
+        // Merely retaining a partly off-screen drag position causes an immediate re-hide.
+        if let (Ok(position), Ok(size), Ok(Some(monitor))) =
+            (window.outer_position(), window.outer_size(), window.current_monitor())
+        {
+            let origin = monitor.position();
+            let available = monitor.size();
+            let axis = |value: i32, origin: i32, available: u32, size: u32| {
+                let spare = available.saturating_sub(size).min(i32::MAX as u32) as i32;
+                let margin = 16.min(spare / 2);
+                value.clamp(origin + margin, origin + spare - margin)
+            };
+            let _ = window.set_position(tauri::PhysicalPosition::new(
+                axis(position.x, origin.x, available.width, size.width),
+                axis(position.y, origin.y, available.height, size.height),
+            ));
+        }
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
 
         // The window may have been rebuilt by `ensure_main_window` a moment ago,

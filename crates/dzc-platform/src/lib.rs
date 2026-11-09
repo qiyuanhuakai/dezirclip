@@ -9,6 +9,14 @@ pub mod user_resource;
 pub mod runtime_display;
 pub mod native_clipboard;
 pub mod runtime;
+pub mod process_memory;
+#[cfg(target_os = "windows")]
+mod export_guard;
+
+pub fn dispatch_export_guardian() {
+    #[cfg(target_os = "windows")]
+    export_guard::dispatch();
+}
 #[cfg(any(feature = "native-fonts", all(feature = "ipc", target_os = "linux")))]
 pub mod fonts;
 #[cfg(feature = "ipc")]

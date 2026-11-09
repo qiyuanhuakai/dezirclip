@@ -24,6 +24,7 @@ native-screen = ["dzc-host/native-screen"]
 portable = ["dzc-core/portable", "dzc-platform/portable"]
 
 [build-dependencies]
+tauri-winres = "0.3.6"
 tauri-build = { workspace = true, optional = true }
 serde_json = { workspace = true }
 

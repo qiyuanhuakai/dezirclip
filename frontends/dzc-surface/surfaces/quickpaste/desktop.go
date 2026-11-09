@@ -10,15 +10,17 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
 )
 
 type desktopPresenter struct {
-	owner      *client.Client
-	connection *client.Client
-	ticket     protocol.QuickTicket
-	shortcut   string
-	notice     bool
-	record     func(string) bool
+	owner             *client.Client
+	connection        *client.Client
+	ticket            protocol.QuickTicket
+	shortcut          string
+	notice            bool
+	record            func(string) bool
+	refreshAppearance func()
 }
 
 // NewDesktopPanel runs on the MyGo UI thread. The standalone Desktop owns
@@ -39,7 +41,7 @@ func NewDesktopPanel(owner *client.Client) *Panel {
 
 func (p *Panel) prepareDesktopWindow() {
 	p.window = mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip 快速粘贴", Width: 560, Height: 440,
-		Hidden: true, Panel: true, Frameless: true, DisableResize: true, Content: ui.View(p.view)})
+		Hidden: true, Panel: true, Frameless: true, Transparent: true, DisableResize: true, Content: ui.View(p.view)})
 	p.window.OnClose(func(e *mygo.CloseEvent) {
 		if !p.stopping {
 			e.PreventDefault()
@@ -65,6 +67,19 @@ func (p *Panel) preferences() (protocol.QuickPreferences, error) {
 }
 
 func (p *Panel) SetShortcutRecorder(record func(string) bool) { p.local.record = record }
+
+func (p *Panel) SetAppearanceRefresher(refresh func()) { p.local.refreshAppearance = refresh }
+
+func (p *Panel) SetAppearance(appearance theme.Appearance) {
+	if !appearance.Valid() {
+		return
+	}
+	p.appearance = &appearance
+	p.mode, p.locale, p.opacity = appearance.Mode, appearance.Locale, appearance.Opacity
+	if !p.window.IsDestroyed() {
+		p.window.Update(func() {})
+	}
+}
 
 func (p *Panel) HasShortcut() bool { return p.local != nil && p.local.shortcut != "" }
 
@@ -115,6 +130,9 @@ func (p *Panel) toggleDesktop() {
 	if p.model.Visible {
 		p.dismiss("cancel")
 		return
+	}
+	if p.local.refreshAppearance != nil {
+		p.local.refreshAppearance()
 	}
 	pref, err := p.preferences()
 	if err != nil || !pref.Enabled || pref.Hotkey != p.local.shortcut {

@@ -7,10 +7,12 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
 )
 
 type DesktopShell struct {
@@ -25,6 +27,13 @@ type DesktopShell struct {
 
 var settingsRequested = mygo.NewEvent[bool]("settings-requested")
 var searchRequested = mygo.NewEvent[bool]("search-requested")
+
+func (s *DesktopShell) SyncAppearance(ctx context.Context, appearance theme.Appearance) error {
+	if !appearance.Valid() {
+		return errors.New("InvalidNativeAppearance")
+	}
+	return s.resident.send(ctx, residentRequest{Operation: "appearance", Appearance: &appearance}, 5*time.Second)
+}
 
 func (shell *DesktopShell) SetIgnoreBlur(ignore bool) {
 	shell.dock.ignoreBlur.Store(ignore)

@@ -1265,7 +1265,7 @@ def check(desktop, pinned, audio, pin_preview=False):
                 if frame:
                     geometry = frame.get_frame_extents()
                     right = geometry.x+geometry.width
-                    aligned = abs(right-(work.x+work.width-5)) <= 5 and abs(geometry.y-(work.y+76)) <= 5
+                    aligned = abs(right-(work.x+work.width-16)) <= 5 and abs(geometry.y-(work.y+76)) <= 5
                     if follows and aligned or not follows and abs(right-(work.x+work.width)) > 30:
                         return
             time.sleep(.05)

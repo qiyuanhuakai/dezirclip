@@ -8,6 +8,8 @@ struct ActiveLease {
 }
 const MAX_TOTAL: usize = 32 * 1024 * 1024;
 pub(crate) struct Exports {
+    #[cfg(target_os = "windows")]
+    guardian: Option<crate::export_guard::Guardian>,
     handles: Vec<File>,
     paths: Vec<String>,
     directory: Option<PathBuf>,
@@ -24,6 +26,8 @@ impl Exports {
             return Err("PrivateExportRejected".into());
         }
         let mut exports = Self {
+            #[cfg(target_os = "windows")]
+            guardian: None,
             handles: Vec::new(),
             paths: Vec::new(),
             directory: None,
@@ -101,6 +105,10 @@ impl Exports {
                 .map(|file| format!("/proc/{}/fd/{}", owner.pid(), file.as_raw_fd()))
                 .collect();
             exports.owner = Some(owner);
+        }
+        #[cfg(target_os = "windows")]
+        if writable {
+            exports.guardian = Some(crate::export_guard::Guardian::start(exports.directory.as_ref().ok_or("PrivateExportRejected")?, &exports.paths)?);
         }
         for (handle, file) in exports.handles.iter_mut().zip(&files) {
             handle
@@ -483,6 +491,37 @@ mod linux_owner;
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn export_owner_subprocess() {
+        if std::env::var_os("DZC_EXPORT_OWNER_TEST_CHILD").is_none() { return; }
+        let export = Exports::create_with_access(vec![ClipboardFile { name: "crash.txt".into(), bytes: b"synthetic crash fixture".to_vec() }], true).unwrap();
+        println!("DZC_EXPORT_PATH={}", serde_json::to_string(&export.paths()[0]).unwrap());
+        std::io::stdout().flush().unwrap();
+        loop { std::thread::park(); }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn guardian_cleans_after_owner_crash_and_nonsharing_editor_close() {
+        use std::{io::BufRead, os::windows::{fs::OpenOptionsExt, process::CommandExt}, process::{Command, Stdio}};
+        let mut owner = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "private_files::tests::export_owner_subprocess", "--nocapture"])
+            .env("DZC_EXPORT_OWNER_TEST_CHILD", "1").creation_flags(0x08000000)
+            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+        let reader = std::io::BufReader::new(owner.stdout.take().unwrap());
+        let path: String = reader.lines().map(Result::unwrap).find_map(|line| line.split_once("DZC_EXPORT_PATH=")
+            .map(|(_, value)| serde_json::from_str(value).unwrap())).expect("owner published fixture path");
+        let editor = std::fs::OpenOptions::new().read(true).share_mode(3).open(&path).unwrap();
+        owner.kill().unwrap();
+        owner.wait().unwrap();
+        drop(editor);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while std::path::Path::new(&path).exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        assert!(!std::path::Path::new(&path).exists(), "guardian must remove plaintext after abrupt owner exit");
+    }
     #[cfg(target_os = "windows")]
     #[test]
     fn external_editor_without_delete_sharing_can_open_but_blocks_revocation_until_closed() {

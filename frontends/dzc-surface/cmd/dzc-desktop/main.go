@@ -259,6 +259,7 @@ func run() error {
 	go library.saveWindowSizes(sizes, sizeDone)
 	defer func() { close(sizes); <-sizeDone }()
 	mygo.App.WhenReady(func() {
+		installMemoryPolicy(func() bool { return false })
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 352, Height: 380, MinWidth: 250, MinHeight: 300,
 			Hidden: true, SkipTaskbar: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true})
 		if err := win.SetIcon(trayIcon); err != nil {
@@ -281,12 +282,14 @@ func run() error {
 		})
 		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus"); focusChanged.Emit(win, true) })
 		win.OnShow(func() {
+			fmt.Fprintln(os.Stdout, "visible")
 			shell.idle.cancel()
 			dock.hidden = false
 			dock.shown = time.Now()
 			visibilityChanged.Emit(win, true)
 		})
 		win.OnHide(func() {
+			fmt.Fprintln(os.Stdout, "hidden")
 			preview.clear()
 			visibilityChanged.Emit(win, false)
 			fmt.Fprintln(os.Stdout, "recording-cancel")

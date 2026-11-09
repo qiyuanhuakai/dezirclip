@@ -41,7 +41,7 @@ func (s *DesktopShell) CompleteResume(ctx context.Context, request uint64, insta
 	}
 	done := make(chan bool, 1)
 	mygo.RunOnMain(func() {
-		if w.IsDestroyed() || !s.resumePending.Load() || request != s.resumeSequence.Load() {
+		if ctx.Err() != nil || w.IsDestroyed() || !s.resumePending.Load() || request != s.resumeSequence.Load() {
 			done <- false
 			return
 		}

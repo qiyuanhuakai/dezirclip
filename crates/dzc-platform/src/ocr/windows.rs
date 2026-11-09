@@ -31,10 +31,12 @@ struct OcrApartment {
 #[cfg(target_os = "windows")]
 impl OcrApartment {
     fn new() -> Result<Self, OcrError> {
-        use windows::Win32::{Foundation::RPC_E_CHANGED_MODE, System::Com::{CoInitializeEx, COINIT_MULTITHREADED}};
-        let result = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
-        if result.is_err() && result != RPC_E_CHANGED_MODE {
-            return Err(OcrError::OcrFailed(format!("OCR apartment initialization failed: {result:?}")));
+        use windows::Win32::{Foundation::RPC_E_CHANGED_MODE, System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED}};
+        let result = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+        if let Err(error) = &result {
+            if error.code() != RPC_E_CHANGED_MODE {
+                return Err(OcrError::OcrFailed(format!("OCR apartment initialization failed: {error}")));
+            }
         }
         Ok(Self { initialized: result.is_ok(), _thread: std::marker::PhantomData })
     }
@@ -43,7 +45,7 @@ impl OcrApartment {
 #[cfg(target_os = "windows")]
 impl Drop for OcrApartment {
     fn drop(&mut self) {
-        if self.initialized { unsafe { windows::Win32::System::Com::CoUninitialize() }; }
+        if self.initialized { unsafe { windows::Win32::System::WinRT::RoUninitialize() }; }
     }
 }
 
@@ -122,6 +124,20 @@ fn dynamic_image_to_software_bitmap(img: &DynamicImage) -> Result<SoftwareBitmap
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn recognizes_on_fresh_worker_threads() {
+        for _ in 0..3 {
+            std::thread::spawn(|| {
+                let service = OcrService::new().expect("Windows OCR engine");
+                let image = image::RgbaImage::from_pixel(64, 64, image::Rgba([255, 255, 255, 255]));
+                let mut encoded = std::io::Cursor::new(Vec::new());
+                image.write_to(&mut encoded, image::ImageFormat::Png).unwrap();
+                assert_eq!(service.recognize(&encoded.into_inner()).unwrap().trim(), "");
+            }).join().expect("OCR worker finishes and releases its apartment");
+        }
+    }
 
     #[test]
     fn test_ocr_service_new() {

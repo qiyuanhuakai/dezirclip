@@ -546,7 +546,7 @@ using System.Text;
 public class FixtureEditor {
     public static void Main(string[] args) {
         if (args.Length != 1) return;
-        using (var file = new FileStream(args[0], FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete)) {
+        using (var file = new FileStream(args[0], FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite)) {
             file.Seek(0, SeekOrigin.End);
             var bytes = Encoding.UTF8.GetBytes(" externally edited");
             file.Write(bytes, 0, bytes.Length);

@@ -1,4 +1,5 @@
 import type { Event as DesktopEvent } from "@tauri-apps/api/event";
+import { observeNativeAppearance } from "./appearance";
 
 const bus = new EventTarget();
 let nextId = 0;
@@ -104,6 +105,7 @@ export async function listen<T>(event: string, receive: (message: DesktopEvent<T
   if (event === "open-settings-panel") settingsListeners++;
   if (event === "focus-search-input") searchListeners++;
   if (!watching) {
+    observeNativeAppearance();
     watching = true;
     window.mygo.on<string>("hotkey-recorded", hotkey => dispatch("hotkey-recorded", hotkey));
     window.mygo.on("recording-cancelled", () => dispatch("recording-cancelled"));
