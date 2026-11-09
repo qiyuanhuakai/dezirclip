@@ -137,6 +137,9 @@ func (l *Library) OcrText(ctx context.Context, recognize bool, params protocol.M
 		}
 		method = protocol.MethodDesktopOcrRecognize
 	} else {
+		if params.ServiceInstanceId != "" && params.ServiceInstanceId != instance {
+			return result, client.ErrProtocol
+		}
 		params.Reveal = false
 		params.ServiceInstanceId = instance
 	}

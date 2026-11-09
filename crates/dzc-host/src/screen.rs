@@ -27,7 +27,7 @@ struct Selection {
     permit: PrivacyReadPermit,
     ticket: Option<CaptureTicket>,
     rect: MonitorRect,
-    frame: Option<FrozenScreenFrame>,
+    frame: Option<Arc<FrozenScreenFrame>>,
     png: Zeroizing<Vec<u8>>,
 }
 
@@ -45,7 +45,7 @@ struct Slot {
 }
 
 #[derive(Default)]
-pub(crate) struct Screens(Arc<Mutex<Slot>>);
+pub(crate) struct Screens(Arc<Mutex<Slot>>, Mutex<()>);
 
 impl Screens {
     pub(crate) fn clear(&self) -> Result<(), WireErrorCode> {
@@ -106,7 +106,7 @@ impl Host {
                 freeze_at(request.cursor.map(|p| (p.x, p.y))).map_err(|_| WireErrorCode::Unavailable)
             }).and_then(encode);
         }
-        let token = params["token"].as_str().ok_or(WireErrorCode::InvalidRequest)?;
+        let token = params["token"].as_str().ok_or(WireErrorCode::InvalidRequest)?.to_owned();
         let mut slot = self.screen.0.lock().map_err(|_| WireErrorCode::Unavailable)?;
         let selection = slot.current.as_mut().filter(|s| s.owner == session.id() && s.token == token && s.deadline > Instant::now())
             .ok_or(WireErrorCode::NotFound)?;
@@ -123,11 +123,19 @@ impl Host {
             }
             Method::DesktopScreenCrop => {
                 let p: ScreenCropParams = decode(params)?;
-                let crop = selection.frame.as_ref().ok_or(WireErrorCode::InvalidRequest)?.crop(p.x, p.y, p.width, p.height)
+                let frame = selection.frame.as_ref().ok_or(WireErrorCode::InvalidRequest)?.clone();
+                let permit = selection.permit.clone();
+                drop(slot);
+                // Encoding is CPU work, not ownership state. Privacy revocation,
+                // disconnect and other clients' idle reads must not wait for it.
+                let crop = frame.crop(p.x, p.y, p.width, p.height)
                     .map_err(|_| WireErrorCode::InvalidRequest)?;
                 let png = Zeroizing::new(crop.png_bytes);
                 if png.len() > MAX_PNG { return Err(WireErrorCode::FrameTooLarge); }
-                self.history.privacy().check_read(&selection.permit, now_ms()?).map_err(privacy_error)?;
+                self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?;
+                let mut slot = self.screen.0.lock().map_err(|_| WireErrorCode::Unavailable)?;
+                let selection = slot.current.as_mut().filter(|s| s.owner == session.id() && s.token == token && s.deadline > Instant::now())
+                    .ok_or(WireErrorCode::NotFound)?;
                 selection.rect = MonitorRect { x: p.x, y: p.y, width: p.width, height: p.height, is_primary: selection.rect.is_primary };
                 selection.frame = None;
                 selection.png = png;
@@ -151,6 +159,12 @@ impl Host {
     }
 
     fn begin_screen(&self, session: &Session, epoch: u64, freeze: impl FnOnce() -> Result<FrozenScreenFrame, WireErrorCode>) -> Result<ScreenImage, WireErrorCode> {
+        // Reserve the expensive capture without blocking ownership or status
+        // reads. Concurrent clients must not allocate multiple monitor frames.
+        let _capture = self.screen.1.try_lock().map_err(|error| match error {
+            std::sync::TryLockError::WouldBlock => WireErrorCode::Busy,
+            std::sync::TryLockError::Poisoned(_) => WireErrorCode::Unavailable,
+        })?;
         let timestamp = now_ms()?;
         let privacy = self.history.privacy();
         let permit = privacy.authorize_read(PrivacyAccessIntent::GeneratedCopy, SensitiveAccess::Denied, Some(epoch), timestamp).map_err(privacy_error)?;
@@ -168,6 +182,6 @@ impl Host {
         if png.len() > MAX_PNG { return Err(WireErrorCode::FrameTooLarge); }
         privacy.check_read(&permit, now_ms()?).map_err(privacy_error)?;
         self.screen.install(Selection { owner: session.id().into(), token: uuid::Uuid::new_v4().to_string(),
-            deadline: Instant::now() + SELECTION_TIMEOUT, timestamp, permit, ticket, rect: frame.bounds(), frame: Some(frame), png })
+            deadline: Instant::now() + SELECTION_TIMEOUT, timestamp, permit, ticket, rect: frame.bounds(), frame: Some(Arc::new(frame)), png })
     }
 }

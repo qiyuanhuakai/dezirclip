@@ -112,12 +112,12 @@ func (p *Preview) clear() {
 }
 
 type previewAppearance struct {
-	Palette                                            *surfaceTheme.Appearance
-	Pin, Close, Retry, Concealed, Failed, OpacityLabel string
-	ZoomIn, ZoomOut, Fit, FitLabel, Actual, ImageZoom  string
-	Opacity                                            int
-	Dark                                               bool
-	Background                                         *struct{ R, G, B uint8 }
+	Palette                                                   *surfaceTheme.Appearance
+	Title, Pin, Close, Retry, Concealed, Failed, OpacityLabel string
+	ZoomIn, ZoomOut, Fit, FitLabel, Actual, ImageZoom         string
+	Opacity                                                   int
+	Dark                                                      bool
+	Background                                                *struct{ R, G, B uint8 }
 }
 
 func (a previewAppearance) theme() *ui.Theme {
@@ -144,7 +144,28 @@ func (a previewAppearance) panel(c *ui.Context) ui.Element {
 	background := theme.Background
 	theme.Background = background.Alpha(0)
 	c.SetTheme(theme)
-	return ui.Column(c).Fill().Background(background).Padding(10)
+	return ui.Column(c).Fill().Background(background).Radius(max(12, theme.Radius)).Border(1, theme.Border.Alpha(.6)).Padding(10).Gap(6)
+}
+
+func previewIcon(c *ui.Context, label string, pin bool) ui.Element {
+	t := c.Theme()
+	return ui.ButtonBase(c).Size(26, 26).Radius(8).Border(1, t.Border.Alpha(.65)).Background(t.Surface.Alpha(.3)).Label(label).Tooltip(label).Draw(func(p *ui.Painter, r ui.Rect) {
+		x, y := r.X+13, r.Y+13
+		if pin {
+			p.Stroke(ui.Rect{X: x - 4, Y: y - 7, W: 8, H: 4}, t.Text, 1, 1.3)
+			p.Line(x-2, y-3, x-2, y+1, 1.3, t.Text)
+			p.Line(x+2, y-3, x+2, y+1, 1.3, t.Text)
+			p.Line(x-5, y+2, x+5, y+2, 1.3, t.Text)
+			p.Line(x, y+2, x, y+8, 1.3, t.Text)
+		} else {
+			var cross ui.Path
+			cross.MoveTo(x-4, y-4)
+			cross.LineTo(x+4, y+4)
+			cross.MoveTo(x+4, y-4)
+			cross.LineTo(x-4, y+4)
+			p.StrokePath(&cross, 1.5, t.Text)
+		}
+	})
 }
 
 func (p *Preview) ShowEntry(ctx context.Context, sequence uint64, id int64, instance string, epoch uint64, reveal bool, placement previewPlacement, appearance previewAppearance) {
@@ -179,6 +200,8 @@ type previewBody struct {
 	source, text string
 	bitmap       *ui.Bitmap
 	formatted    *richtext.Document
+	kind         string
+	timestamp    int64
 }
 
 func readPreview(ctx context.Context, host *client.Client, params protocol.DesktopEntryParams, full bool) (*previewBody, protocol.RuntimeState, error) {
@@ -239,12 +262,23 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 	if bitmap == nil && formatted == nil {
 		formatted = previewDocument(richtext.NewText(text))
 	}
-	return &previewBody{row.SourceApp, text, bitmap, formatted}, snapshot.State, nil
+	return &previewBody{source: row.SourceApp, text: text, bitmap: bitmap, formatted: formatted, kind: row.ContentType, timestamp: row.Timestamp}, snapshot.State, nil
+}
+
+func (body *previewBody) metadata(c *ui.Context) {
+	label := body.kind
+	if body.source != "" {
+		label += "   ·   " + body.source
+	}
+	if body.timestamp > 0 {
+		label += "   ·   " + time.UnixMilli(body.timestamp).Format("01-02 15:04")
+	}
+	ui.Text(c, label).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)
 }
 
 func (body *previewBody) draw(c *ui.Context) {
 	if body.bitmap != nil {
-		ui.Image(c, body.bitmap).Fill()
+		ui.Image(c, body.bitmap).Fill().Fit(ui.Contain)
 	} else if body.formatted != nil {
 		drawRichPreview(c, body.formatted)
 	} else {
@@ -328,16 +362,21 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 		p.window = mygo.NewFlyout(mygo.FlyoutOptions{Parent: main, Anchor: anchor, Width: frame.Width, Height: frame.Height, Hidden: true, Content: ui.View(func(c *ui.Context) {
 			appearance.Opacity = opacity.value
 			appearance.panel(c).Children(func() {
-				ui.Row(c).FillWidth().Children(func() {
-					ui.Text(c, body.source).Grow(1)
-					if appearance.Close != "" && ui.Button(c, appearance.Close).Disabled(pinning).Clicked() {
+				ui.Row(c).FillWidth().Height(30).Gap(6).Children(func() {
+					title := appearance.Title
+					if title == "" {
+						title = "DezirClip"
+					}
+					ui.Text(c, title).Grow(1).FontSize(13).SingleLine()
+					opacity.draw(c, appearance)
+					if appearance.Close != "" && previewIcon(c, appearance.Close, false).Disabled(pinning).Clicked() {
 						main.Update(func() {
 							if p.generation == sequence {
 								p.clear()
 							}
 						})
 					}
-					if appearance.Pin != "" && ui.Button(c, appearance.Pin).Disabled(pinning).Clicked() {
+					if appearance.Pin != "" && previewIcon(c, appearance.Pin, true).Disabled(pinning).Clicked() {
 						pinning = true
 						ticket := pinPreviewRequest{Params: params, Appearance: appearance, Bounds: p.window.Bounds()}
 						go func() {
@@ -356,7 +395,7 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 						}()
 					}
 				})
-				opacity.draw(c, appearance)
+				body.metadata(c)
 				if failed {
 					ui.Text(c, appearance.Failed)
 				}

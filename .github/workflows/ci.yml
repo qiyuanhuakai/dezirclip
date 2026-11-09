@@ -390,7 +390,16 @@ jobs:
         env:
           GOTOOLCHAIN: local
           CGO_ENABLED: '0'
-        run: go test ./...
+          DZC_VISUAL_DIR: ${{ github.workspace }}/target/native-visual-review
+        run: go test -count=1 ./...
+
+      - name: Upload native panel visual fixtures
+        if: matrix.can_test
+        uses: actions/upload-artifact@v4
+        with:
+          name: Native-panel-visuals-${{ matrix.name }}-${{ github.sha }}
+          path: target/native-visual-review/*.png
+          if-no-files-found: error
 
       - name: Build experimental Surface with matching source identity
         env:
@@ -458,6 +467,7 @@ jobs:
           subprocess.run(["python", "scripts/test-local-host.py", "--cli", str(binary), "--desktop-fixture", str(fixture)], check=True)
 
       - name: Verify MyGo React library operations against the Rust Service
+        id: mygo_library
         if: matrix.can_test
         shell: python
         run: |
@@ -527,7 +537,10 @@ jobs:
         if: runner.os == 'Windows' && matrix.can_test
         env:
           DZC_TEST_CLIPBOARD_READER: '1'
-        run: cargo test --locked -p dzc-platform capture::windows_access::tests::reader_window_owns_the_lock_until_drop -- --exact
+        run: |
+          cargo test --locked -p dzc-platform capture::windows_access::tests::reader_window_owns_the_lock_until_drop -- --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked -p dzc-platform native_clipboard::windows_image::tests
 
       - name: Diagnose Windows Service startup crashes with local symbols
         if: runner.os == 'Windows' && matrix.can_test && inputs.windows_service_crash_stacks
@@ -561,9 +574,14 @@ jobs:
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -DisabledPanels
 
       - name: Verify MyGo tray Exit drains Desktop and Service processes
-        if: runner.os == 'Windows' && matrix.can_test
+        if: ${{ !cancelled() && runner.os == 'Windows' && matrix.can_test && steps.mygo_library.outcome == 'success' }}
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Quit
+
+      - name: Verify MyGo tray recovers after the Service exits
+        if: ${{ !cancelled() && runner.os == 'Windows' && matrix.can_test && steps.mygo_library.outcome == 'success' }}
+        shell: powershell
+        run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -RecoverService
 
       - name: Verify middle-button hook survives a blocked resident UI
         if: runner.os == 'Windows' && matrix.can_test
@@ -575,7 +593,7 @@ jobs:
         run: go test ./cmd/dzc-desktop -run '^TestMiddleHookSurvivesBlockedResident$' -count=1 -timeout=30s
 
       - name: Verify MyGo WebView2 screenshot buttons on the Windows desktop
-        if: runner.os == 'Windows' && matrix.can_test
+        if: ${{ !cancelled() && runner.os == 'Windows' && matrix.can_test && steps.mygo_library.outcome == 'success' }}
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Capture
 

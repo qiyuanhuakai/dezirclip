@@ -215,8 +215,18 @@ func run() error {
 	softwareWindow := runtime.GOOS == "windows" && len(os.Args) == 4 && os.Args[3] == "--software-webview"
 	mainWindow := (len(os.Args) == 3 || softwareWindow) && os.Args[1] == "--main-window"
 	minimized := len(os.Args) == 2 && os.Args[1] == "--minimized"
-	forceShow := len(os.Args) == 2 && os.Args[1] == "--show"
-	if len(os.Args) != 1 && !mainWindow && !minimized && !forceShow {
+	activation := ""
+	if len(os.Args) == 2 {
+		switch os.Args[1] {
+		case "--show":
+			activation = "show"
+		case "--settings":
+			activation = "settings"
+		case "--search":
+			activation = "search"
+		}
+	}
+	if len(os.Args) != 1 && !mainWindow && !minimized && activation == "" {
 		return fmt.Errorf("unexpected desktop arguments")
 	}
 	// The Desktop always loads the packaged local UI even in a developer shell.
@@ -234,7 +244,7 @@ func run() error {
 	}
 	mygo.App.SetName("DezirClip MyGo")
 	if !mainWindow {
-		return runResident(actions, minimized, forceShow)
+		return runResident(actions, minimized, activation)
 	}
 	if actions.Hello().State.ServiceInstanceId != os.Args[2] {
 		return client.ErrProtocol

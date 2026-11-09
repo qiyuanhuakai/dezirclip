@@ -461,7 +461,9 @@ func (p *Panel) query(offset uint32) {
 		connect = p.local.owner.DesktopConnection
 	} else {
 		endpoint, grant := p.init.Endpoint, p.init.Grant
-		connect = func(ctx context.Context) (*client.Client, error) { return client.DialSurface(ctx, endpoint, grant, buildinfo.Identity()) }
+		connect = func(ctx context.Context) (*client.Client, error) {
+			return client.DialSurface(ctx, endpoint, grant, buildinfo.Identity())
+		}
 	}
 	go func() {
 		defer cancel()
@@ -477,6 +479,9 @@ func (p *Panel) query(offset uint32) {
 				request.Mode = &mode
 			}
 			page, err = host.SurfacePage(ctx, request)
+			if err == nil && p.local != nil {
+				err = enrichDesktopPage(ctx, host, request, &page)
+			}
 		}
 		cancelled := ctx.Err() == context.Canceled
 		p.window.Update(func() {
@@ -621,8 +626,11 @@ func (p *Panel) word(key string) string {
 	zh := strings.HasPrefix(p.locale, "zh")
 	traditional := p.locale == "zh-TW" || p.locale == "zh-Hant" || p.locale == "tw"
 	words := map[string][3]string{
-		"search": {"Search history", "搜索历史", "搜尋歷史"}, "empty": {"No results", "没有匹配记录", "沒有相符記錄"},
-		"loading": {"Loading…", "正在加载…", "正在載入…"}, "hidden": {"Protected record", "受保护记录", "受保護記錄"},
+		"search": {"Search…", "搜索…", "搜尋…"}, "empty": {"No results", "没有匹配记录", "沒有相符記錄"},
+		"image":     {"[Image Content]", "[图片内容]", "[圖片內容]"},
+		"rich_text": {"[Rich Text]", "[富文本]", "[富文字]"},
+		"link":      {"[Link]", "[链接]", "[連結]"},
+		"loading":   {"Loading…", "正在加载…", "正在載入…"}, "hidden": {"Protected record", "受保护记录", "受保護記錄"},
 		"read_failed":  {"Could not read history. Retry.", "读取失败，请重试。", "讀取失敗，請重試。"},
 		"paste_failed": {"Paste failed. Select again to retry.", "粘贴失败，请重新选择。", "貼上失敗，請重新選擇。"},
 		"paste_notice": {"Previous paste could not be confirmed. Check the target content before selecting again.", "上次粘贴无法确认，请先检查目标内容后重新选择。", "上次貼上無法確認，請先檢查目標內容後重新選擇。"},
@@ -641,7 +649,9 @@ func (p *Panel) word(key string) string {
 
 func (p *Panel) view(c *ui.Context) {
 	tokens := theme.Select(p.mode)
-	if p.appearance != nil { tokens = p.appearance.Tokens }
+	if p.appearance != nil {
+		tokens = p.appearance.Tokens
+	}
 	t := ui.LightTheme()
 	if p.mode == "dark" {
 		t = ui.DarkTheme()
@@ -661,7 +671,7 @@ func (p *Panel) view(c *ui.Context) {
 	display := p.model.Display
 	var rows *model.View
 	ui.Column(c.Key("display-"+display)).Fill().Padding(float32(tokens.Padding)).Gap(float32(tokens.Gap)).Radius(float32(tokens.Radius)).Border(1, t.Border).Background(background).Children(func() {
-		input := ui.TextInput(c.Key("query-"+p.model.Display), &p.search).Placeholder(p.word("search")).Label(p.word("search")).Height(float32(tokens.SearchHeight)).AutoFocus()
+		input := ui.TextInput(c.Key("query-"+p.model.Display), &p.search).Placeholder(p.word("search")).Label(p.word("search")).Height(float32(tokens.SearchHeight)).Radius(float32(tokens.SearchHeight)/2).Background(t.Surface.Alpha(.25)).Padding(6, 14).AutoFocus()
 		input.OnTextKey(func(key ui.TextKey) bool {
 			if key.Key == ui.KeyEnter {
 				p.diagnosticRecord(map[string]any{"stage": "enter_gate", "visible": p.model.Visible,
@@ -723,13 +733,28 @@ func (p *Panel) view(c *ui.Context) {
 			row, _ := rows.Row(&p.model, i)
 			return row.Text
 		}
+		listTheme := *t
+		listTheme.Accent, listTheme.AccentText = t.Selection.Alpha(.5), t.Text
+		listTheme.SurfaceHover = t.Surface.Alpha(.2)
+		c.SetTheme(&listTheme)
 		list := ui.List(c.Key("entries-"+display), p.list, rows.Len(&p.model), func(i int) {
 			row, current := rows.Row(&p.model, i)
 			if !current {
 				return
 			}
-			ui.Column(c).Height(float32(tokens.RowHeight)).Padding(4, 8).Children(func() {
-				ui.Text(c, row.Text).FontWeight(tokens.RegularWeight)
+			label := row.Text
+			if strings.HasPrefix(label, "[") && strings.HasSuffix(label, "]") {
+				switch label {
+				case "[image]":
+					label = p.word("image")
+				case "[rich_text]":
+					label = p.word("rich_text")
+				case "[url]", "[link]":
+					label = p.word("link")
+				}
+			}
+			ui.Column(c).Height(float32(tokens.RowHeight)).Padding(6, 12).Gap(3).BorderWidth(0, 0, 1, 0).BorderColor(t.Border.Alpha(.35)).Children(func() {
+				ui.Text(c, label).FontWeight(tokens.RegularWeight).SingleLine().TextColor(t.Text)
 				ui.Text(c, row.SourceApp).FontSize(float32(tokens.FontSize - 2)).TextColor(t.TextMuted)
 			})
 		}).Grow(1).Disabled(p.model.Loading || p.model.PendingAction != "").Children(func() {
@@ -741,6 +766,7 @@ func (p *Panel) view(c *ui.Context) {
 				ui.Text(c, label).TextColor(t.TextMuted).Padding(12)
 			}
 		})
+		c.SetTheme(t)
 		if list.Submitted() {
 			p.paste(rows)
 		}
@@ -750,7 +776,7 @@ func (p *Panel) view(c *ui.Context) {
 				p.query(0)
 			}
 		}
-		if p.model.HasMore && ui.Button(c, p.word("more")).Disabled(p.model.Loading).Clicked() {
+		if p.model.HasMore && ui.ButtonBase(c).Label(p.word("more")).Height(24).Center().TextColor(t.TextMuted).Disabled(p.model.Loading).Children(func() { ui.Text(c, p.word("more")).FontSize(float32(tokens.FontSize - 2)) }).Clicked() {
 			p.query(p.model.NextOffset)
 		}
 		ui.Text(c, p.word("hint")).FontSize(float32(tokens.FontSize - 2)).TextColor(t.TextMuted)

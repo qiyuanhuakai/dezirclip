@@ -66,8 +66,17 @@ func (o *previewOpacityControl) draw(c *ui.Context, a previewAppearance) {
 	if a.OpacityLabel == "" {
 		return
 	}
-	ui.Row(c).FillWidth().Children(func() {
-		if ui.Slider(c, &o.slider, 0, 100).Grow(1).Label(a.OpacityLabel).Tooltip(a.OpacityLabel).Changed() {
+	t := c.Theme()
+	ui.Row(c).Width(150).Height(26).Gap(5).Children(func() {
+		slider := ui.SliderBase(c, &o.slider, 0, 100).Grow(1).Height(26).PaddingX(6).Label(a.OpacityLabel).Tooltip(a.OpacityLabel)
+		slider.Draw(func(p *ui.Painter, r ui.Rect) {
+			track := ui.Rect{X: r.X + 6, Y: r.Y + 11, W: max(0, r.W-12), H: 4}
+			p.Stroke(track, t.Border, 2, 1)
+			x := track.X + track.W*float32(o.slider/100)
+			p.Fill(ui.Rect{X: x - 5, Y: r.Y + 7, W: 10, H: 12}, t.Surface.Alpha(.8), 3)
+			p.Stroke(ui.Rect{X: x - 5, Y: r.Y + 7, W: 10, H: 12}, t.Border, 3, 1)
+		})
+		if slider.Changed() {
 			next := int(math.Round(o.slider))
 			if o.value != next {
 				o.value = next
@@ -78,7 +87,7 @@ func (o *previewOpacityControl) draw(c *ui.Context, a previewAppearance) {
 				}
 			}
 		}
-		ui.Text(c, strconv.Itoa(o.value)+"%")
+		ui.Text(c, strconv.Itoa(o.value)+"%").FontSize(12).Width(32)
 	})
 	if o.failed {
 		ui.Text(c, a.Failed)

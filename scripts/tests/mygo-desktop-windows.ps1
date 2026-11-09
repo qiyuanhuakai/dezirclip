@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -87,11 +87,14 @@ public static class MyGoInput {
     [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
     [DllImport("user32.dll")] static extern bool GetMenuItemRect(IntPtr window, IntPtr menu, uint item, out Rect rect);
     public static IntPtr ResidentTrayExit(int process, out Rect rect) {
+        return ResidentTrayItem(process, 2, out rect);
+    }
+    public static IntPtr ResidentTrayItem(int process, uint item, out Rect rect) {
         rect = new Rect();
         if (!ResidentTrayMenuVisible(process)) return IntPtr.Zero;
         IntPtr popup = FindWindow("#32768", null);
         IntPtr menu = SendMessage(popup, 0x1E1, IntPtr.Zero, IntPtr.Zero);
-        return GetMenuItemRect(IntPtr.Zero, menu, 2, out rect) ? popup : IntPtr.Zero;
+        return GetMenuItemRect(IntPtr.Zero, menu, item, out rect) ? popup : IntPtr.Zero;
     }
     public static bool ResidentTrayMenuVisible(int process) {
         IntPtr popup = FindWindow("#32768", null);
@@ -504,8 +507,50 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     Write-Output 'Verified a WebView2 Open click launched the selected editor and the Service refreshed the same history row'
 }
 
-function Get-DesktopProcesses([int[]]$RootIds) {
-    $processes = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,Name,WorkingSetSize,PrivatePageCount)
+function Test-OcrAfterReopen($Main, $Resident, [string]$Executable, $Form, $Editor) {
+    $Form.Activate()
+    $null = $Editor.Focus()
+    $null = Wait-Until { $Editor.Focused } 'OCR fixture editor did not regain focus'
+    $fixture = Join-Path $PSScriptRoot '../../frontends/dzc-surface/cmd/dzc-desktop/testdata/ocr-clipboard.png'
+    $image = [Drawing.Image]::FromFile((Resolve-Path -LiteralPath $fixture).Path)
+    try { [Windows.Forms.Clipboard]::SetImage($image) } finally { $image.Dispose() }
+    foreach ($reopen in @($false, $true)) {
+        if ($reopen) {
+            if (!$Main.CloseMainWindow()) { throw 'Could not close the OCR WebView' }
+            $null = Wait-Until { $Main.HasExited } 'OCR WebView did not exit'
+        }
+        if (![MyGoInput]::OpenResidentTrayMenu($Resident.Id)) { throw 'Could not open the OCR resident tray menu' }
+        $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($Resident.Id) } 'OCR resident tray menu did not appear'
+        $showRect = [MyGoInput+Rect]::new()
+        $popup = [MyGoInput]::ResidentTrayItem($Resident.Id, 0, [ref]$showRect)
+        if ($popup -eq [IntPtr]::Zero) { throw 'Could not locate the resident Show action' }
+        Click-WindowPoint $popup ([Drawing.Point]::new(($showRect.left + $showRect.right)/2, ($showRect.top + $showRect.bottom)/2))
+        if ($reopen) {
+            $Main = Wait-Until {
+                if ($Resident.HasExited) { throw 'Resident exited during OCR recovery' }
+                Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
+                    $_.Id -ne $Resident.Id -and $_.Path -eq $Executable -and $_.MainWindowTitle -eq 'DezirClip'
+                } | Select-Object -First 1
+            } 'Main window did not reopen after automatic OCR'
+        }
+        $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $Main.MainWindowHandle } 'OCR tray activation did not bring the main window to foreground'
+        $tree = [Windows.Automation.AutomationElement]::FromHandle($Main.MainWindowHandle)
+        $button = Wait-Until {
+            $tree.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) |
+                Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::Button -and $_.Current.Name.EndsWith('OCR Text') -and !$_.Current.IsOffscreen } |
+                Select-Object -First 1
+        } 'Persisted automatic OCR was missing from the image row' 40
+        $bounds = $button.Current.BoundingRectangle
+        Click-Control $Main ([Drawing.Point]::new([int]($bounds.Left+$bounds.Width/2), [int]($bounds.Top+$bounds.Height/2)))
+        $null = Get-ControlPoint $tree 'DESKTOP TEST'
+    }
+    Write-Host 'Verified automatic OCR text survives a fresh WebView and the main window remains reopenable'
+    return $Main
+}
+
+function Get-DesktopProcesses([int[]]$RootIds, [datetime]$Since = [datetime]::MinValue) {
+    $processes = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate,Name,WorkingSetSize,PrivatePageCount |
+        Where-Object { !$_.CreationDate -or $_.CreationDate -ge $Since })
     $owned = [Collections.Generic.HashSet[int]]::new()
     foreach ($rootId in $RootIds) { $null = $owned.Add($rootId) }
     do {
@@ -602,8 +647,20 @@ import os, sqlite3, sys
 with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.text',?)", (sys.argv[1],))
     db.execute("UPDATE settings SET value='true' WHERE key='app.silent_start'")
+    # Automatic OCR is scheduled for new persistent images. This fixture must
+    # opt into persistence rather than relying on the RAM-only profile default.
+    db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
+                   [('app.persistent','true'), ('app.ocr_enabled','true')])
 '@ | python - $fixtureEditor
         if ($LASTEXITCODE) { throw 'Could not select the isolated external editor' }
+    }
+    if ($RecoverService) {
+        @'
+import os, sqlite3
+with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+    db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.search_hotkey','Ctrl+Shift+F9')")
+'@ | python -
+        if ($LASTEXITCODE) { throw 'Could not seed the recovery search shortcut' }
     }
     if ($InstalledElevation) {
         $config = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'io.github.qiyuanhuakai.dezirclip'
@@ -614,11 +671,17 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         Remove-Item Env:DEZIRCLIP_DB_PATH -ErrorAction SilentlyContinue
         Remove-Item Env:TIEZ_DB_PATH -ErrorAction SilentlyContinue
     }
-    if ($Emoji -or $Elevation) {
-        if ($env:DZC_SERVICE_CRASH_ROOT -and $env:DZC_SERVICE_CRASH_LAUNCH -ne 'cli') {
-            $recorded = Start-RecordedService (Join-Path (Split-Path $exe) 'dzc-service.exe') ('--database "' + $fixtureDatabase + '"') $env:DZC_SERVICE_CRASH_ROOT
-            $startedServiceProcess = $recorded.Process
-            $serviceCrashReceipt = $recorded.Receipt
+    if ($Capture) { [Windows.Forms.Clipboard]::SetText('Before ' + $marker) }
+    if ($Emoji -or $Elevation -or $Capture) {
+        if ($Capture -or ($env:DZC_SERVICE_CRASH_ROOT -and $env:DZC_SERVICE_CRASH_LAUNCH -ne 'cli')) {
+            if ($Capture) {
+                $startedServiceProcess = Start-Process -FilePath (Join-Path (Split-Path $exe) 'dzc-service.exe') -ArgumentList ('--database "' + $fixtureDatabase + '"') -WindowStyle Hidden -RedirectStandardError (Join-Path $dir.FullName 'service.log') -PassThru
+                $null = $startedServiceProcess.Handle
+            } else {
+                $recorded = Start-RecordedService (Join-Path (Split-Path $exe) 'dzc-service.exe') ('--database "' + $fixtureDatabase + '"') $env:DZC_SERVICE_CRASH_ROOT
+                $startedServiceProcess = $recorded.Process
+                $serviceCrashReceipt = $recorded.Receipt
+            }
             $startedService = Wait-Until {
                 if ($startedServiceProcess.HasExited) { throw 'Recorded Service exited before readiness' }
                 $preference = $ErrorActionPreference
@@ -663,7 +726,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
             } | ConvertTo-Json | Set-Content -LiteralPath $serviceCrashReceipt -Encoding UTF8
         }
     }
-    [Windows.Forms.Clipboard]::SetText('Before ' + $marker)
+    if (!$Capture) { [Windows.Forms.Clipboard]::SetText('Before ' + $marker) }
     $form.Show()
     $form.Activate()
     $null = $edit.Focus()
@@ -867,6 +930,69 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Test-PinnedPreview $root $main $resident $marker
         return
     }
+    if ($RecoverService) {
+      foreach ($recoveryAction in @('show', 'search', 'settings')) {
+        $oldResident = $resident
+        $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
+        if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot identify Service before the recovery fixture' }
+        $serviceProcess = Get-Process -Id $endpoint.pid
+        $expectedService = Join-Path (Split-Path $exe) 'dzc-service.exe'
+        if ($serviceProcess.Path -ne $expectedService) { throw 'Recovery fixture Service executable mismatch' }
+        $null = $serviceProcess.Handle
+        if (!$main.CloseMainWindow()) { throw 'Cannot close the idle main WebView' }
+        $null = Wait-Until { $main.HasExited } 'Idle main WebView did not exit'
+        # This process belongs to the isolated CI profile. End it without a
+        # graceful protocol stop, then exercise the existing resident's tray.
+        $serviceProcess.Kill()
+        $null = Wait-Until { $serviceProcess.HasExited } 'Fixture Service did not exit'
+        if ($recoveryAction -eq 'search') {
+            $form.Activate()
+            $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $form.Handle } 'Recovery shortcut target did not acquire foreground'
+            [Windows.Forms.SendKeys]::SendWait('^+{F9}')
+        } else {
+            if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open tray after Service exit' }
+            $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($resident.Id) } 'Recovery tray menu did not open'
+            $showRect = [MyGoInput+Rect]::new()
+            $item = if ($recoveryAction -eq 'settings') { 1 } else { 0 }
+            $popup = [MyGoInput]::ResidentTrayItem($resident.Id, $item, [ref]$showRect)
+            if ($popup -eq [IntPtr]::Zero) { throw 'Recovery tray action missing' }
+            Click-WindowPoint $popup ([Drawing.Point]::new(($showRect.left+$showRect.right)/2, ($showRect.top+$showRect.bottom)/2))
+        }
+        $resident = Wait-Until {
+            Get-CimInstance Win32_Process -Filter "Name='dzc-desktop.exe'" | Where-Object {
+                $_.ParentProcessId -eq $oldResident.Id -and $_.ExecutablePath -eq $exe
+            } | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue } | Select-Object -First 1
+        } 'Tray activation did not replace the stale native owner' 40
+        $null = Wait-Until { $oldResident.HasExited } 'Stale resident did not exit during Host recovery'
+        $main = Wait-Until {
+            if ($resident.HasExited) { throw 'Recovered resident exited' }
+            Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
+                $_.Id -ne $resident.Id -and $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip'
+            } | Select-Object -First 1
+        } 'Tray activation did not recreate the main WebView' 40
+        $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+        if ($recoveryAction -eq 'settings') {
+            $null = Get-ControlPoint $root 'General Settings'
+        } else {
+            $null = Get-ControlPoint $root $marker
+            if ($recoveryAction -eq 'search') {
+                $null = Wait-Until {
+                    $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
+                        [Windows.Automation.AndCondition]::new(
+                            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Search clipboard...'),
+                            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::HasKeyboardFocusProperty, $true)))
+                } 'Service recovery did not focus the requested search input'
+            }
+        }
+        $replacement = & $cli service desktop-endpoint | ConvertFrom-Json
+        if ($LASTEXITCODE -or $replacement.instance -eq $endpoint.instance -or $replacement.database -cne $endpoint.database) {
+            throw 'Recovery did not authenticate a new Service for the same profile'
+        }
+        Write-Output "Verified $recoveryAction recovered after Service exit with a fresh native owner, Host identity and requested WebView destination"
+        $serviceProcess.Dispose()
+      }
+        return
+    }
     if ($Quit) {
         $null = Wait-Until { Get-ControlPoint $root $marker } 'History was not ready before tray Exit'
         $null = $resident.Handle
@@ -875,7 +1001,10 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot identify Service before exit' }
         $serviceProcess = Get-Process -Id $endpoint.pid
         $null = $serviceProcess.Handle
-        $children = @(Get-DesktopProcesses @($resident.Id) | ForEach-Object {
+        # This root is still alive and its process handle is retained. An older
+        # process cannot be its child even if Windows has reused its parent's PID.
+        # Idle checks below keep tracking recorded roots after their parents exit.
+        $children = @(Get-DesktopProcesses @($resident.Id) -Since $resident.StartTime | ForEach-Object {
             $process = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
             if ($process) { $null = $process.Handle; $process }
         })
@@ -905,6 +1034,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     if ($Capture) {
         Test-TransparentPreview $root $main $marker
         Test-ExternalEdit $root $main $marker
+        $main = Test-OcrAfterReopen $main $resident $exe $form $edit
+        $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
         Click-Control $main (Get-ControlPoint $root 'Settings')
         $softwareFlag = '(?:^|\s)--disable-gpu(?:\s|$)'
         $inheritedGpu = (Get-WebViewBrowser $main).CommandLine -match $softwareFlag
@@ -947,6 +1078,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         $point = Get-ControlPoint $root 'Full Screen Capture'
         $bounds = [Windows.Forms.Screen]::FromPoint($point).Bounds
         Click-Control $main $point
+        $acknowledged = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Copied to clipboard')
+        $null = Wait-Until { $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $acknowledged) } 'Full Screen Capture was not acknowledged'
         $null = Wait-Until {
             try { $image = [Windows.Forms.Clipboard]::GetImage() }
             catch [Runtime.InteropServices.ExternalException] { return $false }
@@ -955,8 +1088,6 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
                 finally { $image.Dispose() }
             }
         } 'Full Screen Capture did not copy the selected display'
-        $acknowledged = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Copied to clipboard')
-        $null = Wait-Until { $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $acknowledged) } 'Full Screen Capture was not acknowledged'
         Click-Control $main (Get-ControlPoint $root 'Region Capture')
         $panel = Get-ResidentPanel $resident ([regex]::Unescape('DezirClip \u622a\u56fe'))
         [Windows.Forms.SendKeys]::SendWait('{ESC}')
@@ -1025,11 +1156,28 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         $names = $root.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) |
             ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -Last 40
         Write-Host ("Synthetic main-window accessibility tree: " + ($names -join ' | '))
+        if ($RecoverService) {
+          $focused = $root.FindAll([Windows.Automation.TreeScope]::Descendants,
+            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::HasKeyboardFocusProperty, $true)) |
+            ForEach-Object { "$($_.Current.ControlType.ProgrammaticName): $($_.Current.Name)" }
+          Write-Host ("Recovery foreground={0}, main={1}, focused controls={2}" -f [MyGoInput]::GetForegroundWindow(), $main.MainWindowHandle, ($focused -join ' | '))
+        }
       }
       Write-Host ("Clipboard matches selected entry: " + ([Windows.Forms.Clipboard]::GetText() -ceq $marker))
     } catch { Write-Host ("Diagnostic query failed: " + $_.Exception.Message) }
+    if ($Capture) {
+        @'
+import json, os, sqlite3
+with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+    settings=dict(db.execute("SELECT key,value FROM settings WHERE key IN ('app.persistent','app.ocr_enabled')"))
+    rows=db.execute("SELECT ocr_status,count(*),sum(length(COALESCE(ocr_text,''))>0) FROM clipboard_history WHERE content_type='image' GROUP BY ocr_status").fetchall()
+    print('Synthetic OCR diagnostics:', json.dumps({'settings':settings,'status_counts':rows}))
+'@ | python -
+    }
     $log = Join-Path $dir.FullName 'desktop.log'
     if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 12 | Write-Host }
+    $serviceLog = Join-Path $dir.FullName 'service.log'
+    if (Test-Path -LiteralPath $serviceLog) { Get-Content -LiteralPath $serviceLog -Tail 12 | Write-Host }
     if (($Emoji -or $Elevation) -and ($startedService -or $startedServiceProcess)) {
         if ($startedServiceProcess) {
             $startedServiceProcess.Refresh()

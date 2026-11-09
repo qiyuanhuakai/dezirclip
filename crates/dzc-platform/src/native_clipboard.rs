@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 mod selection_lease;
 #[cfg(target_os = "windows")]
 mod private_windows;
+#[cfg(target_os = "windows")]
+mod windows_image;
 #[cfg(target_os = "linux")]
 mod private_x11_files;
 #[cfg(target_os = "linux")]
@@ -442,6 +444,18 @@ fn set(cb: &mut arboard::Clipboard, payload: Payload) -> Result<(), String> {
         Payload::Private(payload) => (*payload, true),
         payload => (payload, false),
     };
+    // Decode before opening the native clipboard; Windows Set acquires its lock.
+    let image = if let Payload::Image(bytes) = &payload {
+        Some(image::load_from_memory(bytes).map_err(|_| "ClipboardImageRejected")?.into_rgba8())
+    } else { None };
+    #[cfg(target_os = "windows")]
+    if let Some(image) = image {
+        if private { return Err("NativeLeaseOwnerRequired".into()); }
+        return windows_image::write(image);
+    }
+    #[cfg(target_os = "windows")]
+    let image: Option<image::RgbaImage> = None;
+    let image_write = image.is_some();
     let setter = cb.set();
     #[cfg(target_os = "windows")]
     let setter = {
@@ -465,10 +479,8 @@ fn set(cb: &mut arboard::Clipboard, payload: Payload) -> Result<(), String> {
         Payload::Text(text) => setter.text(text),
         Payload::Html { html, text } => setter.html(html, Some(text)),
         Payload::Files(paths) => setter.file_list(&paths),
-        Payload::Image(bytes) => {
-            let image = image::load_from_memory(&bytes)
-                .map_err(|_| "ClipboardImageRejected")?
-                .into_rgba8();
+        Payload::Image(_) => {
+            let image = image.ok_or("ClipboardImageRejected")?;
             setter.image(arboard::ImageData {
                 width: image.width() as usize,
                 height: image.height() as usize,
@@ -479,7 +491,24 @@ fn set(cb: &mut arboard::Clipboard, payload: Payload) -> Result<(), String> {
             return Err("NativeLeaseOwnerRequired".into())
         }
     };
-    result.map_err(|_| "ClipboardWriteUnavailable".into())
+    result.map_err(|error| {
+        let category = match &error {
+            arboard::Error::ClipboardOccupied => "occupied",
+            arboard::Error::ConversionFailure => "conversion",
+            arboard::Error::ClipboardNotSupported => "unsupported",
+            arboard::Error::ContentNotAvailable => "content-unavailable",
+            _ => "native-error",
+        };
+        eprintln!("Native clipboard write failed: {category}");
+        // The image adapter's native descriptions contain only fixed operation
+        // names and Windows error codes, never image content or file paths.
+        if image_write {
+            if let arboard::Error::Unknown { description } = &error {
+                eprintln!("Native clipboard image failure: {description}");
+            }
+        }
+        "ClipboardWriteUnavailable".into()
+    })
 }
 pub fn write_private(
     payload: Payload,

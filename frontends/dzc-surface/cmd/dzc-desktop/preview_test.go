@@ -3,7 +3,10 @@ package main
 import (
 	"image"
 	"image/color"
+	"image/png"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,6 +14,39 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/richtext"
 )
+
+func TestPreviewVisualFixture(t *testing.T) {
+	directory := os.Getenv("DZC_VISUAL_DIR")
+	if directory == "" {
+		t.Skip("visual export directory is not set")
+	}
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, dark := range []bool{false, true} {
+		mode := "light"
+		if dark {
+			mode = "dark"
+		}
+		p := &pinnedPreview{ticket: pinPreviewRequest{Appearance: previewAppearance{Title: "Content preview", Dark: dark, Opacity: 85, Close: "Close preview", OpacityLabel: "Opacity"}},
+			opacity: previewOpacityControl{value: 85, slider: 85},
+			body: &previewBody{source: "DezirClip", kind: "rich_text", timestamp: 1794222000000,
+				formatted: previewDocument(richtext.ParseHTML("<h2>Native content preview</h2><p>Clipboard notes keep <b>bold text</b>, <i>emphasis</i> and paragraph spacing.</p><p>The compact toolbar shares the same visual hierarchy as the main WebView.</p><p>A second paragraph stays readable in both light and dark themes.</p>"))}}
+		frame := ui.NewTester(p.view, 480, 320).Image()
+		if frame.RGBAAt(0, 0).A != 0 {
+			t.Fatal("preview corners must be transparent")
+		}
+		file, err := os.Create(filepath.Join(directory, "preview-"+mode+".png"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = png.Encode(file, frame)
+		file.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 func TestLongPreviewOpensAtFirstParagraph(t *testing.T) {
 	const opening = "First paragraph"
@@ -56,6 +92,22 @@ func TestRichPreviewPaintsOnlyOneBackground(t *testing.T) {
 				t.Fatalf("dark=%v opacity=%d: formatted text missing", dark, opacity)
 			}
 		}
+	}
+}
+
+func TestPreviewPanelKeepsBackgroundOpacityInsideBorder(t *testing.T) {
+	for _, opacity := range []int{0, 40, 75, 100} {
+		a := previewAppearance{Opacity: opacity}
+		frame := ui.NewTester(func(c *ui.Context) {
+			a.panel(c).Children(func() { ui.Text(c, "Visible preview content") })
+		}, 360, 160).Image()
+		if alpha := frame.RGBAAt(180, 152).A; math.Abs(float64(alpha)-float64(opacity)*2.55) > 1 {
+			t.Fatalf("opacity %d: interior background alpha %d", opacity, alpha)
+		}
+		if frame.RGBAAt(0, 0).A != 0 {
+			t.Fatal("rounded corner must be transparent")
+		}
+		t.Logf("opacity %d: corner-border alpha=%d, interior alpha=%d", opacity, frame.RGBAAt(356, 156).A, frame.RGBAAt(180, 152).A)
 	}
 }
 

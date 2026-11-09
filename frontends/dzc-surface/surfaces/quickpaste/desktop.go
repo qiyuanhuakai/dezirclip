@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -12,6 +13,44 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
 )
+
+// The resident Desktop already has ordinary GUI metadata authority. Enrich
+// only IDs admitted by the restricted Surface page; never reveal a hidden row.
+func enrichDesktopPage(ctx context.Context, host *client.Client, request protocol.SurfacePageParams, page *protocol.SurfacePage) error {
+	var snapshot protocol.BodySnapshot
+	params := protocol.DesktopPageParams{Limit: request.Limit, Offset: request.Offset, Query: request.Query}
+	if err := host.Call(ctx, protocol.MethodDesktopHistoryPage, params, "BodySnapshot", &snapshot); err != nil {
+		return err
+	}
+	if snapshot.State.ServiceInstanceId != request.ServiceInstanceId || snapshot.State.PrivacyEpoch != request.ExpectedEpoch || snapshot.State.HistoryRevision != request.ExpectedHistoryRevision {
+		return client.ErrProtocol
+	}
+	var metadata protocol.DesktopEntries
+	if err := host.ReadSnapshot(ctx, snapshot, "DesktopEntries", &metadata); err != nil {
+		return err
+	}
+	byID := make(map[int64]string)
+	for _, entry := range metadata.Entries {
+		if entry.ContentType != "rich_text" && entry.ContentType != "url" && entry.ContentType != "link" {
+			continue
+		}
+		text := strings.TrimSpace(entry.Preview)
+		lower := strings.ToLower(text)
+		if strings.HasPrefix(lower, "data:") || strings.HasPrefix(lower, "file:") || strings.HasPrefix(lower, "asset:") || strings.ContainsAny(text, "<>") {
+			continue
+		}
+		byID[entry.Id] = text
+	}
+	for i := range page.Entries {
+		row := &page.Entries[i]
+		if row.PrivacyVisibility == "ordinary" && row.Preview == nil {
+			if text := byID[row.Id]; text != "" {
+				row.Preview = &text
+			}
+		}
+	}
+	return nil
+}
 
 type desktopPresenter struct {
 	owner             *client.Client

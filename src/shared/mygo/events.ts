@@ -81,7 +81,14 @@ async function watchHost() {
         dispatch("preview-preferences-changed");
         void window.mygo.call("Preview.ReloadOpacity").catch(console.error);
       }
-      if (recovered || update.resync_required || previous?.history_revision !== update.state.history_revision) dispatch("clipboard-changed");
+      if (recovered || update.resync_required || previous?.history_revision !== update.state.history_revision) {
+        const removals = update.events.filter(({ event, data, state }) => event === "EntryDeleted" && data.entry_id !== undefined
+          && state.privacy_epoch === update.state.privacy_epoch && state.service_instance_id === update.state.service_instance_id);
+        const onlyRemovals = !resync && !privacyChanged && previous !== undefined && removals.length > 0
+          && update.state.history_revision - previous.history_revision === removals.length
+          && !update.events.some(({ event }) => ["EntryAdded", "EntryUpdated", "HistoryReset"].includes(event));
+        dispatch("clipboard-changed", onlyRemovals ? { removedIds: removals.map(({ data }) => data.entry_id) } : undefined);
+      }
       previous = update.state;
     } catch {
       connected = false;

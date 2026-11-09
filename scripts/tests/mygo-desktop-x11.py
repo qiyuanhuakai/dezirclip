@@ -1632,7 +1632,9 @@ def check_preview(button, atspi, pin=None):
         data = pixels.get_pixels()
         stride = pixels.get_rowstride()
         width, height = pixels.get_width(), pixels.get_height()
-        return (data[(height-4)*stride+(width-4)*4+3] == 0
+        # Sample the bottom padding, inside the rounded outline. The corner
+        # at width-4/height-4 is now border ink, not the panel background.
+        return (data[(height-8)*stride+(width//2)*4+3] == 0
                 and any(data[y*stride+x*4+3] >= 220 for y in range(5,height-5) for x in range(5,width-5)))
     deadline = time.monotonic()+4
     while not clear_background_and_visible_ink():
@@ -1680,7 +1682,7 @@ def check_preview(button, atspi, pin=None):
             return wait(saved,'Native opacity control did not persist through the Rust Host')
         def matches_opacity(xid,percent):
             win=GdkX11.X11Window.foreign_new_for_display(screen.get_display(),xid)
-            pixels=Gdk.pixbuf_get_from_window(win,win.get_width()-4,win.get_height()-4,1,1)
+            pixels=Gdk.pixbuf_get_from_window(win,win.get_width()//2,win.get_height()-8,1,1)
             return pixels and pixels.get_has_alpha() and abs(pixels.get_pixels()[3]-round(percent*2.55))<=2
         saved=set_opacity(.4)
         wait(lambda:matches_opacity(preview_id,saved),'Hover background did not follow the native slider')

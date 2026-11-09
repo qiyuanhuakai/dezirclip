@@ -95,9 +95,18 @@ impl OcrService {
             .engine
             .RecognizeAsync(&bitmap)
             .map_err(|e| OcrError::OcrFailed(format!("RecognizeAsync failed: {e}")))?;
-        let result = async_op
-            .join()
-            .map_err(|e| OcrError::OcrFailed(format!("OCR operation failed: {e}")))?;
+        // An unresponsive native engine must not retain capture work forever
+        // or prevent the Service from shutting down after the UI exits.
+        let (send, receive) = std::sync::mpsc::sync_channel(1);
+        async_op.when(move |result| { let _ = send.send(result); })
+            .map_err(|e| OcrError::OcrFailed(format!("OCR completion registration failed: {e}")))?;
+        let result = match receive.recv_timeout(std::time::Duration::from_secs(30)) {
+            Ok(result) => result.map_err(|e| OcrError::OcrFailed(format!("OCR operation failed: {e}")))?,
+            Err(_) => {
+                let _ = async_op.Cancel();
+                return Err(OcrError::OcrFailed("OCR operation timed out".into()));
+            }
+        };
         let text = result
             .Text()
             .map_err(|e| OcrError::OcrFailed(format!("Text() failed: {e}")))?;
@@ -161,6 +170,17 @@ mod tests {
                 assert_eq!(text.split_whitespace().collect::<Vec<_>>().join(" "), "DESKTOP TEST");
             }
         }).join().expect("OCR worker remains usable after engine probes");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn recognizes_text_on_concurrent_capture_workers() {
+        let workers: Vec<_> = (0..8).map(|_| std::thread::spawn(|| {
+            let bytes = include_bytes!("../../../../frontends/dzc-surface/cmd/dzc-desktop/testdata/ocr-clipboard.png");
+            let text = OcrService::new().unwrap().recognize(bytes).unwrap();
+            assert_eq!(text.split_whitespace().collect::<Vec<_>>().join(" "), "DESKTOP TEST");
+        })).collect();
+        for worker in workers { worker.join().unwrap(); }
     }
 
     #[test]

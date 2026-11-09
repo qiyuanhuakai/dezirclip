@@ -234,6 +234,32 @@ func (c *Client) DesktopConnection(ctx context.Context) (*Client, error) {
 	return c.desktop.connect(ctx, c.hello.CoreVersion)
 }
 
+// RecoverDesktopForPresentation is only for a new explicit window activation.
+// It never retries a clipboard operation. A replacement Host requires the UI
+// owner to discard its old windows, grants, selections and event cursors.
+func (c *Client) RecoverDesktopForPresentation(ctx context.Context) (bool, error) {
+	probe, cancel := context.WithTimeout(ctx, 2*time.Second)
+	host, err := c.DesktopConnection(probe)
+	cancel()
+	if err == nil {
+		host.Close()
+		return false, nil
+	}
+	database, err := c.DesktopDatabase()
+	if err != nil {
+		return false, err
+	}
+	next, err := OpenDesktop(ctx, c.hello.CoreVersion, true)
+	if err != nil {
+		return false, err
+	}
+	defer next.Close()
+	if next.desktop.Database != database {
+		return false, ErrProtocol
+	}
+	return next.hello.State.ServiceInstanceId != c.hello.State.ServiceInstanceId, nil
+}
+
 // DesktopCall performs one operation on a new authenticated connection.
 // Never replay a mutation after an ambiguous transport failure.
 func (c *Client) DesktopCall(ctx context.Context, method protocol.Method, params any, schema string, result any) error {

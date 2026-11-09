@@ -295,11 +295,14 @@ impl Host {
         self.events.push(event, self.snapshot()?, data).map_err(unavailable)
     }
     pub(crate) fn copy_payload(&self,payload:dzc_core::ports::ClipboardPayload)->Result<(),WireErrorCode> {
-        let hint=dzc_platform::capture::clipboard_echo(&payload).map_err(|_|WireErrorCode::Unavailable)?;
+        let hint=dzc_platform::capture::clipboard_echo(&payload).map_err(|_| {
+            eprintln!("Clipboard copy failed while preparing echo fingerprint");
+            WireErrorCode::Unavailable
+        })?;
         let timestamp=now_ms()?;
         *self.copy_echo.lock().map_err(unavailable)?=hint.map(|hint|(hint,timestamp));
         let result=self.actions.copy(payload);
-        if result.is_err() {self.clear_copy_echo();}
+        if result.is_err() {eprintln!("Clipboard copy failed in platform writer");self.clear_copy_echo();}
         result
     }
     pub(crate) fn own_copy(&self,timestamp:i64)->dzc_core::capture::OwnClipboardCopy {
@@ -444,7 +447,9 @@ impl Host {
         match self.route(session, request) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) }
     }
     pub(crate) fn independent_dispatch(method: Method) -> bool {
-        matches!(method, Method::DesktopHistoryOpen | Method::DesktopApplicationsSelect | Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
+        matches!(method, Method::Health | Method::ServiceStatus | Method::PrivacyGet |
+            Method::DesktopScreenBegin | Method::DesktopScreenRead | Method::DesktopScreenCrop | Method::DesktopScreenCancel | Method::DesktopScreenFinish |
+            Method::DesktopHistoryOpen | Method::DesktopApplicationsSelect | Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
             Method::DesktopWindowPaste | Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
             Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview | Method::DesktopSystemExplorerRestart)
     }
@@ -478,8 +483,17 @@ impl Host {
             Method::Hello => Err(WireErrorCode::InvalidRequest),
             Method::Capabilities | Method::SurfaceCapabilities => result("CapabilityReport", self.capabilities(session)),
             Method::Health => result("RuntimeState", self.snapshot()?),
-            Method::ServiceStatus => result("ServiceStatus", ServiceStatus { mode: self.mode,
-                capture_owner: self.capture_active(), state: self.snapshot()?, privacy: self.privacy_state()?,capture_unavailable_reason:self.capture_diagnostic.lock().map_err(unavailable)?.clone() }),
+            Method::ServiceStatus => {
+                let before = self.session.revision().map_err(unavailable)?;
+                let snapshot = self.history.runtime_snapshot(now_ms()?).map_err(unavailable)?;
+                let after = self.session.revision().map_err(unavailable)?;
+                if before != after { return Err(WireErrorCode::Busy); }
+                let privacy = PrivacyState { active: snapshot.session.active,
+                    expires_at_ms: snapshot.session.expires_at_ms, privacy_epoch: snapshot.privacy_epoch };
+                let state = self.versioned_snapshot(snapshot, after)?;
+                result("ServiceStatus", ServiceStatus { mode: self.mode, capture_owner: self.capture_active(),
+                    state, privacy, capture_unavailable_reason: self.capture_diagnostic.lock().map_err(unavailable)?.clone() })
+            }
             Method::PrivacyGet => result("PrivacyState", self.privacy_state()?),
             Method::ServiceGrant => {
                 session.require(Permission::ServiceManage)?;
@@ -922,6 +936,25 @@ pub(crate) mod tests {
     }
     fn dispatch(host: &Host, session: &Session, method: Method, params: Value) -> Response {
         host.dispatch(session, Request { request_id: "synthetic-request".into(), method, params })
+    }
+    #[test]
+    fn status_reads_complete_while_a_mutation_is_blocked() {
+        let host = synthetic_host();
+        let (session, _) = host.hello(hello(ClientRole::Cli)).unwrap();
+        let held = host.requests.lock().unwrap();
+        let worker_host = host.clone();
+        let (send, receive) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            for method in [Method::Health, Method::ServiceStatus, Method::PrivacyGet] {
+                let result = dispatch(&worker_host, &session, method, serde_json::json!({}));
+                assert!(result.error.is_none(), "{method:?}: {:?}", result.error);
+            }
+            send.send(()).unwrap();
+        });
+        let result = receive.recv_timeout(Duration::from_secs(2));
+        drop(held);
+        worker.join().unwrap();
+        assert!(result.is_ok(), "status reads were blocked behind a mutation");
     }
     #[test]
     fn extended_catalog_is_negotiated_within_each_clients_schema_limit() {

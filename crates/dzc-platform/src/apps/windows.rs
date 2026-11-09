@@ -18,11 +18,62 @@ pub struct AppInfo {
 
 pub struct Handler(Option<String>);
 
-pub fn resolve_handler(handler: Option<&str>) -> Handler { Handler(handler.map(str::to_owned)) }
+pub fn resolve_handler(handler: Option<&str>) -> Handler {
+    Handler(handler.map(|selected| {
+        if !Path::new(selected).is_absolute() && !selected.contains('!') {
+            if let Some(executable) = desktop_app_executable(selected) { return executable; }
+        }
+        selected.to_owned()
+    }))
+}
+
+// Start-menu desktop IDs (for example Microsoft.VisualStudioCode) are not
+// packaged activation IDs. Resolve their executable before passing a file;
+// AppsFolder's default verb does not reliably forward command-line arguments.
+fn desktop_app_executable(app_id: &str) -> Option<String> {
+    use windows::core::{GUID, HSTRING};
+    use windows::Win32::{Foundation::{PROPERTYKEY, RPC_E_CHANGED_MODE},
+        System::Com::{CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED},
+        UI::Shell::{IShellItem2, SHCreateItemFromParsingName}};
+    let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    if initialized.is_err() && initialized != RPC_E_CHANGED_MODE { return None; }
+    let resolved = (|| {
+        let name = HSTRING::from(format!(r"shell:AppsFolder\{app_id}"));
+        let item: IShellItem2 = unsafe { SHCreateItemFromParsingName(PCWSTR(name.as_ptr()), None) }.ok()?;
+        let arguments_key = PROPERTYKEY { fmtid: GUID::from_u128(0x436f2667_14e2_4feb_b30a_146c53b5b674), pid: 100 };
+        if let Ok(value) = unsafe { item.GetString(&arguments_key) } {
+            let arguments = unsafe { value.to_string() };
+            unsafe { CoTaskMemFree(Some(value.0.cast())) };
+            // Preserve launchers that require their shortcut's own arguments.
+            if arguments.ok().is_none_or(|arguments| !arguments.trim().is_empty()) { return None; }
+        }
+        let key = PROPERTYKEY { fmtid: GUID::from_u128(0xb9b4b3fc_2b51_4a42_b5d8_324146afcf25), pid: 2 };
+        let value = unsafe { item.GetString(&key) }.ok()?;
+        let path = unsafe { value.to_string() }.ok();
+        unsafe { CoTaskMemFree(Some(value.0.cast())) };
+        path.filter(|path| Path::new(path).is_absolute() && Path::new(path).is_file())
+    })();
+    if initialized.is_ok() { unsafe { CoUninitialize() }; }
+    resolved
+}
+
+#[cfg(test)]
+mod desktop_id_tests {
+    #[test]
+    #[ignore = "requires VS Code registered for the current Windows user; resolves only, never launches"]
+    fn visual_studio_code_id_resolves_to_an_existing_executable() {
+        let super::Handler(path) = super::resolve_handler(Some("Microsoft.VisualStudioCode"));
+        let path = std::path::PathBuf::from(path.unwrap());
+        assert!(path.is_absolute() && path.is_file());
+        assert!(path.file_name().unwrap().to_string_lossy().eq_ignore_ascii_case("Code.exe"));
+    }
+}
 
 pub(super) fn launch(handler: &Handler, target: &str, url: bool) -> io::Result<()> {
     use windows::core::{w, HSTRING};
     use windows::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+    let shell_path = (!url).then(|| dunce::simplified(Path::new(target)).to_string_lossy().into_owned());
+    let target = shell_path.as_deref().unwrap_or(target);
     let target_wide = HSTRING::from(target);
     let shell_item;
     let argument;

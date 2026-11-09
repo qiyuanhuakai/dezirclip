@@ -51,7 +51,14 @@ pub struct FrozenScreenFrame {
 
 impl FrozenScreenFrame {
     pub fn png_bytes(&self) -> Result<Vec<u8>, ScreenshotError> {
-        encode_png(&self.pixels)
+        // The frozen frame is latency-sensitive IPC, not an archive. A fixed
+        // lossless filter avoids trying five filters on every full-screen row.
+        use xcap::image::codecs::png::{CompressionType, FilterType, PngEncoder};
+        let mut bytes = Vec::with_capacity(self.pixels.len() / 4);
+        PngEncoder::new_with_quality(&mut bytes, CompressionType::Fast, FilterType::Sub)
+            .write_image(self.pixels.as_raw(), self.rect.width, self.rect.height, ExtendedColorType::Rgba8)
+            .map_err(|_| ScreenshotError::EncodeError)?;
+        Ok(bytes)
     }
     pub fn bounds(&self) -> MonitorRect { self.rect }
 
@@ -286,6 +293,27 @@ pub fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<ScreenshotResult
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "synthetic screenshot encoder timing comparison; never captures a desktop"]
+    fn compare_screenshot_png_filters() {
+        use xcap::image::codecs::png::{CompressionType, FilterType, PngEncoder};
+        for noisy in [false, true] {
+            let image = xcap::image::RgbaImage::from_fn(1920, 1080, |x, y| {
+                let v = if noisy { x.wrapping_mul(1664525).wrapping_add(y.wrapping_mul(1013904223)) } else { (x / 140 + y / 24) * 29 };
+                xcap::image::Rgba([v as u8, (v >> 8) as u8, (v >> 16) as u8, 255])
+            });
+            for filter in [FilterType::Adaptive, FilterType::Sub] {
+                let start = std::time::Instant::now();
+                let mut bytes = Vec::new();
+                PngEncoder::new_with_quality(&mut bytes, CompressionType::Fast, filter)
+                    .write_image(image.as_raw(), 1920, 1080, ExtendedColorType::Rgba8).unwrap();
+                let elapsed = start.elapsed();
+                assert_eq!(xcap::image::load_from_memory(&bytes).unwrap().to_rgba8(), image);
+                println!("noise={noisy} filter={filter:?} elapsed_ms={} bytes={}", elapsed.as_millis(), bytes.len());
+            }
+        }
+    }
 
     #[test]
     fn frozen_preview_and_region_use_the_same_original_pixels() {

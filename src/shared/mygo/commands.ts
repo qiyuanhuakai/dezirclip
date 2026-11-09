@@ -112,7 +112,8 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
     return { item_id: args.itemId, text: result.text, status: result.status, confidence: null };
   },
   get_ocr_status: async args => {
-    const result = await library<{ status: string; text?: string }>("OcrText", false, { id: args.itemId, expected_epoch: currentEpoch() });
+    const result = await library<{ status: string; text?: string }>("OcrText", false, { id: args.itemId,
+      service_instance_id: args.expectedHostInstanceId, expected_epoch: args.expectedEpoch ?? currentEpoch() });
     return { item_id: args.itemId, ocr_status: result.status, ocr_text: result.text ?? null };
   },
   set_window_pinned: async args => {
