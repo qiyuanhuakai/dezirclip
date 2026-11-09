@@ -67,7 +67,21 @@ def verify(installer, stage):
             raise AssertionError('Uninstall registration remains')
     except FileNotFoundError:
         pass
-    print('MYGO_INSTALL_UPGRADE_LOCK_UNINSTALL_PASSED', flush=True)
+    subprocess.run([str(installer), '/S'], check=True, timeout=90)
+    assert_payload()
+    assert preserved.read_text(encoding='utf-8') == 'Keep user data'
+    subprocess.run([str(uninstaller), '/S', '_?=' + str(root)], check=True, timeout=90)
+    assert all(not (root / relative).exists() for relative in expected)
+    assert preserved.read_text(encoding='utf-8') == 'Keep user data'
+    # Reproduce the on-disk state of an interrupted install: durable directory
+    # ownership and a partial executable, without an uninstall registration.
+    assert (root / 'mygo-installation.ini').is_file()
+    (root / 'dzc.exe').write_bytes(b'interrupted payload')
+    subprocess.run([str(installer), '/S'], check=True, timeout=90)
+    assert_payload()
+    assert preserved.read_text(encoding='utf-8') == 'Keep user data'
+    subprocess.run([str(uninstaller), '/S', '_?=' + str(root)], check=True, timeout=90)
+    print('MYGO_INSTALL_RECOVERY_UPGRADE_LOCK_UNINSTALL_REINSTALL_PASSED', flush=True)
 
 
 if __name__ == '__main__':

@@ -8,6 +8,7 @@ SetCompressor /SOLID lzma
 !include "LogicLib.nsh"
 !include "x64.nsh"
 !define KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\DezirClip-MyGo"
+!define OWNER "DezirClip-MyGo-installation-v1"
 !define MUI_ABORTWARNING
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_INSTFILES
@@ -63,13 +64,27 @@ Section "Install"
   ${EndIf}
   IfFileExists "$INSTDIR\*.*" 0 empty
   ${If} $1 != $INSTDIR
-    SetErrorLevel 3
-    Abort "The MyGo installation directory already exists without an installation receipt."
+    ReadINIStr $4 "$INSTDIR\mygo-installation.ini" "Installation" "Owner"
+    ReadINIStr $5 "$INSTDIR\mygo-installation.ini" "Installation" "Directory"
+    ${If} $4 != "${OWNER}"
+    ${OrIf} $5 != $INSTDIR
+      SetErrorLevel 3
+      Abort "The MyGo directory exists without a matching installation ownership record."
+    ${EndIf}
   ${EndIf}
 empty:
   !insertmacro Unlocked "dzc-desktop.exe"
   !insertmacro Unlocked "dzc-service.exe"
   !insertmacro Unlocked "dzc.exe"
+  ClearErrors
+  CreateDirectory "$INSTDIR"
+  WriteINIStr "$INSTDIR\mygo-installation.ini" "Installation" "Owner" "${OWNER}"
+  WriteINIStr "$INSTDIR\mygo-installation.ini" "Installation" "Directory" "$INSTDIR"
+  FlushINI "$INSTDIR\mygo-installation.ini"
+  ${If} ${Errors}
+    SetErrorLevel 5
+    Abort "Could not record ownership of the MyGo installation directory."
+  ${EndIf}
   SetOverwrite on
   ClearErrors
   !include "${INSTALL_FILES}"
@@ -109,6 +124,7 @@ Section "Uninstall"
   RMDir "$SMPROGRAMS\DezirClip MyGo"
   Delete "$DESKTOP\DezirClip MyGo.lnk"
   DeleteRegKey HKCU "${KEY}"
+  ; Keep the directory receipt for reinstall and interrupted-install recovery.
   RMDir "$INSTDIR"
   SetErrorLevel 0
 SectionEnd
