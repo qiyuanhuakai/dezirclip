@@ -140,7 +140,8 @@ jobs:
 
   tauri:
     if: inputs.full_validation || inputs.windows_x64_mygo_test_package || inputs.windows_service_crash_stacks || inputs.linux_release_inputs
-    name: ${{ matrix.name && format('Tauri backend ({0})', matrix.name) || 'Tauri backend (full validation only)' }}
+    # GitHub displays this template literally when the job is skipped before matrix expansion.
+    name: Tauri backend (${{ matrix.name }})
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -937,7 +938,8 @@ jobs:
 
   native-windows-upgrade:
     if: inputs.full_validation
-    name: ${{ matrix.scenario && format('Native NSIS ({0})', matrix.scenario) || 'Native NSIS (full validation only)' }}
+    # Keep scenario identities distinct for the full release acceptance gate.
+    name: Native NSIS (${{ matrix.scenario }})
     runs-on: windows-latest
     timeout-minutes: 45
     strategy:

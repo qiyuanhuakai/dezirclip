@@ -6,6 +6,8 @@
 
 完整的四平台 Tauri 原生验收、独立 CLI 兼容性、六种 NSIS 升级场景和双架构 Flatpak 打包，仍在手动 CI 的 `full_validation=true` 以及 tag 发布时执行。发布工作流必须等完整源码验收成功后才能公开版本；日常检查通过并不代表原生升级或所有发布平台已经通过。
 
+GitHub 在判断 job 条件后才展开矩阵。日常跳过的 Tauri / Native NSIS 行可能显示 `${{ matrix.name }}` / `${{ matrix.scenario }}` 原文，这是跳过状态的显示限制；全量执行时才显示具体平台与场景。发布门槛按这些展开后的唯一名称逐项验收。
+
 复用工作流的验收产物使用 `acceptance-cli-*` / `acceptance-flatpak-*`，发布产物使用 `release-cli-*` / `release-flatpak-*`。发布下载器只选择 `release-cli-*`，避免同一 run 中重名或误下载。
 
 2026-11-09 的基线运行 `42557275483` 中，Windows Tauri 任务耗时约 19.4 分钟，Flatpak x64 约 14.8 分钟（该次运行失败，不能视为成功验收耗时）。调整后的首轮 PR 运行 `42560409914` 全部成功，从 04:11:27 UTC 到 04:16:45 UTC，约 5 分 18 秒，包含 Windows 原生终端交互测试。此数据是一次实际测量，并非所有后续运行的时间保证。
