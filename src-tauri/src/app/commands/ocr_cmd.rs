@@ -33,8 +33,9 @@ pub async fn recognize_clipboard_image(item_id: i64, app: AppHandle, expected_pr
 }
 
 #[tauri::command]
-pub async fn get_ocr_status(host: State<'_, DesktopHost>, item_id: i64) -> Result<OcrStatusResponse, String> {
-    let row = host.manual_ocr(Method::DesktopOcrStatus, item_id, None, None).await?;
+pub async fn get_ocr_status(host: State<'_, DesktopHost>, item_id: i64,
+    expected_host_instance_id: Option<String>, expected_epoch: Option<u64>) -> Result<OcrStatusResponse, String> {
+    let row = host.manual_ocr(Method::DesktopOcrStatus, item_id, expected_host_instance_id.as_deref(), expected_epoch).await?;
     Ok(OcrStatusResponse { item_id, ocr_status: row.status, ocr_text: row.text })
 }
 

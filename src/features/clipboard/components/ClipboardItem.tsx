@@ -103,6 +103,24 @@ const ocrSubscribers = new Set<{
 }>();
 let ocrUnlisten: Promise<() => void> | null = null;
 
+let ocrReadTail = Promise.resolve();
+function readPersistedOcr(item: ClipboardEntry, epoch: number, isCurrent: () => boolean) {
+    // Only the mounted rows hydrate, one at a time. OCR text does not need the
+    // original image payload, and refreshes must not exhaust local IPC slots.
+    const read = ocrReadTail.then(() => {
+        if (!isCurrent()) throw new Error("PrivacyReadSuperseded");
+        return isSensitiveEntry(item)
+            ? invokePrivacyBound<Pick<ClipboardEntry, "ocr_text" | "ocr_status">>("get_privacy_entry", {
+                id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: epoch, reveal: true
+            })
+            : invokePrivacyBound<Pick<ClipboardEntry, "ocr_text" | "ocr_status">>("get_ocr_status", {
+                itemId: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: epoch
+            });
+    });
+    ocrReadTail = read.then(() => {}, () => {});
+    return read;
+}
+
 const subscribeOcrComplete = (
     matches: (itemId: number) => boolean,
     handle: (payload: OcrCompletePayload) => void
@@ -588,8 +606,9 @@ const ClipboardItem = ({
                 const access = beginPrivacyAccess();
                 if (!access || hiddenRef.current) { setOcrText(null); return; }
                 const generation = contentIdentity.current.generation;
-                void invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id: ocrItemIdRef.current, expectedHostInstanceId: contentIdentity.current.item.host_instance_id, expectedEpoch: access.epoch })
-                    .then(entry => { if (access.isCurrent() && !hiddenRef.current && generation === contentIdentity.current.generation) { setOcrSource(contentIdentity.current.item); setOcrText(entry.ocr_text ?? null); } })
+                const isCurrent = () => access.isCurrent() && !hiddenRef.current && generation === contentIdentity.current.generation;
+                void readPersistedOcr(contentIdentity.current.item, access.epoch, isCurrent)
+                    .then(entry => { if (isCurrent()) { setOcrSource(contentIdentity.current.item); setOcrText(entry.ocr_text ?? null); setOcrStatus(entry.ocr_status ?? null); } })
                     .catch(() => { if (generation === contentIdentity.current.generation) setOcrText(null); });
             }
         );
@@ -600,7 +619,22 @@ const ClipboardItem = ({
         setOcrText(item.ocr_text ?? null);
         setOcrStatus(item.ocr_status ?? null);
         setOcrTextExpanded(false);
-    }, [item]);
+        if (isSensitiveHidden || item.content_type !== "image" || item.ocr_status !== "done" || item.ocr_text != null) return;
+        const access = beginPrivacyAccess();
+        if (!access) return;
+        let disposed = false;
+        const generation = contentIdentity.current.generation;
+        // List metadata omits OCR bodies. Hydrate the current authorized row
+        // after refresh/reopen instead of treating that omission as deletion.
+        const isCurrent = () => !disposed && access.isCurrent() && !hiddenRef.current && generation === contentIdentity.current.generation;
+        void readPersistedOcr(item, access.epoch, isCurrent).then(entry => {
+            if (!isCurrent()) return;
+            setOcrSource(item);
+            setOcrText(entry.ocr_text ?? null);
+            setOcrStatus(entry.ocr_status ?? null);
+        }).catch(() => {});
+        return () => { disposed = true; };
+    }, [item, isSensitiveHidden]);
 
     const [ocrRunning, setOcrRunning] = useState(false);
     const shareInFlightRef = useRef(false);

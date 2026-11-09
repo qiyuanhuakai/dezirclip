@@ -666,10 +666,17 @@ impl DesktopHost {
         let bridge=self.clone();
         tauri::async_runtime::spawn(async move {
             let mut last_revision=client.hello.state.history_revision;
+            let mut last_epoch=client.hello.state.privacy_epoch;
             while !bridge.0.closing.load(Ordering::Acquire) {
                 let result:Result<EventsResult,_>=client.call(Method::EventsSubscribe,SubscribeParams{after_sequence:after,wait_ms:Some(1000)},"EventsResult").await;
                 let Ok(events)=result else {break;};
                 if events.state.service_instance_id!=instance {break;}
+                let removals=events.events.iter().filter(|event| event.event==EventKind::EntryDeleted
+                    && event.state.service_instance_id==instance && event.state.privacy_epoch==events.state.privacy_epoch)
+                    .filter_map(|event|event.data.entry_id).collect::<Vec<_>>();
+                let only_removals=!events.resync_required && last_epoch==events.state.privacy_epoch && !removals.is_empty()
+                    && events.state.history_revision.checked_sub(last_revision)==Some(removals.len() as u64)
+                    && !events.events.iter().any(|event|matches!(event.event,EventKind::EntryAdded|EventKind::EntryUpdated|EventKind::HistoryReset));
                 for event in events.events {
                     match event.event {
                         EventKind::EntryAdded|EventKind::EntryUpdated=>{if let Some(id)=event.data.entry_id {emit("clipboard-captured",serde_json::json!({"id":id,"host_instance_id":instance}));}},
@@ -683,8 +690,11 @@ impl DesktopHost {
                         _=>(),
                     }
                 }
-                if events.resync_required || events.state.history_revision!=last_revision {emit("clipboard-changed",());}
-                last_revision=events.state.history_revision;after=events.state.event_sequence;
+                if events.resync_required || events.state.history_revision!=last_revision {
+                    if only_removals {emit("clipboard-changed",serde_json::json!({"removedIds":removals}));}
+                    else {emit("clipboard-changed",());}
+                }
+                last_revision=events.state.history_revision;last_epoch=events.state.privacy_epoch;after=events.state.event_sequence;
             }
             if bridge.0.closing.load(Ordering::Acquire) {return;}
             // A broken transport is not proof that the previous worker stopped.

@@ -67,7 +67,6 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const [batchFeedback, setBatchFeedback] = useState<{ message: string; error: boolean } | null>(null);
     const [menuOpen, setMenuOpen] = useState(false);
     const [selectedId, setSelectedId] = useState<number | null>(null);
-    const [detailRevision, setDetailRevision] = useState(0);
     const [dialog, setDialog] = useState<Dialog | null>(null);
     const [qrEntry, setQrEntry] = useState<ClipboardEntry | null>(null);
     const [value, setValue] = useState('');
@@ -96,7 +95,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     }, [library.tags, debouncedTagSearch]);
     const notifyError = useCallback(() => { if (mounted.current) setActionError(true); }, []);
     const clearRevealError = useCallback(() => { if (mounted.current) setActionError(false); }, []);
-    const changed = useCallback(() => { setDetailRevision(current => current + 1); refresh(); }, [refresh]);
+    const changed = refresh;
     const excludeBulkReveal = useCallback((id: number) => setBulkRevealExcluded(previous => new Set(previous).add(id)), []);
     useEffect(() => subscribePrivacyInvalidation(scope => {
         detailSequence.current += 1;
@@ -258,12 +257,21 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                 deletedCount = result.deletedCount;
             } else await invoke('delete_clipboard_entry', { id: current.item.id, expectedHostInstanceId: current.item.host_instance_id });
             if (!mounted.current) return;
-            setDialog(null); changed();
+            setDialog(null);
+            let removedIds: number[] | undefined;
+            if (current.kind === 'deleteItem') {
+                removedIds = [current.item.id];
+                library.removeItems(new Set(removedIds));
+            }
+            else if (current.kind === 'deleteSelection') {
+                removedIds = library.items.filter(item => tagEntrySelected(current.selection, item.id)).map(item => item.id);
+                library.removeItems(new Set(removedIds), deletedCount ?? undefined);
+            } else changed();
             if (deletedCount !== null) {
                 clearSelection(); setBatchFeedback({ message: t('tag_batch_deleted').replace('{count}', String(deletedCount)), error: false });
             }
             if (current.kind === 'createTag' && !split) requestAnimationFrame(() => pickerButton.current?.focus());
-            void emit('clipboard-changed').catch(console.error);
+            void emit('clipboard-changed', removedIds ? { removedIds } : undefined).catch(console.error);
         } catch (reason) {
             if (mounted.current) {
                 if (current.kind === 'deleteSelection') {
@@ -461,7 +469,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                 {library.loading || (library.metadataLoading && library.tags.length === 0) ? <div className="tag-manager-empty" role="status"><LoaderCircle className="tag-manager-spinner" size={22} /></div>
                     : library.items.length ? <div className="virtual-list-wrapper"><Virtuoso ref={list} key={`${selectedTag}:${library.query}:${library.sortBy}`} data={library.items}
                         computeItemKey={(_, item) => item.id} endReached={library.loadMore} increaseViewportBy={100}
-                        itemContent={(index, item) => <TagHistoryRow key={`${item.id}:${library.contentRevision}:${detailRevision}`} item={item} index={index} selected={selectedId === item.id}
+                        itemContent={(index, item) => <TagHistoryRow key={`${item.host_instance_id}:${item.id}`} item={item} index={index} selected={selectedId === item.id}
                             compactMode={compactMode} isWindowPinned={isWindowPinned}
                             revealAll={revealAll}
                             bulkRevealExcluded={bulkRevealExcluded.has(item.id)} onExcludeBulkReveal={excludeBulkReveal}

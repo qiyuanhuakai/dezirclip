@@ -3,7 +3,10 @@ package main
 import (
 	"image"
 	"image/color"
+	"image/png"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,6 +14,39 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/richtext"
 )
+
+func TestPreviewVisualFixture(t *testing.T) {
+	directory := os.Getenv("DZC_VISUAL_DIR")
+	if directory == "" {
+		t.Skip("visual export directory is not set")
+	}
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, dark := range []bool{false, true} {
+		mode := "light"
+		if dark {
+			mode = "dark"
+		}
+		p := &pinnedPreview{ticket: pinPreviewRequest{Appearance: previewAppearance{Title: "Content preview", Dark: dark, Opacity: 85, Close: "Close preview", OpacityLabel: "Opacity"}},
+			opacity: previewOpacityControl{value: 85, slider: 85},
+			body: &previewBody{source: "DezirClip", kind: "rich_text", timestamp: 1794222000000,
+				formatted: previewDocument(richtext.ParseHTML("<h2>Native content preview</h2><p>Clipboard notes keep <b>bold text</b>, <i>emphasis</i> and paragraph spacing.</p><p>The compact toolbar shares the same visual hierarchy as the main WebView.</p><p>A second paragraph stays readable in both light and dark themes.</p>"))}}
+		frame := ui.NewTester(p.view, 480, 320).Image()
+		if frame.RGBAAt(0, 0).A != 0 {
+			t.Fatal("preview corners must be transparent")
+		}
+		file, err := os.Create(filepath.Join(directory, "preview-"+mode+".png"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = png.Encode(file, frame)
+		file.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 func TestLongPreviewOpensAtFirstParagraph(t *testing.T) {
 	const opening = "First paragraph"

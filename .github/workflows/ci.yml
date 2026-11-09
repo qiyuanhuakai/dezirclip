@@ -390,7 +390,16 @@ jobs:
         env:
           GOTOOLCHAIN: local
           CGO_ENABLED: '0'
+          DZC_VISUAL_DIR: ${{ github.workspace }}/target/native-visual-review
         run: go test ./...
+
+      - name: Upload native panel visual fixtures
+        if: matrix.can_test
+        uses: actions/upload-artifact@v4
+        with:
+          name: Native-panel-visuals-${{ matrix.name }}-${{ github.sha }}
+          path: target/native-visual-review/*.png
+          if-no-files-found: error
 
       - name: Build experimental Surface with matching source identity
         env:

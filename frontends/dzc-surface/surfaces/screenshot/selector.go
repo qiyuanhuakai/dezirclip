@@ -36,6 +36,7 @@ type selection struct {
 	cancel     context.CancelFunc
 	start, end ui.Point
 	dragging   bool
+	started    time.Time
 }
 
 func (s *Selector) SetShortcutRecorder(record func(string) bool) { s.record = record }
@@ -157,13 +158,6 @@ func (shot *selection) notify(err error) {
 }
 
 func (s *Selector) start(full bool, epoch *uint64, ready func(error)) {
-	pref, err := s.preferences()
-	if err != nil || !pref.Enabled {
-		if ready != nil {
-			ready(errors.New("ScreenshotUnavailable"))
-		}
-		return
-	}
 	target, ok := cursorTarget()
 	if !ok {
 		if ready != nil {
@@ -172,9 +166,14 @@ func (s *Selector) start(full bool, epoch *uint64, ready func(error)) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 115*time.Second)
-	shot := &selection{cancel: cancel, full: full, ready: ready}
+	shot := &selection{cancel: cancel, full: full, ready: ready, started: time.Now()}
 	s.session = shot
 	go func() {
+		pref, err := s.preferences()
+		if err != nil || !pref.Enabled {
+			s.end(shot, errors.New("ScreenshotUnavailable"))
+			return
+		}
 		host, err := s.owner.DesktopConnection(ctx)
 		if err != nil {
 			s.end(shot, err)
@@ -239,6 +238,7 @@ func (s *Selector) start(full bool, epoch *uint64, ready func(error)) {
 			s.window.Focus()
 			s.window.Invalidate()
 			shot.notify(nil)
+			log.Printf("Screenshot selector ready in %d ms", time.Since(shot.started).Milliseconds())
 			go s.watch(ctx, shot, state)
 		})
 	}()
@@ -270,13 +270,34 @@ func (s *Selector) draw(c *ui.Context, shot *selection) {
 	if w <= 0 || h <= 0 {
 		return
 	}
-	pane := ui.Column(c).Fill()
+	pane := ui.Column(c).Fill().Cursor(ui.CursorCrosshair)
 	pane.Draw(func(p *ui.Painter, r ui.Rect) {
 		p.Image(shot.bitmap, r, ui.FillBox)
 		if shot.dragging {
 			box := ui.Rect{X: min(shot.start.X, shot.end.X), Y: min(shot.start.Y, shot.end.Y),
 				W: max(shot.start.X, shot.end.X) - min(shot.start.X, shot.end.X), H: max(shot.start.Y, shot.end.Y) - min(shot.start.Y, shot.end.Y)}
-			p.Stroke(box, ui.Hex("#36aaff"), 0, 2)
+			shade := ui.RGBA(0, 0, 0, .28)
+			p.Fill(ui.Rect{W: w, H: box.Y}, shade, 0)
+			p.Fill(ui.Rect{Y: box.Y + box.H, W: w, H: h - box.Y - box.H}, shade, 0)
+			p.Fill(ui.Rect{Y: box.Y, W: box.X, H: box.H}, shade, 0)
+			p.Fill(ui.Rect{X: box.X + box.W, Y: box.Y, W: w - box.X - box.W, H: box.H}, shade, 0)
+			p.Stroke(box, ui.Hex("#ffffff"), 0, 1)
+			phase := float32(time.Since(shot.started).Milliseconds()%800) / 100
+			for x := -phase; x < box.W; x += 8 {
+				if x+4 <= 0 {
+					continue
+				}
+				p.Line(box.X+max(0, x), box.Y, box.X+min(box.W, x+4), box.Y, 1, ui.Hex("#202124"))
+				p.Line(box.X+max(0, x), box.Y+box.H, box.X+min(box.W, x+4), box.Y+box.H, 1, ui.Hex("#202124"))
+			}
+			for y := -phase; y < box.H; y += 8 {
+				if y+4 <= 0 {
+					continue
+				}
+				p.Line(box.X, box.Y+max(0, y), box.X, box.Y+min(box.H, y+4), 1, ui.Hex("#202124"))
+				p.Line(box.X+box.W, box.Y+max(0, y), box.X+box.W, box.Y+min(box.H, y+4), 1, ui.Hex("#202124"))
+			}
+			p.AnimationFrame()
 		}
 	})
 	c.OnShortcut(0, ui.KeyEscape, s.clear)

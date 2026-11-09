@@ -92,18 +92,19 @@ func (p *pinnedPreview) view(c *ui.Context) {
 	a := p.ticket.Appearance
 	a.Opacity = p.opacity.value
 	a.panel(c).Children(func() {
-		ui.Row(c).FillWidth().Children(func() {
-			label := "DezirClip"
-			if p.body != nil && p.body.source != "" {
-				label = p.body.source
+		ui.Row(c).FillWidth().Height(30).Gap(6).Children(func() {
+			label := a.Title
+			if label == "" {
+				label = "DezirClip"
 			}
-			ui.Text(c, label).Grow(1).DragWindow()
-			if ui.Button(c, a.Close).Clicked() {
+			ui.Text(c, label).Grow(1).FontSize(13).SingleLine().DragWindow()
+			p.opacity.draw(c, a)
+			if previewIcon(c, a.Close, false).Clicked() {
 				p.window.Update(p.window.Close)
 			}
 		})
-		p.opacity.draw(c, a)
 		if p.body != nil {
+			p.body.metadata(c)
 			if p.body.bitmap != nil {
 				p.imageView.draw(c, p.body.bitmap, a)
 			} else {

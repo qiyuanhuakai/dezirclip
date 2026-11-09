@@ -504,6 +504,44 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     Write-Output 'Verified a WebView2 Open click launched the selected editor and the Service refreshed the same history row'
 }
 
+function Test-OcrAfterReopen($Main, $Resident, [string]$Executable, $Form, $Editor) {
+    $Form.Activate()
+    $null = $Editor.Focus()
+    $null = Wait-Until { $Editor.Focused } 'OCR fixture editor did not regain focus'
+    $fixture = Join-Path $PSScriptRoot '../../frontends/dzc-surface/cmd/dzc-desktop/testdata/ocr-clipboard.png'
+    $image = [Drawing.Image]::FromFile((Resolve-Path -LiteralPath $fixture).Path)
+    try { [Windows.Forms.Clipboard]::SetImage($image) } finally { $image.Dispose() }
+    foreach ($reopen in @($false, $true)) {
+        if ($reopen) {
+            if (!$Main.CloseMainWindow()) { throw 'Could not close the OCR WebView' }
+            $null = Wait-Until { $Main.HasExited } 'OCR WebView did not exit'
+        }
+        $wake = Start-Process -FilePath $Executable -ArgumentList '--show' -WindowStyle Hidden -PassThru
+        $null = $wake.Handle
+        if (!$wake.WaitForExit(10000)) { throw 'OCR wake command stalled' }
+        if ($wake.ExitCode -ne 0) { throw 'OCR wake command failed' }
+        if ($reopen) {
+            $Main = Wait-Until {
+                if ($Resident.HasExited) { throw 'Resident exited during OCR recovery' }
+                Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
+                    $_.Id -ne $Resident.Id -and $_.Path -eq $Executable -and $_.MainWindowTitle -eq 'DezirClip'
+                } | Select-Object -First 1
+            } 'Main window did not reopen after automatic OCR'
+        }
+        $tree = [Windows.Automation.AutomationElement]::FromHandle($Main.MainWindowHandle)
+        $button = Wait-Until {
+            $tree.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) |
+                Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::Button -and $_.Current.Name.EndsWith('OCR Text') -and !$_.Current.IsOffscreen } |
+                Select-Object -First 1
+        } 'Persisted automatic OCR was missing from the image row' 40
+        $bounds = $button.Current.BoundingRectangle
+        Click-Control $Main ([Drawing.Point]::new([int]($bounds.Left+$bounds.Width/2), [int]($bounds.Top+$bounds.Height/2)))
+        $null = Get-ControlPoint $tree 'DESKTOP TEST'
+    }
+    Write-Host 'Verified automatic OCR text survives a fresh WebView and the main window remains reopenable'
+    return $Main
+}
+
 function Get-DesktopProcesses([int[]]$RootIds) {
     $processes = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,Name,WorkingSetSize,PrivatePageCount)
     $owned = [Collections.Generic.HashSet[int]]::new()
@@ -905,6 +943,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     if ($Capture) {
         Test-TransparentPreview $root $main $marker
         Test-ExternalEdit $root $main $marker
+        $main = Test-OcrAfterReopen $main $resident $exe $form $edit
+        $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
         Click-Control $main (Get-ControlPoint $root 'Settings')
         $softwareFlag = '(?:^|\s)--disable-gpu(?:\s|$)'
         $inheritedGpu = (Get-WebViewBrowser $main).CommandLine -match $softwareFlag

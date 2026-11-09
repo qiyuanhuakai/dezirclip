@@ -66,7 +66,7 @@ pub fn schedule_capture_ocr(history:HistoryService,capture:&StoredCapture,work:C
         let _work=work;
         let now=||chrono_ms();
         let bytes=match history.image_bytes_for_capture_authorized(id,&ticket,now()) {Ok(Some(bytes))=>bytes,_=>return};
-        if history.update_ocr_authorized(id,"","processing",&ticket,now()).is_err() {return;}
+        if !history.update_ocr_authorized(id,"","processing",&ticket,now()).is_ok_and(|count|count>0) {return;}
         changed(id,"processing");
         let result=dzc_platform::ocr::OcrService::new().and_then(|service|service.recognize(&bytes));
         let (text,status)=match result {
@@ -74,7 +74,7 @@ pub fn schedule_capture_ocr(history:HistoryService,capture:&StoredCapture,work:C
             Err(dzc_platform::ocr::OcrError::NoOcrEngine|dzc_platform::ocr::OcrError::NoLanguages)=>(String::new(),"unsupported"),
             Err(_)=>(String::new(),"failed"),
         };
-        if history.update_ocr_authorized(id,&text,status,&ticket,now()).is_ok() {changed(id,status);}
+        if history.update_ocr_authorized(id,&text,status,&ticket,now()).is_ok_and(|count|count>0) {changed(id,status);}
     }).map(|_|()).map_err(|_|())
 }
 fn chrono_ms()->i64 {std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|value|i64::try_from(value.as_millis()).ok()).unwrap_or(i64::MAX)}
