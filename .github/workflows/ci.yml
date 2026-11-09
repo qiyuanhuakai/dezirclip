@@ -553,6 +553,11 @@ jobs:
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -RichPaste
 
+      - name: Verify disabled native panels release and recreate their windows
+        if: runner.os == 'Windows' && matrix.can_test
+        shell: powershell
+        run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -DisabledPanels
+
       - name: Verify middle-button hook survives a blocked resident UI
         if: runner.os == 'Windows' && matrix.can_test
         timeout-minutes: 2

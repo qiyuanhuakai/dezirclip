@@ -652,13 +652,15 @@ func (p *Panel) view(c *ui.Context) {
 	if len(tokens.FontFamilies) > 0 {
 		t.Font = tokens.FontFamilies[0]
 	}
+	background := t.Background
+	t.Background = background.Alpha(0)
 	c.SetTheme(t)
 	if !p.model.Visible {
 		return
 	}
 	display := p.model.Display
 	var rows *model.View
-	ui.Column(c.Key("display-"+display)).Fill().Padding(float32(tokens.Padding)).Gap(float32(tokens.Gap)).Radius(float32(tokens.Radius)).Border(1, t.Border).Background(t.Background).Children(func() {
+	ui.Column(c.Key("display-"+display)).Fill().Padding(float32(tokens.Padding)).Gap(float32(tokens.Gap)).Radius(float32(tokens.Radius)).Border(1, t.Border).Background(background).Children(func() {
 		input := ui.TextInput(c.Key("query-"+p.model.Display), &p.search).Placeholder(p.word("search")).Label(p.word("search")).Height(float32(tokens.SearchHeight)).AutoFocus()
 		input.OnTextKey(func(key ui.TextKey) bool {
 			if key.Key == ui.KeyEnter {

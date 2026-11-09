@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -512,6 +512,15 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
                    [("app.hotkey", "Ctrl+Shift+F8"), ("app.silent_start", "false"), ("app.emoji_panel_enabled", "true"), ("app.language","en"), ("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false"), ("app.window_width","670"), ("app.window_height","608")])
 '@ | python -
     if ($LASTEXITCODE) { throw 'Could not seed isolated window appearance' }
+    if ($DisabledPanels) {
+        @'
+import os, sqlite3
+with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+    db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',
+                   [('app.quick_paste_enabled','false'), ('app.screenshot_enabled','false')])
+'@ | python -
+        if ($LASTEXITCODE) { throw 'Could not seed disabled native panels' }
+    }
     if ($RichPaste) {
         @'
 import os, sqlite3
@@ -656,8 +665,8 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         if (![MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$frame)) { return $false }
         $width = $frame.right - $frame.left
         $height = $frame.bottom - $frame.top
-        $x = [Math]::Max($workArea.Left, $workArea.Right - $width - 5)
-        $y = [Math]::Max($workArea.Top, [Math]::Min($cursorY + 12, $workArea.Bottom - $height - 5))
+        $x = [Math]::Max($workArea.Left, $workArea.Right - $width - 16)
+        $y = [Math]::Max($workArea.Top, [Math]::Min($cursorY + 12, $workArea.Bottom - $height - 16))
         [Math]::Abs($frame.left - $x) -le 5 -and [Math]::Abs($frame.top - $y) -le 5
     } 'MyGo main window did not follow the pointer inside the Windows work area'
     $null = Wait-Until {
@@ -666,6 +675,27 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
             [Math]::Abs($clientRect.right - 670) -le 1 -and [Math]::Abs($clientRect.bottom - 608) -le 1
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+    if ($DisabledPanels) {
+        foreach ($title in @('DezirClip 快速粘贴', 'DezirClip 截图')) {
+            if ([MyGoInput]::WindowWithTitle($title) -ne [IntPtr]::Zero) { throw 'Disabled panel retained a native window' }
+        }
+        Click-Control $main (Get-ControlPoint $root 'Settings')
+        Click-Control $main (Get-ControlPoint $root 'Tools')
+        foreach ($enabled in @($true, $false, $true)) {
+            foreach ($panel in @(@('Quick Paste', 'DezirClip 快速粘贴'), @('Screenshot', 'DezirClip 截图'))) {
+                $box = Wait-Until { Get-SettingsCheckbox $root $panel[0] } 'Native panel setting unavailable'
+                $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+                $toggle.Toggle()
+                $null = Wait-Until {
+                    if ($resident.HasExited) { throw 'Disabling the last native panel exited the resident' }
+                    $exists = [MyGoInput]::WindowWithTitle($panel[1]) -ne [IntPtr]::Zero
+                    $exists -eq $enabled
+                } 'Native panel window lifetime differs from its setting'
+            }
+        }
+        Write-Output 'Verified predisabled startup, destroying both panels and recreating both panels'
+        return
+    }
     if ($RichPaste) {
         Click-Control $main (Get-ControlPoint $root 'Search clipboard...' ([Windows.Automation.ControlType]::ComboBox))
         $search = $root.FindFirst([Windows.Automation.TreeScope]::Descendants,

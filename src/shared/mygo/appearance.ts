@@ -50,6 +50,7 @@ export function observeNativeAppearance() {
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style", "lang"] });
   observer.observe(document.head, { childList: true, subtree: true });
   document.addEventListener("load", schedule, true);
+  window.addEventListener("dezirclip-theme-applied", schedule);
   schedule();
-  window.addEventListener("pagehide", () => { observer.disconnect(); clearTimeout(timer); document.removeEventListener("load", schedule, true); }, { once: true });
+  window.addEventListener("pagehide", () => { observer.disconnect(); clearTimeout(timer); document.removeEventListener("load", schedule, true); window.removeEventListener("dezirclip-theme-applied", schedule); }, { once: true });
 }
