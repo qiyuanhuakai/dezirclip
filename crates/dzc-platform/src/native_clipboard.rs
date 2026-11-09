@@ -446,6 +446,7 @@ fn set(cb: &mut arboard::Clipboard, payload: Payload) -> Result<(), String> {
     let image = if let Payload::Image(bytes) = &payload {
         Some(image::load_from_memory(bytes).map_err(|_| "ClipboardImageRejected")?.into_rgba8())
     } else { None };
+    let image_write = image.is_some();
     let setter = cb.set();
     #[cfg(target_os = "windows")]
     let setter = {
@@ -482,7 +483,7 @@ fn set(cb: &mut arboard::Clipboard, payload: Payload) -> Result<(), String> {
         }
     };
     result.map_err(|error| {
-        let category = match error {
+        let category = match &error {
             arboard::Error::ClipboardOccupied => "occupied",
             arboard::Error::ConversionFailure => "conversion",
             arboard::Error::ClipboardNotSupported => "unsupported",
@@ -490,6 +491,13 @@ fn set(cb: &mut arboard::Clipboard, payload: Payload) -> Result<(), String> {
             _ => "native-error",
         };
         eprintln!("Native clipboard write failed: {category}");
+        // The image adapter's native descriptions contain only fixed operation
+        // names and Windows error codes, never image content or file paths.
+        if image_write {
+            if let arboard::Error::Unknown { description } = &error {
+                eprintln!("Native clipboard image failure: {description}");
+            }
+        }
         "ClipboardWriteUnavailable".into()
     })
 }
