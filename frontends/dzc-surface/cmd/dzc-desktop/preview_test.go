@@ -95,6 +95,22 @@ func TestRichPreviewPaintsOnlyOneBackground(t *testing.T) {
 	}
 }
 
+func TestPreviewPanelKeepsBackgroundOpacityInsideBorder(t *testing.T) {
+	for _, opacity := range []int{0, 40, 75, 100} {
+		a := previewAppearance{Opacity: opacity}
+		frame := ui.NewTester(func(c *ui.Context) {
+			a.panel(c).Children(func() { ui.Text(c, "Visible preview content") })
+		}, 360, 160).Image()
+		if alpha := frame.RGBAAt(180, 152).A; math.Abs(float64(alpha)-float64(opacity)*2.55) > 1 {
+			t.Fatalf("opacity %d: interior background alpha %d", opacity, alpha)
+		}
+		if frame.RGBAAt(0, 0).A != 0 {
+			t.Fatal("rounded corner must be transparent")
+		}
+		t.Logf("opacity %d: corner-border alpha=%d, interior alpha=%d", opacity, frame.RGBAAt(356, 156).A, frame.RGBAAt(180, 152).A)
+	}
+}
+
 func TestPreviewNeverCoversItsSourceRow(t *testing.T) {
 	for _, c := range []struct {
 		area, row mygo.Rectangle

@@ -87,11 +87,14 @@ public static class MyGoInput {
     [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
     [DllImport("user32.dll")] static extern bool GetMenuItemRect(IntPtr window, IntPtr menu, uint item, out Rect rect);
     public static IntPtr ResidentTrayExit(int process, out Rect rect) {
+        return ResidentTrayItem(process, 2, out rect);
+    }
+    public static IntPtr ResidentTrayItem(int process, uint item, out Rect rect) {
         rect = new Rect();
         if (!ResidentTrayMenuVisible(process)) return IntPtr.Zero;
         IntPtr popup = FindWindow("#32768", null);
         IntPtr menu = SendMessage(popup, 0x1E1, IntPtr.Zero, IntPtr.Zero);
-        return GetMenuItemRect(IntPtr.Zero, menu, 2, out rect) ? popup : IntPtr.Zero;
+        return GetMenuItemRect(IntPtr.Zero, menu, item, out rect) ? popup : IntPtr.Zero;
     }
     public static bool ResidentTrayMenuVisible(int process) {
         IntPtr popup = FindWindow("#32768", null);
@@ -516,10 +519,12 @@ function Test-OcrAfterReopen($Main, $Resident, [string]$Executable, $Form, $Edit
             if (!$Main.CloseMainWindow()) { throw 'Could not close the OCR WebView' }
             $null = Wait-Until { $Main.HasExited } 'OCR WebView did not exit'
         }
-        $wake = Start-Process -FilePath $Executable -ArgumentList '--show' -WindowStyle Hidden -PassThru
-        $null = $wake.Handle
-        if (!$wake.WaitForExit(10000)) { throw 'OCR wake command stalled' }
-        if ($wake.ExitCode -ne 0) { throw 'OCR wake command failed' }
+        if (![MyGoInput]::OpenResidentTrayMenu($Resident.Id)) { throw 'Could not open the OCR resident tray menu' }
+        $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($Resident.Id) } 'OCR resident tray menu did not appear'
+        $showRect = [MyGoInput+Rect]::new()
+        $popup = [MyGoInput]::ResidentTrayItem($Resident.Id, 0, [ref]$showRect)
+        if ($popup -eq [IntPtr]::Zero) { throw 'Could not locate the resident Show action' }
+        Click-WindowPoint $popup ([Drawing.Point]::new(($showRect.left + $showRect.right)/2, ($showRect.top + $showRect.bottom)/2))
         if ($reopen) {
             $Main = Wait-Until {
                 if ($Resident.HasExited) { throw 'Resident exited during OCR recovery' }
