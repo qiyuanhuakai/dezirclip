@@ -19,7 +19,14 @@ pub struct OcrService {
     #[cfg(target_os = "windows")]
     engine: OcrEngine,
     #[cfg(target_os = "windows")]
-    _apartment: OcrApartment,
+    _thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+#[cfg(target_os = "windows")]
+thread_local! {
+    // WinRT activation factories remain cached between OCR requests. Keep the
+    // apartment alive for the worker's lifetime, including engine-only probes.
+    static OCR_APARTMENT: std::cell::RefCell<Option<OcrApartment>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(target_os = "windows")]
@@ -52,14 +59,18 @@ impl Drop for OcrApartment {
 impl OcrService {
     #[cfg(target_os = "windows")]
     pub fn new() -> Result<Self, OcrError> {
-        let apartment = OcrApartment::new()?;
+        OCR_APARTMENT.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            if slot.is_none() { *slot = Some(OcrApartment::new()?); }
+            Ok::<(), OcrError>(())
+        })?;
         if let Ok(engine) = OcrEngine::TryCreateFromUserProfileLanguages() {
-            return Ok(Self { engine, _apartment: apartment });
+            return Ok(Self { engine, _thread: std::marker::PhantomData });
         }
         let lang =
             Language::CreateLanguage(&HSTRING::from("en-US")).map_err(|_| OcrError::NoLanguages)?;
         let engine = OcrEngine::TryCreateFromLanguage(&lang).map_err(|_| OcrError::NoOcrEngine)?;
-        Ok(Self { engine, _apartment: apartment })
+        Ok(Self { engine, _thread: std::marker::PhantomData })
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -137,6 +148,19 @@ mod tests {
                 assert_eq!(service.recognize(&encoded.into_inner()).unwrap().trim(), "");
             }).join().expect("OCR worker finishes and releases its apartment");
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn recognizes_text_after_repeated_engine_probes() {
+        std::thread::spawn(|| {
+            for _ in 0..3 { drop(OcrService::new().expect("OCR engine probe")); }
+            let bytes = include_bytes!("../../../../frontends/dzc-surface/cmd/dzc-desktop/testdata/ocr-clipboard.png");
+            for _ in 0..3 {
+                let text = OcrService::new().unwrap().recognize(bytes).unwrap();
+                assert_eq!(text.split_whitespace().collect::<Vec<_>>().join(" "), "DESKTOP TEST");
+            }
+        }).join().expect("OCR worker remains usable after engine probes");
     }
 
     #[test]

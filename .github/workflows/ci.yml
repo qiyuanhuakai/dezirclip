@@ -464,7 +464,7 @@ jobs:
           fixture = Path("target/debug", "mygo-library.test" + (".exe" if os.name == "nt" else "")).resolve()
           version = json.loads(Path("package.json").read_text(encoding="utf-8"))["version"]
           subprocess.run(["go", "test", "-c", "-o", str(fixture), "./cmd/dzc-desktop"], cwd="frontends/dzc-surface", check=True)
-          command = [fixture, "-test.run=^(TestReactLibraryWithService|TestBundledUpdateChannels)$", "-test.v", "-test.timeout=60s"]
+          command = [fixture, "-test.run=^(TestReactLibraryWithService|TestBundledUpdateChannels|TestDesktopServiceShutdown)$", "-test.v", "-test.timeout=90s"]
           environment = {**os.environ, "DZC_TEST_LIBRARY_VERSION": version}
           if os.name == "nt":
               subprocess.run(command, env=environment, check=True)
@@ -557,6 +557,11 @@ jobs:
         if: runner.os == 'Windows' && matrix.can_test
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -DisabledPanels
+
+      - name: Verify MyGo tray Exit drains Desktop and Service processes
+        if: runner.os == 'Windows' && matrix.can_test
+        shell: powershell
+        run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Quit
 
       - name: Verify middle-button hook survives a blocked resident UI
         if: runner.os == 'Windows' && matrix.can_test

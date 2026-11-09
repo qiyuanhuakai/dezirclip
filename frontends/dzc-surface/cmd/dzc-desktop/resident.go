@@ -66,6 +66,8 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		return err
 	}
 	relaunch := false
+	var mainChild *exec.Cmd
+	var mainDone <-chan struct{}
 	mygo.App.WhenReady(func() {
 		mygo.App.OnWindowAllClosed(func() {})
 		mainVisible := false
@@ -232,6 +234,9 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				return
 			}
 			commands = input
+			mainChild = child
+			done := make(chan struct{})
+			mainDone = done
 			mainPID = child.Process.Pid
 			if err := grantMainFocus(mainPID); err != nil {
 				log.Printf("New main activation permission unavailable: %v", err)
@@ -512,6 +517,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				if err := child.Wait(); err != nil {
 					log.Printf("Main window exited: %v", err)
 				}
+				close(done)
 				mygo.RunOnMain(func() {
 					_ = recorder.stop()
 					input.Close()
@@ -634,6 +640,11 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 	if err := mygo.App.Run(); err != nil {
 		return fmt.Errorf("native desktop: %w", err)
 	}
+	if mainChild != nil {
+		if err := waitDesktopExit(mainDone, mainChild.Process.Kill, 5*time.Second); err != nil {
+			return err
+		}
+	}
 	if relaunch {
 		child := exec.Command(executable, "--show")
 		child.Stderr = os.Stderr
@@ -642,5 +653,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		}
 		return child.Process.Release()
 	}
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return owner.StopDesktopService(ctx)
 }

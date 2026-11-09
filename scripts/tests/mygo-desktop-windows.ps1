@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -79,6 +79,21 @@ public static class MyGoInput {
     [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr FindWindow(string cls, string title);
     public static IntPtr WindowWithTitle(string title) { return FindWindow(null,title); }
+    delegate bool EnumWindowCallback(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowCallback callback, IntPtr parameter);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int size);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
+    public static bool OpenResidentTrayMenu(int process) {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr window, IntPtr unused) {
+            uint owner; GetWindowThreadProcessId(window, out owner);
+            var name = new System.Text.StringBuilder(128); GetClassName(window, name, 128);
+            if (owner == process && name.ToString() == "MyGoApp") { found = window; return false; }
+            return true;
+        }, IntPtr.Zero);
+        // The pinned MyGo backend's notification-area right-click callback.
+        return found != IntPtr.Zero && PostMessage(found, 0x8003, new IntPtr(1), new IntPtr(0x205));
+    }
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr window, System.Text.StringBuilder title, int capacity);
@@ -830,6 +845,33 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     }
     if ($PinPreview) {
         Test-PinnedPreview $root $main $resident $marker
+        return
+    }
+    if ($Quit) {
+        $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
+        if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot identify Service before exit' }
+        $serviceProcess = Get-Process -Id $endpoint.pid
+        $null = $serviceProcess.Handle
+        $children = @(Get-DesktopProcesses @($resident.Id) | ForEach-Object {
+            $process = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
+            if ($process) { $null = $process.Handle; $process }
+        })
+        try {
+            if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open the resident tray menu' }
+            $exitLabel = [regex]::Unescape('\u9000\u51fa')
+            $exitItem = Wait-Until {
+                [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Descendants,
+                    [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $exitLabel))
+            } 'Tray Exit item was not exposed'
+            $exitItem.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+            $null = Wait-Until { $resident.HasExited -and $serviceProcess.HasExited -and
+                @($children | Where-Object { !$_.HasExited }).Count -eq 0 } 'Tray Exit left Desktop, WebView or Service processes running'
+            if ($resident.ExitCode -ne 0 -or $serviceProcess.ExitCode -ne 0) { throw 'Application exit was not clean' }
+            Write-Output 'Verified tray Exit stopped the resident, main WebView process tree and authenticated Service without fixture cleanup'
+        } finally {
+            foreach ($process in $children) { $process.Dispose() }
+            $serviceProcess.Dispose()
+        }
         return
     }
     if ($Capture) {
