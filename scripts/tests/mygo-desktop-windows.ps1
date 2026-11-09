@@ -851,6 +851,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         return
     }
     if ($Quit) {
+        $null = $main.Handle
         $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
         if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot identify Service before exit' }
         $serviceProcess = Get-Process -Id $endpoint.pid
