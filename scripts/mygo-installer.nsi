@@ -80,10 +80,19 @@ empty:
   CreateDirectory "$INSTDIR"
   WriteINIStr "$INSTDIR\mygo-installation.ini" "Installation" "Owner" "${OWNER}"
   WriteINIStr "$INSTDIR\mygo-installation.ini" "Installation" "Directory" "$INSTDIR"
-  FlushINI "$INSTDIR\mygo-installation.ini"
   ${If} ${Errors}
-    SetErrorLevel 5
+    SetErrorLevel 6
     Abort "Could not record ownership of the MyGo installation directory."
+  ${EndIf}
+  FlushINI "$INSTDIR\mygo-installation.ini"
+  ClearErrors
+  ReadINIStr $4 "$INSTDIR\mygo-installation.ini" "Installation" "Owner"
+  ReadINIStr $5 "$INSTDIR\mygo-installation.ini" "Installation" "Directory"
+  ${If} ${Errors}
+  ${OrIf} $4 != "${OWNER}"
+  ${OrIf} $5 != $INSTDIR
+    SetErrorLevel 7
+    Abort "Could not verify the MyGo installation ownership record."
   ${EndIf}
   SetOverwrite on
   ClearErrors
