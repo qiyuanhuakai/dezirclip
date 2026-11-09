@@ -11,6 +11,7 @@ import statistics
 import subprocess
 import sys
 import time
+import tempfile
 from urllib.request import ProxyHandler, build_opener
 
 import psutil
@@ -18,6 +19,7 @@ import websocket
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlite_history_fixture import connect_fixture_database
+import release_windows_webview as webview_policy
 from importlib.util import spec_from_file_location, module_from_spec
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +28,16 @@ seed = module_from_spec(spec)
 spec.loader.exec_module(seed)
 OUT = ROOT / '.harness/release-memory'
 HTTP = build_opener(ProxyHandler({}))
+POLICIES = []
+
+
+def restore_policies():
+    while POLICIES:
+        api, state, context, boundary = POLICIES[-1]
+        if state.exists():
+            document = webview_policy.validate_document(json.loads(state.read_text()), boundary, context)
+            webview_policy.restore(api, state, document)
+        POLICIES.pop()
 
 
 def save(path, value):
@@ -101,7 +113,7 @@ def run_case(label, version, binaries):
         settings = {'app.hotkey': 'Ctrl+Alt+Shift+F9', 'app.quick_paste_hotkey': '', 'app.screenshot_hotkey': '',
                     'app.screenshot_full_hotkey': '', 'app.auto_start': 'false', 'app.silent_start': 'false',
                     'app.window_width': '400', 'app.window_height': '600', 'app.theme': 'retro', 'app.color_mode': 'light',
-                    'app.edge_docking': 'false', 'app.window_pinned': 'false', 'app.idle_destroy_enabled': 'true',
+                    'app.edge_docking': 'false', 'app.window_pinned': 'true', 'app.idle_destroy_enabled': 'true',
                     'app.idle_destroy_seconds': '60', 'app.ocr_enabled': 'false', 'app.light_mode_enabled': 'false'}
         db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)', settings.items())
         db.commit()
@@ -111,6 +123,12 @@ def run_case(label, version, binaries):
         probe.bind(('127.0.0.1', 0))
         port = probe.getsockname()[1]
     environment['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = f'--remote-debugging-port={port} --remote-debugging-address=127.0.0.1'
+    boundary = Path(tempfile.mkdtemp(prefix='dzc-release-memory-', dir=os.environ['RUNNER_TEMP'])).resolve()
+    state = boundary / 'policy.json'
+    api = webview_policy.NativeWindows()
+    context = {'source': os.environ['GITHUB_SHA'], 'run': os.environ['GITHUB_RUN_ID'], 'case': label}
+    POLICIES.append((api, state, context, boundary))
+    webview_policy.configure(api, state, boundary, boundary / 'browser', port, context)
     log = (OUT / f'{label}.log').open('wb')
     process = subprocess.Popen([str(desktop)], env=environment, cwd=case, stdout=log, stderr=log, creationflags=subprocess.CREATE_NO_WINDOW)
     root = psutil.Process(process.pid)
@@ -184,6 +202,7 @@ def run_case(label, version, binaries):
                 pass
         psutil.wait_procs(list(tracked.values()), timeout=10)
         log.close()
+        restore_policies()
 
 
 def main():
@@ -220,4 +239,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    finally:
+        restore_policies()
