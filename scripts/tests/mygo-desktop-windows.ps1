@@ -867,7 +867,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             $exitItem.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
             $null = Wait-Until { $resident.HasExited -and $serviceProcess.HasExited -and
                 @($children | Where-Object { !$_.HasExited }).Count -eq 0 } 'Tray Exit left Desktop, WebView or Service processes running'
-            if ($resident.ExitCode -ne 0 -or $serviceProcess.ExitCode -ne 0) { throw 'Application exit was not clean' }
+            if ($resident.ExitCode -ne 0 -or $main.ExitCode -ne 0 -or $serviceProcess.ExitCode -ne 0) { throw 'Application exit was not clean' }
             $quitVerified = $true
             Write-Output 'Verified tray Exit stopped the resident, main WebView process tree and authenticated Service without fixture cleanup'
         } finally {

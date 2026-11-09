@@ -1933,11 +1933,21 @@ def check_profile_move(executable, home):
         assert Path((config/'datapath.txt').read_text()) == target and (config/'clipboard.db').is_file()
         print('Verified MyGo Settings folder selection, pre-commit rollback, post-commit restart failure, tray recovery after WebView exit, destination-only history and preserved capture mode')
     finally:
-        for pid in residents():
-            try: os.kill(pid, 15)
-            except ProcessLookupError: pass
-        process.wait(timeout=10)
-        run('service', 'stop')
+        with observed_service_cleanup(cli):
+            exits = []
+            try:
+                for pid in residents():
+                    try:
+                        exits.append(os.pidfd_open(pid))
+                        os.kill(pid, 15)
+                    except ProcessLookupError:
+                        pass
+                process.wait(timeout=20)
+                for descriptor in exits:
+                    assert select.select([descriptor], [], [], 20)[0], 'Relocated resident did not exit'
+            finally:
+                for descriptor in exits:
+                    os.close(descriptor)
 
 
 if __name__ == '__main__':
