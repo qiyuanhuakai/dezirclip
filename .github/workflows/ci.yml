@@ -13,6 +13,10 @@ on:
         default: true
   workflow_dispatch:
     inputs:
+      windows_release_memory:
+        description: Compare published alpha.8 and alpha.9 Windows memory with synthetic history
+        type: boolean
+        default: false
       full_validation:
         description: Run complete multi-platform native and packaging acceptance
         type: boolean
@@ -64,6 +68,33 @@ env:
   DEZIRCLIP_DISABLE_LINUX_SERVICES: window_tracker,edge_docking,mouse_hotkey
 
 jobs:
+  windows-release-memory:
+    name: Published Windows memory comparison
+    if: github.event_name == 'workflow_dispatch' && inputs.windows_release_memory == true
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install measurement dependencies
+        run: python -m pip install psutil==7.2.2 Pillow==13.0.0 websocket-client==1.9.2
+      - name: Measure original published executables
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/tests/release-memory-windows.py
+      - name: Preserve measurements and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-windows-memory-${{ github.run_attempt }}
+          path: |
+            .harness/release-memory/*.json
+            .harness/release-memory/*.log
+            .harness/release-memory/*/identity.json
+          retention-days: 14
+
   frontend:
     name: Frontend
     runs-on: ubuntu-22.04
