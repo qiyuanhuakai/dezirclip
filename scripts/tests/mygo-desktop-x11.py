@@ -17,15 +17,20 @@ import tempfile
 import time
 
 
-def cleanup_stopped_desktop_service(cli):
-    # SIGTERM now follows the normal application quit path and drains Service.
-    # An already absent endpoint is expected only during fixture cleanup; tray
-    # acceptance separately confirms the original Service process using pidfd.
-    status = subprocess.run([cli, 'service', 'status', '--json'], capture_output=True, text=True)
-    if status.returncode:
-        assert 'No such file or directory (os error 2)' in status.stderr, status.stderr
-        return
-    subprocess.run([cli, 'service', 'stop'], check=True)
+@contextlib.contextmanager
+def observed_service_cleanup(cli):
+    # Retain the original kernel process identity before signaling the desktop.
+    endpoint = json.loads(subprocess.check_output([cli, 'service', 'desktop-endpoint']))
+    service = os.pidfd_open(endpoint['pid'])
+    try:
+        yield
+    finally:
+        try:
+            if not select.select([service], [], [], 0)[0]:
+                subprocess.run([cli, 'service', 'stop', '--from-instance', endpoint['instance']], check=True)
+            assert select.select([service], [], [], 5)[0], 'Original Service survived fixture cleanup'
+        finally:
+            os.close(service)
 
 
 @contextlib.contextmanager
@@ -1384,10 +1389,10 @@ def check(desktop, pinned, audio, pin_preview=False):
         check_native_panels(marker, process, endpoint['pid'], target, editor, paste_row, audio)
         print('Verified independent MyGo WebView, visible synthetic history, native Copy action and clipboard text')
     finally:
-        if process.poll() is None:
-            process.terminate()
-        process.wait(timeout=10)
-        cleanup_stopped_desktop_service(cli)
+        with observed_service_cleanup(cli):
+            if process.poll() is None:
+                process.terminate()
+            process.wait(timeout=20)
     check_storage_limit(cli)
 
 
@@ -1439,16 +1444,16 @@ def check_reset_settings(desktop):
         wait(lambda: tray_item(replacement, '退出', activate=False), 'Reset did not restore the native tray')
         print('Verified React reset confirmation, default preferences, resident replacement, restored tray and preserved history', flush=True)
     finally:
-        if resident.poll() is None: resident.terminate()
-        resident.wait(timeout=10)
-        if replacement is not None:
-            process_exit = os.pidfd_open(replacement)
-            try:
-                os.kill(replacement, 15)
-                assert select.select([process_exit], [], [], 20)[0], 'Replacement resident did not exit'
-            finally:
-                os.close(process_exit)
-        cleanup_stopped_desktop_service(cli)
+        with observed_service_cleanup(cli):
+            if resident.poll() is None: resident.terminate()
+            resident.wait(timeout=20)
+            if replacement is not None:
+                process_exit = os.pidfd_open(replacement)
+                try:
+                    os.kill(replacement, 15)
+                    assert select.select([process_exit], [], [], 20)[0], 'Replacement resident did not exit'
+                finally:
+                    os.close(process_exit)
 
 
 def check_paste_hotkeys(desktop, middle=False):
@@ -1541,9 +1546,9 @@ def check_paste_hotkeys(desktop, middle=False):
         print('Verified resident sequential queue order, empty queue and latest-entry HTML paste without a main WebView', flush=True)
     finally:
         window.destroy()
-        resident.terminate()
-        resident.wait(timeout=10)
-        cleanup_stopped_desktop_service(cli)
+        with observed_service_cleanup(cli):
+            resident.terminate()
+            resident.wait(timeout=20)
 
 
 def check_storage_limit(cli):
@@ -1804,9 +1809,9 @@ def check_idle(executable):
         print('Verified middle-button wake, idle release off, cancel on reopen, expiration and recreation with the same resident')
     finally:
         db.close()
-        process.terminate()
-        process.wait(timeout=10)
-        cleanup_stopped_desktop_service(cli)
+        with observed_service_cleanup(cli):
+            process.terminate()
+            process.wait(timeout=20)
 
 
 def check_profile_move(executable, home):
