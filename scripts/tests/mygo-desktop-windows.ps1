@@ -645,6 +645,10 @@ import os, sqlite3, sys
 with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.text',?)", (sys.argv[1],))
     db.execute("UPDATE settings SET value='true' WHERE key='app.silent_start'")
+    # Automatic OCR is scheduled for new persistent images. This fixture must
+    # opt into persistence rather than relying on the RAM-only profile default.
+    db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
+                   [('app.persistent','true'), ('app.ocr_enabled','true')])
 '@ | python - $fixtureEditor
         if ($LASTEXITCODE) { throw 'Could not select the isolated external editor' }
     }
@@ -1073,6 +1077,15 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
       }
       Write-Host ("Clipboard matches selected entry: " + ([Windows.Forms.Clipboard]::GetText() -ceq $marker))
     } catch { Write-Host ("Diagnostic query failed: " + $_.Exception.Message) }
+    if ($Capture) {
+        @'
+import json, os, sqlite3
+with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+    settings=dict(db.execute("SELECT key,value FROM settings WHERE key IN ('app.persistent','app.ocr_enabled')"))
+    rows=db.execute("SELECT ocr_status,count(*),sum(length(COALESCE(ocr_text,''))>0) FROM clipboard_history WHERE content_type='image' GROUP BY ocr_status").fetchall()
+    print('Synthetic OCR diagnostics:', json.dumps({'settings':settings,'status_counts':rows}))
+'@ | python -
+    }
     $log = Join-Path $dir.FullName 'desktop.log'
     if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 12 | Write-Host }
     if (($Emoji -or $Elevation) -and ($startedService -or $startedServiceProcess)) {
