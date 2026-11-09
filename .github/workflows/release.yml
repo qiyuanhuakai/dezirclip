@@ -11,7 +11,7 @@ on:
         required: true
         type: choice
         default: sync-published-channel
-        options: [sync-published-channel, resume-existing-alpha2]
+        options: [sync-published-channel, resume-existing-alpha2, publish-mygo-installer]
       tag:
         description: Published version tag to synchronize (sync-published-channel only)
         required: false
@@ -260,23 +260,28 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Attach the verified Windows x64 MyGo ZIP to the release
+      - name: Build and exercise the Windows x64 MyGo installer
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-test-package" --version $version --output "$env:RUNNER_TEMP/DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo-setup.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-test-package" --installer "$env:RUNNER_TEMP/DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo-setup.exe"
+
+      - name: Attach the verified Windows x64 MyGo installer to the release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           DZC_RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
         run: |
-          $stage = Join-Path $env:RUNNER_TEMP 'mygo-test-package'
-          $archive = Join-Path $env:RUNNER_TEMP "DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo.zip"
-          $files = 'dzc-desktop.exe', 'dzc-service.exe', 'dzc.exe', 'skills' | ForEach-Object { Join-Path $stage $_ }
-          Compress-Archive -LiteralPath $files -DestinationPath $archive -CompressionLevel Optimal
-          python scripts/stage-mygo-windows.py --verify-archive $archive --output $stage
-          if ($LASTEXITCODE) { throw 'MyGo ZIP differs from the tested package' }
+          $archive = Join-Path $env:RUNNER_TEMP "DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo-setup.exe"
           $release = gh release view "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" --json databaseId,isDraft,tagName | ConvertFrom-Json
           if ($LASTEXITCODE -or !$release.isDraft -or [string]$release.databaseId -ne $env:DZC_RELEASE_ID -or $release.tagName -cne $env:GITHUB_REF_NAME) {
             throw 'Expected the original draft release for this tag'
           }
-          gh release upload "$env:GITHUB_REF_NAME" $archive --repo "$env:GITHUB_REPOSITORY" --clobber
+          gh release upload "$env:GITHUB_REF_NAME" $archive --repo "$env:GITHUB_REPOSITORY"
 
   publish-tauri:
     name: Tauri release (${{ matrix.name }})
@@ -544,3 +549,39 @@ jobs:
           name: updater-channel-backfill-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/updater-channel-sync.json
           if-no-files-found: error
+
+  publish-mygo-installer:
+    name: Supplement published MyGo installer
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-mygo-installer'
+    runs-on: windows-latest
+    steps:
+      - name: Require merged packaging tooling
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/master') { throw 'Run this mode from master' }
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
+      - name: Prepare immutable released MyGo payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/package-published-mygo.py --output "${{ runner.temp }}/mygo-installer-input"
+      - name: Build installer
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-installer-input/stage" --version 0.2.0-alpha.9 --output "$env:RUNNER_TEMP/DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe"
+      - name: Verify installation, installed desktop, upgrade, locked files and uninstall
+        run: python scripts/tests/mygo-installer-windows.py --stage "${{ runner.temp }}/mygo-installer-input/stage" --installer "${{ runner.temp }}/DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe"
+      - name: Attach tested installer without replacing existing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $release = gh release view v0.2.0-alpha.9 --repo "$env:GITHUB_REPOSITORY" --json databaseId,isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -or $release.isDraft -or $release.databaseId -ne 438668292) { throw 'Release changed' }
+          gh release upload v0.2.0-alpha.9 "$env:RUNNER_TEMP/DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe" --repo "$env:GITHUB_REPOSITORY"

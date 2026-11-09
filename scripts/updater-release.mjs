@@ -296,7 +296,7 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
   const publishers = jobs.filter(job => publisherJobs.includes(job.name));
   if (publishers.length !== 1 || (requiresMyGo(tag) && jobs.filter(job => job.name === mygoJob).length !== 1)
       || jobs.some(job => !(job.status === 'completed' && job.conclusion === 'success')
-      && !(job.name === 'Synchronize an already published update channel'
+      && !(['Synchronize an already published update channel', 'Supplement published MyGo installer'].includes(job.name)
         && job.status === 'completed' && job.conclusion === 'skipped')
       && !(repair && job === publishers[0] && job.status === 'completed' && job.conclusion === 'failure')
       && !(job === publishers[0] && job.status === 'in_progress' && job.conclusion === null))
@@ -331,8 +331,19 @@ function verifiedReleaseAssets(release, version, cutoff) {
     ...deb.flatMap(name => [name, `${name}.sig`]),
     ...['x86_64', 'aarch64'].map(arch => `DezirClip-${rpmVersion}-${rpmRelease}.${arch}.rpm`),
     ...['x86_64', 'aarch64'].map(arch => `DezirClip-${value}-linux-${arch}.flatpak`)];
-  const assets = release.assets;
-  if (requiresMyGo(value)) names.push(`DezirClip-v${value}-windows-x64-MyGo.zip`);
+  let assets = release.assets;
+  if (requiresMyGo(value)) names.push(`DezirClip-v${value}-windows-x64-MyGo${value === '0.2.0-alpha.9' ? '.zip' : '-setup.exe'}`);
+  // alpha.9's original gate predates its separately tested installer supplement.
+  // That attachment is outside the signed updater set and original time cutoff.
+  if (value === '0.2.0-alpha.9' && !release.draft && Array.isArray(assets)) {
+    const supplements = assets.filter(asset => asset.name === `DezirClip-v${value}-windows-x64-MyGo-setup.exe`);
+    if (supplements.length > 1 || supplements.some(asset => !Number.isSafeInteger(asset.id) || asset.id <= 0
+        || !Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.state !== 'uploaded'
+        || !/^sha256:[a-f0-9]{64}$/.test(asset.digest ?? ''))) {
+      throw new Error('Invalid alpha.9 MyGo installer supplement');
+    }
+    assets = assets.filter(asset => !supplements.includes(asset));
+  }
   if (!Array.isArray(assets) || assets.length !== names.length || new Set(assets.map(asset => asset.id)).size !== names.length
       || names.some(name => assets.filter(asset => asset.name === name).length !== 1)
       || assets.some(asset => !Number.isSafeInteger(asset.id) || asset.id <= 0
