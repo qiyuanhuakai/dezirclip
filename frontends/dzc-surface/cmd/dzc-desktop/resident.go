@@ -296,6 +296,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 										})
 									}()
 								case "reset-settings":
+									log.Print("Settings reset requested by main window")
 									if pasteBusy {
 										reply(fmt.Errorf("PasteBusy"))
 										break
@@ -309,6 +310,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 										break
 									}
 									relaunch, closing = true, true
+									log.Print("Settings reset acknowledged; rebuilding desktop")
 									reply(nil)
 									_, _ = io.WriteString(input, "rebuild\n")
 								case "appearance":
