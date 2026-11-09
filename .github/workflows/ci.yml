@@ -391,7 +391,7 @@ jobs:
           GOTOOLCHAIN: local
           CGO_ENABLED: '0'
           DZC_VISUAL_DIR: ${{ github.workspace }}/target/native-visual-review
-        run: go test ./...
+        run: go test -count=1 ./...
 
       - name: Upload native panel visual fixtures
         if: matrix.can_test
@@ -573,6 +573,11 @@ jobs:
         if: runner.os == 'Windows' && matrix.can_test
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Quit
+
+      - name: Verify MyGo tray recovers after the Service exits
+        if: runner.os == 'Windows' && matrix.can_test
+        shell: powershell
+        run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -RecoverService
 
       - name: Verify middle-button hook survives a blocked resident UI
         if: runner.os == 'Windows' && matrix.can_test

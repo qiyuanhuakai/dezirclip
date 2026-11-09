@@ -131,6 +131,10 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		}
 		var toggle func()
 		var present func(string)
+		activationContext, cancelActivation := context.WithCancel(context.Background())
+		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { cancelActivation() })
+		activating := false
+		activationCommand := ""
 		registerSearch := func(key string) error {
 			return registerMainShortcut(key, func() {
 				if !recorder.offer(key) {
@@ -182,7 +186,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				})
 			}()
 		}
-		present = func(command string) {
+		presentReady := func(command string) {
 			if stopping || migrating || moved {
 				return
 			}
@@ -540,6 +544,43 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 					} else if !stopping && pinnedCount == 0 && !panel.HasShortcut() && !selector.HasShortcut() && !reachable() {
 						mygo.App.Quit()
 					}
+				})
+			}()
+		}
+		present = func(command string) {
+			if stopping || migrating || moved || relaunch {
+				return
+			}
+			if pending != nil {
+				reconnect(nil)
+				return
+			}
+			activationCommand = command
+			if activating {
+				return
+			}
+			activating = true
+			go func() {
+				ctx, cancel := context.WithTimeout(activationContext, 30*time.Second)
+				defer cancel()
+				changed, err := owner.RecoverDesktopForPresentation(ctx)
+				mygo.RunOnMain(func() {
+					activating = false
+					if activationContext.Err() != nil || stopping || migrating || moved || relaunch {
+						return
+					}
+					if err != nil {
+						log.Printf("Desktop Host recovery failed: %v", err)
+						_, _ = mygo.Dialog.Message(mygo.MessageOptions{Title: "DezirClip", Message: "无法连接剪贴板服务，请稍后重试。\nClipboard Service is unavailable. Please try again.", Buttons: []string{"OK"}})
+						return
+					}
+					if changed {
+						log.Print("Desktop Host changed; replacing native and WebView sessions")
+						relaunch = true
+						mygo.App.Quit()
+						return
+					}
+					presentReady(activationCommand)
 				})
 			}()
 		}

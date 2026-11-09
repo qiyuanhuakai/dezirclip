@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -914,6 +914,48 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Test-PinnedPreview $root $main $resident $marker
         return
     }
+    if ($RecoverService) {
+        $oldResident = $resident
+        $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
+        if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot identify Service before the recovery fixture' }
+        $serviceProcess = Get-Process -Id $endpoint.pid
+        $expectedService = Join-Path (Split-Path $exe) 'dzc-service.exe'
+        if ($serviceProcess.Path -ne $expectedService) { throw 'Recovery fixture Service executable mismatch' }
+        $null = $serviceProcess.Handle
+        if (!$main.CloseMainWindow()) { throw 'Cannot close the idle main WebView' }
+        $null = Wait-Until { $main.HasExited } 'Idle main WebView did not exit'
+        # This process belongs to the isolated CI profile. End it without a
+        # graceful protocol stop, then exercise the existing resident's tray.
+        $serviceProcess.Kill()
+        $null = Wait-Until { $serviceProcess.HasExited } 'Fixture Service did not exit'
+        if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open tray after Service exit' }
+        $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($resident.Id) } 'Recovery tray menu did not open'
+        $showRect = [MyGoInput+Rect]::new()
+        $popup = [MyGoInput]::ResidentTrayItem($resident.Id, 0, [ref]$showRect)
+        if ($popup -eq [IntPtr]::Zero) { throw 'Recovery Show action missing' }
+        Click-WindowPoint $popup ([Drawing.Point]::new(($showRect.left+$showRect.right)/2, ($showRect.top+$showRect.bottom)/2))
+        $resident = Wait-Until {
+            Get-CimInstance Win32_Process -Filter "Name='dzc-desktop.exe'" | Where-Object {
+                $_.ParentProcessId -eq $oldResident.Id -and $_.ExecutablePath -eq $exe
+            } | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue } | Select-Object -First 1
+        } 'Tray activation did not replace the stale native owner' 40
+        $null = Wait-Until { $oldResident.HasExited } 'Stale resident did not exit during Host recovery'
+        $main = Wait-Until {
+            if ($resident.HasExited) { throw 'Recovered resident exited' }
+            Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
+                $_.Id -ne $resident.Id -and $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip'
+            } | Select-Object -First 1
+        } 'Tray activation did not recreate the main WebView' 40
+        $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+        $null = Get-ControlPoint $root $marker
+        $replacement = & $cli service desktop-endpoint | ConvertFrom-Json
+        if ($LASTEXITCODE -or $replacement.instance -eq $endpoint.instance -or $replacement.database -cne $endpoint.database) {
+            throw 'Recovery did not authenticate a new Service for the same profile'
+        }
+        Write-Output 'Verified tray Show recovered after Service exit with a fresh native owner, Host identity and readable WebView history'
+        $serviceProcess.Dispose()
+        return
+    }
     if ($Quit) {
         $null = Wait-Until { Get-ControlPoint $root $marker } 'History was not ready before tray Exit'
         $null = $resident.Handle
@@ -996,6 +1038,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         $point = Get-ControlPoint $root 'Full Screen Capture'
         $bounds = [Windows.Forms.Screen]::FromPoint($point).Bounds
         Click-Control $main $point
+        $acknowledged = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Copied to clipboard')
+        $null = Wait-Until { $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $acknowledged) } 'Full Screen Capture was not acknowledged'
         $null = Wait-Until {
             try { $image = [Windows.Forms.Clipboard]::GetImage() }
             catch [Runtime.InteropServices.ExternalException] { return $false }
@@ -1004,8 +1048,6 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
                 finally { $image.Dispose() }
             }
         } 'Full Screen Capture did not copy the selected display'
-        $acknowledged = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Copied to clipboard')
-        $null = Wait-Until { $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $acknowledged) } 'Full Screen Capture was not acknowledged'
         Click-Control $main (Get-ControlPoint $root 'Region Capture')
         $panel = Get-ResidentPanel $resident ([regex]::Unescape('DezirClip \u622a\u56fe'))
         [Windows.Forms.SendKeys]::SendWait('{ESC}')
