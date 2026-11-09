@@ -537,7 +537,10 @@ jobs:
         if: runner.os == 'Windows' && matrix.can_test
         env:
           DZC_TEST_CLIPBOARD_READER: '1'
-        run: cargo test --locked -p dzc-platform capture::windows_access::tests::reader_window_owns_the_lock_until_drop -- --exact
+        run: |
+          cargo test --locked -p dzc-platform capture::windows_access::tests::reader_window_owns_the_lock_until_drop -- --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked -p dzc-platform native_clipboard::windows_image::tests
 
       - name: Diagnose Windows Service startup crashes with local symbols
         if: runner.os == 'Windows' && matrix.can_test && inputs.windows_service_crash_stacks

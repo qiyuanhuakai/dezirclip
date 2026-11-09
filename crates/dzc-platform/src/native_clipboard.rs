@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 mod selection_lease;
 #[cfg(target_os = "windows")]
 mod private_windows;
+#[cfg(target_os = "windows")]
+mod windows_image;
 #[cfg(target_os = "linux")]
 mod private_x11_files;
 #[cfg(target_os = "linux")]
@@ -446,6 +448,13 @@ fn set(cb: &mut arboard::Clipboard, payload: Payload) -> Result<(), String> {
     let image = if let Payload::Image(bytes) = &payload {
         Some(image::load_from_memory(bytes).map_err(|_| "ClipboardImageRejected")?.into_rgba8())
     } else { None };
+    #[cfg(target_os = "windows")]
+    if let Some(image) = image {
+        if private { return Err("NativeLeaseOwnerRequired".into()); }
+        return windows_image::write(image);
+    }
+    #[cfg(target_os = "windows")]
+    let image: Option<image::RgbaImage> = None;
     let image_write = image.is_some();
     let setter = cb.set();
     #[cfg(target_os = "windows")]
