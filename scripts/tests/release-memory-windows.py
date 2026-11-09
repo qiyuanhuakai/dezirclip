@@ -1,5 +1,6 @@
 """Compare published alpha.8/alpha.9 bytes on a disposable Windows runner."""
 import ctypes
+from contextlib import closing
 from ctypes import wintypes
 import hashlib
 import json
@@ -68,7 +69,7 @@ def ready(port):
     main = [target for target in targets if target.get('type') == 'page' and 'window=' not in target.get('url', '')]
     if len(main) != 1:
         raise RuntimeError('Expected exactly one main WebView')
-    with websocket.create_connection(main[0]['webSocketDebuggerUrl'], timeout=3, suppress_origin=True) as ws:
+    with closing(websocket.create_connection(main[0]['webSocketDebuggerUrl'], timeout=3, suppress_origin=True)) as ws:
         ws.send(json.dumps({'id': 1, 'method': 'Runtime.evaluate', 'params': {
             'expression': "({rows:document.querySelectorAll('.clipboard-item').length,images:[...document.images].filter(i=>i.complete&&i.naturalWidth>0).length,visible:document.visibilityState})",
             'returnByValue': True}}))
