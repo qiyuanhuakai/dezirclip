@@ -652,6 +652,14 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
 '@ | python - $fixtureEditor
         if ($LASTEXITCODE) { throw 'Could not select the isolated external editor' }
     }
+    if ($RecoverService) {
+        @'
+import os, sqlite3
+with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+    db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.search_hotkey','Ctrl+Shift+F9')")
+'@ | python -
+        if ($LASTEXITCODE) { throw 'Could not seed the recovery search shortcut' }
+    }
     if ($InstalledElevation) {
         $config = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'io.github.qiyuanhuakai.dezirclip'
         $null = New-Item -ItemType Directory -Force -Path $config
@@ -915,6 +923,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         return
     }
     if ($RecoverService) {
+      foreach ($recoveryAction in @('show', 'search', 'settings')) {
         $oldResident = $resident
         $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
         if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot identify Service before the recovery fixture' }
@@ -928,12 +937,19 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         # graceful protocol stop, then exercise the existing resident's tray.
         $serviceProcess.Kill()
         $null = Wait-Until { $serviceProcess.HasExited } 'Fixture Service did not exit'
-        if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open tray after Service exit' }
-        $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($resident.Id) } 'Recovery tray menu did not open'
-        $showRect = [MyGoInput+Rect]::new()
-        $popup = [MyGoInput]::ResidentTrayItem($resident.Id, 0, [ref]$showRect)
-        if ($popup -eq [IntPtr]::Zero) { throw 'Recovery Show action missing' }
-        Click-WindowPoint $popup ([Drawing.Point]::new(($showRect.left+$showRect.right)/2, ($showRect.top+$showRect.bottom)/2))
+        if ($recoveryAction -eq 'search') {
+            $form.Activate()
+            $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $form.Handle } 'Recovery shortcut target did not acquire foreground'
+            [Windows.Forms.SendKeys]::SendWait('^+{F9}')
+        } else {
+            if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open tray after Service exit' }
+            $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($resident.Id) } 'Recovery tray menu did not open'
+            $showRect = [MyGoInput+Rect]::new()
+            $item = if ($recoveryAction -eq 'settings') { 1 } else { 0 }
+            $popup = [MyGoInput]::ResidentTrayItem($resident.Id, $item, [ref]$showRect)
+            if ($popup -eq [IntPtr]::Zero) { throw 'Recovery tray action missing' }
+            Click-WindowPoint $popup ([Drawing.Point]::new(($showRect.left+$showRect.right)/2, ($showRect.top+$showRect.bottom)/2))
+        }
         $resident = Wait-Until {
             Get-CimInstance Win32_Process -Filter "Name='dzc-desktop.exe'" | Where-Object {
                 $_.ParentProcessId -eq $oldResident.Id -and $_.ExecutablePath -eq $exe
@@ -947,13 +963,25 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             } | Select-Object -First 1
         } 'Tray activation did not recreate the main WebView' 40
         $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
-        $null = Get-ControlPoint $root $marker
+        if ($recoveryAction -eq 'settings') {
+            $null = Get-ControlPoint $root 'General Settings'
+        } else {
+            $null = Get-ControlPoint $root $marker
+            if ($recoveryAction -eq 'search') {
+                $null = Wait-Until {
+                    $focused = $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
+                        [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::HasKeyboardFocusProperty, $true))
+                    $focused -and $focused.Current.Name -eq 'Search clipboard...'
+                } 'Service recovery did not focus the requested search input'
+            }
+        }
         $replacement = & $cli service desktop-endpoint | ConvertFrom-Json
         if ($LASTEXITCODE -or $replacement.instance -eq $endpoint.instance -or $replacement.database -cne $endpoint.database) {
             throw 'Recovery did not authenticate a new Service for the same profile'
         }
-        Write-Output 'Verified tray Show recovered after Service exit with a fresh native owner, Host identity and readable WebView history'
+        Write-Output "Verified $recoveryAction recovered after Service exit with a fresh native owner, Host identity and requested WebView destination"
         $serviceProcess.Dispose()
+      }
         return
     }
     if ($Quit) {

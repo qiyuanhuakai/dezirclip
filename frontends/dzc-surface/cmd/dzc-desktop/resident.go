@@ -60,12 +60,13 @@ func refreshMainShortcuts(owner *client.Client, registered map[string]bool, togg
 
 // Only the main window loads the WebView runtime. Parent and child use
 // inherited pipes for window lifecycle, and authenticate separately to Rust.
-func runResident(owner *client.Client, minimized, forceShow bool) error {
+func runResident(owner *client.Client, minimized bool, activation string) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
 	}
 	relaunch := false
+	relaunchCommand := "show"
 	var mainChild *exec.Cmd
 	var mainDone <-chan struct{}
 	mygo.App.WhenReady(func() {
@@ -576,6 +577,9 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 					}
 					if changed {
 						log.Print("Desktop Host changed; replacing native and WebView sessions")
+						if activationCommand == "settings" || activationCommand == "search" {
+							relaunchCommand = activationCommand
+						}
 						relaunch = true
 						mygo.App.Quit()
 						return
@@ -676,7 +680,9 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 			}
 		})
 		silent := startupSettings != nil && startupSettings["app.silent_start"] != "false"
-		if forceShow || (!minimized && !silent) || !reachable() {
+		if activation != "" {
+			present(activation)
+		} else if (!minimized && !silent) || !reachable() {
 			open()
 		}
 		refreshMemory()
@@ -691,7 +697,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		}
 	}
 	if relaunch {
-		child := exec.Command(executable, "--show")
+		child := exec.Command(executable, "--"+relaunchCommand)
 		child.Stderr = os.Stderr
 		if err := child.Start(); err != nil {
 			return err
