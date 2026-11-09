@@ -619,6 +619,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 			})
 		})
 		mygo.App.OnBeforeQuit(func(event *mygo.QuitEvent) {
+			log.Printf("Desktop quit requested (migrating=%t, relaunch=%t)", migrating, relaunch)
 			if migrating {
 				event.PreventDefault()
 				return
@@ -642,6 +643,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 	if err := mygo.App.Run(); err != nil {
 		return fmt.Errorf("native desktop: %w", err)
 	}
+	log.Print("Desktop native loop stopped; waiting for main process")
 	if mainChild != nil {
 		if err := waitDesktopExit(mainDone, mainChild.Process.Kill, 5*time.Second); err != nil {
 			return err
@@ -657,5 +659,6 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	log.Print("Desktop main process stopped; stopping authenticated Service")
 	return owner.StopDesktopService(ctx)
 }

@@ -1029,7 +1029,10 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
             close = wait_for(lambda: find_item('Close'), 'Settings close action unavailable')
             assert atspi.Action.do_action(close, 0)
             wait_for(lambda: find_item('Stickers'), 'Main window did not return to history')
-            settings_window().focus(Gdk.CURRENT_TIME)
+            window = settings_window()
+            window.focus(Gdk.CURRENT_TIME)
+            wait_for(lambda: int(subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1], 16) == window.get_xid(),
+                     'History window did not finish its requested activation')
         show_history()
         try:
             wait_for(painted, 'Selected wallpaper did not paint its magenta pixels in the MyGo WebView')

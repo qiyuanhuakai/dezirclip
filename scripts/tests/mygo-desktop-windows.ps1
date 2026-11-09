@@ -881,6 +881,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             $quitVerified = $true
             Write-Output 'Verified tray Exit stopped the resident, main WebView process tree and authenticated Service without fixture cleanup'
         } finally {
+            Write-Output "Exit observation: resident=$($resident.HasExited), main=$($main.HasExited), service=$($serviceProcess.HasExited)"
+            foreach ($process in $children) { Write-Output "Child $($process.Id) $($process.ProcessName): exited=$($process.HasExited)" }
             foreach ($process in $children) { $process.Dispose() }
             $serviceProcess.Dispose()
         }
