@@ -4,25 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
 	"io"
 	"sync"
 	"time"
-	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
 )
 
 // The resident owns the tray and native selector. Only its original WebView child has these pipes.
 type residentRequest struct {
-	Appearance *theme.Appearance `json:"appearance,omitempty"`
-	Preview   *pinPreviewRequest `json:"preview,omitempty"`
-	ID        uint64             `json:"request_id"`
-	Epoch     uint64             `json:"epoch"`
-	Operation string             `json:"operation"`
-	Directory string             `json:"directory,omitempty"`
-	Panel     string             `json:"panel,omitempty"`
-	Hotkey    string             `json:"hotkey,omitempty"`
-	Disabled  bool               `json:"disabled,omitempty"`
-	Full      bool               `json:"full,omitempty"`
-	Visible   bool               `json:"visible,omitempty"`
+	Appearance *theme.Appearance  `json:"appearance,omitempty"`
+	Preview    *pinPreviewRequest `json:"preview,omitempty"`
+	ID         uint64             `json:"request_id"`
+	Epoch      uint64             `json:"epoch"`
+	Operation  string             `json:"operation"`
+	Directory  string             `json:"directory,omitempty"`
+	Panel      string             `json:"panel,omitempty"`
+	Hotkey     string             `json:"hotkey,omitempty"`
+	Disabled   bool               `json:"disabled,omitempty"`
+	Full       bool               `json:"full,omitempty"`
+	Visible    bool               `json:"visible,omitempty"`
 }
 type residentReply struct {
 	ID        uint64 `json:"request_id"`
@@ -36,6 +36,8 @@ type residentBridge struct {
 	mu         sync.Mutex
 	id         uint64
 	pending    chan residentReply
+	operation  string
+	finished   chan struct{}
 }
 
 var errReconnect = errors.New("ProfileReconnectRequired")
@@ -77,22 +79,50 @@ func (s *DesktopShell) TestHotkeyAvailable(ctx context.Context, hotkey string) (
 }
 
 func (c *residentBridge) send(ctx context.Context, request residentRequest, deadline time.Duration) error {
-	c.mu.Lock()
-	if c.pending != nil {
-		c.mu.Unlock()
-		if request.Operation == "capture" {
-			return errors.New("ScreenshotBusy")
+	timeout, cancel := context.WithCancel(ctx)
+	if deadline > 0 {
+		cancel()
+		timeout, cancel = context.WithTimeout(ctx, deadline)
+	}
+	defer cancel()
+	for {
+		c.mu.Lock()
+		if err := timeout.Err(); err != nil {
+			c.mu.Unlock()
+			return err
 		}
-		return errors.New("ResidentBusy")
+		if c.pending == nil {
+			break
+		}
+		if c.operation != "appearance" && request.Operation != "appearance" {
+			c.mu.Unlock()
+			if request.Operation == "capture" {
+				return errors.New("ScreenshotBusy")
+			}
+			return errors.New("ResidentBusy")
+		}
+		// Background palette synchronization must not reject user actions.
+		// Wait before sending anything; a timed-out action is never replayed.
+		finished := c.finished
+		c.mu.Unlock()
+		select {
+		case <-finished:
+		case <-timeout.Done():
+			return timeout.Err()
+		}
 	}
 	c.id++
 	done := make(chan residentReply, 1)
 	c.pending = done
+	c.operation = request.Operation
+	c.finished = make(chan struct{})
 	request.ID = c.id
 	c.mu.Unlock()
 	defer func() {
 		c.mu.Lock()
 		c.pending = nil
+		close(c.finished)
+		c.operation = ""
 		c.mu.Unlock()
 	}()
 	if request.Operation == "capture" && !request.Full && c.grantFocus != nil {
@@ -103,12 +133,6 @@ func (c *residentBridge) send(ctx context.Context, request residentRequest, dead
 	if err := json.NewEncoder(c.output).Encode(request); err != nil {
 		return err
 	}
-	timeout, cancel := context.WithCancel(ctx)
-	if deadline > 0 {
-		cancel()
-		timeout, cancel = context.WithTimeout(ctx, deadline)
-	}
-	defer cancel()
 	select {
 	case reply := <-done:
 		if request.Operation == "move-profile" && reply.Success && reply.Reconnect {

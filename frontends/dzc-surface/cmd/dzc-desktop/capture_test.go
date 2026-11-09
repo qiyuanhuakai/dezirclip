@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 )
 
 // A late response after cancellation must not complete the next settings action.
@@ -56,5 +57,54 @@ func TestCaptureReplyBelongsToRequest(t *testing.T) {
 	reply(next.ID, true)
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAppearanceDoesNotRejectForegroundAction(t *testing.T) {
+	for _, pair := range [][2]string{{"appearance", "reset-settings"}, {"reset-settings", "appearance"}} {
+		t.Run(pair[0], func(t *testing.T) {
+			input, output := io.Pipe()
+			defer input.Close()
+			defer output.Close()
+			bridge := residentBridge{output: output}
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			decoder := json.NewDecoder(input)
+			first := make(chan error, 1)
+			go func() { first <- bridge.send(ctx, residentRequest{Operation: pair[0]}, time.Second) }()
+			var pending residentRequest
+			if err := decoder.Decode(&pending); err != nil {
+				t.Fatal(err)
+			}
+			if err := bridge.send(ctx, residentRequest{Operation: "appearance"}, time.Millisecond); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("queued appearance did not honor its deadline: %v", err)
+			}
+			next := make(chan error, 1)
+			go func() { next <- bridge.send(ctx, residentRequest{Operation: pair[1]}, time.Second) }()
+			select {
+			case err := <-next:
+				t.Fatalf("background sync rejected an overlapping action: %v", err)
+			case <-time.After(20 * time.Millisecond):
+			}
+			answer := func(id uint64) {
+				encoded, _ := json.Marshal(residentReply{ID: id, Success: true})
+				bridge.accept(string(encoded))
+			}
+			answer(pending.ID)
+			if err := <-first; err != nil {
+				t.Fatal(err)
+			}
+			var following residentRequest
+			if err := decoder.Decode(&following); err != nil {
+				t.Fatal(err)
+			}
+			if following.Operation != pair[1] || following.ID != pending.ID+1 {
+				t.Fatal(following)
+			}
+			answer(following.ID)
+			if err := <-next; err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
