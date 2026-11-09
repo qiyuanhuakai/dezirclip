@@ -44,9 +44,17 @@ func scaledSize(width, height int, scale float64) mygo.Size {
 	return mygo.Size{Width: int(math.Round(float64(width) * scale)), Height: int(math.Round(float64(height) * scale))}
 }
 
+func visibleMainPosition(bounds, area mygo.Rectangle) mygo.Point {
+	axis := func(value, origin, space, size int) int {
+		margin := min(16, max(0, (space-size)/2))
+		return max(origin+margin, min(value, origin+max(0, space-size)-margin))
+	}
+	return mygo.Point{X: axis(bounds.X, area.X, area.Width, bounds.Width), Y: axis(bounds.Y, area.Y, area.Height, bounds.Height)}
+}
+
 func nearCursor(cursor mygo.Point, work mygo.Rectangle, width, height int) mygo.Point {
 	const gap = 12
-	const margin = 5
+	const margin = 16
 	x := cursor.X - width/2
 	y := cursor.Y + gap
 	if y+height > work.Y+work.Height {

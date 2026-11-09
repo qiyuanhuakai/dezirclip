@@ -66,7 +66,12 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		return err
 	}
 	relaunch := false
+	var mainChild *exec.Cmd
+	var mainDone <-chan struct{}
 	mygo.App.WhenReady(func() {
+		mygo.App.OnWindowAllClosed(func() {})
+		mainVisible := false
+		refreshMemory := installMemoryPolicy(func() bool { return mainVisible })
 		panel := quickpaste.NewDesktopPanel(owner)
 		selector := screenshot.New(owner)
 		var tray *mygo.Tray
@@ -229,6 +234,9 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				return
 			}
 			commands = input
+			mainChild = child
+			done := make(chan struct{})
+			mainDone = done
 			mainPID = child.Process.Pid
 			if err := grantMainFocus(mainPID); err != nil {
 				log.Printf("New main activation permission unavailable: %v", err)
@@ -288,6 +296,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 										})
 									}()
 								case "reset-settings":
+									log.Print("Settings reset requested by main window")
 									if pasteBusy {
 										reply(fmt.Errorf("PasteBusy"))
 										break
@@ -301,8 +310,16 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 										break
 									}
 									relaunch, closing = true, true
+									log.Print("Settings reset acknowledged; rebuilding desktop")
 									reply(nil)
 									_, _ = io.WriteString(input, "rebuild\n")
+								case "appearance":
+									if request.Appearance == nil || !request.Appearance.Valid() {
+										reply(fmt.Errorf("InvalidNativeAppearance"))
+									} else {
+										saveNativeAppearance(owner, panel, *request.Appearance)
+										reply(nil)
+									}
 								case "paste-hotkey":
 									keys, ok := pasteKeys[request.Panel]
 									if !ok {
@@ -481,6 +498,8 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 						continue
 					}
 					switch line {
+					case "visible", "hidden":
+						mygo.RunOnMain(func() { mainVisible = line == "visible"; refreshMemory() })
 					case "recording-cancel":
 						mygo.RunOnMain(func() { recorder.abort() })
 					case "closing":
@@ -500,11 +519,14 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				if err := child.Wait(); err != nil {
 					log.Printf("Main window exited: %v", err)
 				}
+				close(done)
 				mygo.RunOnMain(func() {
 					_ = recorder.stop()
 					input.Close()
 					commands = nil
 					mainPID = 0
+					mainVisible = false
+					refreshMemory()
 					closing = false
 					if moved || relaunch {
 						relaunch = true
@@ -524,6 +546,17 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		toggle = func() { present("toggle") }
 		open := func() { present("show") }
 		startupSettings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
+		restoreNativeAppearance(owner, panel, startupSettings)
+		panel.SetAppearanceRefresher(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if encoded, err := (&Library{owner}).Preferences(ctx); err == nil {
+				var values map[string]string
+				if json.Unmarshal(encoded, &values) == nil {
+					restoreNativeAppearance(owner, panel, values)
+				}
+			}
+		})
 		refreshSearch(startupSettings)
 		refreshPaste(startupSettings)
 		setTrayVisible = func(visible bool) error {
@@ -586,6 +619,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 			})
 		})
 		mygo.App.OnBeforeQuit(func(event *mygo.QuitEvent) {
+			log.Printf("Desktop quit requested (migrating=%t, relaunch=%t)", migrating, relaunch)
 			if migrating {
 				event.PreventDefault()
 				return
@@ -604,9 +638,16 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		if forceShow || (!minimized && !silent) || !reachable() {
 			open()
 		}
+		refreshMemory()
 	})
 	if err := mygo.App.Run(); err != nil {
 		return fmt.Errorf("native desktop: %w", err)
+	}
+	log.Print("Desktop native loop stopped; waiting for main process")
+	if mainChild != nil {
+		if err := waitDesktopExit(mainDone, mainChild.Process.Kill, 5*time.Second); err != nil {
+			return err
+		}
 	}
 	if relaunch {
 		child := exec.Command(executable, "--show")
@@ -616,5 +657,8 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		}
 		return child.Process.Release()
 	}
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	log.Print("Desktop main process stopped; stopping authenticated Service")
+	return owner.StopDesktopService(ctx)
 }

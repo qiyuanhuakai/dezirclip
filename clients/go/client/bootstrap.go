@@ -35,6 +35,33 @@ func (c *Client) DesktopDatabase() (string, error) {
 	return c.desktop.Database, nil
 }
 
+// StopDesktopService stops only the authenticated standalone Host for this
+// profile. Embedded Tauri Hosts and replacement Service instances are retained.
+func (c *Client) StopDesktopService(ctx context.Context) error {
+	database, err := c.DesktopDatabase()
+	if err != nil {
+		return err
+	}
+	var status protocol.ServiceStatus
+	if err := c.DesktopCall(ctx, protocol.MethodServiceStatus, protocol.EmptyParams{}, "ServiceStatus", &status); err != nil {
+		return err
+	}
+	if status.Mode != protocol.HostModeService {
+		return nil
+	}
+	cmd, err := bundledCLI(ctx, "service", "stop", "--from-instance", c.hello.State.ServiceInstanceId)
+	if err != nil {
+		return err
+	}
+	cmd.Env = append(os.Environ(), "DEZIRCLIP_DB_PATH="+database)
+	var stderr desktopStderr
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stderr.exitError(err)
+	}
+	return nil
+}
+
 func RestartElevatedService(ctx context.Context, instance, database string) (protocol.ServiceStatus, error) {
 	var status protocol.ServiceStatus
 	output, err := relocationCommand(ctx, "restart-elevated", "--from-instance", instance, "--database", database, "--json")

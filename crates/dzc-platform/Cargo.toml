@@ -15,7 +15,7 @@ portable = ["dzc-core/portable"]
 ipc = ["dep:tokio", "dzc-protocol/wire", "dep:sha2"]
 native-screen = ["dep:xcap", "dep:zeroize"]
 native-fonts = ["dep:font-kit", "dzc-protocol/wire"]
-native-ocr = ["dep:windows-core"]
+native-ocr = ["dep:windows-core", "windows/Win32_System_WinRT"]
 
 [dependencies]
 tempfile = "3"
@@ -28,6 +28,7 @@ dzc-core.workspace = true
 uuid.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+rusqlite.workspace = true
 base64.workspace = true
 arboard.workspace = true
 image.workspace = true

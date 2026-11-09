@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -15,7 +16,11 @@ func (s *DesktopShell) SetMainHotkeys(ctx context.Context, hotkeys string, epoch
 }
 
 func (s *DesktopShell) ResetSettings(ctx context.Context, epoch uint64) error {
-	return s.resident.send(ctx, residentRequest{Operation: "reset-settings", Epoch: epoch}, 15*time.Second)
+	err := s.resident.send(ctx, residentRequest{Operation: "reset-settings", Epoch: epoch}, 15*time.Second)
+	if err != nil {
+		log.Printf("Settings reset request failed: %v", err)
+	}
+	return err
 }
 
 func resetSettings(owner *client.Client, epoch uint64) error {

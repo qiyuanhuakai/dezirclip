@@ -37,12 +37,16 @@ impl HostActions for NativeActions {
 }
 
 pub fn main_entry() -> Result<(), String> {
+    dzc_platform::dispatch_export_guardian();
     let options = Options::parse();
     if options.build_info {
         println!("{}", serde_json::to_string(&dzc_protocol::build_info::BuildInfo::current(dzc_protocol::build_info::Component::Service, dzc_core::api::DATABASE_SCHEMA_VERSION)).map_err(|_| "BuildInfoUnavailable")?);
         return Ok(());
     }
     dzc_platform::ipc::ProcessExit::ensure_supported().map_err(|_| "ServiceProcessObservationUnsupported")?;
+    if let Err(error) = dzc_platform::process_memory::background_service() {
+        eprintln!("Service memory priority unavailable: {error}");
+    }
     let database = options.database.map(Ok).unwrap_or_else(dzc_host::data::database_path)?;
     let directory = dzc_host::data::canonical_directory(&database)?;
     dzc_platform::install_default_key_provider();

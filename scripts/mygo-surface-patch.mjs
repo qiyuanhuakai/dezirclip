@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-export const MYGO_PATCH_ID = 'mygo-v0.6.4-native-alpha-v5';
+export const MYGO_PATCH_ID = 'mygo-v0.6.4-native-alpha-v6';
 export const MYGO_APP_SHA256 = 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9';
 const modulePath = 'github.com/egoist/mygo';
 const version = 'v0.6.4';
@@ -58,7 +58,19 @@ function windowsPatches(directory) {
   const upstream = source(windowFile, '446aa0b7e52a40557f7f6e5f0899cc1c2f4dbe84f354dab911ab642c39d328d1');
   const marker = 'if o.Flyout != nil {\n\t\t// What the content leaves transparent shows what is behind.';
   if (upstream.split(marker).length !== 2) throw new Error('Expected the reviewed MyGo native composition condition');
-  const window = upstream.replace(marker, marker.replace('o.Flyout != nil', 'o.Flyout != nil || o.Transparent && o.Surface'));
+  const window = upstream.replace(marker, marker.replace('o.Flyout != nil', 'o.Flyout != nil || o.Transparent && o.Surface'))
+    .replace('func (w *window) Show() {', 'func (w *window) Show() {\n\tw.memoryTarget(0)')
+    .replace('func (w *window) ShowInactive() {', 'func (w *window) ShowInactive() {\n\tw.memoryTarget(0)')
+    .replace('func (w *window) Hide() { procShowWindow.Call(w.hwnd, swHide) }', `func (w *window) Hide() { procShowWindow.Call(w.hwnd, swHide); w.memoryTarget(1) }
+
+// ICoreWebView2_19 extends _18 with get/put MemoryUsageTargetLevel at slots 119/120.
+// The controller owns its process group; unrelated WebViews are never enumerated.
+func (w *window) memoryTarget(level uintptr) {
+    if w.webview == 0 { return }
+    iid := guid("6921f954-79b0-437f-a997-c85811897c68")
+    core := queryInterface(w.webview, &iid)
+    if core != 0 { comCall(core, 120, level); release(core) }
+}`);
   // A non-activating flyout must receive pointer events without blurring its parent WebView.
   const surfaceFile = 'internal/windows/surface.go';
   const surface = source(surfaceFile, '41dd1c1eacd1a8f6c812725ec2d4eb96f3bf6634dcc2b743a1459c38b1e55c2f')

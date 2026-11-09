@@ -1,4 +1,5 @@
 import type { Event as DesktopEvent } from "@tauri-apps/api/event";
+import { observeNativeAppearance } from "./appearance";
 
 const bus = new EventTarget();
 let nextId = 0;
@@ -104,6 +105,7 @@ export async function listen<T>(event: string, receive: (message: DesktopEvent<T
   if (event === "open-settings-panel") settingsListeners++;
   if (event === "focus-search-input") searchListeners++;
   if (!watching) {
+    observeNativeAppearance();
     watching = true;
     window.mygo.on<string>("hotkey-recorded", hotkey => dispatch("hotkey-recorded", hotkey));
     window.mygo.on("recording-cancelled", () => dispatch("recording-cancelled"));
@@ -112,6 +114,7 @@ export async function listen<T>(event: string, receive: (message: DesktopEvent<T
     window.mygo.on<boolean>("window-focus", focused => dispatch("mygo-window-focus", focused));
     window.mygo.on<boolean>("window-visibility", visible => dispatch(visible ? "privacy-view-shown" : "privacy-view-hidden"));
     window.mygo.on("window-moved", () => dispatch("mygo-window-moved"));
+    window.mygo.on<number>("main-window-prepare-show", request => dispatch("main-window-prepare-show", request));
     window.mygo.on<boolean>("edge-pinned", pinned => dispatch("window-pinned-changed", pinned));
     window.mygo.on<string[]>("window-file-drop", paths => dispatch("tauri://drag-drop", { paths }));
     void watchHost();

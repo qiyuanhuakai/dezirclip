@@ -16,6 +16,15 @@ func mainWindowScale(w *mygo.Window) float64 {
 	return mygo.Screen.DisplayMatching(w.Bounds()).ScaleFactor
 }
 
+func restoreMainPosition(w *mygo.Window) {
+	if !dockingAvailable() {
+		return
+	}
+	bounds := w.Bounds()
+	point := visibleMainPosition(bounds, mygo.Screen.DisplayMatching(bounds).WorkArea)
+	w.SetPosition(point.X, point.Y)
+}
+
 func dockingAvailable() bool {
 	services, ok := os.LookupEnv("DEZIRCLIP_DISABLE_LINUX_SERVICES")
 	if !ok {

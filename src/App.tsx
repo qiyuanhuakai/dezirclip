@@ -239,6 +239,15 @@ const App = () => {
   const historyViewActive = !showSettings && !effectiveShowTagManager && !effectiveShowEmojiPanel;
   const mainResume = useMainWindowResume(settingsLoaded, fetchHistory, historyViewActive);
   const mainResumePending = mainResume.phase !== "idle" || privacyState.phase !== "ready";
+  const [searchFocusRequested, setSearchFocusRequested] = useState(false);
+  useEffect(() => {
+    if (!searchFocusRequested || mainResumePending || !historyViewActive || !showSearchBox) return;
+    const frame = requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+      setSearchFocusRequested(false);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchFocusRequested, mainResumePending, historyViewActive, showSearchBox, searchInputRef]);
 
   const t = useCallback((key: string) => {
     const k = key as keyof typeof translations['zh'];
@@ -447,9 +456,7 @@ const App = () => {
       setShowEmojiPanel(false);
       setShowSearchBox(true);
       setSearchIsFocused(true);
-      requestAnimationFrame(() => {
-        searchInputRef.current?.focus();
-      });
+      setSearchFocusRequested(true);
     });
 
     return () => {

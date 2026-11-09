@@ -124,6 +124,7 @@ fn apply_webview2_gpu_switch() {
 }
 
 fn main() {
+    dzc_platform::dispatch_export_guardian();
     #[cfg(target_os = "windows")]
     if let Some(exit_code) = infrastructure::windows_api::system_settings::run_maintenance_command() {
         std::process::exit(exit_code);

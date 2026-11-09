@@ -38,6 +38,9 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  get_main_window_resume_request: () => shellCall("ResumeRequest"),
+  complete_main_window_resume: args => shellCall("CompleteResume", args.requestId, args.expectedHostInstanceId, args.expectedEpoch),
+  set_ignore_blur: args => shellCall("SetIgnoreBlur", args.ignore),
   check_is_admin: () => window.mygo.call("SystemSettings.IsAdmin"),
   restart_explorer: () => window.mygo.call("SystemSettings.RestartExplorer"),
   is_registry_win_v_optimized: () => window.mygo.call("SystemSettings.WinVStatus"),

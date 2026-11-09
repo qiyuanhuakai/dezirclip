@@ -95,6 +95,9 @@ func (s *Selector) Refresh() error {
 	}
 	if !pref.Enabled {
 		s.clear()
+		s.window.Destroy()
+	} else if s.window.IsDestroyed() {
+		s.prepareWindow()
 	}
 	var registrationErrors error
 	for full, key := range map[bool]string{false: pref.Region, true: pref.Full} {

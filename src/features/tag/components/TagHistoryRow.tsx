@@ -188,7 +188,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
         void copyHistorySelection({ id: item.id, expectedHostInstanceId: item.host_instance_id, content: '', contentType: item.content_type,
             paste: !capabilities.report.native_wayland, deleteAfterUse: false, pasteWithFormat, pasteImageAsBase64,
             expectedPrivacyEpoch: sensitive ? access.epoch : undefined }, t)
-            .then(outcome => { if (outcome !== 'cancelled') onChanged(); }).catch(onError);
+            .then(() => onChanged()).catch(onError);
     };
     const authorizeMetadata = async (persists: boolean, original?: PrivacyMetadataIntent) => {
         const intent = original ?? capturePrivacyMetadataIntent(getPrivacyViewState());

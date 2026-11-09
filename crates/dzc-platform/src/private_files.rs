@@ -8,6 +8,8 @@ struct ActiveLease {
 }
 const MAX_TOTAL: usize = 32 * 1024 * 1024;
 pub(crate) struct Exports {
+    #[cfg(target_os = "windows")]
+    guardian: Option<crate::export_guard::Guardian>,
     handles: Vec<File>,
     paths: Vec<String>,
     directory: Option<PathBuf>,
@@ -20,12 +22,12 @@ impl Exports {
         Self::create_with_access(files, false)
     }
     fn create_with_access(files: Vec<ClipboardFile>, writable: bool) -> Result<Self, String> {
-        #[cfg(target_os = "windows")]
-        let _ = writable;
         if files.is_empty() || files.len() > 64 {
             return Err("PrivateExportRejected".into());
         }
         let mut exports = Self {
+            #[cfg(target_os = "windows")]
+            guardian: None,
             handles: Vec::new(),
             paths: Vec::new(),
             directory: None,
@@ -82,9 +84,9 @@ impl Exports {
                     .write(true)
                     .read(true)
                     .create_new(true)
-                    .access_mode(0x80000000 | 0x40000000 | 0x00010000)
+                    .access_mode(0x80000000 | 0x40000000 | if writable { 0 } else { 0x00010000 })
                     .share_mode(7)
-                    .custom_flags(0x04000000)
+                    .custom_flags(if writable { 0 } else { 0x04000000 })
                     .open(&path)
                     .map_err(|_| "PrivateExportRejected")?;
                 (handle, path.to_string_lossy().into_owned())
@@ -103,6 +105,10 @@ impl Exports {
                 .map(|file| format!("/proc/{}/fd/{}", owner.pid(), file.as_raw_fd()))
                 .collect();
             exports.owner = Some(owner);
+        }
+        #[cfg(target_os = "windows")]
+        if writable {
+            exports.guardian = Some(crate::export_guard::Guardian::start(exports.directory.as_ref().ok_or("PrivateExportRejected")?, &exports.paths)?);
         }
         for (handle, file) in exports.handles.iter_mut().zip(&files) {
             handle
@@ -129,6 +135,14 @@ impl Exports {
         Ok(exports)
     }
     pub(crate) fn stop(&mut self) -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        for path in &self.paths {
+            if let Err(error) = std::fs::remove_file(path) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    return Err("PrivateExportRevocationUnconfirmed".into());
+                }
+            }
+        }
         #[cfg(target_os = "linux")]
         if let Some(owner) = &mut self.owner {
             owner.stop()?;
@@ -459,6 +473,8 @@ impl Drop for Exports {
         #[cfg(target_os = "linux")]
         self.owner.take();
         self.handles.clear();
+        #[cfg(target_os = "windows")]
+        for path in &self.paths { let _ = std::fs::remove_file(path); }
         if let Some(directory) = self.directory.take() {
             if let Ok(children) = std::fs::read_dir(&directory) {
                 for child in children.flatten() {
@@ -475,6 +491,50 @@ mod linux_owner;
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn export_owner_subprocess() {
+        if std::env::var_os("DZC_EXPORT_OWNER_TEST_CHILD").is_none() { return; }
+        let export = Exports::create_with_access(vec![ClipboardFile { name: "crash.txt".into(), bytes: b"synthetic crash fixture".to_vec() }], true).unwrap();
+        println!("DZC_EXPORT_PATH={}", serde_json::to_string(&export.paths()[0]).unwrap());
+        std::io::stdout().flush().unwrap();
+        loop { std::thread::park(); }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn guardian_cleans_after_owner_crash_and_nonsharing_editor_close() {
+        use std::{io::BufRead, os::windows::{fs::OpenOptionsExt, process::CommandExt}, process::{Command, Stdio}};
+        let mut owner = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "private_files::tests::export_owner_subprocess", "--nocapture"])
+            .env("DZC_EXPORT_OWNER_TEST_CHILD", "1").creation_flags(0x08000000)
+            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+        let reader = std::io::BufReader::new(owner.stdout.take().unwrap());
+        let path: String = reader.lines().map(Result::unwrap).find_map(|line| line.split_once("DZC_EXPORT_PATH=")
+            .map(|(_, value)| serde_json::from_str(value).unwrap())).expect("owner published fixture path");
+        let editor = std::fs::OpenOptions::new().read(true).share_mode(3).open(&path).unwrap();
+        owner.kill().unwrap();
+        owner.wait().unwrap();
+        drop(editor);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while std::path::Path::new(&path).exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        assert!(!std::path::Path::new(&path).exists(), "guardian must remove plaintext after abrupt owner exit");
+    }
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn external_editor_without_delete_sharing_can_open_but_blocks_revocation_until_closed() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let mut export = Exports::create_with_access(vec![ClipboardFile { name: "editor.txt".into(), bytes: b"synthetic".to_vec() }], true).unwrap();
+        let path = export.paths()[0].clone();
+        let editor = std::fs::OpenOptions::new().read(true).write(true).share_mode(3).open(&path).unwrap();
+        assert!(export.stop().is_err());
+        drop(editor);
+        export.stop().unwrap();
+        drop(export);
+        assert!(!std::path::Path::new(&path).exists());
+    }
     use super::*;
     #[cfg(target_os = "linux")]
     #[test]
@@ -611,5 +671,90 @@ mod tests {
         assert!(!paths[0].starts_with(&format!("/proc/{}/fd/", std::process::id())));
         drop(exports);
         assert!(!std::path::Path::new(&paths[0]).exists());
+    }
+}
+
+#[cfg(all(test, target_os = "windows", not(feature = "portable")))]
+mod native_protected_resource_tests {
+    use dzc_core::api::{
+        HistoryService, PrivacySessionCommand, SensitiveAccess,
+    };
+    #[test]
+    fn native_dpapi_protected_files_remain_ciphertext_and_external_lease_revocation_closes_new_readers(
+    ) {
+        const CHILD: &str = "DZC_NATIVE_PROTECTED_EXPORT_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            use std::os::windows::process::CommandExt;
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "private_files::native_protected_resource_tests::native_dpapi_protected_files_remain_ciphertext_and_external_lease_revocation_closes_new_readers",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .creation_flags(0x08000000)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "isolated export scenario failed: {}\n{}",
+                String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+            return;
+        }
+        crate::install_default_key_provider();
+        let directory =
+            std::env::temp_dir().join(format!("dzc-native-private-{}", uuid::Uuid::new_v4()));
+        let database = directory.join("synthetic.db");
+        let history = HistoryService::open(&database).unwrap();
+        let source = directory.join("synthetic.txt");
+        std::fs::write(&source, b"qvxnativesyntheticfile").unwrap();
+        let entry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"file","content":source.to_string_lossy(),"preview":"synthetic","source_app":"Synthetic Native","timestamp":1,"is_pinned":false,"tags":["sensitive"]})).unwrap();
+        let id = history.save(&entry, Some(&directory)).unwrap();
+        let conn = rusqlite::Connection::open(&database).unwrap();
+        let raw: String = conn
+            .query_row(
+                "SELECT content FROM clipboard_history WHERE id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(raw.starts_with("dpapi:"));
+        assert!(!raw.contains("qvxnativesyntheticfile"));
+        assert!(!directory.join("attachments").exists());
+        let permit = history
+            .privacy()
+            .authorize_selected_copy(
+                id,
+                None,
+                SensitiveAccess::ExplicitUserAction,
+                None,
+                1,
+            )
+            .unwrap();
+        let preview = history
+            .get_entry_for_preview_authorized(id, &permit, 1)
+            .unwrap()
+            .unwrap();
+        assert!(preview.content.is_empty());
+        assert_eq!(preview.preview, "synthetic.txt");
+        let export = history.external_files_authorized(id, &permit, 1).unwrap();
+        let native = crate::runtime::private_file_export(export).unwrap();
+        let path = native.paths().unwrap().remove(0);
+        let mut reader = std::fs::File::open(&path).unwrap();
+        history
+            .privacy()
+            .set_session(PrivacySessionCommand::On { duration_ms: None }, 2)
+            .unwrap();
+        crate::runtime::revoke_private_exports().unwrap();
+        assert!(std::fs::File::open(&path).is_err());
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"qvxnativesyntheticfile");
+        drop(reader);
+        assert!(!std::path::Path::new(&path).exists());
+        assert!(native.paths().is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), b"qvxnativesyntheticfile");
+        drop((native, conn, history));
+        let _ = std::fs::remove_dir_all(directory);
     }
 }

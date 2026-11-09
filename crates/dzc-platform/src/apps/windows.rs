@@ -41,7 +41,14 @@ pub(super) fn launch(handler: &Handler, target: &str, url: bool) -> io::Result<(
         }
         _ => (PCWSTR(target_wide.as_ptr()), PCWSTR::null()),
     };
+    use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
+    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
+    let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) };
+    if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
+        return Err(io::Error::other("ShellInitializationFailed"));
+    }
     let result = unsafe { ShellExecuteW(None, w!("open"), item, parameters, None, SW_SHOWNORMAL) };
+    if initialized.is_ok() { unsafe { CoUninitialize() }; }
     if result.0 as isize > 32 { Ok(()) } else { Err(io::Error::other("ShellLaunchFailed")) }
 }
 

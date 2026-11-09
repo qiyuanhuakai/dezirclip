@@ -15,6 +15,7 @@ import (
 	"github.com/egoist/mygo/ui/richtext"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
+	surfaceTheme "github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
 )
 
 // The WebView supplies only a row ID. The preview reads its own privacy-bound
@@ -35,7 +36,7 @@ type previewPlacement struct {
 
 // Keep the flyout outside the triggering row, including when its full size cannot fit beside the main window.
 func previewBounds(area, source mygo.Rectangle, preferred mygo.Point) mygo.Rectangle {
-	width, height := min(360, area.Width), min(200, area.Height)
+	width, height := min(480, area.Width), min(320, area.Height)
 	if width <= 0 || height <= 0 {
 		return mygo.Rectangle{}
 	}
@@ -95,7 +96,7 @@ func (*Preview) Layout(ctx context.Context) (previewLayout, error) {
 	if bounds.Width < 1 || bounds.Height < 1 || area.Width < 1 || area.Height < 1 {
 		return previewLayout{}, errors.New("PreviewPositionUnavailable")
 	}
-	return previewLayout{bounds, area, min(360, area.Width), min(200, area.Height)}, nil
+	return previewLayout{bounds, area, min(480, area.Width), min(320, area.Height)}, nil
 }
 
 func (p *Preview) clear() {
@@ -111,6 +112,7 @@ func (p *Preview) clear() {
 }
 
 type previewAppearance struct {
+	Palette                                            *surfaceTheme.Appearance
 	Pin, Close, Retry, Concealed, Failed, OpacityLabel string
 	ZoomIn, ZoomOut, Fit, FitLabel, Actual, ImageZoom  string
 	Opacity                                            int
@@ -122,6 +124,9 @@ func (a previewAppearance) theme() *ui.Theme {
 	theme := ui.LightTheme()
 	if a.Dark {
 		theme = ui.DarkTheme()
+	}
+	if a.Palette != nil && a.Palette.Valid() {
+		surfaceTheme.Apply(theme, a.Palette.Tokens)
 	}
 	if rgb := a.Background; rgb != nil {
 		theme.Background = ui.RGB(rgb.R, rgb.G, rgb.B)
@@ -231,7 +236,7 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 			}
 		}
 	}
-	if full && bitmap == nil && formatted == nil {
+	if bitmap == nil && formatted == nil {
 		formatted = previewDocument(richtext.NewText(text))
 	}
 	return &previewBody{row.SourceApp, text, bitmap, formatted}, snapshot.State, nil

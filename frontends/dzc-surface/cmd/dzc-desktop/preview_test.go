@@ -65,7 +65,7 @@ func TestPreviewNeverCoversItsSourceRow(t *testing.T) {
 		point     mygo.Point
 		w, h      int
 	}{
-		{mygo.Rectangle{Width: 800, Height: 600}, mygo.Rectangle{X: 224, Y: 290, Width: 352, Height: 40}, mygo.Point{X: 430, Y: 130}, 360, 200},
+		{mygo.Rectangle{Width: 800, Height: 600}, mygo.Rectangle{X: 224, Y: 290, Width: 352, Height: 40}, mygo.Point{X: 430, Y: 130}, 480, 286},
 		{mygo.Rectangle{X: -300, Width: 300, Height: 320}, mygo.Rectangle{X: -300, Y: 100, Width: 300, Height: 40}, mygo.Point{X: -290, Y: 90}, 300, 176},
 		{mygo.Rectangle{Width: 200, Height: 150}, mygo.Rectangle{Width: 200, Height: 150}, mygo.Point{}, 0, 0},
 	} {

@@ -18,18 +18,59 @@ use windows_core::HSTRING;
 pub struct OcrService {
     #[cfg(target_os = "windows")]
     engine: OcrEngine,
+    #[cfg(target_os = "windows")]
+    _thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+#[cfg(target_os = "windows")]
+thread_local! {
+    // WinRT activation factories remain cached between OCR requests. Keep the
+    // apartment alive for the worker's lifetime, including engine-only probes.
+    static OCR_APARTMENT: std::cell::RefCell<Option<OcrApartment>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(target_os = "windows")]
+struct OcrApartment {
+    initialized: bool,
+    _thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+#[cfg(target_os = "windows")]
+impl OcrApartment {
+    fn new() -> Result<Self, OcrError> {
+        use windows::Win32::{Foundation::RPC_E_CHANGED_MODE, System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED}};
+        let result = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+        if let Err(error) = &result {
+            if error.code() != RPC_E_CHANGED_MODE {
+                return Err(OcrError::OcrFailed(format!("OCR apartment initialization failed: {error}")));
+            }
+        }
+        Ok(Self { initialized: result.is_ok(), _thread: std::marker::PhantomData })
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for OcrApartment {
+    fn drop(&mut self) {
+        if self.initialized { unsafe { windows::Win32::System::WinRT::RoUninitialize() }; }
+    }
 }
 
 impl OcrService {
     #[cfg(target_os = "windows")]
     pub fn new() -> Result<Self, OcrError> {
+        OCR_APARTMENT.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            if slot.is_none() { *slot = Some(OcrApartment::new()?); }
+            Ok::<(), OcrError>(())
+        })?;
         if let Ok(engine) = OcrEngine::TryCreateFromUserProfileLanguages() {
-            return Ok(Self { engine });
+            return Ok(Self { engine, _thread: std::marker::PhantomData });
         }
         let lang =
             Language::CreateLanguage(&HSTRING::from("en-US")).map_err(|_| OcrError::NoLanguages)?;
         let engine = OcrEngine::TryCreateFromLanguage(&lang).map_err(|_| OcrError::NoOcrEngine)?;
-        Ok(Self { engine })
+        Ok(Self { engine, _thread: std::marker::PhantomData })
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -94,6 +135,33 @@ fn dynamic_image_to_software_bitmap(img: &DynamicImage) -> Result<SoftwareBitmap
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn recognizes_on_fresh_worker_threads() {
+        for _ in 0..3 {
+            std::thread::spawn(|| {
+                let service = OcrService::new().expect("Windows OCR engine");
+                let image = image::RgbaImage::from_pixel(64, 64, image::Rgba([255, 255, 255, 255]));
+                let mut encoded = std::io::Cursor::new(Vec::new());
+                image.write_to(&mut encoded, image::ImageFormat::Png).unwrap();
+                assert_eq!(service.recognize(&encoded.into_inner()).unwrap().trim(), "");
+            }).join().expect("OCR worker finishes and releases its apartment");
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn recognizes_text_after_repeated_engine_probes() {
+        std::thread::spawn(|| {
+            for _ in 0..3 { drop(OcrService::new().expect("OCR engine probe")); }
+            let bytes = include_bytes!("../../../../frontends/dzc-surface/cmd/dzc-desktop/testdata/ocr-clipboard.png");
+            for _ in 0..3 {
+                let text = OcrService::new().unwrap().recognize(bytes).unwrap();
+                assert_eq!(text.split_whitespace().collect::<Vec<_>>().join(" "), "DESKTOP TEST");
+            }
+        }).join().expect("OCR worker remains usable after engine probes");
+    }
 
     #[test]
     fn test_ocr_service_new() {

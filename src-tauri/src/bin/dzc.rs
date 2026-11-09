@@ -639,6 +639,7 @@ fn run_capabilities(json: bool) -> Result<(), String> {
 }
 
 fn main() {
+    dzc_platform::dispatch_export_guardian();
     dzc_platform::set_diagnostic_sink(dezirclip::logger::log_diagnostic);
     dzc_platform::install_default_key_provider();
     use std::io::IsTerminal;

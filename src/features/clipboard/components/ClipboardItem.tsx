@@ -462,14 +462,14 @@ const ClipboardItem = ({
     };
 
     const scheduleHover = () => {
-        if (hoverTimerRef.current !== null || !compactMode || isSensitiveHidden || currentMenu.current) return;
+        if (hoverTimerRef.current !== null || isSensitiveHidden || currentMenu.current) return;
         hoverTimerRef.current = setTimeout(() => {
             const anchor = hoverAnchorRef.current;
             if (!currentMenu.current && anchor && itemRootRef.current?.isConnected) void showCompactPreview(anchor);
         }, 300);
     };
     const trackHover = (event: React.MouseEvent<HTMLElement>) => {
-        if (!compactMode || isSensitiveHidden || currentMenu.current) return;
+        if (isSensitiveHidden || currentMenu.current) return;
         hoverAnchorThrottle.schedule({
             clientX: event.clientX, clientY: event.clientY, screenX: event.screenX, screenY: event.screenY,
             element: event.currentTarget
@@ -544,10 +544,10 @@ const ClipboardItem = ({
     }, [isEditingTags]);
 
     useEffect(() => {
-        if (!compactMode || isSensitiveHidden) {
+        if (isSensitiveHidden) {
             hideCompactPreview();
         }
-    }, [compactMode, isSensitiveHidden]);
+    }, [isSensitiveHidden]);
 
     useEffect(() => {
         return () => {

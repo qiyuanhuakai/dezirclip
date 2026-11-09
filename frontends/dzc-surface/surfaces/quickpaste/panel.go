@@ -37,6 +37,7 @@ type Panel struct {
 	locale         string
 	mode           string
 	opacity        float64
+	appearance     *theme.Appearance
 	search         string
 	list           *ui.ListState
 	viewRows       *model.View
@@ -640,6 +641,7 @@ func (p *Panel) word(key string) string {
 
 func (p *Panel) view(c *ui.Context) {
 	tokens := theme.Select(p.mode)
+	if p.appearance != nil { tokens = p.appearance.Tokens }
 	t := ui.LightTheme()
 	if p.mode == "dark" {
 		t = ui.DarkTheme()
@@ -650,13 +652,15 @@ func (p *Panel) view(c *ui.Context) {
 	if len(tokens.FontFamilies) > 0 {
 		t.Font = tokens.FontFamilies[0]
 	}
+	background := t.Background
+	t.Background = background.Alpha(0)
 	c.SetTheme(t)
 	if !p.model.Visible {
 		return
 	}
 	display := p.model.Display
 	var rows *model.View
-	ui.Column(c.Key("display-"+display)).Fill().Padding(float32(tokens.Padding)).Gap(float32(tokens.Gap)).Radius(float32(tokens.Radius)).Border(1, t.Border).Background(t.Background).Children(func() {
+	ui.Column(c.Key("display-"+display)).Fill().Padding(float32(tokens.Padding)).Gap(float32(tokens.Gap)).Radius(float32(tokens.Radius)).Border(1, t.Border).Background(background).Children(func() {
 		input := ui.TextInput(c.Key("query-"+p.model.Display), &p.search).Placeholder(p.word("search")).Label(p.word("search")).Height(float32(tokens.SearchHeight)).AutoFocus()
 		input.OnTextKey(func(key ui.TextKey) bool {
 			if key.Key == ui.KeyEnter {

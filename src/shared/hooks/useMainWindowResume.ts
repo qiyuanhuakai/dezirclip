@@ -43,14 +43,11 @@ export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (rese
     };
     const queryPending = (allowVisibleRecovery = false) => {
       const query = ++queryRevision;
-      // The MyGo resident launches a fresh visible WebView process on each open.
-      // Its page uses the same guarded visible-window restore as a Tauri retry.
-      const freshWindow = import.meta.env.MODE === "mygo";
-      const pending = freshWindow ? Promise.resolve(null) : invoke<number | null>("get_main_window_resume_request");
+      const pending = invoke<number | null>("get_main_window_resume_request");
       void pending.then(id => {
         if (disposed || query !== queryRevision) return;
         if (id !== null) start(id);
-        else if ((freshWindow || allowVisibleRecovery) && !nativeActiveRef.current && !visibleRecoveryPending.current) {
+        else if (allowVisibleRecovery && !nativeActiveRef.current && !visibleRecoveryPending.current) {
           void currentWindow.isVisible().then(visible => {
             if (!visible || disposed || query !== queryRevision || nativeActiveRef.current || visibleRecoveryPending.current) return;
             received = true;

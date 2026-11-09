@@ -45,6 +45,7 @@ func containsPoint(r mygo.Rectangle, p mygo.Point) bool {
 // The main WebView owns its docking monitor. The native resident never polls the cursor.
 type edgeDock struct {
 	dialogs        atomic.Int32
+	ignoreBlur     atomic.Bool
 	window         *mygo.Window
 	preview        *Preview
 	history        *History
@@ -52,6 +53,7 @@ type edgeDock struct {
 	hidden         bool
 	strip, monitor mygo.Rectangle
 	shown          time.Time
+	show           func()
 }
 
 func (d *edgeDock) configure(enabled bool) {
@@ -92,14 +94,13 @@ func (d *edgeDock) configure(enabled bool) {
 func (d *edgeDock) reveal() {
 	d.hidden = false
 	d.history.rememberTarget(context.Background())
-	d.window.Show()
-	d.window.Focus()
+	d.show()
 	d.shown = time.Now()
 }
 
 func (d *edgeDock) tick() {
 	w := d.window
-	if d.dialogs.Load() != 0 {
+	if d.dialogs.Load() != 0 || d.ignoreBlur.Load() {
 		return
 	}
 	if !d.hidden && (!w.IsVisible() || w.IsMinimized() || w.IsMaximized() || w.IsFullScreen() ||

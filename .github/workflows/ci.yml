@@ -13,6 +13,10 @@ on:
         default: true
   workflow_dispatch:
     inputs:
+      windows_release_memory:
+        description: Compare published alpha.8 and alpha.9 Windows memory with synthetic history
+        type: boolean
+        default: false
       full_validation:
         description: Run complete multi-platform native and packaging acceptance
         type: boolean
@@ -64,6 +68,36 @@ env:
   DEZIRCLIP_DISABLE_LINUX_SERVICES: window_tracker,edge_docking,mouse_hotkey
 
 jobs:
+  windows-release-memory:
+    name: Published Windows memory comparison
+    if: github.event_name == 'workflow_dispatch' && inputs.windows_release_memory == true
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install measurement dependencies
+        run: python -m pip install psutil==7.2.2 Pillow==13.0.0 websocket-client==1.9.2
+      - name: Measure original published executables
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -m unittest discover -s scripts/tests -p test_release_memory_probe.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/tests/release-memory-windows.py
+      - name: Preserve measurements and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-windows-memory-${{ github.run_attempt }}
+          path: |
+            .harness/release-memory/*.json
+            .harness/release-memory/*.log
+            .harness/release-memory/*/identity.json
+          retention-days: 14
+
   frontend:
     name: Frontend
     runs-on: ubuntu-22.04
@@ -316,6 +350,8 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
+          # Preserve compilation when a later native UI acceptance step fails.
+          cache-on-failure: true
 
       - name: Setup Go for local IPC compatibility
         uses: actions/setup-go@v6
@@ -430,7 +466,7 @@ jobs:
           fixture = Path("target/debug", "mygo-library.test" + (".exe" if os.name == "nt" else "")).resolve()
           version = json.loads(Path("package.json").read_text(encoding="utf-8"))["version"]
           subprocess.run(["go", "test", "-c", "-o", str(fixture), "./cmd/dzc-desktop"], cwd="frontends/dzc-surface", check=True)
-          command = [fixture, "-test.run=^(TestReactLibraryWithService|TestBundledUpdateChannels)$", "-test.v", "-test.timeout=60s"]
+          command = [fixture, "-test.run=^(TestReactLibraryWithService|TestBundledUpdateChannels|TestDesktopServiceShutdown)$", "-test.v", "-test.timeout=90s"]
           environment = {**os.environ, "DZC_TEST_LIBRARY_VERSION": version}
           if os.name == "nt":
               subprocess.run(command, env=environment, check=True)
@@ -444,6 +480,10 @@ jobs:
                   log = evidence / name
                   if log.is_file(): print(log.read_text(encoding="utf-8"))
               result.check_returncode()
+
+      - name: Verify Windows executable icons
+        if: runner.os == 'Windows' && matrix.can_test
+        run: python scripts/tests/windows-executable-icons.py target/debug/dzc-service.exe artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe
 
       - name: Verify independent MyGo WebView history and native clipboard on X11
         if: runner.os == 'Linux' && matrix.can_test
@@ -514,6 +554,16 @@ jobs:
         if: runner.os == 'Windows' && matrix.can_test
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -RichPaste
+
+      - name: Verify disabled native panels release and recreate their windows
+        if: runner.os == 'Windows' && matrix.can_test
+        shell: powershell
+        run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -DisabledPanels
+
+      - name: Verify MyGo tray Exit drains Desktop and Service processes
+        if: runner.os == 'Windows' && matrix.can_test
+        shell: powershell
+        run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Quit
 
       - name: Verify middle-button hook survives a blocked resident UI
         if: runner.os == 'Windows' && matrix.can_test
@@ -649,13 +699,22 @@ jobs:
           cargo build --locked --release --no-default-features --features native-screen --bin dzc --bin dzc-service
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/stage-mygo-windows.py --revision "$env:GITHUB_SHA" --output "$env:RUNNER_TEMP/mygo-test-package"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          choco install nsis --no-progress -y
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $installer = "$env:RUNNER_TEMP/mygo-test-installer/DezirClip-v$version-windows-x64-MyGo-setup.exe"
+          python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-test-package" --version "$version" --output "$installer"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-test-package" --installer "$installer" --pointer-margin 16
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
-      - name: Upload standalone Windows x64 MyGo test desktop
+      - name: Upload Windows x64 MyGo test installer
         if: matrix.name == 'windows-x86_64' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.windows_x64_mygo_test_package))
         uses: actions/upload-artifact@v4
         with:
           name: DezirClip-windows-x64-MyGo-${{ github.sha }}
-          path: ${{ runner.temp }}/mygo-test-package/
+          path: ${{ runner.temp }}/mygo-test-installer/*-setup.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -1063,13 +1122,13 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-installer-input/stage" --version 0.2.0-alpha.9 --output "$env:RUNNER_TEMP/DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe"
       - name: Verify installation, installed desktop, upgrade, locked files and uninstall
-        run: python scripts/tests/mygo-installer-windows.py --stage "${{ runner.temp }}/mygo-installer-input/stage" --installer "${{ runner.temp }}/DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe"
+        run: python scripts/tests/mygo-installer-windows.py --stage "${{ runner.temp }}/mygo-installer-input/stage" --installer "${{ runner.temp }}/DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe" --pointer-margin 5
       - name: Verify the same installer source with a non-ANSI installation path
         shell: pwsh
         run: |
           python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-installer-input/stage" --version 0.2.0-alpha.9 --output "$env:RUNNER_TEMP/mygo-unicode-fixture.exe" --unicode-path-fixture
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-installer-input/stage" --installer "$env:RUNNER_TEMP/mygo-unicode-fixture.exe" --unicode-path-fixture
+          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-installer-input/stage" --installer "$env:RUNNER_TEMP/mygo-unicode-fixture.exe" --unicode-path-fixture --pointer-margin 5
       - uses: actions/upload-artifact@v4
         with:
           name: MyGo-installer-${{ github.sha }}

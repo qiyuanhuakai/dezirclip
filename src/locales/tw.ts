@@ -33,6 +33,7 @@ export const tw = {
         privacy_metadata_persist_confirm: "隱私工作階段仍在進行。釘選或修改標籤會將此記憶體記錄儲存至磁碟歷史，自動記錄繼續暫停。確認儲存此記錄？",
         privacy_rules_title: "隱私規則",
         privacy_rules_manage: "管理隱私規則…",
+        privacy_management: "隱私管理",
         privacy_source_unknown: "未提供來源名稱",
         privacy_feedback_ignore_confirm: "以後不再自動記錄名稱為「{source}」的來源，現有歷史保留。這會取代該同名來源既有的忽略或保護選單規則；可在設定 → 剪貼簿設定 → 隱私規則中刪除。確定繼續？",
         privacy_feedback_protect_confirm: "保護目前記錄，並為名稱為「{source}」的後續記錄要求保護，既有精確內容例外仍適用；其他歷史不會被批次修改。這會取代該同名來源既有的忽略或保護選單規則。刪除規則不會自動解密已保護記錄。確定繼續？",

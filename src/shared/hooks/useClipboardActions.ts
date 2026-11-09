@@ -79,7 +79,6 @@ export const useClipboardActions = ({
           moveToTop: !manualCopy && moveToTopAfterPaste
         };
         const outcome = await copyHistorySelection(request, t);
-        if (outcome === "cancelled") return;
         if (outcome === "copied") {
           pushToast(t("wayland_manual_copy_done"));
           return;

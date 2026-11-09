@@ -67,6 +67,7 @@ export const applyThemeClass = (root: HTMLElement, body: HTMLElement, theme: str
     clearThemeClasses(element);
     element.classList.add(...wanted);
   }
+  window.dispatchEvent(new Event("dezirclip-theme-applied"));
 };
 
 export const applyModeClass = (root: HTMLElement, body: HTMLElement, mode: ThemeMode) => {

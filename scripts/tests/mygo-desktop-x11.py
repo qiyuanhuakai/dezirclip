@@ -18,6 +18,22 @@ import time
 
 
 @contextlib.contextmanager
+def observed_service_cleanup(cli):
+    # Retain the original kernel process identity before signaling the desktop.
+    endpoint = json.loads(subprocess.check_output([cli, 'service', 'desktop-endpoint']))
+    service = os.pidfd_open(endpoint['pid'])
+    try:
+        yield
+    finally:
+        try:
+            if not select.select([service], [], [], 0)[0]:
+                subprocess.run([cli, 'service', 'stop', '--from-instance', endpoint['instance']], check=True)
+            assert select.select([service], [], [], 5)[0], 'Original Service survived fixture cleanup'
+        finally:
+            os.close(service)
+
+
+@contextlib.contextmanager
 def held_x11_keyboard():
     x = ctypes.CDLL('libX11.so.6')
     x.XOpenDisplay.argtypes = [ctypes.c_char_p]
@@ -397,16 +413,10 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
     sentinel = 'pending manual copy'
     clipboard.set_text(sentinel, -1)
     click()
-    cancel = wait_for(lambda: find_item('取消'), 'Missing explicit copy confirmation')
-    assert atspi.Action.do_action(cancel, 0)
-    wait_for(lambda: find_item('取消') is None, 'Cancel did not dismiss confirmation')
-    assert clipboard.wait_for_text() == sentinel and editor.get_text() == marker
-    click()
-    accept = wait_for(lambda: find_item('仅复制'), 'Missing copy-only action')
-    assert atspi.Action.do_action(accept, 0)
-    wait_for(lambda: clipboard.wait_for_text() == marker, 'Confirmed copy did not write selected content')
+    wait_for(lambda: clipboard.wait_for_text() == marker, 'Missing target did not fall back to copying selected content')
+    assert find_item('仅复制') is None and find_item('取消') is None
     assert editor.get_text() == marker
-    print('Verified native pinned window, first delivery, cancellation, and a separately confirmed copy without replay')
+    print('Verified native pinned window, first delivery, and automatic copy fallback without dialog or replay')
     alternate = gtk.Window(title='Second independent paste target')
     other = gtk.Entry()
     alternate.add(other)
@@ -440,9 +450,8 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         tagged = wait_for(lambda: find_item(marker, text=True), 'Tag row disappeared after delivery')
         bounds = atspi.Component.get_extents(tagged, atspi.CoordType.SCREEN)
         click()
-        accept = wait_for(lambda: find_item('仅复制'), 'Tag row omitted the copy-only confirmation')
-        assert atspi.Action.do_action(accept, 0)
         wait_for(lambda: clipboard.wait_for_text() == marker, 'Tag-row manual copy did not write its source')
+        assert find_item('仅复制') is None and find_item('取消') is None
         assert other.get_text() == marker and editor.get_text() == marker
         add = wait_for(lambda: find_item('添加条目'), 'Missing manual entry command')
         assert atspi.Action.do_action(add, 0)
@@ -1020,7 +1029,10 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
             close = wait_for(lambda: find_item('Close'), 'Settings close action unavailable')
             assert atspi.Action.do_action(close, 0)
             wait_for(lambda: find_item('Stickers'), 'Main window did not return to history')
-            settings_window().focus(Gdk.CURRENT_TIME)
+            window = settings_window()
+            window.focus(Gdk.CURRENT_TIME)
+            wait_for(lambda: int(subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1], 16) == window.get_xid(),
+                     'History window did not finish its requested activation')
         show_history()
         try:
             wait_for(painted, 'Selected wallpaper did not paint its magenta pixels in the MyGo WebView')
@@ -1265,13 +1277,23 @@ def check(desktop, pinned, audio, pin_preview=False):
                 if frame:
                     geometry = frame.get_frame_extents()
                     right = geometry.x+geometry.width
-                    aligned = abs(right-(work.x+work.width-5)) <= 5 and abs(geometry.y-(work.y+76)) <= 5
+                    aligned = abs(right-(work.x+work.width-16)) <= 5 and abs(geometry.y-(work.y+76)) <= 5
                     if follows and aligned or not follows and abs(right-(work.x+work.width)) > 30:
                         return
             time.sleep(.05)
         raise AssertionError(f'Expected follow={follows}, work area={work}, window={geometry}')
     move_pointer()
     process = subprocess.Popen(launch, stdout=subprocess.DEVNULL)
+    def quit_resident():
+        endpoint = json.loads(subprocess.check_output([cli, 'service', 'desktop-endpoint']))
+        service = os.pidfd_open(endpoint['pid'])
+        try:
+            assert tray_item(process.pid, '退出')
+            assert process.wait(timeout=20) == 0
+            import select
+            assert select.select([service], [], [], 5)[0], 'Tray Exit left the Service running'
+        finally:
+            os.close(service)
     try:
         if not pinned:
             check_placement(True)
@@ -1313,8 +1335,7 @@ def check(desktop, pinned, audio, pin_preview=False):
             if filter_stage == 3 and row and has_marker:
                 if pinned:
                     check_pinned(row, Atspi, Gtk, marker, target, editor, desktop, process.pid)
-                    assert tray_item(process.pid, '退出')
-                    assert process.wait(timeout=15) == 0
+                    quit_resident()
                     # Launch normally from the same profile after changing the setting in the real UI.
                     process = subprocess.Popen([desktop], stdout=subprocess.DEVNULL)
                     deadline = time.monotonic() + 15
@@ -1336,8 +1357,7 @@ def check(desktop, pinned, audio, pin_preview=False):
                         GLib.Variant('(s)', ('org.kde.StatusNotifierWatcher',)), None, Gio.DBusCallFlags.NONE, 2000, None)
                     assert watcher.unpack() == (False,)
                     for args, key in [([], ''), (['--show'], 'Ctrl+Shift+F8')]:
-                        assert tray_item(process.pid, '退出')
-                        assert process.wait(timeout=15) == 0
+                        quit_resident()
                         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
                             db.execute("UPDATE settings SET value=? WHERE key='app.hotkey'", (key,))
                             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.search_hotkey','')")
@@ -1372,10 +1392,10 @@ def check(desktop, pinned, audio, pin_preview=False):
         check_native_panels(marker, process, endpoint['pid'], target, editor, paste_row, audio)
         print('Verified independent MyGo WebView, visible synthetic history, native Copy action and clipboard text')
     finally:
-        if process.poll() is None:
-            process.terminate()
-        process.wait(timeout=10)
-        subprocess.run([cli, 'service', 'stop'], check=True)
+        with observed_service_cleanup(cli):
+            if process.poll() is None:
+                process.terminate()
+            process.wait(timeout=20)
     check_storage_limit(cli)
 
 
@@ -1427,11 +1447,16 @@ def check_reset_settings(desktop):
         wait(lambda: tray_item(replacement, '退出', activate=False), 'Reset did not restore the native tray')
         print('Verified React reset confirmation, default preferences, resident replacement, restored tray and preserved history', flush=True)
     finally:
-        if resident.poll() is None: resident.terminate()
-        resident.wait(timeout=10)
-        if replacement is not None:
-            os.kill(replacement, 15)
-        subprocess.run([cli, 'service', 'stop'], check=True)
+        with observed_service_cleanup(cli):
+            if resident.poll() is None: resident.terminate()
+            resident.wait(timeout=20)
+            if replacement is not None:
+                process_exit = os.pidfd_open(replacement)
+                try:
+                    os.kill(replacement, 15)
+                    assert select.select([process_exit], [], [], 20)[0], 'Replacement resident did not exit'
+                finally:
+                    os.close(process_exit)
 
 
 def check_paste_hotkeys(desktop, middle=False):
@@ -1524,9 +1549,9 @@ def check_paste_hotkeys(desktop, middle=False):
         print('Verified resident sequential queue order, empty queue and latest-entry HTML paste without a main WebView', flush=True)
     finally:
         window.destroy()
-        resident.terminate()
-        resident.wait(timeout=10)
-        subprocess.run([cli, 'service', 'stop'], check=True)
+        with observed_service_cleanup(cli):
+            resident.terminate()
+            resident.wait(timeout=20)
 
 
 def check_storage_limit(cli):
@@ -1787,9 +1812,9 @@ def check_idle(executable):
         print('Verified middle-button wake, idle release off, cancel on reopen, expiration and recreation with the same resident')
     finally:
         db.close()
-        process.terminate()
-        process.wait(timeout=10)
-        subprocess.run([cli,'service','stop'],check=True)
+        with observed_service_cleanup(cli):
+            process.terminate()
+            process.wait(timeout=20)
 
 
 def check_profile_move(executable, home):
@@ -1911,11 +1936,21 @@ def check_profile_move(executable, home):
         assert Path((config/'datapath.txt').read_text()) == target and (config/'clipboard.db').is_file()
         print('Verified MyGo Settings folder selection, pre-commit rollback, post-commit restart failure, tray recovery after WebView exit, destination-only history and preserved capture mode')
     finally:
-        for pid in residents():
-            try: os.kill(pid, 15)
-            except ProcessLookupError: pass
-        process.wait(timeout=10)
-        run('service', 'stop')
+        with observed_service_cleanup(cli):
+            exits = []
+            try:
+                for pid in residents():
+                    try:
+                        exits.append(os.pidfd_open(pid))
+                        os.kill(pid, 15)
+                    except ProcessLookupError:
+                        pass
+                process.wait(timeout=20)
+                for descriptor in exits:
+                    assert select.select([descriptor], [], [], 20)[0], 'Relocated resident did not exit'
+            finally:
+                for descriptor in exits:
+                    os.close(descriptor)
 
 
 if __name__ == '__main__':

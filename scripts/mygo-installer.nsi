@@ -13,6 +13,8 @@ SetCompressor /SOLID lzma
 !define KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\DezirClip-MyGo"
 !define OWNER "DezirClip-MyGo-installation-v1"
 !define MUI_ABORTWARNING
+!define MUI_ICON "${APP_ICON}"
+!define MUI_UNICON "${APP_ICON}"
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH

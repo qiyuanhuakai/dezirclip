@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -79,6 +79,38 @@ public static class MyGoInput {
     [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr FindWindow(string cls, string title);
     public static IntPtr WindowWithTitle(string title) { return FindWindow(null,title); }
+    delegate bool EnumWindowCallback(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowCallback callback, IntPtr parameter);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int size);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
+    [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
+    [DllImport("user32.dll")] static extern bool GetMenuItemRect(IntPtr window, IntPtr menu, uint item, out Rect rect);
+    public static IntPtr ResidentTrayExit(int process, out Rect rect) {
+        rect = new Rect();
+        if (!ResidentTrayMenuVisible(process)) return IntPtr.Zero;
+        IntPtr popup = FindWindow("#32768", null);
+        IntPtr menu = SendMessage(popup, 0x1E1, IntPtr.Zero, IntPtr.Zero);
+        return GetMenuItemRect(IntPtr.Zero, menu, 2, out rect) ? popup : IntPtr.Zero;
+    }
+    public static bool ResidentTrayMenuVisible(int process) {
+        IntPtr popup = FindWindow("#32768", null);
+        uint owner; GetWindowThreadProcessId(popup, out owner);
+        if (popup == IntPtr.Zero || owner != process || !IsWindowVisible(popup)) return false;
+        IntPtr menu = SendMessage(popup, 0x1E1, IntPtr.Zero, IntPtr.Zero); // MN_GETHMENU
+        return menu != IntPtr.Zero && GetMenuItemCount(menu) == 3;
+    }
+    public static bool OpenResidentTrayMenu(int process) {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr window, IntPtr unused) {
+            uint owner; GetWindowThreadProcessId(window, out owner);
+            var name = new System.Text.StringBuilder(128); GetClassName(window, name, 128);
+            if (owner == process && name.ToString() == "MyGoApp") { found = window; return false; }
+            return true;
+        }, IntPtr.Zero);
+        // The pinned MyGo backend's notification-area right-click callback.
+        return found != IntPtr.Zero && PostMessage(found, 0x8003, new IntPtr(1), new IntPtr(0x205));
+    }
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr window, System.Text.StringBuilder title, int capacity);
@@ -502,6 +534,7 @@ $resident = $null
 $startedService = $null
 $startedServiceProcess = $null
 $serviceCrashReceipt = $null
+$quitVerified = $false
 try {
     & $cli add $marker | Out-Null
     if ($LASTEXITCODE) { throw 'Could not seed isolated clipboard history' }
@@ -512,6 +545,15 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
                    [("app.hotkey", "Ctrl+Shift+F8"), ("app.silent_start", "false"), ("app.emoji_panel_enabled", "true"), ("app.language","en"), ("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false"), ("app.window_width","670"), ("app.window_height","608")])
 '@ | python -
     if ($LASTEXITCODE) { throw 'Could not seed isolated window appearance' }
+    if ($DisabledPanels) {
+        @'
+import os, sqlite3
+with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+    db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',
+                   [('app.quick_paste_enabled','false'), ('app.screenshot_enabled','false')])
+'@ | python -
+        if ($LASTEXITCODE) { throw 'Could not seed disabled native panels' }
+    }
     if ($RichPaste) {
         @'
 import os, sqlite3
@@ -546,7 +588,7 @@ using System.Text;
 public class FixtureEditor {
     public static void Main(string[] args) {
         if (args.Length != 1) return;
-        using (var file = new FileStream(args[0], FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete)) {
+        using (var file = new FileStream(args[0], FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite)) {
             file.Seek(0, SeekOrigin.End);
             var bytes = Encoding.UTF8.GetBytes(" externally edited");
             file.Write(bytes, 0, bytes.Length);
@@ -656,8 +698,8 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         if (![MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$frame)) { return $false }
         $width = $frame.right - $frame.left
         $height = $frame.bottom - $frame.top
-        $x = [Math]::Max($workArea.Left, $workArea.Right - $width - 5)
-        $y = [Math]::Max($workArea.Top, [Math]::Min($cursorY + 12, $workArea.Bottom - $height - 5))
+        $x = [Math]::Max($workArea.Left, $workArea.Right - $width - $ExpectedPointerMargin)
+        $y = [Math]::Max($workArea.Top, [Math]::Min($cursorY + 12, $workArea.Bottom - $height - $ExpectedPointerMargin))
         [Math]::Abs($frame.left - $x) -le 5 -and [Math]::Abs($frame.top - $y) -le 5
     } 'MyGo main window did not follow the pointer inside the Windows work area'
     $null = Wait-Until {
@@ -666,6 +708,29 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
             [Math]::Abs($clientRect.right - 670) -le 1 -and [Math]::Abs($clientRect.bottom - 608) -le 1
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+    if ($DisabledPanels) {
+        $quickTitle = [regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34')
+        $screenTitle = [regex]::Unescape('DezirClip \u622a\u56fe')
+        foreach ($title in @($quickTitle, $screenTitle)) {
+            if ([MyGoInput]::WindowWithTitle($title) -ne [IntPtr]::Zero) { throw 'Disabled panel retained a native window' }
+        }
+        Click-Control $main (Get-ControlPoint $root 'Settings')
+        Click-Control $main (Get-ControlPoint $root 'Tools')
+        foreach ($enabled in @($true, $false, $true)) {
+            foreach ($panel in @(@('Quick Paste', $quickTitle), @('Screenshot', $screenTitle))) {
+                $box = Wait-Until { Get-SettingsCheckbox $root $panel[0] } 'Native panel setting unavailable'
+                $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+                $toggle.Toggle()
+                $null = Wait-Until {
+                    if ($resident.HasExited) { throw 'Disabling the last native panel exited the resident' }
+                    $exists = [MyGoInput]::WindowWithTitle($panel[1]) -ne [IntPtr]::Zero
+                    $exists -eq $enabled
+                } ("Native panel window lifetime differs from its setting: {0}, enabled={1}" -f $panel[0], $enabled)
+            }
+        }
+        Write-Output 'Verified predisabled startup, destroying both panels and recreating both panels'
+        return
+    }
     if ($RichPaste) {
         Click-Control $main (Get-ControlPoint $root 'Search clipboard...' ([Windows.Automation.ControlType]::ComboBox))
         $search = $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
@@ -800,6 +865,41 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     }
     if ($PinPreview) {
         Test-PinnedPreview $root $main $resident $marker
+        return
+    }
+    if ($Quit) {
+        $null = Wait-Until { Get-ControlPoint $root $marker } 'History was not ready before tray Exit'
+        $null = $resident.Handle
+        $null = $main.Handle
+        $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
+        if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot identify Service before exit' }
+        $serviceProcess = Get-Process -Id $endpoint.pid
+        $null = $serviceProcess.Handle
+        $children = @(Get-DesktopProcesses @($resident.Id) | ForEach-Object {
+            $process = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
+            if ($process) { $null = $process.Handle; $process }
+        })
+        try {
+            if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open the resident tray menu' }
+            $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($resident.Id) } 'Resident tray menu did not open'
+            # Click the real owner-drawn Exit item without relying on keyboard
+            # foreground permission for the synthetic notification callback.
+            $exitRect = [MyGoInput+Rect]::new()
+            $popup = [MyGoInput]::ResidentTrayExit($resident.Id, [ref]$exitRect)
+            if ($popup -eq [IntPtr]::Zero) { throw 'Cannot locate the actual tray Exit item' }
+            Click-WindowPoint $popup ([Drawing.Point]::new(($exitRect.left + $exitRect.right) / 2, ($exitRect.top + $exitRect.bottom) / 2))
+            $null = Wait-Until { $resident.HasExited -and $serviceProcess.HasExited -and
+                @($children | Where-Object { !$_.HasExited }).Count -eq 0 } 'Tray Exit left Desktop, WebView or Service processes running'
+            Write-Output "Exit codes: resident=$($resident.ExitCode), main=$($main.ExitCode), service=$($serviceProcess.ExitCode)"
+            if ($resident.ExitCode -ne 0 -or $main.ExitCode -ne 0 -or $serviceProcess.ExitCode -ne 0) { throw 'Application exit was not clean' }
+            $quitVerified = $true
+            Write-Output 'Verified tray Exit stopped the resident, main WebView process tree and authenticated Service without fixture cleanup'
+        } finally {
+            Write-Output "Exit observation: resident=$($resident.HasExited), main=$($main.HasExited), service=$($serviceProcess.HasExited)"
+            foreach ($process in $children) { Write-Output "Child $($process.Id) $($process.ProcessName): exited=$($process.HasExited)" }
+            foreach ($process in $children) { $process.Dispose() }
+            $serviceProcess.Dispose()
+        }
         return
     }
     if ($Capture) {
@@ -972,7 +1072,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     catch { Write-Host ("Service exit receipt failed before cleanup: " + $_.Exception.Message) }
     if ($resident -and !$resident.HasExited) { $resident.Kill(); $resident.WaitForExit() }
     if ($main -and !$main.HasExited) { $main.Kill(); $main.WaitForExit() }
-    & $cli service stop | Out-Null
+    if (!$quitVerified) { & $cli service stop | Out-Null }
     if ($installedRedirect) {
         if ($null -ne $redirectBackup) { [IO.File]::WriteAllBytes($installedRedirect, $redirectBackup) }
         else { Remove-Item -LiteralPath $installedRedirect -ErrorAction SilentlyContinue }

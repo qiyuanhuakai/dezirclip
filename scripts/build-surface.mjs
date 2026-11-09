@@ -60,7 +60,8 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
   const fingerprint = () => {
     const paths = run('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--',
       'frontends/dzc-surface', 'clients/go', 'design', 'package.json', 'Cargo.toml', 'Cargo.lock', 'src-tauri/tauri.conf.json',
-      ...(component === 'mygo-desktop' ? ['src', 'public', 'index.html', 'vite.config.ts', 'pnpm-lock.yaml', 'tsconfig.json'] : []),
+      ...(component === 'mygo-desktop' ? ['src', 'public', 'index.html', 'vite.config.ts', 'pnpm-lock.yaml', 'tsconfig.json',
+        'src-tauri/icons/icon.ico', 'scripts/build-windows-icon.py'] : []),
       'scripts/set-release-version.mjs', 'scripts/updater-release.mjs', 'scripts/build-surface.mjs', 'scripts/mygo-surface-patch.mjs', 'scripts/generate-surface-tokens.mjs'])
       .split('\0').filter(Boolean).sort();
     return paths.map(path => ({ path, sha256: sha256(readFileSync(join(root, path))) }));
@@ -77,6 +78,14 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
   const ldflags = ['-s', '-w', ...(targets[target].GOOS === 'windows' ? ['-H=windowsgui'] : []),
     ...Object.entries(values).flatMap(([name, value]) => ['-X', `${identityPackage}.${name}=${value}`])].join(' ');
   const goArgs = ['build', '-mod=readonly', `-modfile=${patch.modfile}`, '-trimpath', '-buildvcs=false', '-ldflags', ldflags, '-o', temporary, './cmd/' + binaryName];
+  const compile = () => {
+    if (component !== 'mygo-desktop' || targets[target].GOOS !== 'windows') return run(go, goArgs, { cwd: moduleRoot, env: goEnv, stdio: 'inherit' });
+    const resource = join(moduleRoot, 'cmd', binaryName, `dzc_icon_windows_${targets[target].GOARCH}.syso`);
+    run(env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3'), [join(root, 'scripts/build-windows-icon.py'),
+      '--icon', join(root, 'src-tauri/icons/icon.ico'), '--output', resource, '--arch', targets[target].GOARCH]);
+    try { return run(go, goArgs, { cwd: moduleRoot, env: goEnv, stdio: 'inherit' }); }
+    finally { rmSync(resource); }
+  };
   let webAssets;
   if (component === 'mygo-desktop') {
     const staging = mkdtempSync(join(outDir, 'react-build-'));
@@ -95,12 +104,12 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
       const overlay = join(staging, 'overlay.json');
       writeFileSync(overlay, JSON.stringify({ Replace: replacements }));
       goArgs.splice(1, 0, `-overlay=${overlay}`);
-      run(go, goArgs, { cwd: moduleRoot, env: goEnv, stdio: 'inherit' });
+      compile();
     } finally {
       if (dirname(resolve(staging)) === resolve(outDir)) rmSync(staging, { recursive: true, force: true });
     }
   } else {
-    run(go, goArgs, { cwd: moduleRoot, env: goEnv, stdio: 'inherit' });
+    compile();
   }
   patch.verifyUnchanged();
   if (JSON.stringify(fingerprint()) !== JSON.stringify(inputs) || sourceStatus() !== initialStatus

@@ -55,7 +55,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const [pickerOpen, setPickerOpen] = useState(false);
     const [pickerActiveTag, setPickerActiveTag] = useState<string | null>(null);
     const [managementMode, setManagementMode] = useState(false);
-    const revealScope = JSON.stringify([selectedTag, library.query, library.sortBy, library.contentRevision, privacy.generation]);
+    const revealScope = JSON.stringify([selectedTag, library.query, library.sortBy, privacy.generation]);
     const [revealedScope, setRevealedScope] = useState<string | null>(null);
     const [bulkRevealExcluded, setBulkRevealExcluded] = useState(() => new Set<number>());
     const revealAll = privacy.phase === 'ready' && revealedScope === revealScope;
@@ -115,7 +115,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         return () => { mounted.current = false; detailSequence.current += 1; focusSequence.current += 1; };
     }, []);
     useEffect(() => { detailSequence.current += 1; setActionError(false); setSelectedId(null); setMenuOpen(false); }, [selectedTag, library.query, library.sortBy]);
-    useEffect(() => { setRevealedScope(null); }, [selectedTag, library.query, library.sortBy, library.contentRevision]);
+    useEffect(() => { setRevealedScope(null); }, [selectedTag, library.query, library.sortBy, privacy.generation]);
     useEffect(() => {
         const hadSelection = entrySelection.selection.mode === 'all' || entrySelection.selection.ids.length > 0;
         if (entrySelection.context !== selectionContext) setBatchFeedback(null);

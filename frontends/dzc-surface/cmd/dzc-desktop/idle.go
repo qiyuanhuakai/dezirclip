@@ -40,6 +40,8 @@ func (s *DesktopShell) HideMain(ctx context.Context) error {
 }
 
 func (s *DesktopShell) hideMain(w *mygo.Window) {
+	s.resumePending.Store(false)
+	s.resumeSequence.Add(1)
 	if w.IsDestroyed() || !w.IsVisible() {
 		return
 	}
