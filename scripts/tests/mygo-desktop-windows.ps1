@@ -869,6 +869,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     }
     if ($Quit) {
         $null = Wait-Until { Get-ControlPoint $root $marker } 'History was not ready before tray Exit'
+        $null = $resident.Handle
         $null = $main.Handle
         $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
         if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot identify Service before exit' }
@@ -889,6 +890,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             Click-WindowPoint $popup ([Drawing.Point]::new(($exitRect.left + $exitRect.right) / 2, ($exitRect.top + $exitRect.bottom) / 2))
             $null = Wait-Until { $resident.HasExited -and $serviceProcess.HasExited -and
                 @($children | Where-Object { !$_.HasExited }).Count -eq 0 } 'Tray Exit left Desktop, WebView or Service processes running'
+            Write-Output "Exit codes: resident=$($resident.ExitCode), main=$($main.ExitCode), service=$($serviceProcess.ExitCode)"
             if ($resident.ExitCode -ne 0 -or $main.ExitCode -ne 0 -or $serviceProcess.ExitCode -ne 0) { throw 'Application exit was not clean' }
             $quitVerified = $true
             Write-Output 'Verified tray Exit stopped the resident, main WebView process tree and authenticated Service without fixture cleanup'
