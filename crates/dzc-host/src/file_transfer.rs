@@ -27,11 +27,12 @@ impl Host {
         let permit = privacy.authorize_read(PrivacyAccessIntent::GeneratedCopy, SensitiveAccess::Denied,
             Some(request.expected_epoch), now).map_err(privacy_error)?;
         let payload = self.history.dropped_files_payload_authorized(paths.clone(), &permit, now).map_err(privacy_error)?;
-        if self.capture_owner.load(std::sync::atomic::Ordering::Acquire) {
+        if self.capture_owner.load(std::sync::atomic::Ordering::Acquire)
+            && self.history.capture_settings_snapshot().map_err(|_| WireErrorCode::Unavailable)?.capture_files {
             match privacy.capture_ticket(now) {
                 Ok(ticket) => {
                     self.capture_generated(CaptureFrame { data: CaptureData::Files(paths),
-                        metadata: CaptureReadMetadata { privacy_ticket: Some(ticket), ..Default::default() } },
+                        metadata: CaptureReadMetadata { files: true, privacy_ticket: Some(ticket), ..Default::default() } },
                         CaptureSource { app_name: "DezirClip File Drop".into(), process_path: None }, now)?;
                 }
                 Err(dzc_core::api::PrivacyError::PrivacySessionActive) => {},
@@ -84,6 +85,47 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[derive(Default)]
+    struct FilesWriter(std::sync::Mutex<Vec<Vec<String>>>);
+    impl crate::HostActions for FilesWriter {
+        fn platform_capabilities(&self) -> serde_json::Value { serde_json::json!({}) }
+        fn can_copy(&self) -> bool { true }
+        fn copy(&self, payload: ClipboardPayload) -> Result<(), WireErrorCode> {
+            let ClipboardPayload::Private { payload, authorization } = payload else { panic!("file copy must be revocable") };
+            assert!(authorization.is_current() && authorization.native_lease().unwrap().is_current());
+            let ClipboardPayload::Files(paths) = *payload else { panic!("original files required") };
+            self.0.lock().unwrap().push(paths);
+            Ok(())
+        }
+        fn can_paste(&self) -> bool { false }
+        fn paste(&self) -> Result<(), WireErrorCode> { panic!("file transfer never injects paste") }
+        fn stop_helpers(&self) -> Result<(), WireErrorCode> { Ok(()) }
+    }
+
+    #[test]
+    fn drop_copies_originals_without_starting_capture_or_paste() {
+        use std::sync::Arc;
+        let root = std::env::temp_dir().join(format!("dzc-file-copy-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let file = root.join("source.txt");
+        std::fs::write(&file, b"original").unwrap();
+        {
+            let writer = Arc::new(FilesWriter::default());
+            let host = Host::new(crate::HostOptions { mode: HostMode::Service,
+                history: dzc_core::api::HistoryService::open(&root.join("history.db")).unwrap(),
+                directory: root.clone(), actions: writer.clone() }).unwrap();
+            let client = session(&host, ClientRole::Desktop, true);
+            let state = host.snapshot().unwrap();
+            let paths = vec![file.to_string_lossy().into_owned()];
+            let call = || host.dispatch(&client, Request { request_id: "drop-copy".into(), method: Method::DesktopFilesDrop,
+                params: serde_json::json!({"paths":paths,"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch}) });
+            assert!(call().error.is_none());
+            assert_eq!(*writer.0.lock().unwrap(), vec![paths]);
+            assert!(host.session.lock().unwrap().is_empty());
+            assert_eq!(std::fs::read(&file).unwrap(), b"original");
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
     fn session(host: &Host, role: ClientRole, control: bool) -> Session {
         let grant = control.then(|| host.grants().issue_control(role).unwrap());
         host.hello(HelloParams { protocol_version: VERSION, client_version: "fixture".into(),

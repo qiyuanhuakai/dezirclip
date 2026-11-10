@@ -672,7 +672,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
 '@ | python -
     if ($LASTEXITCODE) { throw 'Could not seed isolated window appearance' }
     if ($FileDrag) {
-        'import os, sqlite3; db=sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]); db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", ("app.window_pinned","true")); db.commit()' | python -
+        'import os, sqlite3; db=sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]); db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", [("app.window_pinned","true"),("app.capture_files","true")]); db.commit()' | python -
         if ($LASTEXITCODE) { throw 'Could not pin native drag fixture' }
     }
     if ($DisabledPanels) {

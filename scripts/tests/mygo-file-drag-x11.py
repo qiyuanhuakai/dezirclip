@@ -17,6 +17,7 @@ def check(desktop, helpers):
     with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', [
             ('app.window_pinned', 'true'), ('app.silent_start', 'false'), ('app.language', 'en'),
+            ('app.capture_files', 'true'),
             ('app.window_width', '650'), ('app.window_height', '600')])
     files = [Path.home()/'drag 文件 with spaces.txt', Path.home()/'drag-image.png']
     files[0].write_text('Native copy fixture')

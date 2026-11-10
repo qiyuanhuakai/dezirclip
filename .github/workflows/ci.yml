@@ -500,6 +500,7 @@ jobs:
         run: |
           cp "artifacts/dzc-desktop/$(rustc --print host-tuple)/dzc-desktop" target/debug/dzc-desktop
           /usr/bin/python3 scripts/tests/test_mygo_audio_fixture.py
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --file-drag
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop
           DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,mouse_hotkey /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --pinned
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --pin-preview
@@ -507,7 +508,6 @@ jobs:
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --paste-hotkeys
           DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --middle-paste-hotkeys
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --reset-settings
-          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --file-drag
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --move-profile
 
       - name: Verify shared MyGo WebView2 paste into an independent Windows editor
@@ -515,8 +515,8 @@ jobs:
         shell: powershell
         run: |
           Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
-          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -FileDrag
+          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -WakeTiming
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -WakeTiming -WakeBackground
 
