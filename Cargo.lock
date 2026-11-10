@@ -1244,7 +1244,7 @@ dependencies = [
 
 [[package]]
 name = "dezirclip"
-version = "0.2.0-alpha.9"
+version = "0.2.0-alpha.10"
 dependencies = [
  "aes-gcm",
  "arboard",
@@ -1548,7 +1548,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "dzc-core"
-version = "0.2.0-alpha.9"
+version = "0.2.0-alpha.10"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -1574,7 +1574,7 @@ dependencies = [
 
 [[package]]
 name = "dzc-host"
-version = "0.2.0-alpha.9"
+version = "0.2.0-alpha.10"
 dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",
@@ -1591,7 +1591,7 @@ dependencies = [
 
 [[package]]
 name = "dzc-platform"
-version = "0.2.0-alpha.9"
+version = "0.2.0-alpha.10"
 dependencies = [
  "aes-gcm",
  "arboard",
@@ -1632,7 +1632,7 @@ dependencies = [
 
 [[package]]
 name = "dzc-protocol"
-version = "0.2.0-alpha.9"
+version = "0.2.0-alpha.10"
 dependencies = [
  "jsonschema",
  "serde",
@@ -1641,7 +1641,7 @@ dependencies = [
 
 [[package]]
 name = "dzc-service"
-version = "0.2.0-alpha.9"
+version = "0.2.0-alpha.10"
 dependencies = [
  "clap",
  "ctrlc",

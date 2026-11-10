@@ -347,6 +347,38 @@ function Test-QuickPasteInput($Resident, $Editor, $Form, [string]$Marker) {
         } "Native quick-paste $method failed to deliver once and restore focus" 3
         Write-Output "Native quick-paste $method delivered once in $($delivery.ElapsedMilliseconds) ms"
     }
+    # Add more than one protocol page to this disposable profile. The last row
+    # must become reachable by the wheel without a pagination button.
+    foreach ($index in 64..0) {
+        & $cli add ('MyGo scroll fixture {0:D3}' -f $index) | Out-Null
+        if ($LASTEXITCODE) { throw 'Cannot seed native scroll pagination' }
+    }
+    $Editor.Text = ''
+    $Form.Activate()
+    $null = $Editor.Focus()
+    $null = Wait-Until { $Editor.Focused -and [MyGoInput]::GetForegroundWindow() -eq $Form.Handle } 'Scroll paste target did not gain focus'
+    [Windows.Forms.SendKeys]::SendWait('^+v')
+    $panel = Get-ResidentPanel $Resident ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34'))
+    $root = [Windows.Automation.AutomationElement]::FromHandle($panel)
+    $null = Get-ControlPoint $root 'MyGo scroll fixture 000'
+    $button = $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
+        [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Load more'))
+    if ($button) { throw 'Quick paste still exposes a Load more button' }
+    $bounds = [MyGoInput+Rect]::new()
+    if (![MyGoInput]::GetWindowRect($panel, [ref]$bounds)) { throw 'Cannot locate the quick-paste viewport' }
+    $null = [MyGoInput]::SetCursorPos(($bounds.left+$bounds.right)/2, ($bounds.top+$bounds.bottom)/2)
+    $target = 'MyGo scroll fixture 055'
+    $row = Wait-Until {
+        $item = $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
+            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $target))
+        if ($item -and !$item.Current.IsOffscreen) { return $item }
+        [MyGoInput]::mouse_event(0x800, 0, 0, ([uint32]::MaxValue - 119), [UIntPtr]::Zero)
+        return $null
+    } 'Wheel scrolling did not automatically load the second page' 15
+    $r = $row.Current.BoundingRectangle
+    Click-WindowPoint $panel ([Drawing.Point]::new($r.Left+$r.Width/2, $r.Top+$r.Height/2))
+    $null = Wait-Until { $Editor.Text -ceq $target -and $Editor.Focused -and ![MyGoInput]::IsWindowVisible($panel) } 'Appended row did not paste once into the original target' 3
+    Write-Output 'Verified wheel-only pagination across 50 rows, no Load more button, and single-click paste of an appended row'
 }
 
 function Get-SavedMainHotkeys {

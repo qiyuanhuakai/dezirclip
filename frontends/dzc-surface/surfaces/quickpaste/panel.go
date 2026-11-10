@@ -40,6 +40,7 @@ type Panel struct {
 	appearance     *theme.Appearance
 	search         string
 	list           *ui.ListState
+	prefetch       pagePrefetch
 	viewRows       *model.View
 	pointerKnown   bool
 	pointerX       float32
@@ -641,8 +642,8 @@ func (p *Panel) word(key string) string {
 		"read_failed":  {"Could not read history. Retry.", "读取失败，请重试。", "讀取失敗，請重試。"},
 		"paste_failed": {"Paste failed. Select again to retry.", "粘贴失败，请重新选择。", "貼上失敗，請重新選擇。"},
 		"paste_notice": {"Previous paste could not be confirmed. Check the target content before selecting again.", "上次粘贴无法确认，请先检查目标内容后重新选择。", "上次貼上無法確認，請先檢查目標內容後重新選擇。"},
-		"more":         {"Load more", "加载更多", "載入更多"}, "retry": {"Retry", "重试", "重試"},
-		"hint": {"↑ ↓ Select   Enter Paste   Esc Close", "↑ ↓ 选择   Enter 粘贴   Esc 关闭", "↑ ↓ 選擇   Enter 貼上   Esc 關閉"},
+		"retry":        {"Retry", "重试", "重試"},
+		"hint":         {"↑ ↓ Select   Enter Paste   Esc Close", "↑ ↓ 选择   Enter 粘贴   Esc 关闭", "↑ ↓ 選擇   Enter 貼上   Esc 關閉"},
 	}
 	index := 0
 	if zh || p.locale == "tw" {
@@ -805,8 +806,12 @@ func (p *Panel) view(c *ui.Context) {
 				p.query(0)
 			}
 		}
-		if p.model.HasMore && ui.ButtonBase(c).Label(p.word("more")).Height(24).Center().TextColor(t.TextMuted).Disabled(p.model.Loading).Children(func() { ui.Text(c, p.word("more")).FontSize(float32(tokens.FontSize - 2)) }).Clicked() {
-			p.query(p.model.NextOffset)
+		_, last := p.list.Visible()
+		if p.window != nil {
+			p.prefetch.nearEnd(&p.model, last, p.window.Update, p.query)
+		}
+		if p.model.Loading && len(p.model.Entries) > 0 {
+			ui.Text(c, p.word("loading")).FontSize(float32(tokens.FontSize - 2)).TextColor(t.TextMuted)
 		}
 		ui.Text(c, p.word("hint")).FontSize(float32(tokens.FontSize - 2)).TextColor(t.TextMuted)
 	})
