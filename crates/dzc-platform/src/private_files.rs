@@ -21,6 +21,26 @@ impl Exports {
     pub(crate) fn create(files: Vec<ClipboardFile>) -> Result<Self, String> {
         Self::create_with_access(files, false)
     }
+    fn attachment(files: Vec<ClipboardFile>) -> Result<Self, String> {
+        #[cfg(target_os = "linux")]
+        { Self::create_with_access(files, false) }
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::io::{AsRawHandle, FromRawHandle};
+            use windows::Win32::{Foundation::HANDLE, Storage::FileSystem::{ReOpenFile, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_SHARE_DELETE, FILE_FLAGS_AND_ATTRIBUTES}};
+            // The guardian owns cleanup, so attachment readers need neither
+            // write nor delete sharing. Reopen the same file identity read-only
+            // after initialization; ordinary File.OpenRead must work.
+            let mut exports = Self::create_with_access(files, true)?;
+            for file in &mut exports.handles {
+                let handle = unsafe { ReOpenFile(HANDLE(file.as_raw_handle()), 0x80000000,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_FLAGS_AND_ATTRIBUTES(0)) }
+                    .map_err(|_| "PrivateExportRejected")?;
+                *file = unsafe { File::from_raw_handle(handle.0) };
+            }
+            Ok(exports)
+        }
+    }
     fn create_with_access(files: Vec<ClipboardFile>, writable: bool) -> Result<Self, String> {
         if files.is_empty() || files.len() > 64 {
             return Err("PrivateExportRejected".into());
@@ -288,28 +308,36 @@ pub(crate) struct BoundExport {
     authorization: ClipboardAuthorization,
     retained: bool,
 }
+enum ExportPurpose { Clipboard, Editor, Attachment }
 impl BoundExport {
     pub(crate) fn new(
         files: Vec<ClipboardFile>,
         authorization: ClipboardAuthorization,
     ) -> Result<Self, String> {
-        Self::with_access(files, authorization, true)
+        Self::with_access(files, authorization, ExportPurpose::Editor)
     }
     pub(crate) fn readonly(
         files: Vec<ClipboardFile>,
         authorization: ClipboardAuthorization,
     ) -> Result<Self, String> {
-        Self::with_access(files, authorization, false)
+        Self::with_access(files, authorization, ExportPurpose::Clipboard)
+    }
+    pub(crate) fn attachment(files: Vec<ClipboardFile>, authorization: ClipboardAuthorization) -> Result<Self, String> {
+        Self::with_access(files, authorization, ExportPurpose::Attachment)
     }
     fn with_access(
         files: Vec<ClipboardFile>,
         authorization: ClipboardAuthorization,
-        writable: bool,
+        purpose: ExportPurpose,
     ) -> Result<Self, String> {
         if !authorization.is_current() {
             return Err("PrivacyEpochChanged".into());
         }
-        let exports = Exports::create_with_access(files, writable)?;
+        let exports = match purpose {
+            ExportPurpose::Attachment => Exports::attachment(files)?,
+            ExportPurpose::Editor => Exports::create_with_access(files, true)?,
+            ExportPurpose::Clipboard => Exports::create_with_access(files, false)?,
+        };
         let lease = std::sync::Arc::new(std::sync::Mutex::new(Some(exports)));
         {
             let mut active = ACTIVE
@@ -325,7 +353,7 @@ impl BoundExport {
             });
             active.push(ActiveLease {
                 lease: lease.clone(),
-                clipboard: !writable,
+                clipboard: matches!(purpose, ExportPurpose::Clipboard),
             });
         }
         if !authorization.is_current() {
@@ -491,6 +519,23 @@ mod linux_owner;
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn attachment_reader_can_deny_write_and_delete_sharing() {
+        use std::io::Read;
+        use std::os::windows::fs::OpenOptionsExt;
+        let mut export = Exports::attachment(vec![ClipboardFile { name: "attachment.png".into(), bytes: b"fixture image bytes".to_vec() }]).unwrap();
+        let path = export.paths()[0].clone();
+        let mut reader = std::fs::OpenOptions::new().read(true).share_mode(1).open(&path).unwrap();
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"fixture image bytes");
+        assert!(export.stop().is_err(), "an unconfirmed external read cannot acknowledge revocation");
+        drop(reader);
+        export.stop().unwrap();
+        drop(export);
+        assert!(!std::path::Path::new(&path).exists());
+    }
     #[cfg(target_os = "windows")]
     #[test]
     fn export_owner_subprocess() {

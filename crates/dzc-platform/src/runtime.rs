@@ -1169,6 +1169,12 @@ pub fn private_file_export(
         .map_err(|_| clipboard_failure(Capability::Write))
 }
 
+pub fn private_attachment_export(export: dzc_core::ports::AuthorizedFileExport) -> PlatformResult<PrivateFileExport> {
+    crate::private_files::BoundExport::attachment(export.files, export.authorization)
+        .map(PrivateFileExport)
+        .map_err(|_| clipboard_failure(Capability::Write))
+}
+
 pub fn prepare_private_files(
     files: Vec<ClipboardFile>,
     authorization: ClipboardAuthorization,

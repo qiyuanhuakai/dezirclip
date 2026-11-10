@@ -68,7 +68,7 @@ impl Host {
                 let export = if let Some(row) = &row {
                     self.history.session_external_files_for_host_authorized(row, &request.service_instance_id, &permit, now)
                 } else { self.history.external_files_authorized(request.id, &permit, now) }.map_err(privacy_error)?;
-                let lease = dzc_platform::runtime::private_file_export(export).map_err(|_| WireErrorCode::Unavailable)?;
+                let lease = dzc_platform::runtime::private_attachment_export(export).map_err(|_| WireErrorCode::Unavailable)?;
                 let paths = lease.paths().map_err(|_| WireErrorCode::Unavailable)?;
                 self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
                 lease.retain();
