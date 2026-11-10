@@ -62,7 +62,8 @@ def check(desktop, helpers):
             pump()
             result = predicate()
             if result: return result
-        raise AssertionError(message)
+        tree = [(name, text[:120]) for _, name, _, text in helpers['mygo_nodes'](Atspi, desktop) if name or text]
+        raise AssertionError(f'{message}; accessibility={tree}')
 
     def point(label):
         for node, name, interfaces, text in helpers['mygo_nodes'](Atspi, desktop):
@@ -99,20 +100,23 @@ def check(desktop, helpers):
         main = wait(lambda: helpers['visible_main_window'](process.pid, desktop), 'Main window missing')
         x11.XMoveWindow(display, main, 350, 20)
         x11.XSync(display, False)
-        wait(lambda: point('native file drag fixture'), 'Initial history missing')
+        drop = wait(lambda: point('native file drag fixture'), 'Initial history missing')
+        origin = panel.get_window().get_origin()
+        outside = (origin[-2] + 100, origin[-1] + 100)
+        print(f'Native file fixture positions: source={outside}, destination={drop}', flush=True)
         pump(.3)
-        gesture((120, 160), (650, 300))
+        gesture(outside, drop)
         row = wait(lambda: point('2 items'), 'Native file drop did not enter history')
         clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         selection = clipboard.wait_for_contents(Gdk.Atom.intern('text/uri-list', False))
         assert selection and selection.get_uris() == uris, 'Drop must copy original file URIs'
         panel.drag_source_unset()
-        gesture(row, (120, 160))
+        gesture(row, outside)
         wait(lambda: received, 'Native card drag did not reach independent GTK target')
         assert received == [uris], received
         assert files[0].read_text() == 'Native copy fixture' and files[1].is_file()
         received.clear()
-        gesture(row, (120, 160), cancel=True)
+        gesture(row, outside, cancel=True)
         pump(.5)
         assert not received, 'Cancelled drag delivered files'
         selection = clipboard.wait_for_contents(Gdk.Atom.intern('text/uri-list', False))
@@ -121,7 +125,7 @@ def check(desktop, helpers):
         image.fill(0x6699ffff)
         clipboard.set_image(image)
         row = wait(lambda: point('Clipboard Image'), 'Captured image card missing')
-        gesture(row, (120, 160))
+        gesture(row, outside)
         wait(lambda: received, 'Image card did not export a native file')
         from urllib.parse import urlparse, unquote
         assert len(received) == 1 and len(received[0]) == 1

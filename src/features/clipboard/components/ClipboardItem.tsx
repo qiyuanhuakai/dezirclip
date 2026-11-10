@@ -933,8 +933,12 @@ const ClipboardItem = ({
             data-test-clipboard-item
             draggable={!isSensitiveHidden && ["image", "file", "files", "video"].includes(item.content_type)}
             onDragStartCapture={event => {
+                if (!["image", "file", "files", "video"].includes(item.content_type)) return;
                 event.preventDefault();
                 event.stopPropagation();
+                // A cancelled HTML drag has no browser dragend. End its bridge
+                // bookkeeping before handing the gesture to the native source.
+                window.dispatchEvent(new DragEvent("dragend"));
                 if (isSensitiveHidden || !(event.target instanceof Element)
                     || event.target.closest("button, input, textarea, .drag-handle")
                     || !["image", "file", "files", "video"].includes(item.content_type)) return;
