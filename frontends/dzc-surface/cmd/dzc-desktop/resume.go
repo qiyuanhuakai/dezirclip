@@ -15,6 +15,7 @@ var prepareShow = mygo.NewEvent[uint64]("main-window-prepare-show")
 func (s *DesktopShell) requestShow(w *mygo.Window) {
 	s.idle.cancel()
 	s.resumePending.Store(true)
+	s.resumeStarted = time.Now()
 	request := s.resumeSequence.Add(1)
 	prepareShow.Emit(w, request)
 }
@@ -51,6 +52,7 @@ func (s *DesktopShell) CompleteResume(ctx context.Context, request uint64, insta
 		s.dock.shown = time.Now()
 		w.Show()
 		w.Focus()
+		desktopTiming("React preparation and show", s.resumeStarted)
 		done <- true
 	})
 	select {

@@ -136,6 +136,7 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { cancelActivation() })
 		activating := false
 		activationCommand := ""
+		activationStarted := time.Time{}
 		registerSearch := func(key string) error {
 			return registerMainShortcut(key, func() {
 				if !recorder.offer(key) {
@@ -504,7 +505,14 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 					}
 					switch line {
 					case "visible", "hidden":
-						mygo.RunOnMain(func() { mainVisible = line == "visible"; refreshMemory() })
+						mygo.RunOnMain(func() {
+							mainVisible = line == "visible"
+							if mainVisible && !activationStarted.IsZero() {
+								desktopTiming("activation to visible", activationStarted)
+								activationStarted = time.Time{}
+							}
+							refreshMemory()
+						})
 					case "recording-cancel":
 						mygo.RunOnMain(func() { recorder.abort() })
 					case "closing":
@@ -561,6 +569,7 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 				return
 			}
 			activating = true
+			activationStarted = time.Now()
 			go func() {
 				ctx, cancel := context.WithTimeout(activationContext, 30*time.Second)
 				defer cancel()

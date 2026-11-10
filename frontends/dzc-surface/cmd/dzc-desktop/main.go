@@ -31,6 +31,8 @@ type History struct {
 	actions       *client.Client
 	events        *client.Client
 	eventMu       sync.Mutex
+	target        *client.Client
+	targetMu      sync.Mutex
 	targetInvalid atomic.Bool
 }
 
@@ -87,7 +89,6 @@ func (h *History) Changes(ctx context.Context, cursor *uint64) (protocol.EventsR
 	h.eventMu.Lock()
 	defer h.eventMu.Unlock()
 	if h.events == nil {
-		h.targetInvalid.Store(true)
 		host, err := h.actions.DesktopConnection(ctx)
 		if err != nil {
 			return events, err
@@ -108,24 +109,43 @@ func (h *History) Changes(ctx context.Context, cursor *uint64) (protocol.EventsR
 		h.events.Close()
 		h.events = nil
 	}
+	if err == nil {
+		h.keepTargetAlive(ctx)
+	}
 	return events, err
 }
 
-// Capture before showing the WebView. Its subscription keeps this exact
-// authenticated session alive while the user searches or edits their selection.
+// The target has its own authenticated stream: a long event poll must not
+// delay presentation or paste. Event polling renews only a still-valid target.
+func (h *History) keepTargetAlive(ctx context.Context) {
+	if !h.targetMu.TryLock() {
+		return
+	}
+	defer h.targetMu.Unlock()
+	if h.target == nil || h.targetInvalid.Load() {
+		return
+	}
+	var state protocol.RuntimeState
+	if h.target.Call(ctx, protocol.MethodHealth, struct{}{}, "RuntimeState", &state) != nil {
+		h.targetInvalid.Store(true)
+		h.target.Close()
+		h.target = nil
+	}
+}
+
 func (h *History) rememberTarget(ctx context.Context) {
-	h.eventMu.Lock()
-	defer h.eventMu.Unlock()
+	h.targetMu.Lock()
+	defer h.targetMu.Unlock()
 	h.targetInvalid.Store(true)
-	if h.events != nil {
-		h.events.Close()
-		h.events = nil
+	if h.target != nil {
+		h.target.Close()
+		h.target = nil
 	}
 	host, err := h.actions.DesktopConnection(ctx)
 	if err != nil {
 		return
 	}
-	h.events = host
+	h.target = host
 	var result protocol.OperationResult
 	// A desktop with no foreground editor can still display history and copy.
 	if host.Call(ctx, protocol.MethodDesktopWindowTarget, struct{}{}, "OperationResult", &result) == nil && result.Performed {
@@ -138,13 +158,13 @@ func (h *History) CopyEntry(ctx context.Context, params protocol.DesktopCopyPara
 		return "", client.ErrProtocol
 	}
 	if params.Paste {
-		h.eventMu.Lock()
-		defer h.eventMu.Unlock()
-		if h.events == nil || h.targetInvalid.Swap(true) {
+		h.targetMu.Lock()
+		defer h.targetMu.Unlock()
+		if h.target == nil || h.targetInvalid.Swap(true) {
 			// No paste was dispatched. Only this outcome may offer a new copy-only action.
 			return "target_required", nil
 		}
-		if err := h.events.PasteWindowSelection(ctx, params); err != nil {
+		if err := h.target.PasteWindowSelection(ctx, params); err != nil {
 			fmt.Fprintf(os.Stderr, "Host window paste failed: %v\n", err)
 			return "", err
 		}
@@ -162,12 +182,12 @@ func (h *History) SendEmoji(ctx context.Context, kind, content string, epoch uin
 	params := protocol.WindowEmojiParams{ServiceInstanceId: h.actions.Hello().State.ServiceInstanceId,
 		ExpectedEpoch: epoch, Kind: kind, Content: content, Paste: paste}
 	if paste {
-		h.eventMu.Lock()
-		defer h.eventMu.Unlock()
-		if h.events == nil || h.targetInvalid.Swap(true) {
+		h.targetMu.Lock()
+		defer h.targetMu.Unlock()
+		if h.target == nil || h.targetInvalid.Swap(true) {
 			return "target_required", nil
 		}
-		if err := h.events.PasteWindowEmoji(ctx, params); err != nil {
+		if err := h.target.PasteWindowEmoji(ctx, params); err != nil {
 			fmt.Fprintf(os.Stderr, "Host window emoji paste failed: %v\n", err)
 			return "", err
 		}
@@ -232,6 +252,7 @@ func run() error {
 	// The Desktop always loads the packaged local UI even in a developer shell.
 	os.Unsetenv("MYGO_DEV_URL")
 	ctx := context.Background()
+	bootStarted := time.Now()
 	actions, err := client.OpenDesktop(ctx, buildinfo.Version, !mainWindow && elevatedInstance == "")
 	if err != nil {
 		return fmt.Errorf("open desktop Host: %w", err)
@@ -249,6 +270,7 @@ func run() error {
 	if actions.Hello().State.ServiceInstanceId != os.Args[2] {
 		return client.ErrProtocol
 	}
+	desktopTiming("child authentication", bootStarted)
 	mygo.SetFrontend(assets)
 	history := &History{actions: actions}
 	mygo.Bind(history)
@@ -269,6 +291,7 @@ func run() error {
 	go library.saveWindowSizes(sizes, sizeDone)
 	defer func() { close(sizes); <-sizeDone }()
 	mygo.App.WhenReady(func() {
+		windowStarted := time.Now()
 		installMemoryPolicy(func() bool { return false })
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 352, Height: 380, MinWidth: 250, MinHeight: 300,
 			Hidden: true, SkipTaskbar: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true})
@@ -334,6 +357,8 @@ func run() error {
 		// Creating a cold WebView can outlast the Host's idle session timeout.
 		// Sample the external foreground after initialization, immediately before we take focus.
 		history.rememberTarget(ctx)
+		desktopTiming("child WebView creation", windowStarted)
+		desktopTiming("child ready for React", bootStarted)
 		shell.requestShow(win)
 		physicalSize := func() mygo.Size {
 			width, height := win.ContentSize()
@@ -373,6 +398,7 @@ func run() error {
 					continue
 				}
 				if command == "show" || command == "toggle" || command == "settings" || command == "search" {
+					wakeStarted := time.Now()
 					// Accept the wake before any Host read can outlive the old idle
 					// deadline. The UI-thread generation also invalidates a queued timer.
 					shell.idle.acceptWake(mygo.RunOnMain)
@@ -381,6 +407,7 @@ func run() error {
 						history.rememberTarget(ctx)
 						position = library.windowPreferences(ctx).FollowMouse != "false"
 					}
+					desktopTiming("warm native preparation", wakeStarted)
 					mygo.RunOnMain(func() {
 						if !win.IsDestroyed() {
 							if position {

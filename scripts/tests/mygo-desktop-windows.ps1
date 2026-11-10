@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$WakeTiming, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -775,7 +775,9 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     if (![MyGoInput]::SetCursorPos($workArea.Right - 14, $cursorY)) { throw 'Could not set the fixture pointer' }
     $launchPath = $env:Path
     $launchBrowserArguments = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+    $launchTiming = $env:DZC_DESKTOP_TIMING
     try {
+        if ($WakeTiming -or $Capture) { $env:DZC_DESKTOP_TIMING = '1' }
         if ($Capture) {
             $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "$launchBrowserArguments --dzc-ci-inherited-marker".Trim()
             $env:Path = (($launchPath -split ';') | Where-Object {
@@ -788,6 +790,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     } finally {
         $env:Path = $launchPath
         $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $launchBrowserArguments
+        $env:DZC_DESKTOP_TIMING = $launchTiming
     }
     $main = Wait-Until {
         if ($resident.HasExited) { throw 'Resident exited during startup' }
@@ -810,6 +813,37 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             [Math]::Abs($clientRect.right - 670) -le 1 -and [Math]::Abs($clientRect.bottom - 608) -le 1
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+    if ($WakeTiming) {
+        $null = Get-ControlPoint $root $marker
+        foreach ($mode in @('hidden', 'hidden', 'recreated', 'hidden', 'recreated')) {
+            $previousPID = $main.Id
+            if ($mode -eq 'hidden') {
+                Click-Control $main (Get-ControlPoint $root 'Hide')
+                $null = Wait-Until { $main.Refresh(); !$main.HasExited -and $main.MainWindowHandle -eq [IntPtr]::Zero } 'Hide did not retain the live WebView'
+            } else {
+                if (!$main.CloseMainWindow()) { throw 'Cannot close the main WebView for reconstruction timing' }
+                $null = Wait-Until { $main.HasExited } 'Main WebView did not exit before reconstruction'
+            }
+            if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open tray for wake timing' }
+            $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($resident.Id) } 'Wake timing tray menu did not open'
+            $showRect = [MyGoInput+Rect]::new()
+            $popup = [MyGoInput]::ResidentTrayItem($resident.Id, 0, [ref]$showRect)
+            if ($popup -eq [IntPtr]::Zero) { throw 'Wake timing show action missing' }
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            Click-WindowPoint $popup ([Drawing.Point]::new(($showRect.left+$showRect.right)/2, ($showRect.top+$showRect.bottom)/2))
+            $main = Wait-Until {
+                Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
+                    $_.Id -ne $resident.Id -and $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip'
+                } | Select-Object -First 1
+            } 'Tray wake did not show a prepared main window'
+            $visibleMs = $clock.ElapsedMilliseconds
+            if (($mode -eq 'hidden') -ne ($main.Id -eq $previousPID)) { throw 'Wake timing did not exercise the requested lifecycle' }
+            $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+            $null = Get-ControlPoint $root $marker
+            Write-Host "Tray wake timing: $mode visible=${visibleMs}ms content=$($clock.ElapsedMilliseconds)ms"
+        }
+        return
+    }
     if ($DisabledPanels) {
         $quickTitle = [regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34')
         $screenTitle = [regex]::Unescape('DezirClip \u622a\u56fe')
@@ -1276,6 +1310,10 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     }
     throw $failure
 } finally {
+    if ($WakeTiming -or $Capture) {
+        $timingLog = Join-Path $dir.FullName 'desktop.log'
+        if (Test-Path -LiteralPath $timingLog) { Get-Content -LiteralPath $timingLog | Write-Host }
+    }
     try { Update-RecordedServiceExit $startedServiceProcess $serviceCrashReceipt }
     catch { Write-Host ("Service exit receipt failed before cleanup: " + $_.Exception.Message) }
     if ($resident -and !$resident.HasExited) { $resident.Kill(); $resident.WaitForExit() }

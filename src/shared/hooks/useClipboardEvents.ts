@@ -48,9 +48,15 @@ export const useClipboardEvents = ({ onUpdated, onRemoved, onChanged }: UseClipb
       onRemovedRef.current(event.payload);
       if (interrupted) onChangedRef.current();
     });
-    const unlistenChanged = listen("clipboard-changed", () => {
+    const unlistenChanged = listen<{ removedIds?: number[] } | undefined>("clipboard-changed", event => {
       if (disposed) return;
-      captured.invalidate();
+      const interrupted = captured.invalidate();
+      const removed = event.payload?.removedIds;
+      if (Array.isArray(removed) && removed.length > 0 && removed.every(Number.isSafeInteger)) {
+        removed.forEach(id => onRemovedRef.current(id));
+        if (interrupted) onChangedRef.current();
+        return;
+      }
       onChangedRef.current();
     });
     const stopPrivacy = subscribePrivacyInvalidation(scope => { if (scope === "all") captured.invalidate(); });

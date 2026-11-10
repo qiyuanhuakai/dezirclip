@@ -5,6 +5,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { ClipboardEntry } from "../types";
 import { HISTORY_SEARCH_LIMIT } from "../../features/app/constants/pagination";
 import { reuseUnchangedEntries } from "../lib/reuseUnchanged";
+import { createHistoryRequestGate } from "../lib/historyRequestGate";
 import { parseTagFilter } from "../lib/tagQuery";
 import type { TagItemsPage } from "../../features/tag/types";
 
@@ -38,7 +39,10 @@ export const useHistoryFetch = ({
   setIsLoadingMore
 }: UseHistoryFetchOptions) => {
   const loadingRef = useRef(false);
-  const fetchSeqRef = useRef(0);
+  const [requests] = useState(createHistoryRequestGate);
+  const queryKey = JSON.stringify([debouncedSearch, typeFilter, pageSize]);
+  const currentQueryKey = useRef(queryKey);
+  currentQueryKey.current = queryKey;
   const lastRequestedOffsetRef = useRef<number | null>(null);
   const currentOffsetRef = useRef(currentOffset);
   const historyLengthRef = useRef(historyLength);
@@ -47,10 +51,10 @@ export const useHistoryFetch = ({
   useEffect(() => subscribePrivacyInvalidation((scope, hidden) => {
     if (scope === "reveal") return;
     if (!hidden) resumePage.clear();
-    fetchSeqRef.current += 1;
+    requests.invalidate();
     lastRequestedOffsetRef.current = null;
     setAppliedSearch(null);
-  }), [resumePage]);
+  }), [resumePage, requests]);
 
   useEffect(() => {
     currentOffsetRef.current = currentOffset;
@@ -61,11 +65,14 @@ export const useHistoryFetch = ({
   }, [historyLength]);
   const fetchHistory = useCallback(
     async (reset = false, resume?: PageStamp) => {
-      const seq = ++fetchSeqRef.current;
+      if (queryKey !== currentQueryKey.current) return false;
+      const request = requests.begin(queryKey, reset);
+      if (!request) return false;
+      let success = false;
       try {
         if (reset) {
           lastRequestedOffsetRef.current = null;
-          setAppliedSearch(null);
+          if (!requests.hasApplied(queryKey)) setAppliedSearch(null);
         }
 
         const baseOffset = reset
@@ -83,7 +90,7 @@ export const useHistoryFetch = ({
           const page = selectedTag ? await invokePrivacyBound<TagItemsPage>("get_tag_items_page", {
             tag: selectedTag, query: "", sortBy: "time", limit: Math.min(pageSize, 100), offset: baseOffset, expectedEpoch: access.epoch
           }) : { items: [], has_more: false, next_offset: null };
-          if (seq !== fetchSeqRef.current) return false;
+          if (!request.isCurrent(currentQueryKey.current)) return false;
           setHistory(previous => reset ? reuseUnchangedEntries(previous, page.items) : [
             ...previous, ...page.items.filter(item => !previous.some(existing => existing.id === item.id
               && existing.host_instance_id === item.host_instance_id))
@@ -102,7 +109,7 @@ export const useHistoryFetch = ({
             throw e;
           }
 
-          if (seq !== fetchSeqRef.current) return false;
+          if (!request.isCurrent(currentQueryKey.current)) return false;
           // Search results are not paginated; always replace list and stop infinite loading.
           setHistory((prev) => reuseUnchangedEntries(prev, data));
           setCurrentOffset(data.length);
@@ -118,7 +125,7 @@ export const useHistoryFetch = ({
             content_type: typeFilter || undefined
           });
 
-          if (seq !== fetchSeqRef.current) return false;
+          if (!request.isCurrent(currentQueryKey.current)) return false;
 
           if (stamp && !cached) resumePage.save(stamp, key, rawData);
           const hasMoreNow = rawData.length > pageSize;
@@ -150,12 +157,15 @@ export const useHistoryFetch = ({
           }
         }
         setAppliedSearch(debouncedSearch);
+        success = true;
         return true;
       } catch (err) {
-        if (seq !== fetchSeqRef.current) return false;
+        if (!request.isCurrent(currentQueryKey.current)) return false;
         console.error("无法获取历史记录", err);
         setHasMore(false);
         return false;
+      } finally {
+        request.finish(success, currentQueryKey.current);
       }
     },
     [
@@ -163,6 +173,8 @@ export const useHistoryFetch = ({
       typeFilter,
       pageSize,
       resumePage,
+      requests,
+      queryKey,
       setCurrentOffset,
       setHasMore,
       setHistory
@@ -170,7 +182,7 @@ export const useHistoryFetch = ({
   );
 
   const loadMoreHistory = useCallback(async () => {
-    if (loadingRef.current || isLoadingMore || !hasMore || appliedSearch !== debouncedSearch) return;
+    if (loadingRef.current || isLoadingMore || !hasMore || appliedSearch !== debouncedSearch || !requests.canAppend(queryKey)) return;
     if (debouncedSearch.trim() && parseTagFilter(debouncedSearch) === null) return;
 
     const effectiveOffset = Math.min(currentOffsetRef.current, historyLengthRef.current);
@@ -185,7 +197,7 @@ export const useHistoryFetch = ({
       loadingRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [appliedSearch, debouncedSearch, fetchHistory, hasMore, isLoadingMore, setIsLoadingMore]);
+  }, [appliedSearch, debouncedSearch, fetchHistory, hasMore, isLoadingMore, setIsLoadingMore, requests, queryKey]);
 
   return { fetchHistory, loadMoreHistory, appliedSearch };
 };

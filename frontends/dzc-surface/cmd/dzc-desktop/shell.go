@@ -18,6 +18,7 @@ import (
 type DesktopShell struct {
 	resumeSequence  atomic.Uint64
 	resumePending   atomic.Bool
+	resumeStarted   time.Time // UI-thread owned
 	idle            hiddenWebView
 	dock            edgeDock
 	resident        residentBridge

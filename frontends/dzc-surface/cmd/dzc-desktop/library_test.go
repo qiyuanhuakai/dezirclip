@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -78,6 +79,24 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	owner.Close()
 	library := Library{owner}
+	t.Run("target capture does not wait for event poll", func(t *testing.T) {
+		history := History{actions: owner}
+		history.eventMu.Lock()
+		done := make(chan struct{})
+		go func() { history.rememberTarget(ctx); close(done) }()
+		select {
+		case <-done:
+			history.eventMu.Unlock()
+		case <-time.After(2 * time.Second):
+			history.eventMu.Unlock()
+			<-done
+			t.Error("foreground capture waited for the unrelated event stream")
+		}
+		if history.target == nil {
+			t.Fatal("target capture did not open its own authenticated stream")
+		}
+		history.target.Close()
+	})
 	t.Run("resident recording restarts", func(t *testing.T) {
 		callbacks := make(chan func(), 16)
 		recorder := shortcutRecording{post: func(callback func()) { callbacks <- callback }}
@@ -627,6 +646,42 @@ func TestReactLibraryWithService(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Run("concurrent thumbnails and reveals survive snapshot contention", func(t *testing.T) {
+			host, err := owner.DesktopConnection(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer host.Close()
+			var held [4]protocol.BodySnapshot
+			for i := range held {
+				if err := host.Call(ctx, protocol.MethodDesktopSettingsPreferences,
+					protocol.LibraryStateParams{ServiceInstanceId: instance, ExpectedEpoch: epoch}, "BodySnapshot", &held[i]); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var workers sync.WaitGroup
+			for i := range 24 {
+				workers.Go(func() {
+					request := protocol.DesktopEntryParams{Id: id, ServiceInstanceId: instance, ExpectedEpoch: epoch, Reveal: i%2 == 0}
+					if i%2 != 0 {
+						dimension := uint32(384)
+						request.ThumbnailDimension = &dimension
+					}
+					entry, err := library.Entry(ctx, request)
+					if err != nil || !strings.HasPrefix(entry.Content, "data:image/png;base64,") {
+						t.Errorf("read %d lost an available image: %v", i, err)
+					}
+				})
+			}
+			time.Sleep(80 * time.Millisecond)
+			for _, body := range held {
+				var prefs protocol.DesktopPreferences
+				if err := host.ReadSnapshot(ctx, body, "DesktopPreferences", &prefs); err != nil {
+					t.Error(err)
+				}
+			}
+			workers.Wait()
+		})
 		image := protocol.ManualOcrParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Id: id}
 		result, err := library.OcrText(ctx, true, image)
 		if !engine.Available {
@@ -653,7 +708,7 @@ func TestReactLibraryWithService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	history := History{actions: owner, events: fresh}
+	history := History{actions: owner, target: fresh}
 	paste := protocol.DesktopCopyParams{Id: rows[0].Id, ExpectedEpoch: epoch, ServiceInstanceId: instance, Paste: true}
 	// Reproduce a connection loss after the UI had a valid target. Retire
 	// its real Service socket and reconnect before the user's first click.
