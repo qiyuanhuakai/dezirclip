@@ -41,7 +41,7 @@ type Panel struct {
 	search         string
 	list           *ui.ListState
 	viewRows       *model.View
-	pointerRow     int64
+	pointerKnown   bool
 	pointerX       float32
 	pointerY       float32
 	out            chan outgoing
@@ -199,7 +199,7 @@ func (p *Panel) revokeView() {
 
 func (p *Panel) resetList() {
 	p.revokeView()
-	p.pointerRow = 0
+	p.pointerKnown = false
 	// MyGo's previous render tree retains the old ListState's frame pointer.
 	// Replacing the instance leaves that frame valid until MyGo replaces it.
 	p.list = &ui.ListState{}
@@ -680,7 +680,11 @@ func (p *Panel) view(c *ui.Context) {
 	}
 	display := p.model.Display
 	var rows *model.View
-	ui.Column(c.Key("display-"+display)).Fill().Padding(float32(tokens.Padding)).Gap(float32(tokens.Gap)).Radius(float32(tokens.Radius)).Border(1, t.Border).Background(background).Children(func() {
+	panel := ui.Column(c.Key("display-"+display)).Fill().Padding(float32(tokens.Padding)).Gap(float32(tokens.Gap)).Radius(float32(tokens.Radius)).Border(1, t.Border).Background(background)
+	x, y, over := panel.PointerPosition()
+	pointerMoved := over && (!p.pointerKnown || p.pointerX != x || p.pointerY != y)
+	p.pointerKnown, p.pointerX, p.pointerY = over, x, y
+	panel.Children(func() {
 		input := ui.TextInput(c.Key("query-"+p.model.Display), &p.search).Placeholder(p.word("search")).Label(p.word("search")).Height(float32(tokens.SearchHeight)).Radius(float32(tokens.SearchHeight)/2).Background(t.Surface.Alpha(.85)).Padding(6, 14).AutoFocus()
 		input.OnTextKey(func(key ui.TextKey) bool {
 			if key.Key == ui.KeyEnter {
@@ -748,7 +752,6 @@ func (p *Panel) view(c *ui.Context) {
 		listTheme.SurfaceHover = t.Surface.Alpha(.2)
 		c.SetTheme(&listTheme)
 		clickedRow := -1
-		hoveredRow := int64(0)
 		list := ui.List(c.Key("entries-"+display), p.list, rows.Len(&p.model), func(i int) {
 			row, current := rows.Row(&p.model, i)
 			if !current {
@@ -769,13 +772,11 @@ func (p *Panel) view(c *ui.Context) {
 				ui.Text(c, label).FontWeight(tokens.RegularWeight).SingleLine().TextColor(t.Text)
 				ui.Text(c, row.SourceApp).FontSize(float32(tokens.FontSize - 2)).TextColor(t.TextMuted)
 			})
-			if x, y, over := cell.PointerPosition(); over {
-				hoveredRow = row.ID
-				if p.model.CanSelect() && (p.pointerRow != row.ID || p.pointerX != x || p.pointerY != y) && p.model.Selected != i {
+			if _, _, over := cell.PointerPosition(); over {
+				if p.model.CanSelect() && pointerMoved && p.model.Selected != i {
 					p.model.Selected = i
 					c.Invalidate()
 				}
-				p.pointerX, p.pointerY = x, y
 			}
 			if cell.Clicked() && cell.ClickModifiers() == 0 {
 				clickedRow = i
@@ -790,7 +791,6 @@ func (p *Panel) view(c *ui.Context) {
 			}
 		})
 		c.SetTheme(t)
-		p.pointerRow = hoveredRow
 		// Commit after all rows build: paste revokes this frame's metadata.
 		// A click on the already selected row also submits, exactly once on release.
 		if clickedRow >= 0 {

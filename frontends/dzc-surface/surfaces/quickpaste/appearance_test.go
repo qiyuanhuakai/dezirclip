@@ -2,6 +2,7 @@ package quickpaste
 
 import (
 	"encoding/json"
+	"fmt"
 	"image/png"
 	"math"
 	"os"
@@ -138,5 +139,27 @@ func TestSingleClickSubmitsOnceOnRelease(t *testing.T) {
 	frame.Key(0, ui.KeyEnter)
 	if len(p.out) != 0 {
 		t.Fatal("replayed the pending paste")
+	}
+}
+
+func TestKeyboardScrollDoesNotSelectUnderStationaryPointer(t *testing.T) {
+	p := &Panel{mode: "light", locale: "en", opacity: 1}
+	p.model.Visible, p.model.Display, p.model.Session = true, "scroll", "scroll"
+	for i := range 30 {
+		label := fmt.Sprintf("Item %02d", i)
+		p.model.Entries = append(p.model.Entries, protocol.EntrySummary{Id: int64(i + 1), Kind: "text", Preview: &label, PrivacyVisibility: "ordinary"})
+	}
+	frame := ui.NewTester(p.view, 560, 440)
+	r, ok := frame.Find("Item 01")
+	if !ok {
+		t.Fatal("missing row")
+	}
+	frame.Move(r.X+r.W/2, r.Y+r.H/2)
+	for range 20 {
+		frame.Key(0, ui.KeyDown)
+	}
+	frame.Frame()
+	if p.model.Selected != 21 {
+		t.Fatalf("scrolling rows under pointer stole keyboard selection: %d", p.model.Selected)
 	}
 }
