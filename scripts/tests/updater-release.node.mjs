@@ -4,7 +4,7 @@ import { existsSync, readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync
 import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, publishAndSync, syncPublished, promote as promoteFile, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
+import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, publishAndSync, syncPublished, resumeVerifiedDraft, promote as promoteFile, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
 
 const gateNames = ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'];
 const gateReport = (receipt, kind) => ({ schema_version: 1, kind, status: 'passed',
@@ -303,7 +303,9 @@ function withSynchronization(options, body) {
       ({ name, status: 'passed', report_sha256: 'd'.repeat(64), raw_native_sha256: 'e'.repeat(64) })) };
   const invoke = (mode = 'publish-and-sync', runId = '7001', attempt = '1') => {
     writeFileSync(file, JSON.stringify(gate));
-    return (mode === 'sync-published' ? syncPublished : publishAndSync)(version, fixture.config,
+    const synchronize = mode === 'resume-verified-draft' ? resumeVerifiedDraft
+      : mode === 'sync-published' ? syncPublished : publishAndSync;
+    return synchronize(version, fixture.config,
       runId, attempt, file, () => {}, fixture.transport);
   };
   try { return body(fixture, gate, invoke, file); }
@@ -392,6 +394,20 @@ test('only the exact conditional backfill job may be skipped on a push release',
   });
 });
 
+for (const name of ['Full source acceptance / Published Windows memory comparison',
+  'Resume verified publication or synchronize update channel']) {
+  for (const conclusion of ['skipped', 'failure', 'cancelled', null]) {
+    test(`optional publication job ${name} accepts only success or intentional skip: ${conclusion}`, () => {
+      withSynchronization({ version: '0.2.0-alpha.10', running: true }, (fixture, gate, invoke) => {
+        fixture.state.jobs.push({ ...fixture.state.jobs[0], id: 9003, name,
+          status: conclusion === null ? 'in_progress' : 'completed', conclusion });
+        if (conclusion === 'skipped') assert.equal(invoke().status, 'synchronized');
+        else { assert.throws(() => invoke(), /gates/); assert.deepEqual(fixture.state.mutations, []); }
+      });
+    });
+  }
+}
+
 test('an incomplete paginated job listing or drifting gate source blocks every write', () => {
   for (const options of [{ incompleteJobs: true }, { changeRunAt: 2 }]) {
     withSynchronization(options, (fixture, gate, invoke) => {
@@ -460,6 +476,44 @@ test('sync-published permits only the unique publisher failure in an otherwise s
     assert.throws(() => invoke('sync-published')); assert.deepEqual(fixture.state.mutations, []);
   });
 });
+
+test('verified draft recovery retains original signed bytes and accepts only a failed publisher', () => {
+  withSynchronization({ version: '0.2.0-alpha.10' }, (fixture, gate, invoke) => {
+    fixture.state.run.conclusion = 'failure'; fixture.state.jobs.at(-1).conclusion = 'failure';
+    const assets = structuredClone(fixture.state.product.assets);
+    const result = invoke('resume-verified-draft');
+    assert.equal(result.status, 'synchronized');
+    assert.equal(result.workflow.conclusion, 'failure');
+    assert.equal(fixture.state.product.draft, false);
+    assert.deepEqual(fixture.state.product.assets, assets);
+    assert.equal(fixture.active('preview.json').version, '0.2.0-alpha.10');
+  });
+});
+
+for (const [label, change] of [
+  ['public release', fixture => { fixture.state.product.draft = false; }],
+  ['successful run', fixture => { fixture.state.run.conclusion = 'success'; fixture.state.jobs.at(-1).conclusion = 'success'; }],
+  ['running publisher', fixture => {
+    Object.assign(fixture.state.run, { status: 'in_progress', conclusion: null });
+    Object.assign(fixture.state.jobs.at(-1), { status: 'in_progress', conclusion: null });
+  }],
+  ['failed source gate', fixture => { fixture.state.jobs.find(job => job.name === 'Full source acceptance / Frontend').conclusion = 'failure'; }],
+  ['skipped source gate', fixture => { fixture.state.jobs.find(job => job.name === 'Full source acceptance / Frontend').conclusion = 'skipped'; }],
+  ['changed source', fixture => { fixture.state.run.head_sha = 'b'.repeat(40); }],
+  ['replaced asset', fixture => { fixture.state.product.assets[0].updated_at = '2026-10-22T00:00:00Z'; }],
+  ['changed asset bytes', fixture => { fixture.state.product.assets[0].digest = 'sha256:' + '0'.repeat(64); }],
+  ['failed upgrade evidence', (fixture, gate) => { gate.status = 'failed'; }],
+  ['changed upgrade source', (fixture, gate) => { gate.source_revision = 'b'.repeat(40); }],
+]) {
+  test(`verified draft recovery refuses ${label} before any writes`, () => {
+    withSynchronization({ version: '0.2.0-alpha.10' }, (fixture, gate, invoke) => {
+      fixture.state.run.conclusion = 'failure'; fixture.state.jobs.at(-1).conclusion = 'failure';
+      change(fixture, gate);
+      assert.throws(() => invoke('resume-verified-draft'));
+      assert.deepEqual(fixture.state.mutations, []);
+    });
+  });
+}
 
 test('the same channel version is idempotent only for the complete verified manifest', () => {
   withSynchronization({ published: true, channel: 'published' }, (fixture, gate, invoke) => {
