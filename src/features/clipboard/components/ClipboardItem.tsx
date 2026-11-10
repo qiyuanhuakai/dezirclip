@@ -1,6 +1,7 @@
 import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
 import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
 import { derivedCopySource, invoke } from "../../../shared/lib/desktopInvoke";
+import { startNativeFileDrag } from "../../../shared/lib/nativeFileDrag";
 import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -946,7 +947,7 @@ const ClipboardItem = ({
                 if (!access || !item.host_instance_id) return;
                 fileDragGesture.current = true;
                 void hideCompactPreviewGlobal();
-                void invoke("start_file_drag", { id: item.id, expectedHostInstanceId: item.host_instance_id,
+                void startNativeFileDrag({ id: item.id, expectedHostInstanceId: item.host_instance_id,
                     expectedPrivacyEpoch: access.epoch, allowSensitive: isSensitiveEntry(item) })
                     .catch(error => onTransformItemError?.("file_drag", String(error)));
             }}

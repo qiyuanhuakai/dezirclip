@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/egoist/mygo"
 	"golang.org/x/sys/windows"
+	"os"
 	"runtime"
 	"syscall"
 	"unsafe"
@@ -82,6 +83,7 @@ func dragFilesWindows(window *mygo.Window, paths []string) error {
 	}
 	var effect uint32
 	hr, _, _ = dragFileData.Call(window.NativeHandle(), data, 0, 1, uintptr(unsafe.Pointer(&effect)))
+	fmt.Fprintf(os.Stderr, "Native file drag completed: result=0x%x effect=%d\n", hr, effect)
 	runtime.KeepAlive(names)
 	if int32(hr) < 0 {
 		return fmt.Errorf("FileDrag: 0x%x", hr)

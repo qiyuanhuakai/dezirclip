@@ -72,6 +72,7 @@ $panel.Received = $null
 $watch = [Diagnostics.Stopwatch]::StartNew()
 while ($watch.Elapsed.TotalSeconds -lt 3) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 50 }
 if ($panel.Received) { throw 'Cancelled drag unexpectedly delivered files' }
+if (![MyGoInput]::IsWindowVisible($main.MainWindowHandle)) { throw 'Cancelling the native drag hid the main window' }
 if (([Windows.Forms.Clipboard]::GetFileDropList() -join '|') -ne ($files -join '|')) { throw 'Dragging unexpectedly changed the clipboard' }
 $bitmap = [Drawing.Bitmap]::new(240, 160)
 try {

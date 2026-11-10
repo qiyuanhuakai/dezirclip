@@ -210,6 +210,7 @@ jobs:
       - name: Install Linux native fixture dependencies
         if: runner.os == 'Linux'
         run: |
+          sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources
           sudo apt-get update
           sudo apt-get install -y libdbus-1-dev libxcb1-dev libx11-dev libxi-dev libxtst-dev libxrandr-dev libpipewire-0.3-dev libgbm-dev libwebkit2gtk-4.1-0 libayatana-appindicator3-1 python3-gi python3-psutil python3-pil gir1.2-gtk-3.0 gir1.2-atspi-2.0 xvfb dbus-x11 openbox x11-utils gnome-keyring fonts-noto-cjk
       - name: Build Service and native Desktop

@@ -132,6 +132,7 @@ def check(desktop, helpers):
         gesture(row, outside, cancel=True)
         pump(.5)
         assert not received, 'Cancelled drag delivered files'
+        assert helpers['visible_main_window'](process.pid, desktop), 'Cancelling the native drag hid the main window'
         selection = clipboard.wait_for_contents(Gdk.Atom.intern('text/uri-list', False))
         assert selection and selection.get_uris() == uris, 'Dragging changed the clipboard'
         image = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, True, 8, 240, 160)
