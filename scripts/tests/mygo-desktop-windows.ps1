@@ -626,7 +626,9 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         if ($LASTEXITCODE) { throw 'Could not seed the isolated preview preferences' }
     }
     if ($Capture) {
-        $wallpaper = Join-Path $dir.FullName 'background.png'
+        # Resources inside the private profile must use its managed image namespace.
+        $wallpaperDirectory = New-Item -ItemType Directory -Path (Join-Path $dir.FullName 'emoji_favorites') -Force
+        $wallpaper = Join-Path $wallpaperDirectory.FullName 'fav_ca01.png'
         $bitmap = [Drawing.Bitmap]::new(32, 32)
         $graphics = [Drawing.Graphics]::FromImage($bitmap)
         try {
