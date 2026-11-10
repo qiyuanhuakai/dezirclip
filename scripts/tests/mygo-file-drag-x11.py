@@ -1,5 +1,6 @@
 """Actual GTK URI-list transfers in the existing private Xvfb desktop fixture."""
 import ctypes
+import json
 import os
 from pathlib import Path
 import sqlite3
@@ -32,7 +33,13 @@ def check(desktop, helpers):
     target.add(panel)
     targets = [Gtk.TargetEntry.new('text/uri-list', 0, 0)]
     panel.drag_source_set(Gdk.ModifierType.BUTTON1_MASK, targets, Gdk.DragAction.COPY)
-    panel.connect('drag-data-get', lambda widget, context, selection, info, stamp: selection.set_uris(uris))
+    source_events = []
+    panel.connect('drag-begin', lambda *args: source_events.append('begin'))
+    panel.connect('drag-end', lambda *args: source_events.append('end'))
+    def supply_files(widget, context, selection, info, stamp):
+        source_events.append('data')
+        selection.set_uris(uris)
+    panel.connect('drag-data-get', supply_files)
     panel.drag_dest_set(Gtk.DestDefaults.ALL, targets, Gdk.DragAction.COPY)
     received = []
     panel.connect('drag-data-received', lambda widget, context, x, y, selection, info, stamp: received.append(selection.get_uris()))
@@ -64,6 +71,8 @@ def check(desktop, helpers):
             result = predicate()
             if result: return result
         tree = [(name, text[:120]) for _, name, _, text in helpers['mygo_nodes'](Atspi, desktop) if name or text]
+        log = Path(os.environ['DEZIRCLIP_DB_PATH']).parent/'desktop.log'
+        if log.is_file(): print(log.read_text(errors='replace')[-6000:], flush=True)
         raise AssertionError(f'{message}; accessibility={tree}')
 
     def point(label):
@@ -96,6 +105,8 @@ def check(desktop, helpers):
         x11.XSync(display, False)
         pump(.3)
 
+    status = json.loads(subprocess.check_output([cli, 'service', 'start', '--json'], text=True))
+    assert status['capture_owner'], 'File history fixture requires an active capture owner'
     process = subprocess.Popen([desktop])
     try:
         main = wait(lambda: helpers['visible_main_window'](process.pid, desktop), 'Main window missing')
@@ -107,6 +118,7 @@ def check(desktop, helpers):
         print(f'Native file fixture positions: source={outside}, destination={drop}', flush=True)
         pump(.3)
         gesture(outside, drop)
+        print('GTK file source events:', source_events, flush=True)
         row = wait(lambda: point('2 items'), 'Native file drop did not enter history')
         clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         selection = clipboard.wait_for_contents(Gdk.Atom.intern('text/uri-list', False))

@@ -792,7 +792,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Remove-Item Env:TIEZ_DB_PATH -ErrorAction SilentlyContinue
     }
     if ($Capture) { [Windows.Forms.Clipboard]::SetText('Before ' + $marker) }
-    if ($Emoji -or $Elevation -or $Capture) {
+    if ($Emoji -or $Elevation -or $Capture -or $FileDrag) {
         if ($Capture -or ($env:DZC_SERVICE_CRASH_ROOT -and $env:DZC_SERVICE_CRASH_LAUNCH -ne 'cli')) {
             if ($Capture) {
                 $startedServiceProcess = Start-Process -FilePath (Join-Path (Split-Path $exe) 'dzc-service.exe') -ArgumentList ('--database "' + $fixtureDatabase + '"') -WindowStyle Hidden -RedirectStandardError (Join-Path $dir.FullName 'service.log') -PassThru
