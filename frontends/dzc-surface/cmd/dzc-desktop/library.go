@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
@@ -70,6 +71,7 @@ func (l *Library) snapshot(ctx context.Context, method protocol.Method, params a
 }
 
 func (l *Library) readSnapshot(ctx context.Context, method protocol.Method, params any, schema string, result any, epoch uint64) error {
+	started := time.Now()
 	host, err := l.owner.DesktopConnection(ctx)
 	if err != nil {
 		return err
@@ -82,7 +84,9 @@ func (l *Library) readSnapshot(ctx context.Context, method protocol.Method, para
 	if body.State.PrivacyEpoch != epoch {
 		return errors.New("PrivacyEpochChanged")
 	}
-	return host.ReadSnapshot(ctx, body, schema, result)
+	err = host.ReadSnapshot(ctx, body, schema, result)
+	desktopSnapshotTiming(string(method), body.TotalBytes, started)
+	return err
 }
 
 func (l *Library) Page(ctx context.Context, params protocol.DesktopPageParams, epoch uint64) ([]hostedEntry, error) {

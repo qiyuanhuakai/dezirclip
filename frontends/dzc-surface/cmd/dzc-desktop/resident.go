@@ -257,6 +257,12 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 				scanner := bufio.NewScanner(events)
 				for scanner.Scan() {
 					line := scanner.Text()
+					if value, found := strings.CutPrefix(line, "tray-show:"); found {
+						if request, err := strconv.ParseUint(value, 10, 64); err == nil && request > 0 {
+							mygo.RunOnMain(func() { present(line) })
+						}
+						continue
+					}
 					if strings.HasPrefix(line, "{") {
 						var request residentRequest
 						if json.Unmarshal([]byte(line), &request) == nil && request.ID != 0 {
@@ -599,6 +605,19 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 		}
 		toggle = func() { present("toggle") }
 		open := func() { present("show") }
+		trayToggle := func() {
+			if stopping || migrating || moved || relaunch {
+				return
+			}
+			if commands == nil || closing {
+				open()
+				return
+			}
+			if _, err := io.WriteString(commands, "tray-toggle\n"); err != nil {
+				log.Printf("Tray toggle unavailable: %v", err)
+				open()
+			}
+		}
 		startupSettings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
 		restoreNativeAppearance(owner, panel, startupSettings)
 		panel.SetAppearanceRefresher(func() {
@@ -627,9 +646,9 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 				return err
 			}
 			tray = created
-			tray.OnClick(open)
+			tray.OnClick(trayToggle)
 			tray.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-				{Label: "打开剪贴板", Click: func(*mygo.MenuItem, *mygo.Window) { open() }},
+				{Label: "显示／隐藏", Click: func(*mygo.MenuItem, *mygo.Window) { trayToggle() }},
 				{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { present("settings") }},
 				{Label: "退出", Role: mygo.RoleQuit},
 			}))

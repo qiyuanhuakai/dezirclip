@@ -16,10 +16,12 @@ type hiddenWebView struct {
 	timer      *time.Timer
 }
 
-func (idle *hiddenWebView) acceptWake(dispatch func(func())) {
+func (idle *hiddenWebView) acceptWake(dispatch func(func())) uint64 {
 	accepted := make(chan struct{})
-	dispatch(func() { idle.cancel(); close(accepted) })
+	var generation uint64
+	dispatch(func() { idle.cancel(); generation = idle.generation; close(accepted) })
 	<-accepted
+	return generation
 }
 
 func (idle *hiddenWebView) cancel() {
@@ -42,9 +44,11 @@ func (s *DesktopShell) HideMain(ctx context.Context) error {
 func (s *DesktopShell) hideMain(w *mygo.Window) {
 	s.resumePending.Store(false)
 	s.resumeSequence.Add(1)
-	if w.IsDestroyed() || !w.IsVisible() {
+	if w.IsDestroyed() {
 		return
 	}
+	s.dock.hidden = false
+	s.dock.history.targetInvalid.Store(true)
 	s.idle.cancel()
 	generation := s.idle.generation
 	started := time.Now()

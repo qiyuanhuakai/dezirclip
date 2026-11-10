@@ -290,6 +290,12 @@ func TestReactLibraryWithService(t *testing.T) {
 		if err := library.SetSetting(ctx, "app.custom_background", path, epoch); err != nil {
 			t.Fatal(err)
 		}
+		if selected, err := library.BackgroundSelected(ctx, epoch, path); err != nil || !selected {
+			t.Fatalf("selected background authorization: %v %v", selected, err)
+		}
+		if selected, err := library.BackgroundSelected(ctx, epoch, path+".other"); err != nil || selected {
+			t.Fatalf("unselected background authorization: %v %v", selected, err)
+		}
 		data, err := library.Background(ctx, epoch, path)
 		if err != nil || data == nil || *data != "data:image/png;base64,"+base64.StdEncoding.EncodeToString(original.Bytes()) {
 			t.Fatalf("selected background did not roundtrip its pixels: %v", err)
@@ -302,6 +308,9 @@ func TestReactLibraryWithService(t *testing.T) {
 		}
 		if data, err := library.Background(ctx, epoch, path); err != nil || data != nil {
 			t.Fatalf("cleared background was exposed: %v", err)
+		}
+		if selected, err := library.BackgroundSelected(ctx, epoch, path); err != nil || selected {
+			t.Fatalf("cleared background authorization: %v %v", selected, err)
 		}
 	})
 	t.Run("managed favorites", func(t *testing.T) {

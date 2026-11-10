@@ -47,6 +47,9 @@ func (s *DesktopShell) CompleteResume(ctx context.Context, request uint64, insta
 			return
 		}
 		s.resumePending.Store(false)
+		if w.IsMinimized() {
+			w.Restore()
+		}
 		restoreMainPosition(w)
 		s.dock.hidden = false
 		s.dock.shown = time.Now()

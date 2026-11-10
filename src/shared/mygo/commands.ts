@@ -80,6 +80,7 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
     if (!src) throw "CustomBackgroundPending";
     return src;
   },
+  is_custom_background_selected: args => library<boolean>("BackgroundSelected", currentEpoch(), args.expectedPath),
   show_region_selector: () => shellCall("Capture", false, currentEpoch()),
   capture_full_screen: async () => {
     await shellCall("Capture", true, currentEpoch());

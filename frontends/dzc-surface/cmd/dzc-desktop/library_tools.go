@@ -24,6 +24,20 @@ func (l *Library) Background(ctx context.Context, epoch uint64, expected string)
 	return result.Src, err
 }
 
+// Reauthorize a background already held by this WebView without transferring its pixels again.
+func (l *Library) BackgroundSelected(ctx context.Context, epoch uint64, expected string) (bool, error) {
+	var result protocol.DesktopPreferences
+	params := protocol.LibraryStateParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch}
+	if err := l.snapshot(ctx, protocol.MethodDesktopSettingsPreferences, params, "DesktopPreferences", &result, epoch); err != nil {
+		return false, err
+	}
+	var settings map[string]string
+	if err := json.Unmarshal(result.Values, &settings); err != nil {
+		return false, err
+	}
+	return expected != "" && settings["app.custom_background"] == expected, nil
+}
+
 func (l *Library) PreviewBackup(ctx context.Context, epoch uint64, path string) ([]protocol.BackupPreviewRow, error) {
 	var result protocol.BackupPreview
 	params := protocol.BackupPreviewParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path}
