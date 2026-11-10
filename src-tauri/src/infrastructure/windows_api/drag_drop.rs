@@ -30,7 +30,7 @@ use windows::{
             SystemServices::MODIFIERKEYS_FLAGS,
         },
         UI::{
-            Shell::{DragFinish, DragQueryFileW, CFSTR_FILECONTENTS, CFSTR_FILEDESCRIPTORW, HDROP},
+            Shell::{DragQueryFileW, CFSTR_FILECONTENTS, CFSTR_FILEDESCRIPTORW, HDROP},
             WindowsAndMessaging::EnumChildWindows,
         },
     },
@@ -159,11 +159,11 @@ impl EmojiDropTarget {
         Some(bytes)
     }
 
-    unsafe fn iterate_file_paths(data_obj: &IDataObject) -> Option<(Vec<PathBuf>, HDROP)> {
+    unsafe fn iterate_file_paths(data_obj: &IDataObject) -> Option<Vec<PathBuf>> {
         let drop_format = Self::format_etc(CF_HDROP.0, -1, TYMED_HGLOBAL.0 as u32);
 
         match data_obj.GetData(&drop_format) {
-            Ok(medium) => {
+            Ok(mut medium) => {
                 let hdrop = HDROP(medium.u.hGlobal.0 as _);
                 let item_count = DragQueryFileW(hdrop, 0xFFFFFFFF, None);
                 let mut paths = Vec::new();
@@ -176,7 +176,10 @@ impl EmojiDropTarget {
                     paths.push(OsString::from_wide(&path_buf[0..character_count]).into());
                 }
 
-                Some((paths, hdrop))
+                // IDataObject may supply an owner in pUnkForRelease. Releasing
+                // only the HDROP bypasses that ownership contract.
+                ReleaseStgMedium(&mut medium);
+                Some(paths)
             }
             Err(_) => None,
         }
@@ -415,7 +418,7 @@ impl IDropTarget_Impl for EmojiDropTarget_Impl {
 
         let data_obj = pDataObj.as_ref().expect("Received null IDataObject");
 
-        if let Some((paths, hdrop)) = unsafe { EmojiDropTarget::iterate_file_paths(data_obj) } {
+        if let Some(paths) = unsafe { EmojiDropTarget::iterate_file_paths(data_obj) } {
             let paths: Vec<String> = paths
                 .into_iter()
                 .map(|p| p.to_string_lossy().to_string())
@@ -423,7 +426,6 @@ impl IDropTarget_Impl for EmojiDropTarget_Impl {
             if !paths.is_empty() {
                 EmojiDropTarget::emit_file_drop(self.app_handle.as_ref(), paths);
             }
-            unsafe { DragFinish(hdrop) };
         } else {
             let virtual_files = unsafe { EmojiDropTarget::read_virtual_files(data_obj) };
             if !virtual_files.is_empty() {

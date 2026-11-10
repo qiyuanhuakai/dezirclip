@@ -115,7 +115,20 @@ def check(desktop, helpers):
         gesture(row, (120, 160), cancel=True)
         pump(.5)
         assert not received, 'Cancelled drag delivered files'
-        print('Native Linux multi-file copy, Unicode paths, outbound attachment and cancellation passed')
+        selection = clipboard.wait_for_contents(Gdk.Atom.intern('text/uri-list', False))
+        assert selection and selection.get_uris() == uris, 'Dragging changed the clipboard'
+        image = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, True, 8, 240, 160)
+        image.fill(0x6699ffff)
+        clipboard.set_image(image)
+        row = wait(lambda: point('Clipboard Image'), 'Captured image card missing')
+        gesture(row, (120, 160))
+        wait(lambda: received, 'Image card did not export a native file')
+        from urllib.parse import urlparse, unquote
+        assert len(received) == 1 and len(received[0]) == 1
+        export = Path(unquote(urlparse(received[0][0]).path))
+        assert export.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
+        assert clipboard.wait_is_image_available(), 'Dragging must preserve the clipboard'
+        print('Native Linux multi-file copy, Unicode paths, image attachment and cancellation passed')
     finally:
         with helpers['observed_service_cleanup'](cli):
             process.terminate()

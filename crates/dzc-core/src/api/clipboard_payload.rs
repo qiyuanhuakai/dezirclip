@@ -244,7 +244,8 @@ impl HistoryService {
         let permission = permit.clone();
         Ok(ClipboardPayload::Private { payload: Box::new(ClipboardPayload::Files(paths)),
             authorization: crate::ports::ClipboardAuthorization::new(move || owner.privacy()
-                .check_read(&permission, chrono::Utc::now().timestamp_millis()).is_ok()) })
+                .check_read(&permission, chrono::Utc::now().timestamp_millis()).is_ok())
+                .with_native_lease(self.privacy().native_read_lease(permit)?) })
     }
 
     /// A new caller-owned payload has no history identity or history read grant.
@@ -551,6 +552,28 @@ impl HistoryService {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dropped_files_carry_a_native_lease_revoked_by_epoch_changes() {
+        use super::*;
+        use crate::api::{PrivacyAccessIntent, PrivacySessionCommand, SensitiveAccess};
+        let root = std::env::temp_dir().join(format!("dzc-drop-lease-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        {
+            let history = HistoryService::open(&root.join("history.db")).unwrap();
+            let now = chrono::Utc::now().timestamp_millis();
+            let privacy = history.privacy();
+            let permit = privacy.authorize_read(PrivacyAccessIntent::GeneratedCopy, SensitiveAccess::Denied, None, now).unwrap();
+            let paths = vec![root.join("file.txt").to_string_lossy().into_owned()];
+            let ClipboardPayload::Private { authorization, .. } = history.dropped_files_payload_authorized(paths, &permit, now).unwrap() else {
+                panic!("file drop requires revocable native ownership");
+            };
+            let lease = authorization.native_lease().expect("native writer requires a persisted lease");
+            assert!(authorization.is_current() && lease.is_current());
+            privacy.set_session(PrivacySessionCommand::On { duration_ms: None }, now).unwrap();
+            assert!(!authorization.is_current() && !lease.is_current());
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
     use super::*;
     use crate::api::{
         PrivacyAccessIntent, PrivacySessionCommand, SearchRequest, SensitiveAccess, SummaryQuery,

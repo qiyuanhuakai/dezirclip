@@ -72,4 +72,17 @@ $panel.Received = $null
 $watch = [Diagnostics.Stopwatch]::StartNew()
 while ($watch.Elapsed.TotalSeconds -lt 3) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 50 }
 if ($panel.Received) { throw 'Cancelled drag unexpectedly delivered files' }
-Write-Output 'Native Windows multi-file copy, Unicode paths, outbound attachment and cancellation passed'
+if (([Windows.Forms.Clipboard]::GetFileDropList() -join '|') -ne ($files -join '|')) { throw 'Dragging unexpectedly changed the clipboard' }
+$bitmap = [Drawing.Bitmap]::new(240, 160)
+try {
+    $paint = [Drawing.Graphics]::FromImage($bitmap)
+    try { $paint.Clear([Drawing.Color]::CornflowerBlue) } finally { $paint.Dispose() }
+    [Windows.Forms.Clipboard]::SetImage($bitmap)
+} finally { $bitmap.Dispose() }
+$image = Get-ControlPoint $root 'Clipboard Image'
+[FileTransferFixture]::Gesture($image, $target, $false)
+$null = Wait-Until { $panel.Received -and $panel.Received.Length -eq 1 } 'Image card did not export a native file'
+$bytes = [IO.File]::ReadAllBytes($panel.Received[0])
+if ($bytes.Length -lt 8 -or $bytes[0] -ne 137 -or $bytes[1] -ne 80 -or $bytes[2] -ne 78 -or $bytes[3] -ne 71) { throw 'Image export was not PNG' }
+if (![Windows.Forms.Clipboard]::ContainsImage()) { throw 'Dragging the image unexpectedly changed the clipboard' }
+Write-Output 'Native Windows multi-file copy, Unicode paths, image attachment and cancellation passed'
