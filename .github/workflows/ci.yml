@@ -300,7 +300,7 @@ jobs:
             libxtst-dev \
             libdbus-1-dev \
             bubblewrap \
-            xdg-utils
+            xdg-utils fonts-noto-cjk
 
       - name: Install Rust stable
         if: matrix.rust_target == ''
@@ -1212,7 +1212,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev libxtst-dev
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev libxtst-dev fonts-noto-cjk
+          fc-match 'sans-serif:lang=zh-cn'
       - name: Test local protocol client
         working-directory: clients/go
         run: go test ./...
