@@ -7,21 +7,21 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Synchronize a published update channel, or recover original alpha.2 assets
+        description: Synchronize a channel, resume a verified draft, or recover original alpha.2 assets
         required: true
         type: choice
         default: sync-published-channel
-        options: [sync-published-channel, resume-existing-alpha2, publish-mygo-installer]
+        options: [sync-published-channel, resume-verified-draft, resume-existing-alpha2, publish-mygo-installer]
       tag:
-        description: Published version tag to synchronize (sync-published-channel only)
+        description: Original version tag for channel synchronization or verified draft recovery
         required: false
         type: string
       release-run-id:
-        description: Successful original tag-triggered Release run ID (sync-published-channel only)
+        description: Original tag-triggered Release run ID for synchronization or draft recovery
         required: false
         type: string
       release-run-attempt:
-        description: Successful original Release attempt (sync-published-channel only)
+        description: Exact original Release attempt for synchronization or draft recovery
         required: false
         type: string
         default: '1'
@@ -514,8 +514,8 @@ jobs:
           if-no-files-found: error
 
   sync-published-channel:
-    name: Synchronize an already published update channel
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'sync-published-channel'
+    name: Resume verified publication or synchronize update channel
+    if: github.event_name == 'workflow_dispatch' && (inputs.mode == 'sync-published-channel' || inputs.mode == 'resume-verified-draft')
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -533,7 +533,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Download the original successful release upgrade gate
+      - name: Download the original release upgrade gate
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
@@ -541,15 +541,16 @@ jobs:
           name: release-windows-upgrade-gate-attempt-${{ inputs.release-run-attempt }}
           path: ${{ runner.temp }}/updater-release-gates
 
-      - name: Verify the original release gates and synchronize without rebuilding
+      - name: Verify the original release gates and publish or synchronize without rebuilding
         env:
           GH_TOKEN: ${{ github.token }}
           DZC_RELEASE_TAG: ${{ inputs.tag }}
           DZC_RELEASE_RUN_ID: ${{ inputs.release-run-id }}
           DZC_RELEASE_RUN_ATTEMPT: ${{ inputs.release-run-attempt }}
+          DZC_PUBLICATION_MODE: ${{ inputs.mode == 'resume-verified-draft' && 'resume-verified-draft' || 'sync-published' }}
         run: |
           set -euo pipefail
-          node scripts/updater-release.mjs sync-published "$DZC_RELEASE_TAG" "$DZC_RELEASE_RUN_ID" "$DZC_RELEASE_RUN_ATTEMPT" "$RUNNER_TEMP/updater-release-gates/windows-upgrade.json" | tee "$RUNNER_TEMP/updater-channel-sync.json"
+          node scripts/updater-release.mjs "$DZC_PUBLICATION_MODE" "$DZC_RELEASE_TAG" "$DZC_RELEASE_RUN_ID" "$DZC_RELEASE_RUN_ATTEMPT" "$RUNNER_TEMP/updater-release-gates/windows-upgrade.json" | tee "$RUNNER_TEMP/updater-channel-sync.json"
 
       - name: Retain the synchronization receipt
         if: always()

@@ -118,6 +118,8 @@ GitHub Release 资产重命名不提供事务：替换活动索引时可能短�
 
 `publish-only` 保留原语义：只公开经过验签的版本，不推进通道；仅固定 alpha.2 的历史恢复继续使用此路径。正常发布改用 `publish-and-sync`，已公开版本采用 `sync-published-channel` 补同步。资产或来源发生变化时拒绝复用原验收，不重建已公开的同 tag。旧四报告的字段仍见 [alpha.2 发布验收](specs/v0.2-alpha2-release.md)。
 
+若原 tag 发布的全部构建、来源绑定和安装升级验收成功，仅最终发布任务失败，可在修复工具的 PR 合并 `master` 后，通过既有 Release workflow 的 `resume-verified-draft` 模式续发。必须指定原 `tag`、`release-run-id` 和 `release-run-attempt`。入口只接受仍为草稿的版本及已结束、仅 publisher 失败的原始 push run；重新核对原提交、全部必要任务、原安装升级报告、资产 ID/摘要/时间和签名，再公开并同步通道。它不移动标签、不重建或替换任何资产；已公开的版本仍使用 `sync-published-channel`。可选的已发布版本内存对比任务仅在明确 `skipped` 时不阻止发布，失败或取消仍阻止发布。
+
 ## 验证命令与边界
 
 ```powershell

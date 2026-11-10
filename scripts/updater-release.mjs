@@ -305,6 +305,8 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
       || (requiresFullSourceAcceptance(tag) && fullSourceJobs.some(name => !jobs.some(job => job.name === name && job.conclusion === 'success')))
       || jobs.some(job => !(job.status === 'completed' && job.conclusion === 'success')
       && !(['Synchronize an already published update channel', 'Supplement published MyGo installer',
+        'Resume verified publication or synchronize update channel',
+        'Full source acceptance / Published Windows memory comparison',
         'Full source acceptance / Optional Windows Surface comparison or crash diagnostics'].includes(job.name)
         && job.status === 'completed' && job.conclusion === 'skipped')
       && !(repair && job === publishers[0] && job.status === 'completed' && job.conclusion === 'failure')
@@ -409,12 +411,17 @@ function publication(mode, version, config, log, transport, bundle) {
     throw new Error('Release tag or prerelease flag differs from the signed version');
   }
   const commit = client.releaseCommit(tag);
-  const synchronize = mode === 'publish-and-sync' || mode === 'sync-published';
-  const run = synchronize ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, mode === 'sync-published') : null;
+  const resumeDraft = mode === 'resume-verified-draft';
+  const synchronize = mode === 'publish-and-sync' || mode === 'sync-published' || resumeDraft;
+  const repair = mode === 'sync-published' || resumeDraft;
+  const run = synchronize ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, repair) : null;
   const releaseAssets = synchronize ? verifiedReleaseAssets(release, parsed.value, run.asset_cutoff) : null;
   if (synchronize && typeof release.draft !== 'boolean') throw new Error('Release draft state is missing');
   if (mode === 'sync-published' && (release.draft !== false || run.status !== 'completed')) {
     throw new Error('Published-channel synchronization requires a public release and completed eligible original run');
+  }
+  if (resumeDraft && (release.draft !== true || run.status !== 'completed' || run.conclusion !== 'failure')) {
+    throw new Error('Draft recovery requires an unpublished release and completed publisher-only failure');
   }
   if (mode === 'promote' && release.draft) throw new Error('Promotion requires an already published release');
   const signedAssets = [];
@@ -463,7 +470,7 @@ function publication(mode, version, config, log, transport, bundle) {
   }
   // Check asset identity again before making the verified release public.
   const currentRun = synchronize
-    ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, mode === 'sync-published') : null;
+    ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, repair) : null;
   const latest = client.releaseByTag(tag);
   if (latest.id !== release.id || client.releaseCommit(tag) !== commit) throw new Error('Release source changed during verification');
   for (const asset of release.assets) {
@@ -589,6 +596,10 @@ export function syncPublished(version, config, runId, runAttempt, upgradePath, l
   return publication('sync-published', version, config, log, transport, synchronizationBundle(runId, runAttempt, upgradePath));
 }
 
+export function resumeVerifiedDraft(version, config, runId, runAttempt, upgradePath, log = console.log, transport = gh) {
+  return publication('resume-verified-draft', version, config, log, transport, synchronizationBundle(runId, runAttempt, upgradePath));
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const config = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'));
   const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
@@ -599,11 +610,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     if (!process.env.TAURI_SIGNING_PRIVATE_KEY) throw new Error('Release signing secret is not configured');
     console.log('Updater signing configuration is ready.');
   } else if (mode === 'publish-only') publishOnly(version, config);
-  else if (['publish-and-sync', 'sync-published'].includes(mode) && acceptancePath && runAttempt && upgradePath) {
-    const synchronize = mode === 'sync-published' ? syncPublished : publishAndSync;
+  else if (['publish-and-sync', 'sync-published', 'resume-verified-draft'].includes(mode) && acceptancePath && runAttempt && upgradePath) {
+    const synchronize = mode === 'resume-verified-draft' ? resumeVerifiedDraft
+      : mode === 'sync-published' ? syncPublished : publishAndSync;
     console.log(JSON.stringify(synchronize(version, config, acceptancePath, runAttempt, upgradePath, console.error)));
   }
   else if (mode === 'promote' && acceptancePath) {
     promote(version, config, acceptancePath);
-  } else throw new Error('Usage: node scripts/updater-release.mjs preflight|publish-only vVERSION; promote vVERSION ACCEPTANCE.json; publish-and-sync|sync-published vVERSION RUN_ID ATTEMPT WINDOWS_UPGRADE.json');
+  } else throw new Error('Usage: node scripts/updater-release.mjs preflight|publish-only vVERSION; promote vVERSION ACCEPTANCE.json; publish-and-sync|sync-published|resume-verified-draft vVERSION RUN_ID ATTEMPT WINDOWS_UPGRADE.json');
 }
