@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "../lib/desktopInvoke";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { resolveBuiltinTheme } from "../lib/themeRuntime";
@@ -22,6 +22,7 @@ export const useCustomBackground = ({
 }: UseCustomBackgroundOptions) => {
   const reportError = useRef(onError);
   const appliedUrl = useRef<string | null>(null);
+  const [settled, setSettled] = useState<{ background: string; theme: string; privacyGeneration: number | null | undefined } | null>(null);
   reportError.current = onError;
   useEffect(() => () => {
     document.documentElement.style.removeProperty("--custom-bg-image");
@@ -40,6 +41,11 @@ export const useCustomBackground = ({
     let generation = 0;
     let disposed = false;
     let stopBackgroundChanges: UnlistenFn | undefined;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const complete = () => {
+      clearTimeout(deadline);
+      setSettled({ background: customBackground, theme, privacyGeneration });
+    };
     const pendingImages = new Map<string, HTMLImageElement>();
     const cancelPendingImages = () => {
       for (const [url, image] of pendingImages) { image.src = ""; URL.revokeObjectURL(url); }
@@ -54,12 +60,25 @@ export const useCustomBackground = ({
     // MyGo reads the selected image through the authenticated desktop session.
     if (privacyGeneration === null) {
       clearAppliedImage();
+      setSettled(null);
       return;
     }
     const apply = () => {
       const current = ++generation;
+      clearTimeout(deadline);
+      setSettled(null);
       cancelPendingImages();
       if (customBackground && ["mica", "acrylic", "liquid-glass"].includes(resolveBuiltinTheme(theme))) {
+        // A missing/unreadable resource must not hold a hidden window forever.
+        // Retire this read on timeout so it cannot pop in after the fallback shows.
+        deadline = setTimeout(() => {
+          if (disposed || current !== generation) return;
+          generation += 1;
+          cancelPendingImages();
+          clearAppliedImage();
+          complete();
+          reportError.current();
+        }, 5000);
         void invoke<string>("get_custom_background_resource", { expectedPath: customBackground }).then(async src => {
           if (disposed || current !== generation) return;
           const { mime, bytes } = decodeBackgroundImage(src);
@@ -76,14 +95,16 @@ export const useCustomBackground = ({
           appliedUrl.current = url;
           pendingImages.delete(url);
           if (previous) URL.revokeObjectURL(previous);
+          complete();
         }).catch((error: unknown) => {
           if (disposed || current !== generation || error === "CustomBackgroundPending") return;
           cancelPendingImages();
           clearAppliedImage();
+          complete();
           console.warn("Custom background could not be loaded");
           reportError.current();
         });
-      } else clearAppliedImage();
+      } else { clearAppliedImage(); complete(); }
     };
     const stop = subscribeCustomThemes(apply);
     // Selection updates React before save_setting has committed the path. Read
@@ -97,9 +118,12 @@ export const useCustomBackground = ({
     return () => {
       disposed = true;
       generation += 1;
+      clearTimeout(deadline);
       cancelPendingImages();
       stop();
       stopBackgroundChanges?.();
     };
   }, [customBackground, theme, privacyGeneration]);
+  return privacyGeneration !== null && settled !== null && settled.background === customBackground
+    && settled.theme === theme && settled.privacyGeneration === privacyGeneration;
 };

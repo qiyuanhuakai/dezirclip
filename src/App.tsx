@@ -237,17 +237,7 @@ const App = () => {
   const filteredHistory = useFilteredHistory({ history, debouncedSearch, search: debouncedSearch, typeFilter });
   const searchResultsReady = !isComposing && search === debouncedSearch && search === appliedSearch;
   const historyViewActive = !showSettings && !effectiveShowTagManager && !effectiveShowEmojiPanel;
-  const mainResume = useMainWindowResume(settingsLoaded, fetchHistory, historyViewActive);
-  const mainResumePending = mainResume.phase !== "idle" || privacyState.phase !== "ready";
   const [searchFocusRequested, setSearchFocusRequested] = useState(false);
-  useEffect(() => {
-    if (!searchFocusRequested || mainResumePending || !historyViewActive || !showSearchBox) return;
-    const frame = requestAnimationFrame(() => {
-      searchInputRef.current?.focus();
-      setSearchFocusRequested(false);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [searchFocusRequested, mainResumePending, historyViewActive, showSearchBox, searchInputRef]);
 
   const t = useCallback((key: string) => {
     const k = key as keyof typeof translations['zh'];
@@ -366,12 +356,6 @@ const App = () => {
   const refreshAfterResume = useRef(false);
   initialPage.current = { fetchHistory, needed: appliedSearch !== debouncedSearch };
   const listGeneration = privacyListGeneration();
-  useEffect(() => {
-    if (historyViewActive && privacyState.phase === "ready" && mainResume.phase === "idle" && (initialPage.current.needed || refreshAfterResume.current)) {
-      refreshAfterResume.current = false;
-      void initialPage.current.fetchHistory(true);
-    }
-  }, [historyViewActive, privacyState.phase, listGeneration, mainResume.phase]);
 
 
   useDragDegradation();
@@ -511,13 +495,29 @@ const App = () => {
     fontMono
   });
 
-  useMainWindowPaintSignal(settingsLoaded);
-
-  useCustomBackground({ customBackground, customBackgroundOpacity, theme,
+  const customBackgroundReady = useCustomBackground({ customBackground, customBackgroundOpacity, theme,
     privacyGeneration: import.meta.env.MODE === "mygo"
       ? privacyState.phase === "ready" && privacyState.snapshot && !privacyState.pending ? listGeneration : null
       : undefined,
     onError: () => pushToast(t("custom_background_load_failed")) });
+
+  useMainWindowPaintSignal(settingsLoaded && customBackgroundReady);
+  const mainResume = useMainWindowResume(settingsLoaded, fetchHistory, historyViewActive, customBackgroundReady);
+  const mainResumePending = mainResume.phase !== "idle" || privacyState.phase !== "ready";
+  useEffect(() => {
+    if (!searchFocusRequested || mainResumePending || !historyViewActive || !showSearchBox) return;
+    const frame = requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+      setSearchFocusRequested(false);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchFocusRequested, mainResumePending, historyViewActive, showSearchBox, searchInputRef]);
+  useEffect(() => {
+    if (historyViewActive && privacyState.phase === "ready" && mainResume.phase === "idle" && (initialPage.current.needed || refreshAfterResume.current)) {
+      refreshAfterResume.current = false;
+      void initialPage.current.fetchHistory(true);
+    }
+  }, [historyViewActive, privacyState.phase, listGeneration, mainResume.phase]);
 
   useClipboardEvents({
     onUpdated: (updatedItem) => {

@@ -1045,7 +1045,8 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         wait_for(lambda: subprocess.run(['xwininfo', '-id', str(saved_window)], capture_output=True).returncode != 0,
                  'WebView did not close with its background saved')
         shortcut()
-        wait_for(lambda: find_item('Stickers') and painted(), 'New WebView did not paint the saved background')
+        wait_for(lambda: find_item('Stickers'), 'New WebView did not show its prepared history')
+        assert painted(), 'Prepared WebView appeared before its saved background'
         clear_bg = open_appearance('Settings', 'Appearance', 'Clear Background')
         assert atspi.Action.do_action(clear_bg, 0)
         wait_for(lambda: action('Choose Background'), 'Clear did not remove the selected file')

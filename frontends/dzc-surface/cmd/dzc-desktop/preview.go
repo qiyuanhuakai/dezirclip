@@ -142,6 +142,9 @@ func (p *Preview) Select(ctx context.Context, sequence uint64, id int64, state p
 func (a previewAppearance) panel(c *ui.Context) ui.Element {
 	theme := a.theme()
 	background := theme.Background
+	// Tooltip defaults otherwise inherit the transparent root as their text color.
+	theme.Inverse, theme.InverseText = theme.Text, background
+	theme.Inverse.A, theme.InverseText.A = 255, 255
 	theme.Background = background.Alpha(0)
 	c.SetTheme(theme)
 	return ui.Column(c).Fill().Background(background).Radius(max(12, theme.Radius)).Border(1, theme.Border.Alpha(.6)).Padding(10).Gap(6)
@@ -149,14 +152,25 @@ func (a previewAppearance) panel(c *ui.Context) ui.Element {
 
 func previewIcon(c *ui.Context, label string, pin bool) ui.Element {
 	t := c.Theme()
-	return ui.ButtonBase(c).Size(26, 26).Radius(8).Border(1, t.Border.Alpha(.65)).Background(t.Surface.Alpha(.3)).Label(label).Tooltip(label).Draw(func(p *ui.Painter, r ui.Rect) {
+	return ui.ButtonBase(c).Size(26, 26).Radius(8).Border(1, t.Text.Alpha(.2)).Background(t.Surface.Alpha(.65)).Label(label).Tooltip(label).Draw(func(p *ui.Painter, r ui.Rect) {
 		x, y := r.X+13, r.Y+13
 		if pin {
-			p.Stroke(ui.Rect{X: x - 4, Y: y - 7, W: 8, H: 4}, t.Text, 1, 1.3)
-			p.Line(x-2, y-3, x-2, y+1, 1.3, t.Text)
-			p.Line(x+2, y-3, x+2, y+1, 1.3, t.Text)
-			p.Line(x-5, y+2, x+5, y+2, 1.3, t.Text)
-			p.Line(x, y+2, x, y+8, 1.3, t.Text)
+			var outline ui.Path
+			outline.MoveTo(x-4, y-7)
+			outline.LineTo(x+4, y-7)
+			outline.LineTo(x+4, y-5)
+			outline.LineTo(x+2, y-4)
+			outline.LineTo(x+2, y)
+			outline.LineTo(x+5, y+2)
+			outline.LineTo(x+5, y+4)
+			outline.LineTo(x-5, y+4)
+			outline.LineTo(x-5, y+2)
+			outline.LineTo(x-2, y)
+			outline.LineTo(x-2, y-4)
+			outline.LineTo(x-4, y-5)
+			outline.Close()
+			p.StrokePath(&outline, 1.4, t.Text)
+			p.Line(x, y+4, x, y+8, 1.4, t.Text)
 		} else {
 			var cross ui.Path
 			cross.MoveTo(x-4, y-4)

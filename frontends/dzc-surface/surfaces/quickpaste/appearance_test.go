@@ -44,13 +44,13 @@ func TestPanelVisualFixture(t *testing.T) {
 	}
 }
 
-func TestPanelPaintsSurfaceOpacityOnce(t *testing.T) {
+func TestPanelKeepsReadableOpacityAndTransparentCorners(t *testing.T) {
 	for _, opacity := range []float64{0, .65, 1} {
 		panel := &Panel{mode: "light", locale: "en", opacity: opacity}
 		panel.model.Visible = true
 		frame := ui.NewTester(panel.view, 560, 440).Image()
 		got := frame.RGBAAt(550, 220).A
-		if math.Abs(float64(got)-opacity*255) > 2 {
+		if math.Abs(float64(got)-max(.92, opacity)*255) > 2 {
 			t.Fatalf("opacity %v painted alpha %d", opacity, got)
 		}
 		if corner := frame.RGBAAt(0, 0).A; corner != 0 {

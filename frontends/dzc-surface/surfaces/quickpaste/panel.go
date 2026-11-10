@@ -656,13 +656,16 @@ func (p *Panel) view(c *ui.Context) {
 	if p.mode == "dark" {
 		t = ui.DarkTheme()
 	}
-	t.Background, t.Surface, t.Text, t.TextMuted = ui.Hex(tokens.Background).Alpha(float32(p.opacity)), ui.Hex(tokens.Panel), ui.Hex(tokens.Text), ui.Hex(tokens.Muted)
+	// Native panels have no CSS backdrop blur to separate text from the desktop.
+	t.Background, t.Surface, t.Text, t.TextMuted = ui.Hex(tokens.Background).Alpha(float32(max(.92, p.opacity))), ui.Hex(tokens.Panel), ui.Hex(tokens.Text), ui.Hex(tokens.Muted)
 	t.Accent, t.Selection, t.Border = ui.Hex(tokens.Accent), ui.Hex(tokens.Selected), ui.Hex(tokens.Border)
 	t.Radius, t.FontSize = float32(tokens.Radius), float32(tokens.FontSize)
 	if len(tokens.FontFamilies) > 0 {
 		t.Font = tokens.FontFamilies[0]
 	}
 	background := t.Background
+	t.Inverse, t.InverseText = t.Text, background
+	t.Inverse.A, t.InverseText.A = 255, 255
 	t.Background = background.Alpha(0)
 	c.SetTheme(t)
 	if !p.model.Visible {
@@ -671,7 +674,7 @@ func (p *Panel) view(c *ui.Context) {
 	display := p.model.Display
 	var rows *model.View
 	ui.Column(c.Key("display-"+display)).Fill().Padding(float32(tokens.Padding)).Gap(float32(tokens.Gap)).Radius(float32(tokens.Radius)).Border(1, t.Border).Background(background).Children(func() {
-		input := ui.TextInput(c.Key("query-"+p.model.Display), &p.search).Placeholder(p.word("search")).Label(p.word("search")).Height(float32(tokens.SearchHeight)).Radius(float32(tokens.SearchHeight)/2).Background(t.Surface.Alpha(.25)).Padding(6, 14).AutoFocus()
+		input := ui.TextInput(c.Key("query-"+p.model.Display), &p.search).Placeholder(p.word("search")).Label(p.word("search")).Height(float32(tokens.SearchHeight)).Radius(float32(tokens.SearchHeight)/2).Background(t.Surface.Alpha(.85)).Padding(6, 14).AutoFocus()
 		input.OnTextKey(func(key ui.TextKey) bool {
 			if key.Key == ui.KeyEnter {
 				p.diagnosticRecord(map[string]any{"stage": "enter_gate", "visible": p.model.Visible,

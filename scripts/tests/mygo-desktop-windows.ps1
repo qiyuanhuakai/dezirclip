@@ -626,6 +626,20 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         if ($LASTEXITCODE) { throw 'Could not seed the isolated preview preferences' }
     }
     if ($Capture) {
+        $wallpaper = Join-Path $dir.FullName 'background.png'
+        $bitmap = [Drawing.Bitmap]::new(32, 32)
+        $graphics = [Drawing.Graphics]::FromImage($bitmap)
+        try {
+            $graphics.Clear([Drawing.Color]::Magenta)
+            $bitmap.Save($wallpaper, [Drawing.Imaging.ImageFormat]::Png)
+        } finally { $graphics.Dispose(); $bitmap.Dispose() }
+        @'
+import os, sqlite3, sys
+with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+    db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',
+                   [('app.custom_background',sys.argv[1]), ('app.custom_background_opacity','100'), ('app.surface_opacity','20')])
+'@ | python - $wallpaper
+        if ($LASTEXITCODE) { throw 'Could not seed the isolated custom background' }
         $fixtureEditor = Join-Path $dir.FullName 'Fixture Editor.exe'
         Add-Type -OutputAssembly $fixtureEditor -OutputType WindowsApplication -TypeDefinition @'
 using System.IO;
@@ -1032,9 +1046,29 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         return
     }
     if ($Capture) {
+        function Assert-CustomBackgroundPresent($window) {
+            $frame = [MyGoInput+Rect]::new()
+            if (![MyGoInput]::GetWindowRect($window.MainWindowHandle, [ref]$frame)) { throw 'Cannot inspect the visible main window' }
+            $bitmap = [Drawing.Bitmap]::new($frame.right-$frame.left, $frame.bottom-$frame.top)
+            $graphics = [Drawing.Graphics]::FromImage($bitmap)
+            try {
+                $graphics.CopyFromScreen($frame.left, $frame.top, 0, 0, $bitmap.Size)
+                $hits = 0
+                for ($y = 24; $y -lt $bitmap.Height-24; $y += 24) {
+                    for ($x = 24; $x -lt $bitmap.Width-24; $x += 24) {
+                        $pixel = $bitmap.GetPixel($x, $y)
+                        if ([Math]::Min([int]$pixel.R-$pixel.G, [int]$pixel.B-$pixel.G) -gt 60) { $hits++ }
+                    }
+                }
+                if ($hits -lt 20) { throw "Visible main window lacks its custom background: $hits colored samples" }
+            } finally { $graphics.Dispose(); $bitmap.Dispose() }
+        }
+        Assert-CustomBackgroundPresent $main
         Test-TransparentPreview $root $main $marker
         Test-ExternalEdit $root $main $marker
         $main = Test-OcrAfterReopen $main $resident $exe $form $edit
+        Assert-CustomBackgroundPresent $main
+        Write-Output 'Verified custom background is present at the initial visible-window check and after WebView recreation'
         $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
         Click-Control $main (Get-ControlPoint $root 'Settings')
         $softwareFlag = '(?:^|\s)--disable-gpu(?:\s|$)'
