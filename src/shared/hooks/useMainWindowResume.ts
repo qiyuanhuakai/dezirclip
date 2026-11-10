@@ -8,6 +8,7 @@ import type { PageStamp } from "../lib/resumePage";
 export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (reset?: boolean, stamp?: PageStamp) => Promise<boolean>, historyViewActive: boolean, appearanceReady: boolean) {
   const [phase, setPhase] = useState<"idle" | "preparing" | "prepared" | "failed">("preparing");
   const [prepared, setPrepared] = useState<PreparedResume | null>(null);
+  const completing = useRef<PreparedResume | null>(null);
   const fetchRef = useRef(fetchHistory);
   fetchRef.current = fetchHistory;
   const historyView = useRef(historyViewActive);
@@ -99,7 +100,6 @@ export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (rese
   useLayoutEffect(() => {
     if (!prepared || phase !== "prepared" || !appearanceReady) return;
     // The masked page has committed. A hidden virtualizer may not measure its first row until show.
-    let disposed = false;
     const failed = () => { cancelRef.current(); nativeActiveRef.current = false; visibleRecoveryPending.current = false; setPhase("failed"); };
     if (!prepared.isRequestCurrent()) return;
     if (!prepared.isCurrent()) { failed(); return; }
@@ -109,15 +109,18 @@ export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (rese
       return;
     }
     // History and decoded background are committed before the native show ACK.
+    // A later appearance refresh must neither cancel this ACK nor replay it.
+    // Request cancellation/unmount still invalidates prepared.isRequestCurrent().
+    if (completing.current === prepared) return;
+    completing.current = prepared;
     void invoke<boolean>("complete_main_window_resume", {
       requestId: prepared.requestId,
       expectedHostInstanceId: prepared.authority.instanceId,
       expectedEpoch: prepared.authority.epoch
     }).then(accepted => {
-      if (disposed || !prepared.isRequestCurrent()) return;
+      if (!prepared.isRequestCurrent()) return;
       if (accepted && prepared.isCurrent()) { nativeActiveRef.current = false; setPhase("idle"); } else failed();
-    }, () => { if (!disposed && prepared.isRequestCurrent()) failed(); });
-    return () => { disposed = true; };
+    }, () => { if (prepared.isRequestCurrent()) failed(); });
   }, [prepared, phase, appearanceReady]);
   return { phase, mode: prepared?.requestId === null ? "already_visible" : "before_show", retry: () => retryRef.current() };
 }
