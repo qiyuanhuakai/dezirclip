@@ -119,7 +119,7 @@ def check(desktop, helpers):
         pump(.3)
         gesture(outside, drop)
         print('GTK file source events:', source_events, flush=True)
-        row = wait(lambda: point('2 items'), 'Native file drop did not enter history')
+        row = wait(lambda: point('drag-image.png'), 'Native file drop did not enter history')
         clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         selection = clipboard.wait_for_contents(Gdk.Atom.intern('text/uri-list', False))
         assert selection and selection.get_uris() == uris, 'Drop must copy original file URIs'

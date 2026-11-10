@@ -63,7 +63,7 @@ $drop = [Drawing.Point]::new($frame.left+330, $frame.top+300)
 $null = Wait-Until { [Windows.Forms.Clipboard]::ContainsFileDropList() -and
     ([Windows.Forms.Clipboard]::GetFileDropList() -join '|') -eq ($files -join '|') } 'Native drop did not copy both original files'
 $panel.Source = $null
-$row = Get-ControlPoint $root '2 items'
+$row = Get-ControlPoint $root 'drag-image.png'
 [FileTransferFixture]::Gesture($row, $target, $false)
 $null = Wait-Until { $panel.Received -and ($panel.Received -join '|') -eq ($files -join '|') } 'Native card drag did not attach both files'
 if ([IO.File]::ReadAllText($files[0]) -ne 'Native copy fixture' -or !(Test-Path -LiteralPath $files[1])) { throw 'Native drag modified a source file' }

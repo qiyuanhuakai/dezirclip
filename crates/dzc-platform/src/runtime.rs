@@ -422,6 +422,7 @@ mod tests {
         let file = runtime.join("native drop 文件.txt");
         std::fs::write(&file, b"original file").unwrap();
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+        history.privacy().set_session(PrivacySessionCommand::Off, now).unwrap();
         let permit = history.privacy().authorize_read(PrivacyAccessIntent::GeneratedCopy, SensitiveAccess::Denied, None, now).unwrap();
         let make_payload = || history.dropped_files_payload_authorized(vec![file.to_string_lossy().into_owned()], &permit, now).unwrap();
         let stale = make_payload();
