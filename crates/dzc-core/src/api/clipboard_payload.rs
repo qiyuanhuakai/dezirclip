@@ -232,6 +232,21 @@ impl HistoryService {
         Ok(result)
     }
 
+    /// Native file drops supply new local paths, never a history read identity.
+    pub fn dropped_files_payload_authorized(&self, paths: Vec<String>, permit: &PrivacyReadPermit, now_ms: i64) -> PrivacyResult<ClipboardPayload> {
+        permit.require_generated()?;
+        self.privacy().check_read(permit, now_ms)?;
+        if paths.is_empty() || paths.len() > 256 || paths.iter().any(|path| !std::path::Path::new(path).is_absolute()
+            || path.contains(['\0', '\r', '\n'])) {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
+        let owner = self.clone();
+        let permission = permit.clone();
+        Ok(ClipboardPayload::Private { payload: Box::new(ClipboardPayload::Files(paths)),
+            authorization: crate::ports::ClipboardAuthorization::new(move || owner.privacy()
+                .check_read(&permission, chrono::Utc::now().timestamp_millis()).is_ok()) })
+    }
+
     /// A new caller-owned payload has no history identity or history read grant.
     pub fn generated_clipboard_payload_authorized(
         &self,

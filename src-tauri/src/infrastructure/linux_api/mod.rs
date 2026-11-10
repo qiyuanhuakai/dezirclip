@@ -1,4 +1,5 @@
 pub mod apps;
+pub mod file_drag;
 pub mod clipboard;
 pub mod clipboard_listener;
 pub mod input_grab;

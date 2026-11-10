@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$WakeTiming, [switch]$WakeBackground, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
+﻿param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$FileDrag, [switch]$WakeTiming, [switch]$WakeBackground, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -671,6 +671,10 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
                    [("app.hotkey", "Ctrl+Shift+F8"), ("app.silent_start", "false"), ("app.emoji_panel_enabled", "true"), ("app.language","en"), ("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false"), ("app.window_width","670"), ("app.window_height","608")])
 '@ | python -
     if ($LASTEXITCODE) { throw 'Could not seed isolated window appearance' }
+    if ($FileDrag) {
+        'import os, sqlite3; db=sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]); db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", ("app.window_pinned","true")); db.commit()' | python -
+        if ($LASTEXITCODE) { throw 'Could not pin native drag fixture' }
+    }
     if ($DisabledPanels) {
         @'
 import os, sqlite3
@@ -890,6 +894,10 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             [Math]::Abs($clientRect.right - 670) -le 1 -and [Math]::Abs($clientRect.bottom - 608) -le 1
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+    if ($FileDrag) {
+        . (Join-Path $PSScriptRoot 'mygo-file-drag-windows.ps1')
+        return
+    }
     if ($WakeTiming) {
         function Invoke-TrayToggle([bool]$Left) {
             if ($Left) {

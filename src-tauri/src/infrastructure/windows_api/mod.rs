@@ -4,6 +4,7 @@ pub mod process_memory;
 pub use dzc_platform::windows_input as paste;
 #[cfg(windows)]
 pub mod drag_drop;
+pub mod file_drag;
 pub mod webview_environment;
 pub mod win_clipboard;
 pub mod window_tracker;

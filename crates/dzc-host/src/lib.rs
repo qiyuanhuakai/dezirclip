@@ -15,6 +15,7 @@ mod backup;
 mod tools;
 mod themes;
 mod desktop_actions;
+mod file_transfer;
 mod desktop_policy;
 mod hotkey;
 mod recording;

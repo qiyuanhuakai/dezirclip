@@ -277,6 +277,8 @@ fn main() {
             app::commands::list_system_fonts,
             app::commands::save_emoji_favorite_data_url,
             app::commands::get_file_size,
+            app::commands::file_transfer_cmd::copy_dropped_files,
+            app::commands::file_transfer_cmd::start_file_drag,
             app::commands::show_quick_paste,
             app::commands::hide_quick_paste,
             app::commands::is_quick_paste_visible,

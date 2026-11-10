@@ -261,6 +261,7 @@ const ClipboardItem = ({
     const displayHtml = previewContent?.html_content ?? item.html_content;
     const tagInputRef = useRef<HTMLInputElement>(null);
     const itemRootRef = useRef<HTMLDivElement>(null);
+    const fileDragGesture = useRef(false);
     const keyboardPreviewRef = useRef(previewFromKeyboard);
     keyboardPreviewRef.current = previewFromKeyboard;
     const hiddenRef = useRef(isSensitiveHidden);
@@ -930,6 +931,21 @@ const ClipboardItem = ({
             ref={itemRootRef}
             id={id}
             data-test-clipboard-item
+            draggable={!isSensitiveHidden && ["image", "file", "files", "video"].includes(item.content_type)}
+            onDragStartCapture={event => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (isSensitiveHidden || !(event.target instanceof Element)
+                    || event.target.closest("button, input, textarea, .drag-handle")
+                    || !["image", "file", "files", "video"].includes(item.content_type)) return;
+                const access = beginPrivacyAccess();
+                if (!access || !item.host_instance_id) return;
+                fileDragGesture.current = true;
+                void hideCompactPreviewGlobal();
+                void invoke("start_file_drag", { id: item.id, expectedHostInstanceId: item.host_instance_id,
+                    expectedPrivacyEpoch: access.epoch, allowSensitive: isSensitiveEntry(item) })
+                    .catch(error => onTransformItemError?.("file_drag", String(error)));
+            }}
             layout={!disableLayout}
             initial={false}
             animate={disableLayout ? undefined : { marginBottom: 0 }}
@@ -937,6 +953,7 @@ const ClipboardItem = ({
             transition={disableLayout ? undefined : { duration: 0.1 }}
             className={`history-item ${isSelected ? "selected" : ""} ${compactMode ? "compact" : ""} ${item.is_pinned ? "pinned" : ""} ${className || ''}`}
             onMouseDown={(e) => {
+                fileDragGesture.current = false;
                 if (!windowPinned) return;
                 const target = e.target as HTMLElement;
                 if (target.closest('button, input, textarea, [role="button"], .drag-handle')) {
@@ -948,6 +965,7 @@ const ClipboardItem = ({
                 // Removed e.preventDefault() to allow blur of search box
             }}
             onClick={(e) => {
+                if (fileDragGesture.current) { e.preventDefault(); e.stopPropagation(); return; }
                 const target = e.target as HTMLElement;
                 if (target.closest('button') || target.closest('input') || target.closest('textarea')) {
                     return;

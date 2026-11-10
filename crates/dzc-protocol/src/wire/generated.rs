@@ -558,6 +558,10 @@ pub enum Method {
     DesktopAppearanceBackground,
     #[serde(rename = "desktop.history.open")]
     DesktopHistoryOpen,
+    #[serde(rename = "desktop.files.drop")]
+    DesktopFilesDrop,
+    #[serde(rename = "desktop.files.drag")]
+    DesktopFilesDrag,
     #[serde(rename = "desktop.applications.select")]
     DesktopApplicationsSelect,
     #[serde(rename = "desktop.window.target")]
@@ -871,6 +875,29 @@ pub struct EventsResult {
     pub events: Vec<Event>,
     pub state: RuntimeState,
     pub resync_required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileDropParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileDragParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub id: i64,
+    pub reveal: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileDragResult {
+    pub paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

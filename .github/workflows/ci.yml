@@ -507,6 +507,7 @@ jobs:
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --paste-hotkeys
           DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --middle-paste-hotkeys
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --reset-settings
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --file-drag
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --move-profile
 
       - name: Verify shared MyGo WebView2 paste into an independent Windows editor
@@ -515,6 +516,7 @@ jobs:
         run: |
           Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
+          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -FileDrag
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -WakeTiming
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -WakeTiming -WakeBackground
 
