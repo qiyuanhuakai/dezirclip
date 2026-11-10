@@ -6,6 +6,7 @@ import type { TagInfo, TagItemsPage, TagSort } from '../types';
 import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
+import { reuseUnchangedEntries } from '../../../shared/lib/reuseUnchanged';
 
 const EMPTY_PAGE: TagItemsPage = { items: [], total: 0, has_more: false, next_offset: null };
 const PAGE_SIZE = 60;
@@ -42,8 +43,9 @@ export function useTagLibrary() {
     requestState.current = { selectedTag, debouncedQuery, sortBy, loading, error };
 
     const publishPage = useCallback((next: TagItemsPage) => {
-        pageRef.current = next;
-        setPage(next);
+        const reconciled = { ...next, items: reuseUnchangedEntries(pageRef.current.items, next.items) };
+        pageRef.current = reconciled;
+        setPage(reconciled);
     }, []);
 
     const invalidatePage = useCallback(() => {

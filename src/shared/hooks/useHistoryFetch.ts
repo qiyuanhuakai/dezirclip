@@ -65,7 +65,7 @@ export const useHistoryFetch = ({
       try {
         if (reset) {
           lastRequestedOffsetRef.current = null;
-          setAppliedSearch(null);
+          setAppliedSearch(previous => previous === debouncedSearch ? previous : null);
         }
 
         const baseOffset = reset

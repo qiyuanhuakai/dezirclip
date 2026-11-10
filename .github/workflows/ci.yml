@@ -514,7 +514,8 @@ jobs:
         shell: powershell
         run: |
           Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
-            ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
+          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
+          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -WakeTiming
 
       - name: Verify repeated MyGo emoji paste and Windows Service startup
         if: runner.os == 'Windows' && matrix.can_test && !inputs.windows_service_crash_stacks

@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"time"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
@@ -65,6 +64,12 @@ func (l *Library) SetPrivacyHotkey(ctx context.Context, hotkey string) (string, 
 
 // The descriptor and its chunks must be read on the same authenticated stream.
 func (l *Library) snapshot(ctx context.Context, method protocol.Method, params any, schema string, result any, epoch uint64) error {
+	return readLibrarySnapshot(ctx, func(ctx context.Context) error {
+		return l.readSnapshot(ctx, method, params, schema, result, epoch)
+	})
+}
+
+func (l *Library) readSnapshot(ctx context.Context, method protocol.Method, params any, schema string, result any, epoch uint64) error {
 	host, err := l.owner.DesktopConnection(ctx)
 	if err != nil {
 		return err
@@ -285,22 +290,8 @@ func (l *Library) Preferences(ctx context.Context) (json.RawMessage, error) {
 	}
 	params := protocol.LibraryStateParams{ServiceInstanceId: status.State.ServiceInstanceId, ExpectedEpoch: status.State.PrivacyEpoch}
 	var preferences protocol.DesktopPreferences
-	// A burst of settings reads during WebView startup can fill all four Host snapshots.
-	for delay := 20 * time.Millisecond; ; delay *= 2 {
-		err := l.snapshot(ctx, protocol.MethodDesktopSettingsPreferences, params, "DesktopPreferences", &preferences, params.ExpectedEpoch)
-		if err == nil {
-			return preferences.Values, nil
-		}
-		var remote *client.RemoteError
-		if !errors.As(err, &remote) || remote.Code != protocol.WireErrorCodeBusy || delay > 160*time.Millisecond {
-			return nil, err
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(delay):
-		}
-	}
+	err = l.snapshot(ctx, protocol.MethodDesktopSettingsPreferences, params, "DesktopPreferences", &preferences, params.ExpectedEpoch)
+	return preferences.Values, err
 }
 
 func (l *Library) PasteQueue(ctx context.Context, epoch uint64) ([]int64, error) {
