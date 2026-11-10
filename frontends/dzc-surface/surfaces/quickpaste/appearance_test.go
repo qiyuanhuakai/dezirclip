@@ -1,6 +1,7 @@
 package quickpaste
 
 import (
+	"encoding/json"
 	"image/png"
 	"math"
 	"os"
@@ -56,5 +57,86 @@ func TestPanelKeepsReadableOpacityAndTransparentCorners(t *testing.T) {
 		if corner := frame.RGBAAt(0, 0).A; corner != 0 {
 			t.Fatalf("rounded panel left an opaque root corner: %d", corner)
 		}
+	}
+}
+
+func TestPointerSelectionLeavesStationaryPointerOutOfKeyboardNavigation(t *testing.T) {
+	p := &Panel{mode: "light", locale: "en", opacity: 1}
+	p.model.Visible, p.model.Display, p.model.Session = true, "pointer", "pointer"
+	for i, label := range []string{"First item", "Second item", "Third item"} {
+		p.model.Entries = append(p.model.Entries, protocol.EntrySummary{Id: int64(i + 1), Kind: "text", Preview: &label, PrivacyVisibility: "ordinary"})
+	}
+	frame := ui.NewTester(p.view, 560, 440)
+	r, ok := frame.Find("Second item")
+	if !ok {
+		t.Fatal("missing second row")
+	}
+	x, y := r.X+r.W/2, r.Y+r.H/2
+	frame.Move(x, y)
+	if p.model.Selected != 1 {
+		t.Fatalf("hover selected %d", p.model.Selected)
+	}
+	frame.Key(0, ui.KeyDown)
+	frame.Frame()
+	if p.model.Selected != 2 {
+		t.Fatalf("stationary pointer overrode keyboard: %d", p.model.Selected)
+	}
+	frame.Move(x+1, y)
+	if p.model.Selected != 1 {
+		t.Fatalf("pointer movement did not restore hover selection: %d", p.model.Selected)
+	}
+	if p.model.PendingAction != "" {
+		t.Fatal("hover submitted a paste")
+	}
+	p.model.PendingAction = "in-flight"
+	r, _ = frame.Find("First item")
+	frame.Move(r.X+r.W/2, r.Y+r.H/2)
+	if p.model.Selected != 1 {
+		t.Fatal("pointer changed the in-flight selection")
+	}
+}
+
+func TestSingleClickSubmitsOnceOnRelease(t *testing.T) {
+	p := &Panel{mode: "light", locale: "en", opacity: 1, out: make(chan outgoing, 4)}
+	p.model.Visible, p.model.Display, p.model.Session = true, "pointer", "pointer"
+	for i, label := range []string{"First item", "Second item"} {
+		p.model.Entries = append(p.model.Entries, protocol.EntrySummary{Id: int64(i + 1), Kind: "text", Preview: &label, PrivacyVisibility: "ordinary"})
+	}
+	t.Cleanup(func() {
+		if p.actionDeadline != nil {
+			p.actionDeadline.Stop()
+		}
+		for len(p.out) > 0 {
+			(<-p.out).done <- nil
+		}
+	})
+	frame := ui.NewTester(p.view, 560, 440)
+	r, ok := frame.Find("Second item")
+	if !ok {
+		t.Fatal("missing second row")
+	}
+	x, y := r.X+r.W/2, r.Y+r.H/2
+	frame.Move(x, y)
+	frame.Press(x, y)
+	if len(p.out) != 0 {
+		t.Fatal("submitted before pointer release")
+	}
+	frame.Release(x, y)
+	if len(p.out) != 1 {
+		t.Fatalf("single click emitted %d actions", len(p.out))
+	}
+	action := <-p.out
+	action.done <- nil
+	var paste protocol.SurfacePaste
+	if err := json.Unmarshal(action.message.Payload, &paste); err != nil {
+		t.Fatal(err)
+	}
+	if action.message.Type != protocol.SurfaceControlTypePaste || paste.EntryId != 2 {
+		t.Fatalf("wrong action: %+v", action.message)
+	}
+	frame.ClickAt(x, y)
+	frame.Key(0, ui.KeyEnter)
+	if len(p.out) != 0 {
+		t.Fatal("replayed the pending paste")
 	}
 }

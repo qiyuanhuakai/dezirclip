@@ -41,6 +41,9 @@ type Panel struct {
 	search         string
 	list           *ui.ListState
 	viewRows       *model.View
+	pointerRow     int64
+	pointerX       float32
+	pointerY       float32
 	out            chan outgoing
 	sequence       uint64
 	requests       map[string]bool
@@ -170,6 +173,9 @@ func (p *Panel) send(id string, kind protocol.SurfaceControlType, payload any, a
 	go func() {
 		select {
 		case err := <-next.done:
+			if err == nil && after == nil {
+				return
+			}
 			p.window.Update(func() {
 				if err != nil {
 					p.stopLocal()
@@ -193,6 +199,7 @@ func (p *Panel) revokeView() {
 
 func (p *Panel) resetList() {
 	p.revokeView()
+	p.pointerRow = 0
 	// MyGo's previous render tree retains the old ListState's frame pointer.
 	// Replacing the instance leaves that frame valid until MyGo replaces it.
 	p.list = &ui.ListState{}
@@ -740,6 +747,8 @@ func (p *Panel) view(c *ui.Context) {
 		listTheme.Accent, listTheme.AccentText = t.Selection.Alpha(.5), t.Text
 		listTheme.SurfaceHover = t.Surface.Alpha(.2)
 		c.SetTheme(&listTheme)
+		clickedRow := -1
+		hoveredRow := int64(0)
 		list := ui.List(c.Key("entries-"+display), p.list, rows.Len(&p.model), func(i int) {
 			row, current := rows.Row(&p.model, i)
 			if !current {
@@ -756,10 +765,21 @@ func (p *Panel) view(c *ui.Context) {
 					label = p.word("link")
 				}
 			}
-			ui.Column(c).Height(float32(tokens.RowHeight)).Padding(6, 12).Gap(3).BorderWidth(0, 0, 1, 0).BorderColor(t.Border.Alpha(.35)).Children(func() {
+			cell := ui.Column(c).Height(float32(tokens.RowHeight)).Padding(6, 12).Gap(3).BorderWidth(0, 0, 1, 0).BorderColor(t.Border.Alpha(.35)).Children(func() {
 				ui.Text(c, label).FontWeight(tokens.RegularWeight).SingleLine().TextColor(t.Text)
 				ui.Text(c, row.SourceApp).FontSize(float32(tokens.FontSize - 2)).TextColor(t.TextMuted)
 			})
+			if x, y, over := cell.PointerPosition(); over {
+				hoveredRow = row.ID
+				if p.model.CanSelect() && (p.pointerRow != row.ID || p.pointerX != x || p.pointerY != y) && p.model.Selected != i {
+					p.model.Selected = i
+					c.Invalidate()
+				}
+				p.pointerX, p.pointerY = x, y
+			}
+			if cell.Clicked() && cell.ClickModifiers() == 0 {
+				clickedRow = i
+			}
 		}).Grow(1).Disabled(p.model.Loading || p.model.PendingAction != "").Children(func() {
 			if rows.Len(&p.model) == 0 {
 				label := p.word("empty")
@@ -770,7 +790,13 @@ func (p *Panel) view(c *ui.Context) {
 			}
 		})
 		c.SetTheme(t)
-		if list.Submitted() {
+		p.pointerRow = hoveredRow
+		// Commit after all rows build: paste revokes this frame's metadata.
+		// A click on the already selected row also submits, exactly once on release.
+		if clickedRow >= 0 {
+			p.model.Selected = clickedRow
+			p.paste(rows)
+		} else if list.Submitted() {
 			p.paste(rows)
 		}
 		if p.model.Error != "" {

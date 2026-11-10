@@ -322,6 +322,29 @@ function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Edito
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } "Resident did not dismiss $Title" 8
 }
 
+function Test-QuickPasteInput($Resident, $Editor, $Form, [string]$Marker) {
+    foreach ($method in @('click', 'enter', 'click')) {
+        $Editor.Text = ''
+        $Form.Activate()
+        $null = $Editor.Focus()
+        $null = Wait-Until { $Editor.Focused -and [MyGoInput]::GetForegroundWindow() -eq $Form.Handle } 'Quick paste target did not gain focus'
+        [Windows.Forms.SendKeys]::SendWait('^+v')
+        $panel = Get-ResidentPanel $Resident ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34'))
+        $root = [Windows.Automation.AutomationElement]::FromHandle($panel)
+        $point = Get-ControlPoint $root $Marker
+        if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not hover the native row' }
+        Start-Sleep -Milliseconds 150
+        if ($Editor.Text -ne '') { throw 'Hover submitted a paste' }
+        $delivery = [Diagnostics.Stopwatch]::StartNew()
+        if ($method -eq 'click') { Click-WindowPoint $panel $point }
+        else { [Windows.Forms.SendKeys]::SendWait('{ENTER}') }
+        $null = Wait-Until {
+            $Editor.Text -ceq $Marker -and $Editor.Focused -and [MyGoInput]::GetForegroundWindow() -eq $Form.Handle -and ![MyGoInput]::IsWindowVisible($panel)
+        } "Native quick-paste $method failed to deliver once and restore focus" 3
+        Write-Output "Native quick-paste $method delivered once in $($delivery.ElapsedMilliseconds) ms"
+    }
+}
+
 function Get-SavedMainHotkeys {
     $value = 'import os, json, sqlite3; print(json.dumps(sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]).execute("SELECT value FROM settings WHERE key=?", ("app.hotkey",)).fetchone()[0]))' | python -
     if ($LASTEXITCODE) { throw 'Cannot read saved main shortcut list' }
@@ -1157,6 +1180,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     Test-ResidentPanel $resident '^+a' ([regex]::Unescape('DezirClip \u622a\u56fe')) $edit $form
     if ($edit.Text -cne $marker) { throw 'Cancelled native panel changed the editor' }
     $null = Wait-Until { [MyGoInput]::CheckClipboardText($marker, $clipboardSequence, $form.Handle) } 'Clipboard remained locked after panel cancellation' 3
+    Test-QuickPasteInput $resident $edit $form $marker
     $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
     if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot locate the isolated Rust Service' }
     $service = Get-Process -Id $endpoint.pid
