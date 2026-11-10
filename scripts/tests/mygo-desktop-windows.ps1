@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -322,6 +322,29 @@ function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Edito
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } "Resident did not dismiss $Title" 8
 }
 
+function Test-QuickPasteInput($Resident, $Editor, $Form, [string]$Marker) {
+    foreach ($method in @('click', 'enter', 'click')) {
+        $Editor.Text = ''
+        $Form.Activate()
+        $null = $Editor.Focus()
+        $null = Wait-Until { $Editor.Focused -and [MyGoInput]::GetForegroundWindow() -eq $Form.Handle } 'Quick paste target did not gain focus'
+        [Windows.Forms.SendKeys]::SendWait('^+v')
+        $panel = Get-ResidentPanel $Resident ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34'))
+        $root = [Windows.Automation.AutomationElement]::FromHandle($panel)
+        $point = Get-ControlPoint $root $Marker
+        if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not hover the native row' }
+        Start-Sleep -Milliseconds 150
+        if ($Editor.Text -ne '') { throw 'Hover submitted a paste' }
+        $delivery = [Diagnostics.Stopwatch]::StartNew()
+        if ($method -eq 'click') { Click-WindowPoint $panel $point }
+        else { [Windows.Forms.SendKeys]::SendWait('{ENTER}') }
+        $null = Wait-Until {
+            $Editor.Text -ceq $Marker -and $Editor.Focused -and [MyGoInput]::GetForegroundWindow() -eq $Form.Handle -and ![MyGoInput]::IsWindowVisible($panel)
+        } "Native quick-paste $method failed to deliver once and restore focus" 3
+        Write-Output "Native quick-paste $method delivered once in $($delivery.ElapsedMilliseconds) ms"
+    }
+}
+
 function Get-SavedMainHotkeys {
     $value = 'import os, json, sqlite3; print(json.dumps(sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]).execute("SELECT value FROM settings WHERE key=?", ("app.hotkey",)).fetchone()[0]))' | python -
     if ($LASTEXITCODE) { throw 'Cannot read saved main shortcut list' }
@@ -626,6 +649,22 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         if ($LASTEXITCODE) { throw 'Could not seed the isolated preview preferences' }
     }
     if ($Capture) {
+        # Resources inside the private profile must use its managed image namespace.
+        $wallpaperDirectory = New-Item -ItemType Directory -Path (Join-Path $dir.FullName 'emoji_favorites') -Force
+        $wallpaper = Join-Path $wallpaperDirectory.FullName 'fav_ca01.png'
+        $bitmap = [Drawing.Bitmap]::new(32, 32)
+        $graphics = [Drawing.Graphics]::FromImage($bitmap)
+        try {
+            $graphics.Clear([Drawing.Color]::Magenta)
+            $bitmap.Save($wallpaper, [Drawing.Imaging.ImageFormat]::Png)
+        } finally { $graphics.Dispose(); $bitmap.Dispose() }
+        @'
+import os, sqlite3, sys
+with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+    db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',
+                   [('app.custom_background',sys.argv[1]), ('app.custom_background_opacity','100'), ('app.surface_opacity','20')])
+'@ | python - $wallpaper
+        if ($LASTEXITCODE) { throw 'Could not seed the isolated custom background' }
         $fixtureEditor = Join-Path $dir.FullName 'Fixture Editor.exe'
         Add-Type -OutputAssembly $fixtureEditor -OutputType WindowsApplication -TypeDefinition @'
 using System.IO;
@@ -1032,9 +1071,29 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         return
     }
     if ($Capture) {
+        function Assert-CustomBackgroundPresent($window) {
+            $frame = [MyGoInput+Rect]::new()
+            if (![MyGoInput]::GetWindowRect($window.MainWindowHandle, [ref]$frame)) { throw 'Cannot inspect the visible main window' }
+            $bitmap = [Drawing.Bitmap]::new($frame.right-$frame.left, $frame.bottom-$frame.top)
+            $graphics = [Drawing.Graphics]::FromImage($bitmap)
+            try {
+                $graphics.CopyFromScreen($frame.left, $frame.top, 0, 0, $bitmap.Size)
+                $hits = 0
+                for ($y = 24; $y -lt $bitmap.Height-24; $y += 24) {
+                    for ($x = 24; $x -lt $bitmap.Width-24; $x += 24) {
+                        $pixel = $bitmap.GetPixel($x, $y)
+                        if ([Math]::Min([int]$pixel.R-$pixel.G, [int]$pixel.B-$pixel.G) -gt 60) { $hits++ }
+                    }
+                }
+                if ($hits -lt 20) { throw "Visible main window lacks its custom background: $hits colored samples" }
+            } finally { $graphics.Dispose(); $bitmap.Dispose() }
+        }
+        Assert-CustomBackgroundPresent $main
         Test-TransparentPreview $root $main $marker
         Test-ExternalEdit $root $main $marker
         $main = Test-OcrAfterReopen $main $resident $exe $form $edit
+        Assert-CustomBackgroundPresent $main
+        Write-Output 'Verified custom background is present at the initial visible-window check and after WebView recreation'
         $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
         Click-Control $main (Get-ControlPoint $root 'Settings')
         $softwareFlag = '(?:^|\s)--disable-gpu(?:\s|$)'
@@ -1121,6 +1180,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     Test-ResidentPanel $resident '^+a' ([regex]::Unescape('DezirClip \u622a\u56fe')) $edit $form
     if ($edit.Text -cne $marker) { throw 'Cancelled native panel changed the editor' }
     $null = Wait-Until { [MyGoInput]::CheckClipboardText($marker, $clipboardSequence, $form.Handle) } 'Clipboard remained locked after panel cancellation' 3
+    if ($QuickPasteInput) { Test-QuickPasteInput $resident $edit $form $marker }
     $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
     if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot locate the isolated Rust Service' }
     $service = Get-Process -Id $endpoint.pid

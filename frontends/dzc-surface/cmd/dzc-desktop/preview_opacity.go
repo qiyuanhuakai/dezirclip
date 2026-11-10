@@ -71,10 +71,12 @@ func (o *previewOpacityControl) draw(c *ui.Context, a previewAppearance) {
 		slider := ui.SliderBase(c, &o.slider, 0, 100).Grow(1).Height(26).PaddingX(6).Label(a.OpacityLabel).Tooltip(a.OpacityLabel)
 		slider.Draw(func(p *ui.Painter, r ui.Rect) {
 			track := ui.Rect{X: r.X + 6, Y: r.Y + 11, W: max(0, r.W-12), H: 4}
-			p.Stroke(track, t.Border, 2, 1)
+			p.Fill(track, t.Text.Alpha(.25), 2)
 			x := track.X + track.W*float32(o.slider/100)
-			p.Fill(ui.Rect{X: x - 5, Y: r.Y + 7, W: 10, H: 12}, t.Surface.Alpha(.8), 3)
-			p.Stroke(ui.Rect{X: x - 5, Y: r.Y + 7, W: 10, H: 12}, t.Border, 3, 1)
+			p.Fill(ui.Rect{X: track.X, Y: track.Y, W: x - track.X, H: track.H}, t.Text.Alpha(.75), 2)
+			thumb := ui.Rect{X: x - 5, Y: r.Y + 6, W: 10, H: 14}
+			p.Fill(thumb, t.Surface.Alpha(1), 4)
+			p.Stroke(thumb, t.Text.Alpha(.8), 4, 1.2)
 		})
 		if slider.Changed() {
 			next := int(math.Round(o.slider))

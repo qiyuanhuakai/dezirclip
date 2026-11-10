@@ -300,7 +300,7 @@ jobs:
             libxtst-dev \
             libdbus-1-dev \
             bubblewrap \
-            xdg-utils
+            xdg-utils fonts-noto-cjk
 
       - name: Install Rust stable
         if: matrix.rust_target == ''
@@ -514,7 +514,7 @@ jobs:
         shell: powershell
         run: |
           Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
-          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe
+            ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
 
       - name: Verify repeated MyGo emoji paste and Windows Service startup
         if: runner.os == 'Windows' && matrix.can_test && !inputs.windows_service_crash_stacks
@@ -1212,10 +1212,20 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev libxtst-dev
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev libxtst-dev fonts-noto-cjk
+          fc-match 'sans-serif:lang=zh-cn'
       - name: Test local protocol client
         working-directory: clients/go
         run: go test ./...
       - name: Test MyGo desktop and native surfaces
         working-directory: frontends/dzc-surface
+        env:
+          DZC_VISUAL_DIR: ${{ github.workspace }}/target/native-development-visuals
         run: go test ./...
+      - name: Preserve native development renderings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Native-development-visuals-${{ matrix.os }}-${{ github.sha }}
+          path: target/native-development-visuals/*.png
+          if-no-files-found: warn

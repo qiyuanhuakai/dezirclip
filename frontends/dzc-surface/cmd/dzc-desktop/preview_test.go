@@ -7,13 +7,77 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/richtext"
 )
+
+func TestPreviewTooltipPaintsOpaqueTextOnTransparentRoot(t *testing.T) {
+	for _, backgroundOpacity := range []int{0, 65, 100} {
+		for _, dark := range []bool{false, true} {
+			a := previewAppearance{Dark: dark, Opacity: backgroundOpacity, Pin: "固定此预览", Close: "关闭预览", OpacityLabel: "透明度"}
+			opacity := previewOpacityControl{value: 65, slider: 65}
+			view := ui.NewTester(func(c *ui.Context) {
+				a.panel(c).Children(func() {
+					ui.Row(c).FillWidth().Height(30).Gap(6).Children(func() {
+						ui.Text(c, "内容预览").Grow(1).FontSize(13)
+						opacity.draw(c, a)
+						previewIcon(c, a.Pin, true)
+						previewIcon(c, a.Close, false)
+					})
+				})
+			}, 360, 160)
+			before := image.NewRGBA(view.Image().Bounds())
+			copy(before.Pix, view.Image().Pix)
+			rect, ok := view.Find(a.Pin)
+			if !ok {
+				t.Fatal("pin button missing")
+			}
+			view.Move(rect.X+rect.W/2, rect.Y+rect.H/2)
+			view.Advance(700 * time.Millisecond)
+			after := view.Image()
+			textPixels := 0
+			for y := 45; y < 120; y++ {
+				for x := 0; x < 360; x++ {
+					pixel := after.RGBAAt(x, y)
+					if pixel == before.RGBAAt(x, y) || pixel.A < 250 {
+						continue
+					}
+					if (!dark && pixel.R > 220 && pixel.G > 220 && pixel.B > 220) ||
+						(dark && pixel.R < 60 && pixel.G < 60 && pixel.B < 60) {
+						textPixels++
+					}
+				}
+			}
+			if directory := os.Getenv("DZC_VISUAL_DIR"); directory != "" {
+				mode := "light"
+				if dark {
+					mode = "dark"
+				}
+				if err := os.MkdirAll(directory, 0700); err != nil {
+					t.Fatal(err)
+				}
+				file, err := os.Create(filepath.Join(directory, "preview-toolbar-"+mode+"-"+strconv.Itoa(backgroundOpacity)+".png"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				err = png.Encode(file, after)
+				file.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if textPixels < 5 {
+				t.Fatalf("dark=%t opacity=%d: tooltip text is invisible (%d pixels), anchor=%+v, texts=%q", dark, backgroundOpacity, textPixels, rect, view.Texts())
+			}
+		}
+	}
+}
 
 func TestPreviewVisualFixture(t *testing.T) {
 	directory := os.Getenv("DZC_VISUAL_DIR")

@@ -44,24 +44,27 @@ func pinPan(value, view, size float32) float32 {
 
 func (v *pinnedImageView) draw(c *ui.Context, bitmap *ui.Bitmap, a previewAppearance) {
 	w, h := bitmap.Size()
-	ui.Row(c).FillWidth().Children(func() {
+	ui.Row(c).FillWidth().Height(24).Gap(4).Children(func() {
+		button := func(text, label string) ui.Element {
+			return ui.Button(c, text).Height(24).Padding(0, 7).FontSize(12).Radius(6).Label(label).Tooltip(label)
+		}
 		factor := max(0.1, min(8, v.factor()))
-		if ui.Button(c, "−").Label(a.ZoomOut).Tooltip(a.ZoomOut).Disabled(factor <= 0.1).Clicked() {
+		if button("−", a.ZoomOut).Width(26).Disabled(factor <= 0.1).Clicked() {
 			v.zoomAt(factor*0.8, v.width/2, v.height/2)
 		}
 		label := a.FitLabel
 		if v.zoom > 0 {
 			label = fmt.Sprintf("%.0f%%", 100*v.zoom)
 		}
-		ui.Text(c, label)
-		if ui.Button(c, "+").Label(a.ZoomIn).Tooltip(a.ZoomIn).Disabled(factor >= 8).Clicked() {
+		ui.Text(c, label).FontSize(12).Width(38)
+		if button("+", a.ZoomIn).Width(26).Disabled(factor >= 8).Clicked() {
 			v.zoomAt(factor*1.25, v.width/2, v.height/2)
 		}
-		if ui.Button(c, a.FitLabel).Label(a.Fit).Tooltip(a.Fit).Clicked() {
+		if button(a.FitLabel, a.Fit).Clicked() {
 			v.zoom = 0
 			v.pan = ui.Point{}
 		}
-		if ui.Button(c, "100%").Label(a.Actual).Tooltip(a.Actual).Clicked() {
+		if button("100%", a.Actual).Clicked() {
 			v.zoomAt(1, v.width/2, v.height/2)
 		}
 	})
