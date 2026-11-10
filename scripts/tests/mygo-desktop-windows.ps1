@@ -777,7 +777,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     $launchBrowserArguments = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
     $launchTiming = $env:DZC_DESKTOP_TIMING
     try {
-        if ($WakeTiming) { $env:DZC_DESKTOP_TIMING = '1' }
+        if ($WakeTiming -or $Capture) { $env:DZC_DESKTOP_TIMING = '1' }
         if ($Capture) {
             $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "$launchBrowserArguments --dzc-ci-inherited-marker".Trim()
             $env:Path = (($launchPath -split ';') | Where-Object {
@@ -818,8 +818,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         foreach ($mode in @('hidden', 'hidden', 'recreated', 'hidden', 'recreated')) {
             $previousPID = $main.Id
             if ($mode -eq 'hidden') {
-                [Windows.Forms.SendKeys]::SendWait('{ESC}')
-                $null = Wait-Until { $main.Refresh(); !$main.HasExited -and $main.MainWindowHandle -eq [IntPtr]::Zero } 'Escape did not hide the live WebView'
+                Click-Control $main (Get-ControlPoint $root 'Hide')
+                $null = Wait-Until { $main.Refresh(); !$main.HasExited -and $main.MainWindowHandle -eq [IntPtr]::Zero } 'Hide did not retain the live WebView'
             } else {
                 if (!$main.CloseMainWindow()) { throw 'Cannot close the main WebView for reconstruction timing' }
                 $null = Wait-Until { $main.HasExited } 'Main WebView did not exit before reconstruction'
@@ -1310,7 +1310,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     }
     throw $failure
 } finally {
-    if ($WakeTiming) {
+    if ($WakeTiming -or $Capture) {
         $timingLog = Join-Path $dir.FullName 'desktop.log'
         if (Test-Path -LiteralPath $timingLog) { Get-Content -LiteralPath $timingLog | Write-Host }
     }
