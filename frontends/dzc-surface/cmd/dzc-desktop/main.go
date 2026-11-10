@@ -404,10 +404,15 @@ func run() error {
 						request, hide := trayState.toggle((win.IsVisible() && !win.IsMinimized()) || shell.resumePending.Load())
 						if hide {
 							shell.hideMain(win)
+							fmt.Fprintln(os.Stdout, "tray-hide")
 						} else {
 							fmt.Fprintf(os.Stdout, "tray-show:%d\n", request)
 						}
 					})
+					continue
+				}
+				if command == "tray-reset" {
+					mygo.RunOnMain(trayState.cancel)
 					continue
 				}
 				if value, found := strings.CutPrefix(command, "tray-show:"); found {

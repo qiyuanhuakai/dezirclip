@@ -510,6 +510,13 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 						continue
 					}
 					switch line {
+					case "tray-hide":
+						mygo.RunOnMain(func() {
+							if strings.HasPrefix(activationCommand, "tray-show") {
+								activationCommand = ""
+								activationStarted = time.Time{}
+							}
+						})
 					case "visible", "hidden":
 						mygo.RunOnMain(func() {
 							mainVisible = line == "visible"
@@ -587,19 +594,25 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 					}
 					if err != nil {
 						log.Printf("Desktop Host recovery failed: %v", err)
+						if strings.HasPrefix(activationCommand, "tray-show") && commands != nil {
+							_, _ = io.WriteString(commands, "tray-reset\n")
+						}
+						if activationCommand == "" {
+							return
+						}
 						_, _ = mygo.Dialog.Message(mygo.MessageOptions{Title: "DezirClip", Message: "无法连接剪贴板服务，请稍后重试。\nClipboard Service is unavailable. Please try again.", Buttons: []string{"OK"}})
 						return
 					}
 					if changed {
 						log.Print("Desktop Host changed; replacing native and WebView sessions")
-						if activationCommand == "settings" || activationCommand == "search" {
-							relaunchCommand = activationCommand
-						}
+						relaunchCommand = recoveredActivation(activationCommand)
 						relaunch = true
 						mygo.App.Quit()
 						return
 					}
-					presentReady(activationCommand)
+					if activationCommand != "" {
+						presentReady(activationCommand)
+					}
 				})
 			}()
 		}
@@ -610,7 +623,12 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 				return
 			}
 			if commands == nil || closing {
-				open()
+				if activating && strings.HasPrefix(activationCommand, "tray-show") {
+					activationCommand = ""
+					activationStarted = time.Time{}
+				} else {
+					present("tray-show")
+				}
 				return
 			}
 			if _, err := io.WriteString(commands, "tray-toggle\n"); err != nil {

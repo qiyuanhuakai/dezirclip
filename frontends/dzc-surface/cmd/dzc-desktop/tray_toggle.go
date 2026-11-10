@@ -1,5 +1,17 @@
 package main
 
+// A replacement Host still needs a new resident after recovery, but a cancelled
+// presentation must not become an unconditional --show in that new process.
+func recoveredActivation(command string) string {
+	if command == "" {
+		return "minimized"
+	}
+	if command == "settings" || command == "search" {
+		return command
+	}
+	return "show"
+}
+
 // UI-thread owned. A second tray click cancels a show awaiting Host recovery.
 type trayToggleState struct {
 	sequence uint64

@@ -1073,7 +1073,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         return
     }
     if ($RecoverService) {
-      foreach ($recoveryAction in @('show', 'search', 'settings')) {
+      foreach ($recoveryAction in @('show', 'search', 'settings', 'cancel')) {
         $oldResident = $resident
         $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
         if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot identify Service before the recovery fixture' }
@@ -1088,6 +1088,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         $serviceProcess.Kill()
         $null = Wait-Until { $serviceProcess.HasExited } 'Fixture Service did not exit'
         if ($recoveryAction -eq 'search') {
+            if (![MyGoInput]::ClickResidentTray($resident.Id)) { throw 'Cannot begin tray recovery before superseding search' }
             $form.Activate()
             $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $form.Handle } 'Recovery shortcut target did not acquire foreground'
             [Windows.Forms.SendKeys]::SendWait('^+{F9}')
@@ -1099,6 +1100,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             $popup = [MyGoInput]::ResidentTrayItem($resident.Id, $item, [ref]$showRect)
             if ($popup -eq [IntPtr]::Zero) { throw 'Recovery tray action missing' }
             Click-WindowPoint $popup ([Drawing.Point]::new(($showRect.left+$showRect.right)/2, ($showRect.top+$showRect.bottom)/2))
+            if ($recoveryAction -eq 'cancel' -and ![MyGoInput]::ClickResidentTray($resident.Id)) { throw 'Cannot cancel pending Service recovery presentation' }
         }
         $resident = Wait-Until {
             Get-CimInstance Win32_Process -Filter "Name='dzc-desktop.exe'" | Where-Object {
@@ -1106,6 +1108,18 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             } | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue } | Select-Object -First 1
         } 'Tray activation did not replace the stale native owner' 40
         $null = Wait-Until { $oldResident.HasExited } 'Stale resident did not exit during Host recovery'
+        if ($recoveryAction -eq 'cancel') {
+            $quiet = [Diagnostics.Stopwatch]::StartNew()
+            while ($quiet.ElapsedMilliseconds -lt 1500) {
+                $visible = Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
+                    $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip'
+                }
+                if ($visible) { throw 'Cancelled recovery resurrected the main window' }
+                [Windows.Forms.Application]::DoEvents()
+                Start-Sleep -Milliseconds 40
+            }
+            if (![MyGoInput]::ClickResidentTray($resident.Id)) { throw 'Cannot show the recovered silent resident' }
+        }
         $main = Wait-Until {
             if ($resident.HasExited) { throw 'Recovered resident exited' }
             Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {

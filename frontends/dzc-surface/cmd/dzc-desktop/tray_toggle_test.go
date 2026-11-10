@@ -2,6 +2,14 @@ package main
 
 import "testing"
 
+func TestHostReplacementPreservesCancelledAndSupersedingActivation(t *testing.T) {
+	for command, want := range map[string]string{"": "minimized", "tray-show:2": "show", "settings": "settings", "search": "search"} {
+		if got := recoveredActivation(command); got != want {
+			t.Fatalf("recovered %q as %q, want %q", command, got, want)
+		}
+	}
+}
+
 func TestTrayToggleCancelsDelayedShowAndPreservesNewerIntent(t *testing.T) {
 	var state trayToggleState
 	first, hide := state.toggle(false)
