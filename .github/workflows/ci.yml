@@ -1218,4 +1218,13 @@ jobs:
         run: go test ./...
       - name: Test MyGo desktop and native surfaces
         working-directory: frontends/dzc-surface
+        env:
+          DZC_VISUAL_DIR: ${{ github.workspace }}/target/native-development-visuals
         run: go test ./...
+      - name: Preserve native development renderings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Native-development-visuals-${{ matrix.os }}-${{ github.sha }}
+          path: target/native-development-visuals/*.png
+          if-no-files-found: warn

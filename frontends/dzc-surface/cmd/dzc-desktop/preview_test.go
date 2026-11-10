@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +54,7 @@ func TestPreviewTooltipPaintsOpaqueTextOnTransparentRoot(t *testing.T) {
 					}
 				}
 			}
-			if directory := os.Getenv("DZC_VISUAL_DIR"); directory != "" && backgroundOpacity == 65 {
+			if directory := os.Getenv("DZC_VISUAL_DIR"); directory != "" {
 				mode := "light"
 				if dark {
 					mode = "dark"
@@ -61,7 +62,7 @@ func TestPreviewTooltipPaintsOpaqueTextOnTransparentRoot(t *testing.T) {
 				if err := os.MkdirAll(directory, 0700); err != nil {
 					t.Fatal(err)
 				}
-				file, err := os.Create(filepath.Join(directory, "preview-toolbar-"+mode+".png"))
+				file, err := os.Create(filepath.Join(directory, "preview-toolbar-"+mode+"-"+strconv.Itoa(backgroundOpacity)+".png"))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -72,7 +73,7 @@ func TestPreviewTooltipPaintsOpaqueTextOnTransparentRoot(t *testing.T) {
 				}
 			}
 			if textPixels < 5 {
-				t.Fatalf("dark=%t: tooltip text is invisible (%d pixels)", dark, textPixels)
+				t.Fatalf("dark=%t opacity=%d: tooltip text is invisible (%d pixels), anchor=%+v, texts=%q", dark, backgroundOpacity, textPixels, rect, view.Texts())
 			}
 		}
 	}
