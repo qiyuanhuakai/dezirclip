@@ -10,7 +10,7 @@
 
 桌面更新使用官方 Tauri 2 Updater。v0.2 的首批原位更新制品仅包含 Windows NSIS 和 Linux AppImage，支持 x86_64 与 aarch64。`dzc-core`、独立 CLI、MCP 和捕获服务不因此联网，也不增加后台进程。P1-A 提供后端与发布门槛，P1-C 在“设置 → 关于 → 软件更新”接入自动检查偏好、通道、手动检查及确认安装界面。
 
-MyGo 的 Windows x64 ZIP 使用同一设置页和两个固定的 GitHub 通道索引。仅 MyGo 桌面进程请求索引，随包 Rust CLI 离线比较版本并校验候选安装包的签名元数据。发现新版后，从对应版本的发布页下载 Windows x64 MyGo ZIP 并手动替换程序文件。
+MyGo 的 Windows x64 版使用同一设置页和两个固定的 GitHub 通道索引。仅 MyGo 桌面进程请求索引，随包 Rust CLI 离线比较版本并校验候选安装包的签名元数据。发现新版后，从对应版本的发布页下载 `windows-x64-MyGo-setup.exe`，退出应用后手动运行安装程序；这不会触发 Tauri 安装器来替换 MyGo 桌面入口。
 
 ## 组件构建身份与 Host 生命周期
 
