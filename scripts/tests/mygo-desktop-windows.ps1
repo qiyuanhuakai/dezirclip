@@ -1087,7 +1087,11 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         # graceful protocol stop, then exercise the existing resident's tray.
         $serviceProcess.Kill()
         $null = Wait-Until { $serviceProcess.HasExited } 'Fixture Service did not exit'
-        if ($recoveryAction -eq 'search') {
+        if ($recoveryAction -eq 'cancel') {
+            if (![MyGoInput]::ClickResidentTray($resident.Id) -or ![MyGoInput]::ClickResidentTray($resident.Id)) {
+                throw 'Cannot toggle twice during pending Service recovery'
+            }
+        } elseif ($recoveryAction -eq 'search') {
             if (![MyGoInput]::ClickResidentTray($resident.Id)) { throw 'Cannot begin tray recovery before superseding search' }
             $form.Activate()
             $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $form.Handle } 'Recovery shortcut target did not acquire foreground'
@@ -1100,7 +1104,6 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             $popup = [MyGoInput]::ResidentTrayItem($resident.Id, $item, [ref]$showRect)
             if ($popup -eq [IntPtr]::Zero) { throw 'Recovery tray action missing' }
             Click-WindowPoint $popup ([Drawing.Point]::new(($showRect.left+$showRect.right)/2, ($showRect.top+$showRect.bottom)/2))
-            if ($recoveryAction -eq 'cancel' -and ![MyGoInput]::ClickResidentTray($resident.Id)) { throw 'Cannot cancel pending Service recovery presentation' }
         }
         $resident = Wait-Until {
             Get-CimInstance Win32_Process -Filter "Name='dzc-desktop.exe'" | Where-Object {
