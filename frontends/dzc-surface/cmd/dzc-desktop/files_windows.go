@@ -20,6 +20,8 @@ var dragUnlock = fileDragKernel.NewProc("GlobalUnlock")
 var dragFree = fileDragKernel.NewProc("GlobalFree")
 var dragKey = windows.NewLazySystemDLL("user32.dll").NewProc("GetAsyncKeyState")
 
+func installNativeFileDrop(window *mygo.Window) {}
+
 type dragFormat struct {
 	format uint16
 	target uintptr

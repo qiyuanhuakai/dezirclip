@@ -334,6 +334,7 @@ func run() error {
 			fmt.Fprintf(os.Stderr, "Native file drop: %d files\n", len(e.Paths))
 			filesDropped.Emit(win, e.Paths)
 		})
+		installNativeFileDrop(win)
 		win.OnClose(func(*mygo.CloseEvent) { fmt.Fprintln(os.Stdout, "closing") })
 		win.OnClosed(func() {
 			shell.idle.cancel()
