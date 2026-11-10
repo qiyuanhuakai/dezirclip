@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$WakeTiming, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
+﻿param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$WakeTiming, [switch]$WakeBackground, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -103,7 +103,11 @@ public static class MyGoInput {
         IntPtr menu = SendMessage(popup, 0x1E1, IntPtr.Zero, IntPtr.Zero); // MN_GETHMENU
         return menu != IntPtr.Zero && GetMenuItemCount(menu) == 3;
     }
-    public static bool OpenResidentTrayMenu(int process) {
+    public static bool OpenResidentTrayMenu(int process) { return ResidentTrayEvent(process, 0x205); }
+    public static bool ClickResidentTray(int process) { return ResidentTrayEvent(process, 0x202); }
+    public struct IoCounters { public ulong ReadOperations, WriteOperations, OtherOperations, ReadBytes, WriteBytes, OtherBytes; }
+    [DllImport("kernel32.dll", SetLastError=true)] public static extern bool GetProcessIoCounters(IntPtr process, out IoCounters counters);
+    static bool ResidentTrayEvent(int process, int message) {
         IntPtr found = IntPtr.Zero;
         EnumWindows(delegate(IntPtr window, IntPtr unused) {
             uint owner; GetWindowThreadProcessId(window, out owner);
@@ -111,8 +115,8 @@ public static class MyGoInput {
             if (owner == process && name.ToString() == "MyGoApp") { found = window; return false; }
             return true;
         }, IntPtr.Zero);
-        // The pinned MyGo backend's notification-area right-click callback.
-        return found != IntPtr.Zero && PostMessage(found, 0x8003, new IntPtr(1), new IntPtr(0x205));
+        // The pinned MyGo backend's notification-area callbacks.
+        return found != IntPtr.Zero && PostMessage(found, 0x8003, new IntPtr(1), new IntPtr(message));
     }
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
@@ -530,6 +534,24 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     Write-Output 'Verified a WebView2 Open click launched the selected editor and the Service refreshed the same history row'
 }
 
+function Assert-CustomBackgroundPresent($window) {
+    $frame = [MyGoInput+Rect]::new()
+    if (![MyGoInput]::GetWindowRect($window.MainWindowHandle, [ref]$frame)) { throw 'Cannot inspect the visible main window' }
+    $bitmap = [Drawing.Bitmap]::new($frame.right-$frame.left, $frame.bottom-$frame.top)
+    $graphics = [Drawing.Graphics]::FromImage($bitmap)
+    try {
+        $graphics.CopyFromScreen($frame.left, $frame.top, 0, 0, $bitmap.Size)
+        $hits = 0
+        for ($y = 24; $y -lt $bitmap.Height-24; $y += 24) {
+            for ($x = 24; $x -lt $bitmap.Width-24; $x += 24) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                if ([Math]::Min([int]$pixel.R-$pixel.G, [int]$pixel.B-$pixel.G) -gt 60) { $hits++ }
+            }
+        }
+        if ($hits -lt 20) { throw "Visible main window lacks its custom background: $hits colored samples" }
+    } finally { $graphics.Dispose(); $bitmap.Dispose() }
+}
+
 function Test-OcrAfterReopen($Main, $Resident, [string]$Executable, $Form, $Editor) {
     $Form.Activate()
     $null = $Editor.Focus()
@@ -541,6 +563,10 @@ function Test-OcrAfterReopen($Main, $Resident, [string]$Executable, $Form, $Edit
         if ($reopen) {
             if (!$Main.CloseMainWindow()) { throw 'Could not close the OCR WebView' }
             $null = Wait-Until { $Main.HasExited } 'OCR WebView did not exit'
+        }
+        if (!$reopen -and [MyGoInput]::IsWindowVisible($Main.MainWindowHandle)) {
+            if (![MyGoInput]::ClickResidentTray($Resident.Id)) { throw 'Cannot hide OCR window through tray' }
+            $null = Wait-Until { $Main.Refresh(); $Main.MainWindowHandle -eq [IntPtr]::Zero } 'OCR tray did not hide the visible background window'
         }
         if (![MyGoInput]::OpenResidentTrayMenu($Resident.Id)) { throw 'Could not open the OCR resident tray menu' }
         $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($Resident.Id) } 'OCR resident tray menu did not appear'
@@ -648,7 +674,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
 '@ | python -
         if ($LASTEXITCODE) { throw 'Could not seed the isolated preview preferences' }
     }
-    if ($Capture) {
+    if ($Capture -or $WakeBackground) {
         # Resources inside the private profile must use its managed image namespace.
         $wallpaperDirectory = New-Item -ItemType Directory -Path (Join-Path $dir.FullName 'emoji_favorites') -Force
         $wallpaper = Join-Path $wallpaperDirectory.FullName 'fav_ca01.png'
@@ -665,6 +691,25 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
                    [('app.custom_background',sys.argv[1]), ('app.custom_background_opacity','100'), ('app.surface_opacity','20')])
 '@ | python - $wallpaper
         if ($LASTEXITCODE) { throw 'Could not seed the isolated custom background' }
+        if ($WakeBackground) {
+            @'
+import random, struct, sys, zlib
+rng = random.Random(17)
+def chunk(kind, data):
+    return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data))
+rows = bytearray()
+for y in range(1024):
+    rows.append(0)
+    for x in range(1024):
+        rows.extend((rng.randrange(192,256),rng.randrange(0,48),rng.randrange(192,256)))
+with open(sys.argv[1],'wb') as out:
+    out.write(b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',1024,1024,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(rows))+chunk(b'IEND',b''))
+'@ | python - $wallpaper
+            if ($LASTEXITCODE) { throw 'Could not generate the large synthetic background' }
+            Write-Host "Wake fixture PNG bytes=$((Get-Item -LiteralPath $wallpaper).Length)"
+        }
+    }
+    if ($Capture) {
         $fixtureEditor = Join-Path $dir.FullName 'Fixture Editor.exe'
         Add-Type -OutputAssembly $fixtureEditor -OutputType WindowsApplication -TypeDefinition @'
 using System.IO;
@@ -814,23 +859,41 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
     if ($WakeTiming) {
+        function Invoke-TrayToggle([bool]$Left) {
+            if ($Left) {
+                if (![MyGoInput]::ClickResidentTray($resident.Id)) { throw 'Cannot invoke tray left-click callback' }
+            } else {
+                if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open tray for wake timing' }
+                $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($resident.Id) } 'Wake timing tray menu did not open'
+                $showRect = [MyGoInput+Rect]::new()
+                $popup = [MyGoInput]::ResidentTrayItem($resident.Id, 0, [ref]$showRect)
+                if ($popup -eq [IntPtr]::Zero) { throw 'Wake timing toggle action missing' }
+                Click-WindowPoint $popup ([Drawing.Point]::new(($showRect.left+$showRect.right)/2, ($showRect.top+$showRect.bottom)/2))
+            }
+        }
+        function Get-BackgroundReadCount {
+            @((Select-String -LiteralPath (Join-Path $dir.FullName 'desktop.log') -Pattern 'Desktop snapshot: desktop.appearance.background ')).Count
+        }
         $null = Get-ControlPoint $root $marker
+        if ($WakeBackground) { Assert-CustomBackgroundPresent $main }
+        $iteration = 0
         foreach ($mode in @('hidden', 'hidden', 'recreated', 'hidden', 'recreated')) {
+            $left = (++$iteration % 2) -eq 1
             $previousPID = $main.Id
             if ($mode -eq 'hidden') {
-                Click-Control $main (Get-ControlPoint $root 'Hide')
-                $null = Wait-Until { $main.Refresh(); !$main.HasExited -and $main.MainWindowHandle -eq [IntPtr]::Zero } 'Hide did not retain the live WebView'
+                # Visibility, rather than focus, determines whether a tray action hides.
+                if ($iteration -eq 2) { $form.Activate() }
+                Invoke-TrayToggle $left
+                $null = Wait-Until { $main.Refresh(); !$main.HasExited -and $main.MainWindowHandle -eq [IntPtr]::Zero } 'Tray hide did not retain the live WebView'
             } else {
                 if (!$main.CloseMainWindow()) { throw 'Cannot close the main WebView for reconstruction timing' }
                 $null = Wait-Until { $main.HasExited } 'Main WebView did not exit before reconstruction'
             }
-            if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open tray for wake timing' }
-            $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($resident.Id) } 'Wake timing tray menu did not open'
-            $showRect = [MyGoInput+Rect]::new()
-            $popup = [MyGoInput]::ResidentTrayItem($resident.Id, 0, [ref]$showRect)
-            if ($popup -eq [IntPtr]::Zero) { throw 'Wake timing show action missing' }
+            $readsBefore = Get-BackgroundReadCount
+            $beforeIo = [MyGoInput+IoCounters]::new()
+            if ($mode -eq 'hidden' -and ![MyGoInput]::GetProcessIoCounters($main.Handle, [ref]$beforeIo)) { throw 'Cannot read process I/O counters' }
             $clock = [Diagnostics.Stopwatch]::StartNew()
-            Click-WindowPoint $popup ([Drawing.Point]::new(($showRect.left+$showRect.right)/2, ($showRect.top+$showRect.bottom)/2))
+            Invoke-TrayToggle $left
             $main = Wait-Until {
                 Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
                     $_.Id -ne $resident.Id -and $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip'
@@ -838,9 +901,15 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             } 'Tray wake did not show a prepared main window'
             $visibleMs = $clock.ElapsedMilliseconds
             if (($mode -eq 'hidden') -ne ($main.Id -eq $previousPID)) { throw 'Wake timing did not exercise the requested lifecycle' }
+            if ($WakeBackground) { Assert-CustomBackgroundPresent $main }
             $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
             $null = Get-ControlPoint $root $marker
-            Write-Host "Tray wake timing: $mode visible=${visibleMs}ms content=$($clock.ElapsedMilliseconds)ms"
+            $contentMs = $clock.ElapsedMilliseconds
+            $afterIo = [MyGoInput+IoCounters]::new()
+            if (![MyGoInput]::GetProcessIoCounters($main.Handle, [ref]$afterIo)) { throw 'Cannot read process I/O counters after wake' }
+            $newReads = (Get-BackgroundReadCount) - $readsBefore
+            if ($WakeBackground -and (($mode -eq 'hidden' -and $newReads -ne 0) -or ($mode -eq 'recreated' -and $newReads -lt 1))) { throw "Unexpected background retransmission count: $mode $newReads" }
+            Write-Host "Tray wake timing: $mode left=$left background=$WakeBackground visible=${visibleMs}ms content=${contentMs}ms backgroundReads=$newReads readBytes=$($afterIo.ReadBytes-$beforeIo.ReadBytes) writeBytes=$($afterIo.WriteBytes-$beforeIo.WriteBytes) otherBytes=$($afterIo.OtherBytes-$beforeIo.OtherBytes)"
         }
         return
     }
@@ -1004,7 +1073,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         return
     }
     if ($RecoverService) {
-      foreach ($recoveryAction in @('show', 'search', 'settings')) {
+      foreach ($recoveryAction in @('show', 'search', 'settings', 'cancel')) {
         $oldResident = $resident
         $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
         if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot identify Service before the recovery fixture' }
@@ -1018,7 +1087,12 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         # graceful protocol stop, then exercise the existing resident's tray.
         $serviceProcess.Kill()
         $null = Wait-Until { $serviceProcess.HasExited } 'Fixture Service did not exit'
-        if ($recoveryAction -eq 'search') {
+        if ($recoveryAction -eq 'cancel') {
+            if (![MyGoInput]::ClickResidentTray($resident.Id) -or ![MyGoInput]::ClickResidentTray($resident.Id)) {
+                throw 'Cannot toggle twice during pending Service recovery'
+            }
+        } elseif ($recoveryAction -eq 'search') {
+            if (![MyGoInput]::ClickResidentTray($resident.Id)) { throw 'Cannot begin tray recovery before superseding search' }
             $form.Activate()
             $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $form.Handle } 'Recovery shortcut target did not acquire foreground'
             [Windows.Forms.SendKeys]::SendWait('^+{F9}')
@@ -1037,6 +1111,18 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             } | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue } | Select-Object -First 1
         } 'Tray activation did not replace the stale native owner' 40
         $null = Wait-Until { $oldResident.HasExited } 'Stale resident did not exit during Host recovery'
+        if ($recoveryAction -eq 'cancel') {
+            $quiet = [Diagnostics.Stopwatch]::StartNew()
+            while ($quiet.ElapsedMilliseconds -lt 1500) {
+                $visible = Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
+                    $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip'
+                }
+                if ($visible) { throw 'Cancelled recovery resurrected the main window' }
+                [Windows.Forms.Application]::DoEvents()
+                Start-Sleep -Milliseconds 40
+            }
+            if (![MyGoInput]::ClickResidentTray($resident.Id)) { throw 'Cannot show the recovered silent resident' }
+        }
         $main = Wait-Until {
             if ($resident.HasExited) { throw 'Recovered resident exited' }
             Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
@@ -1105,23 +1191,6 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         return
     }
     if ($Capture) {
-        function Assert-CustomBackgroundPresent($window) {
-            $frame = [MyGoInput+Rect]::new()
-            if (![MyGoInput]::GetWindowRect($window.MainWindowHandle, [ref]$frame)) { throw 'Cannot inspect the visible main window' }
-            $bitmap = [Drawing.Bitmap]::new($frame.right-$frame.left, $frame.bottom-$frame.top)
-            $graphics = [Drawing.Graphics]::FromImage($bitmap)
-            try {
-                $graphics.CopyFromScreen($frame.left, $frame.top, 0, 0, $bitmap.Size)
-                $hits = 0
-                for ($y = 24; $y -lt $bitmap.Height-24; $y += 24) {
-                    for ($x = 24; $x -lt $bitmap.Width-24; $x += 24) {
-                        $pixel = $bitmap.GetPixel($x, $y)
-                        if ([Math]::Min([int]$pixel.R-$pixel.G, [int]$pixel.B-$pixel.G) -gt 60) { $hits++ }
-                    }
-                }
-                if ($hits -lt 20) { throw "Visible main window lacks its custom background: $hits colored samples" }
-            } finally { $graphics.Dispose(); $bitmap.Dispose() }
-        }
         Assert-CustomBackgroundPresent $main
         Test-TransparentPreview $root $main $marker
         Test-ExternalEdit $root $main $marker

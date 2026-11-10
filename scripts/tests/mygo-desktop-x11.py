@@ -744,7 +744,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
                 assert atspi.Action.do_action(hide_tray, 0)
                 wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.hide_tray_icon'").fetchone() == (str(hidden).lower(),)
                          and hide_tray.get_state_set().contains(atspi.StateType.CHECKED) == hidden
-                         and tray_item(resident, '打开剪贴板', activate=False) != hidden,
+                         and tray_item(resident, '显示／隐藏', activate=False) != hidden,
                          'Resident tray visibility did not match the saved choice')
         print('Verified Hide Tray Icon removes and restores the live native tray from the shared WebView')
         assert not silent.get_state_set().contains(atspi.StateType.CHECKED)
@@ -1300,13 +1300,13 @@ def check(desktop, pinned, audio, pin_preview=False):
             check_placement(True)
         if pinned:
             deadline = time.monotonic() + 15
-            while not tray_item(process.pid, '打开剪贴板', activate=False):
+            while not tray_item(process.pid, '显示／隐藏', activate=False):
                 assert process.poll() is None and time.monotonic() < deadline, 'Minimized resident did not provide a tray'
                 time.sleep(.1)
             members = memory_sample('login before opening main window', [process.pid])
             assert all(Path(f'/proc/{pid}/exe').resolve() != desktop for pid in members if pid != process.pid)
             assert not any('WebKit' in Path(f'/proc/{pid}/exe').resolve().name for pid in members)
-            assert tray_item(process.pid, '打开剪贴板')
+            assert tray_item(process.pid, '显示／隐藏')
             print('Verified minimized login keeps the resident alive without a main WebView until the tray is clicked')
         deadline = time.monotonic() + 35
         last = []
@@ -1340,13 +1340,13 @@ def check(desktop, pinned, audio, pin_preview=False):
                     # Launch normally from the same profile after changing the setting in the real UI.
                     process = subprocess.Popen([desktop], stdout=subprocess.DEVNULL)
                     deadline = time.monotonic() + 15
-                    while not tray_item(process.pid, '打开剪贴板', activate=False):
+                    while not tray_item(process.pid, '显示／隐藏', activate=False):
                         assert process.poll() is None and time.monotonic() < deadline, 'Silent Start lost its tray'
                         time.sleep(.1)
                     members = memory_sample('ordinary startup with Silent Start enabled', [process.pid])
                     assert all(Path(f'/proc/{pid}/exe').resolve() != desktop for pid in members if pid != process.pid)
                     assert not any('WebKit' in Path(f'/proc/{pid}/exe').resolve().name for pid in members)
-                    assert tray_item(process.pid, '打开剪贴板')
+                    assert tray_item(process.pid, '显示／隐藏')
                     deadline = time.monotonic() + 15
                     while not any(name == 'Settings' for _, name, _, _ in mygo_nodes(Atspi, desktop)):
                         assert process.poll() is None and time.monotonic() < deadline, 'Tray did not reopen the silent desktop'

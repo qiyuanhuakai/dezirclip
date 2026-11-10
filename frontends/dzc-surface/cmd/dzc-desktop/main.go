@@ -11,6 +11,8 @@ import (
 	"io/fs"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -383,6 +385,7 @@ func run() error {
 		win.OnResize(func() { preview.clear(); observeSize() })
 		win.OnClose(func(*mygo.CloseEvent) { observeSize() })
 		go func() {
+			var trayState trayToggleState
 			commands := bufio.NewScanner(os.Stdin)
 			for commands.Scan() {
 				command := commands.Text()
@@ -393,6 +396,39 @@ func run() error {
 					shell.resident.accept(command)
 					continue
 				}
+				if command == "tray-toggle" {
+					mygo.RunOnMain(func() {
+						if win.IsDestroyed() {
+							return
+						}
+						request, hide := trayState.toggle((win.IsVisible() && !win.IsMinimized()) || shell.resumePending.Load())
+						if hide {
+							shell.hideMain(win)
+							fmt.Fprintln(os.Stdout, "tray-hide")
+						} else {
+							fmt.Fprintf(os.Stdout, "tray-show:%d\n", request)
+						}
+					})
+					continue
+				}
+				if command == "tray-reset" {
+					mygo.RunOnMain(trayState.cancel)
+					continue
+				}
+				if value, found := strings.CutPrefix(command, "tray-show:"); found {
+					request, err := strconv.ParseUint(value, 10, 64)
+					if err != nil {
+						continue
+					}
+					accepted := make(chan bool, 1)
+					mygo.RunOnMain(func() { accepted <- trayState.accept(request) })
+					if !<-accepted {
+						continue
+					}
+					command = "show"
+				} else if command == "show" || command == "toggle" || command == "settings" || command == "search" || command == "rebuild" {
+					mygo.RunOnMain(trayState.cancel)
+				}
 				if command == "rebuild" || command == "toggle" && mainWindowFocused(win) {
 					mygo.RunOnMain(func() { win.Close() })
 					continue
@@ -401,15 +437,17 @@ func run() error {
 					wakeStarted := time.Now()
 					// Accept the wake before any Host read can outlive the old idle
 					// deadline. The UI-thread generation also invalidates a queued timer.
-					shell.idle.acceptWake(mygo.RunOnMain)
+					wakeGeneration := shell.idle.acceptWake(mygo.RunOnMain)
 					position := false
 					if !mainWindowFocused(win) {
+						preferences := make(chan windowPreferences, 1)
+						go func() { preferences <- library.windowPreferences(ctx) }()
 						history.rememberTarget(ctx)
-						position = library.windowPreferences(ctx).FollowMouse != "false"
+						position = (<-preferences).FollowMouse != "false"
 					}
 					desktopTiming("warm native preparation", wakeStarted)
 					mygo.RunOnMain(func() {
-						if !win.IsDestroyed() {
+						if !win.IsDestroyed() && shell.idle.generation == wakeGeneration {
 							if position {
 								placeMainAtCursor(win)
 							}
