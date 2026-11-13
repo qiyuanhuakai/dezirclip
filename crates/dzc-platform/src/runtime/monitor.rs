@@ -35,7 +35,7 @@ impl ClipboardMonitor for NativeClipboardMonitor {
             if let Err(error) = crate::runtime_display::validate_x11_display() {
                 let reason = match error {
                     crate::runtime_display::DisplayUnavailable::NotSet
-                        if std::env::var_os("WAYLAND_DISPLAY").is_some() =>
+                        if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|value| !value.is_empty()) =>
                     {
                         UnsupportedReason::NativeWaylandUnavailable
                     }

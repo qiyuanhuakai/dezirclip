@@ -10,7 +10,7 @@ use x11rb::{
 pub(super) fn connection() -> Result<(x11rb::rust_connection::RustConnection, usize), UnsupportedReason> {
     crate::runtime_display::validate_x11_display().map_err(|error| match error {
         crate::runtime_display::DisplayUnavailable::NotSet
-            if std::env::var_os("WAYLAND_DISPLAY").is_some() =>
+            if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|value| !value.is_empty()) =>
         {
             UnsupportedReason::NativeWaylandUnavailable
         }

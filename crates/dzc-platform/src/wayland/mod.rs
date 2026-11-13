@@ -86,10 +86,13 @@ pub struct WaylandStatus {
 }
 
 pub fn requested() -> bool {
-    std::env::var_os("WAYLAND_DISPLAY").is_some()
-        || std::env::var_os("WAYLAND_SOCKET").is_some()
-        || std::env::var("XDG_SESSION_TYPE")
-            .is_ok_and(|value| value.eq_ignore_ascii_case("wayland"))
+    requested_for_environment(std::env::var_os("WAYLAND_DISPLAY").as_deref(),
+        std::env::var_os("WAYLAND_SOCKET").as_deref(), std::env::var("XDG_SESSION_TYPE").ok().as_deref())
+}
+
+fn requested_for_environment(display: Option<&std::ffi::OsStr>, socket: Option<&std::ffi::OsStr>, session: Option<&str>) -> bool {
+    display.is_some_and(|value| !value.is_empty()) || socket.is_some_and(|value| !value.is_empty())
+        || session.is_some_and(|value| value.eq_ignore_ascii_case("wayland"))
 }
 
 pub fn service_disabled(service: &str) -> bool {
@@ -108,13 +111,14 @@ fn transfer_deadline() -> Instant {
 }
 
 fn connect() -> Result<Connection, WaylandError> {
-    if std::env::var_os("WAYLAND_SOCKET").is_some() && std::env::var_os("WAYLAND_DISPLAY").is_none()
+    if std::env::var_os("WAYLAND_SOCKET").is_some_and(|value| !value.is_empty())
+        && std::env::var_os("WAYLAND_DISPLAY").is_none_or(|value| value.is_empty())
     {
         // Do not consume a one-shot descriptor during a capability probe and
         // then falsely promise that independent later adapters can reconnect.
         return Err(WaylandError::InheritedSocketUnavailable);
     }
-    let display = std::env::var_os("WAYLAND_DISPLAY").unwrap_or_else(|| "wayland-0".into());
+    let display = std::env::var_os("WAYLAND_DISPLAY").filter(|value| !value.is_empty()).unwrap_or_else(|| "wayland-0".into());
     let display = std::path::PathBuf::from(display);
     let path = if display.is_absolute() {
         display
@@ -829,6 +833,17 @@ impl WaylandClipboardBackend {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn empty_wayland_variables_do_not_disable_x11() {
+        use std::ffi::OsStr;
+        let empty = Some(OsStr::new(""));
+        assert!(!super::requested_for_environment(None, None, Some("x11")));
+        assert!(!super::requested_for_environment(empty, empty, Some("x11")));
+        assert!(!super::requested_for_environment(empty, None, None));
+        assert!(super::requested_for_environment(empty, empty, Some("Wayland")));
+        assert!(super::requested_for_environment(Some(OsStr::new("wayland-0")), empty, Some("x11")));
+        assert!(super::requested_for_environment(empty, Some(OsStr::new("3")), Some("x11")));
+    }
     use super::*;
     fn isolated_runtime() -> Option<std::path::PathBuf> {
         if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") {

@@ -56,9 +56,7 @@ $bitmap = [Drawing.Bitmap]::new(24, 24)
 try { $bitmap.Save($files[1], [Drawing.Imaging.ImageFormat]::Png) } finally { $bitmap.Dispose() }
 $panel.Source = $files
 $target = $panel.PointToScreen([Drawing.Point]::new(100,100))
-$frame = [MyGoInput+Rect]::new()
-$null = [MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$frame)
-$drop = [Drawing.Point]::new($frame.left+330, $frame.top+300)
+$drop = Get-ControlPoint $root $marker
 [FileTransferFixture]::Gesture($target, $drop, $false)
 $null = Wait-Until { [Windows.Forms.Clipboard]::ContainsFileDropList() -and
     ([Windows.Forms.Clipboard]::GetFileDropList() -join '|') -eq ($files -join '|') } 'Native drop did not copy both original files'

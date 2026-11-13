@@ -1969,6 +1969,8 @@ if __name__ == '__main__':
                    'GTK_A11Y':'atspi', 'NO_AT_BRIDGE':'0'}
             for name in ('DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY', 'AT_SPI_BUS_ADDRESS'):
                 env.pop(name, None)
+            if '--screenshots' in sys.argv[2:]:
+                env.update(WAYLAND_DISPLAY='', WAYLAND_SOCKET='', XDG_CURRENT_DESKTOP='X-Cinnamon')
             if '--pinned' in sys.argv[2:]:
                 env.update(HTTPS_PROXY='http://127.0.0.1:0', NO_PROXY='', no_proxy='')
                 applications = home/'data/applications'

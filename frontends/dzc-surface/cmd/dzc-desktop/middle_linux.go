@@ -78,9 +78,7 @@ func registerMiddleShortcut(pressed func()) error {
 			return errors.New("MiddleShortcutDisabled")
 		}
 	}
-	_, wayland := os.LookupEnv("WAYLAND_DISPLAY")
-	_, socket := os.LookupEnv("WAYLAND_SOCKET")
-	if wayland || socket || strings.EqualFold(os.Getenv("XDG_SESSION_TYPE"), "wayland") {
+	if nativeWaylandRequested() {
 		return errors.New("MiddleShortcutRequiresX11")
 	}
 	if middleActive != nil {
