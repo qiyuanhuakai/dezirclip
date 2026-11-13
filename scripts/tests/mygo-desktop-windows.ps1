@@ -469,10 +469,12 @@ function Test-WinVTakeover($Main, $Root) {
     $null = Wait-Until { $toggle.Current.ToggleState -eq [Windows.Automation.ToggleState]::Off } 'Cancelled Win+V takeover remained enabled'
     $null = Wait-Until { $box.Current.IsEnabled } 'Cancelled Win+V transaction did not finish'
     if ((Get-SavedMainHotkeys) -cne $original) { throw 'Cancelled Win+V takeover changed shortcuts' }
+    Write-Output 'Verified cancelled Win+V takeover restored settings'
     $toggle.Toggle()
     Answer-Restart 'OK'
     $null = Wait-Until { (Get-SavedMainHotkeys) -match '(?im)^(Win|Super)\+V$' } 'Win+V was not saved after Explorer released it'
     $null = Wait-Until { $box.Current.IsEnabled } 'Win+V takeover did not finish'
+    Write-Output 'Verified confirmed Win+V takeover registered successfully'
     $window = $Main.MainWindowHandle
     $null = [MyGoInput]::SetForegroundWindow($window)
     $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $window } 'Win+V fixture lost foreground'
@@ -481,6 +483,11 @@ function Test-WinVTakeover($Main, $Root) {
     if ($Main.HasExited) { throw 'Win+V destroyed the WebView' }
     [MyGoInput]::WinV()
     $null = Wait-Until { [MyGoInput]::IsWindowVisible($window) } 'Win+V did not restore the same window'
+    Write-Output 'Verified physical Win+V hides and restores the same WebView'
+    # Resume reloads settings and can replace the checkbox's accessibility peer.
+    $box = Wait-Until { Get-SettingsCheckbox $Root 'Use Win+V Shortcut' } 'Resumed Win+V setting missing'
+    $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+    $null = Wait-Until { $box.Current.IsEnabled -and $toggle.Current.ToggleState -eq [Windows.Automation.ToggleState]::On } 'Resumed Win+V setting is not enabled'
     $toggle.Toggle()
     Answer-Restart 'OK'
     $null = Wait-Until { (Get-SavedMainHotkeys) -ceq $original } 'Disabling Win+V did not restore shortcuts'

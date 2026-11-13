@@ -167,6 +167,29 @@ impl AsyncWrite for Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
+    async fn assert_listener_alive(endpoint: &Endpoint, listener: &mut Listener) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        tokio::time::timeout(Duration::from_secs(3), async {
+            let writer = async {
+                // Connect can see ERROR_PIPE_BUSY while an abandoned instance is
+                // being retired. The production connector has a bounded retry.
+                let mut client = endpoint.connect(Duration::from_secs(2)).await.unwrap();
+                client.write_all(b"alive").await.unwrap();
+            };
+            let reader = async {
+                loop {
+                    let mut server = listener.accept().await.unwrap();
+                    let mut bytes = [0; 5];
+                    match server.read_exact(&mut bytes).await {
+                        Ok(_) => { assert_eq!(&bytes, b"alive"); break; },
+                        Err(error) if matches!(error.kind(), io::ErrorKind::UnexpectedEof | io::ErrorKind::BrokenPipe | io::ErrorKind::ConnectionReset) => continue,
+                        Err(error) => panic!("live client read failed: {error}"),
+                    }
+                }
+            };
+            tokio::join!(writer, reader);
+        }).await.expect("listener did not serve a live client after cancellation");
+    }
     #[test]
     fn clients_abandoned_during_pending_accept_keep_service_endpoint_alive() {
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
@@ -174,24 +197,20 @@ mod tests {
             let endpoint = Endpoint::for_current_session(directory.path()).unwrap();
             let mut listener = endpoint.bind().unwrap();
             for _ in 0..32 {
-                let address = endpoint.address.clone();
-                let client = tokio::spawn(async move {
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                    drop(ClientOptions::new().open(address).unwrap());
-                });
-                match tokio::time::timeout(Duration::from_millis(20), listener.accept()).await {
-                    Err(_) | Ok(Ok(_)) => (),
-                    Ok(Err(error)) => panic!("pending accept killed by disconnected client: {error}"),
+                {
+                    use std::future::Future;
+                    let mut accept = std::pin::pin!(listener.accept());
+                    // Arm the native pending connect before the client arrives,
+                    // then cancel after that client closes without a handshake.
+                    std::future::poll_fn(|cx| {
+                        assert!(accept.as_mut().poll(cx).is_pending());
+                        std::task::Poll::Ready(())
+                    }).await;
+                    drop(ClientOptions::new().open(&endpoint.address).unwrap());
                 }
-                client.await.unwrap();
+                assert_listener_alive(&endpoint, &mut listener).await;
             }
-            let mut client = ClientOptions::new().open(&endpoint.address).unwrap();
-            let mut server = tokio::time::timeout(Duration::from_secs(2), listener.accept()).await.unwrap().unwrap();
-            use tokio::io::{AsyncReadExt, AsyncWriteExt};
-            client.write_all(b"alive").await.unwrap();
-            let mut bytes = [0; 5];
-            tokio::time::timeout(Duration::from_secs(2), server.read_exact(&mut bytes)).await.unwrap().unwrap();
-            assert_eq!(&bytes, b"alive");
+            assert_listener_alive(&endpoint, &mut listener).await;
         });
     }
     #[test]
@@ -207,13 +226,7 @@ mod tests {
                     Ok(Err(error)) => panic!("An abandoned client retired the listener: {error}"),
                 }
             }
-            let mut client = ClientOptions::new().open(&endpoint.address).unwrap();
-            let mut server = tokio::time::timeout(Duration::from_secs(2), listener.accept()).await.unwrap().unwrap();
-            use tokio::io::{AsyncReadExt, AsyncWriteExt};
-            client.write_all(b"alive").await.unwrap();
-            let mut bytes = [0; 5];
-            tokio::time::timeout(Duration::from_secs(2), server.read_exact(&mut bytes)).await.unwrap().unwrap();
-            assert_eq!(&bytes, b"alive");
+            assert_listener_alive(&endpoint, &mut listener).await;
         });
     }
 
