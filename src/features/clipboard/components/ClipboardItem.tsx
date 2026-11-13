@@ -36,7 +36,7 @@ import { ItemContextMenu } from "./ItemContextMenu";
 import type { TransformKindDto } from "./ItemContextMenu";
 import type { CompactPreviewRect } from "./compactPreviewPosition";
 import { COMPACT_PREVIEW_LABEL, hideCompactPreviewGlobal, leaveCompactPreview, showCompactPreview as requestCompactPreview,
-    holdNativeDialogBlur, setIgnoreBlurSafe, previewScrollIdle, type CompactPreviewAnchor } from "./compactPreviewController";
+    holdNativeDialogBlur, setIgnoreBlurSafe, previewScrollIdle, subscribePreviewScroll, type CompactPreviewAnchor } from "./compactPreviewController";
 export { hideCompactPreviewGlobal } from "./compactPreviewController";
 import { resolveContextMenuPoint } from "./contextMenuPosition";
 import { beginPrivacyAccess, getPrivacyViewState, invokePrivacyBound, refreshPrivacyAfterConfirmation, submitPrivacyFeedback, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
@@ -457,16 +457,20 @@ const ClipboardItem = ({
     }, [item]);
     useEffect(() => {
         if (!previewFromKeyboard || isSensitiveHidden) return;
-        const timer = setTimeout(() => {
+        let timer: ReturnType<typeof setTimeout>;
+        const present = () => {
             const node = itemRootRef.current;
-            if (!node?.isConnected) return;
+            if (!node?.isConnected || !keyboardPreviewRef.current) return;
+            if (!previewScrollIdle()) { timer = setTimeout(present, 100); return; }
             const rect = node.getBoundingClientRect();
             const clientX = rect.right - 16;
             const clientY = Math.max(0, Math.min(window.innerHeight, rect.top + rect.height / 2));
             void showCompactPreview({ clientX, clientY, screenX: window.screenX + clientX,
                 screenY: window.screenY + clientY, itemRect: toCompactPreviewRect(rect) }, true);
-        }, 200);
-        return () => { clearTimeout(timer); void hideCompactPreviewGlobal(previewOwner.current); };
+        };
+        const stop = subscribePreviewScroll(() => { clearTimeout(timer); timer = setTimeout(present, 300); });
+        timer = setTimeout(present, 200);
+        return () => { stop(); clearTimeout(timer); void hideCompactPreviewGlobal(previewOwner.current); };
     }, [previewFromKeyboard, isSensitiveHidden, item]);
 
     // Sync local state when prop changes (e.g. when editor opens)

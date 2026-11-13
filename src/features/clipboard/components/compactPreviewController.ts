@@ -71,6 +71,13 @@ const mountedWaiters = new Set<() => void>();
 let leaveTimer: ReturnType<typeof setTimeout> | null = null;
 let lastScroll = -Infinity;
 let activityListening = false;
+const scrollObservers = new Set<() => void>();
+
+export function subscribePreviewScroll(callback: () => void): () => void {
+    previewScrollIdle();
+    scrollObservers.add(callback);
+    return () => { scrollObservers.delete(callback); };
+}
 
 export function previewScrollIdle(): boolean {
     if (!activityListening) {
@@ -78,6 +85,7 @@ export function previewScrollIdle(): boolean {
         const scrolling = () => {
             lastScroll = performance.now();
             void hideCompactPreviewGlobal();
+            scrollObservers.forEach(callback => callback());
         };
         // MyGo returns before the Tauri window listeners are installed. Both
         // paths must cancel pending content before wheel input starts a scroll.
