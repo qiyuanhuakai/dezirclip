@@ -232,6 +232,7 @@ jobs:
         run: |
           cp "artifacts/dzc-desktop/$(rustc --print host-tuple)/dzc-desktop" target/debug/dzc-desktop
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --file-drag
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --screenshots
       - name: Verify X11 screenshot pixels across color depths
         if: runner.os == 'Linux'
         run: |
