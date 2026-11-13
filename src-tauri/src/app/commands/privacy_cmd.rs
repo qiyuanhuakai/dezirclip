@@ -61,7 +61,7 @@ pub async fn get_privacy_entry(
     let instance=bridge.instance()?;
     if expected_host_instance_id.as_ref().is_some_and(|expected| expected!=&instance) {return Err("ClipboardHostInstanceChanged".into());}
     let reveal=reveal.unwrap_or(true);
-    if let Some(entry)=bridge.entry(id,expected_epoch,reveal,None,expected_host_instance_id.as_deref()).await? {
+    if let Some(entry)=bridge.entry(id,expected_epoch,reveal,None,expected_host_instance_id.as_deref(),None).await? {
         if bridge.instance()?!=instance {return Err("ClipboardHostInstanceChanged".into());}
         return Ok(entry);
     }
@@ -109,11 +109,12 @@ pub async fn get_history_resource_preview(
     id: i64,
     expected_epoch: u64,
     max_dimension: Option<u32>,
+    include_video_frame: Option<bool>,
     expected_host_instance_id:Option<String>,
 ) -> Result<HostedEntry, String> {
     let bridge=app.state::<DesktopHost>();
     let maximum = max_dimension.unwrap_or(384).clamp(64, 1024);
-    if let Some(entry)=bridge.entry(id,expected_epoch,false,Some(maximum),expected_host_instance_id.as_deref()).await? {return Ok(entry);}
+    if let Some(entry)=bridge.entry(id,expected_epoch,false,Some(maximum),expected_host_instance_id.as_deref(),include_video_frame).await? {return Ok(entry);}
     if id<0 {bridge.check_instance(id,expected_host_instance_id.as_deref())?;}
     let history = app.state::<DbState>().history_service();
     let permit = history
@@ -127,7 +128,7 @@ pub async fn get_history_resource_preview(
         .map_err(|error| error.to_string())?;
     let entry=if id > 0 {
         history
-            .get_entry_thumbnail_authorized(id, &permit, now(), maximum)
+            .get_entry_thumbnail_authorized(id, &permit, now(), maximum, include_video_frame.unwrap_or(false))
             .map_err(|error| error.to_string())?
             .ok_or_else(|| "SensitiveAccessDenied".into())
     } else {
@@ -141,7 +142,7 @@ pub async fn get_history_resource_preview(
             .cloned()
             .ok_or("ClipboardRecordUnavailable")?;
         history
-            .session_entry_thumbnail_authorized(&entry, &permit, now(), maximum)
+            .session_entry_thumbnail_authorized(&entry, &permit, now(), maximum, include_video_frame.unwrap_or(false))
             .map_err(|error| error.to_string())
     }?;
     bridge.hosted(entry)

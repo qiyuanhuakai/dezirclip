@@ -13,14 +13,17 @@ export function attachmentKind(name: string): string {
     return 'file';
 }
 
-export function attachmentLayout(attachments: AttachmentTile[], width: number, expanded: boolean) {
+export function attachmentLayout(attachments: AttachmentTile[], width: number, expanded: boolean, compact = false) {
     const media = attachments.some(file => file.src);
-    const capacity = Math.max(1, Math.min(4, Math.floor(Math.max(width, 1) / (media ? 110 : 148))));
-    const summary = !media && !expanded && attachments.length > capacity;
-    const visible = summary ? [] : attachments.slice(0, media ? capacity : expanded ? 8 : capacity);
-    const remaining = summary ? [] : attachments.slice(visible.length);
-    const names = media ? remaining.slice(0, expanded ? 6 : Math.min(3, Math.max(1, Math.floor(width / 150)))) : [];
-    return { media, summary, visible, names, omitted: remaining.length - names.length };
+    const columns = Math.max(1, Math.min(4, Math.floor((Math.max(width, 1) + 6) / (media ? compact && !expanded ? 78 : 116 : 134))));
+    const rows = expanded ? 8 : compact ? 2 : 4;
+    const capacity = media ? columns : expanded ? rows : columns * rows;
+    const overflow = !media && attachments.length > capacity;
+    const visible = attachments.slice(0, overflow ? Math.max(0, capacity - 1) : capacity);
+    const remaining = attachments.slice(visible.length);
+    const nameCapacity = expanded ? 6 : columns;
+    const names = media ? remaining.slice(0, remaining.length > nameCapacity ? nameCapacity - 1 : nameCapacity) : [];
+    return { media, columns: !media && expanded ? 1 : columns, visible, names, omitted: remaining.length - names.length };
 }
 const entities: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" };
 const unescape = (value: string) => value.replace(/&amp;|&lt;|&gt;|&quot;|&#39;/g, entity => entities[entity]);

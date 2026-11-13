@@ -221,6 +221,8 @@ type previewBody struct {
 }
 
 func readPreview(ctx context.Context, host *client.Client, params protocol.DesktopEntryParams, full bool) (*previewBody, protocol.RuntimeState, error) {
+	includeVideo := true
+	params.IncludeVideoFrame = &includeVideo
 	size := uint32(560)
 	if !full {
 		params.ThumbnailDimension = &size
@@ -289,6 +291,7 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 	if !params.Reveal && row.SourceApp != "" {
 		iconParams := params
 		iconParams.ThumbnailDimension = nil
+		iconParams.IncludeVideoFrame = nil
 		var iconSnapshot protocol.BodySnapshot
 		if host.Call(ctx, protocol.MethodDesktopHistorySourceIcon, iconParams, "BodySnapshot", &iconSnapshot) == nil {
 			var icon protocol.SourceAppIcon

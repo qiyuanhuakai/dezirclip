@@ -126,7 +126,7 @@ const CompactPreviewWindow = () => {
             const fullContent = pinned || request.allowSensitive;
             const entry = await invokePrivacyBound<ClipboardEntry>(fullContent ? "get_privacy_entry" : "get_history_resource_preview",
                 { id: request.id, expectedHostInstanceId: request.expectedHostInstanceId, expectedEpoch: request.privacyEpoch,
-                    ...(fullContent ? { reveal: request.allowSensitive } : { maxDimension: 560 }) });
+                    ...(fullContent ? { reveal: request.allowSensitive } : { maxDimension: 560, includeVideoFrame: true }) });
             if (disposed || sequence !== payloadSequence.current || !access.isCurrent()) return;
             const next: PreviewPayload = { ...request, contentType: entry.content_type, content: entry.content,
                 protectedContent: isSensitiveEntry(entry), preview: entry.preview, htmlContent: entry.html_content,

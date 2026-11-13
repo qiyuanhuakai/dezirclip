@@ -168,12 +168,12 @@ impl Host {
             let session = self.session.lock().map_err(|_| WireErrorCode::Unavailable)?;
             let row = session.iter().find(|row| row.id == request.id).ok_or(WireErrorCode::NotFound)?;
             match request.thumbnail_dimension {
-                Some(maximum) => self.history.session_entry_thumbnail_authorized(row, &permit, now, maximum),
+                Some(maximum) => self.history.session_entry_thumbnail_authorized(row, &permit, now, maximum, request.include_video_frame.unwrap_or(false)),
                 None => self.history.session_entry_for_preview_authorized(row, &permit, now),
             }.map_err(blocked)?
         } else {
             match request.thumbnail_dimension {
-                Some(maximum) => self.history.get_entry_thumbnail_authorized(request.id, &permit, now, maximum),
+                Some(maximum) => self.history.get_entry_thumbnail_authorized(request.id, &permit, now, maximum, request.include_video_frame.unwrap_or(false)),
                 None => self.history.get_entry_for_preview_authorized(request.id, &permit, now),
             }.map_err(blocked)?.ok_or(WireErrorCode::NotFound)?
         };

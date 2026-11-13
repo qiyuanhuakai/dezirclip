@@ -663,7 +663,7 @@ impl HistoryService {
                 entry.source_app_path = None;
                 entry.is_external = false;
             } else {
-                entry = match super::clipboard_payload::preview_entry(entry.clone(), Some(384)) {
+                entry = match super::clipboard_payload::preview_entry(entry.clone(), Some(384), false) {
                     Ok(entry) => entry,
                     Err(_) => {
                         entry.content.clear();
