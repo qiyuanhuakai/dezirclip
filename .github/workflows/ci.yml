@@ -235,6 +235,7 @@ jobs:
           Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -FileDrag
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Lifecycle
+          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -TrayPaste
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -MiddleShortcut
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -RecoverService
@@ -612,6 +613,7 @@ jobs:
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -WakeTiming
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -WakeTiming -WakeBackground
+            ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -TrayPaste
 
       - name: Verify repeated MyGo emoji paste and Windows Service startup
         if: runner.os == 'Windows' && matrix.can_test && !inputs.windows_service_crash_stacks
@@ -1239,13 +1241,13 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-installer-input/stage" --version 0.2.0-alpha.9 --output "$env:RUNNER_TEMP/DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe"
       - name: Verify installation, installed desktop, upgrade, locked files and uninstall
-        run: python scripts/tests/mygo-installer-windows.py --stage "${{ runner.temp }}/mygo-installer-input/stage" --installer "${{ runner.temp }}/DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe" --pointer-margin 5
+        run: python scripts/tests/mygo-installer-windows.py --stage "${{ runner.temp }}/mygo-installer-input/stage" --installer "${{ runner.temp }}/DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe" --pointer-margin 5 --legacy-close-after-paste
       - name: Verify the same installer source with a non-ANSI installation path
         shell: pwsh
         run: |
           python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-installer-input/stage" --version 0.2.0-alpha.9 --output "$env:RUNNER_TEMP/mygo-unicode-fixture.exe" --unicode-path-fixture
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-installer-input/stage" --installer "$env:RUNNER_TEMP/mygo-unicode-fixture.exe" --unicode-path-fixture --pointer-margin 5
+          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-installer-input/stage" --installer "$env:RUNNER_TEMP/mygo-unicode-fixture.exe" --unicode-path-fixture --pointer-margin 5 --legacy-close-after-paste
       - uses: actions/upload-artifact@v4
         with:
           name: MyGo-installer-${{ github.sha }}

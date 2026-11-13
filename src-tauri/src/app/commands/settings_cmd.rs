@@ -55,11 +55,6 @@ fn apply_setting_state_update(
                 .sound_enabled
                 .store(value == "true", Ordering::Relaxed);
         }
-        "app.sound_paste_enabled" => {
-            settings_state
-                .delete_after_paste
-                .store(value != "false", Ordering::Relaxed);
-        }
         "app.persistent" => {
             settings_state
                 .persistent
@@ -290,7 +285,7 @@ pub async fn save_setting(
         crate::app::surface_supervisor::stop_blocking(&app_handle,"disabled",true).map_err(AppError::Validation)?;
         if let Some(window)=app_handle.get_webview_window("quick-paste") {window.hide()?;}
     }
-    if matches!(key.as_str(), "app.sequential_mode" | "app.delete_after_paste" | "app.paste_method") {
+    if matches!(key.as_str(), "app.sequential_mode" | "app.delete_after_paste" | "app.move_to_top_after_paste" | "app.paste_method") {
         persist_queue_setting(&app_handle, &key, value.clone()).await?;
     } else if dzc_core::api::HistoryService::is_capture_setting(&key) || dzc_core::api::HistoryService::is_view_setting(&key) {
         persist_host_setting(&app_handle.state::<crate::app::ipc_host::DesktopHost>(), &key, value.clone()).await?;

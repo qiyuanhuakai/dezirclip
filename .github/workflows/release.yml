@@ -586,7 +586,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-installer-input/stage" --version 0.2.0-alpha.9 --output "$env:RUNNER_TEMP/DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe"
       - name: Verify installation, installed desktop, upgrade, locked files and uninstall
-        run: python scripts/tests/mygo-installer-windows.py --stage "${{ runner.temp }}/mygo-installer-input/stage" --installer "${{ runner.temp }}/DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe"
+        run: python scripts/tests/mygo-installer-windows.py --stage "${{ runner.temp }}/mygo-installer-input/stage" --installer "${{ runner.temp }}/DezirClip-v0.2.0-alpha.9-windows-x64-MyGo-setup.exe" --legacy-close-after-paste
       - name: Attach tested installer without replacing existing assets
         env:
           GH_TOKEN: ${{ github.token }}

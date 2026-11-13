@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { invoke } from "../lib/desktopInvoke";
 import type { MutableRefObject } from "react";
 import { resolveRichTextSnapshotCacheLimit } from "../lib/richTextSnapshotCache";
@@ -105,6 +105,7 @@ export const useSettingsPostInit = ({
   setEmojiPanelTab,
   setEmojiFavorites
 }: UseSettingsPostInitOptions) => {
+  const appliedPinnedSetting = useRef<boolean | null>(null);
   useEffect(() => {
     if (!settings) return;
 
@@ -119,7 +120,7 @@ export const useSettingsPostInit = ({
       }
     }
 
-    if (settings["app.custom_background"]) setCustomBackground(settings["app.custom_background"]);
+    setCustomBackground(settings["app.custom_background"] ?? "");
     if (settings["app.custom_background_opacity"]) setCustomBackgroundOpacity(parseInt(settings["app.custom_background_opacity"]));
     if (settings["app.surface_opacity"]) {
       const next = parseInt(settings["app.surface_opacity"]);
@@ -185,15 +186,15 @@ export const useSettingsPostInit = ({
         setIdleDestroySeconds(parsed);
       }
     }
-    if (settings["app.show_search_box"] === "false") setShowSearchBox(false);
+    setShowSearchBox(settings["app.show_search_box"] !== "false");
     setScrollTopButtonEnabled(settings["app.show_scroll_top_button"] !== "false");
-    if (settings["app.arrow_key_selection"] === "false") setArrowKeySelection(false);
+    setArrowKeySelection(settings["app.arrow_key_selection"] !== "false");
     setRegistryWinVEnabled(settings["app.use_win_v_shortcut"] === "true");
 
     if (settings["app.sequential_hotkey"] !== undefined) setSequentialHotkey(settings["app.sequential_hotkey"]);
     if (settings["app.rich_paste_hotkey"] !== undefined) setRichPasteHotkey(settings["app.rich_paste_hotkey"]);
     if (settings["app.search_hotkey"] !== undefined) setSearchHotkey(settings["app.search_hotkey"]);
-    if (settings["app.sequential_mode"] === "true") setSequentialModeState(true);
+    setSequentialModeState(settings["app.sequential_mode"] === "true");
     setSoundEnabled(settings["app.sound_enabled"] === "true");
     if (settings["app.sound_volume"]) {
       const next = parseInt(settings["app.sound_volume"], 10);
@@ -202,9 +203,14 @@ export const useSettingsPostInit = ({
     setPasteSoundEnabled(settings["app.sound_paste_enabled"] !== "false");
     if (settings["app.paste_method"]) setPasteMethod(settings["app.paste_method"]);
 
-    if (settings["app.window_pinned"] === "true") {
-      setIsWindowPinned(true);
-      invoke(import.meta.env.MODE === "mygo" ? "restore_window_pinned" : "set_window_pinned", { pinned: true }).catch(console.error);
+    const pinned = settings["app.window_pinned"] === "true";
+    if (appliedPinnedSetting.current !== pinned) {
+      const applyNativePin = pinned || appliedPinnedSetting.current !== null;
+      appliedPinnedSetting.current = pinned;
+      setIsWindowPinned(pinned);
+      if (applyNativePin) {
+        invoke(import.meta.env.MODE === "mygo" ? "restore_window_pinned" : "set_window_pinned", { pinned }).catch(console.error);
+      }
     }
 
     setSettingsLoaded(true);

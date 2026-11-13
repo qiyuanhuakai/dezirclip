@@ -1189,6 +1189,18 @@ mod quick_focus;
 #[cfg(feature = "ipc")]
 pub use quick_focus::RememberedFocus;
 
+#[cfg(all(feature = "ipc", target_os = "windows"))]
+mod window_target_tracking;
+
+/// Explicit Service startup only; linking/probing the platform starts no workers.
+#[cfg(feature = "ipc")]
+pub fn start_window_target_tracking() -> PlatformResult<()> {
+    #[cfg(target_os = "windows")]
+    { window_target_tracking::start() }
+    #[cfg(target_os = "linux")]
+    { Ok(()) }
+}
+
 #[cfg(feature = "ipc")]
 pub struct QueueInputTarget {
     #[cfg(target_os = "windows")]

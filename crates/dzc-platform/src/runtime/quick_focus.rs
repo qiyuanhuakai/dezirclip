@@ -19,6 +19,19 @@ pub struct RememberedFocus {
 }
 
 impl RememberedFocus {
+    pub fn capture_window(peer: &PeerIdentity) -> PlatformResult<Self> {
+        if let Ok(value) = Self::capture(peer) { return Ok(value); }
+        #[cfg(target_os = "windows")]
+        {
+            let peer_pid = peer.pid().ok_or_else(failed)?;
+            let peer = ProcessExit::open(peer).map_err(|_| failed())?;
+            let (windows, original) = super::window_target_tracking::previous(peer_pid, &peer)?;
+            Ok(Self { peer_pid, peer, original, target: QueueTarget { windows: Some(windows), x11: None } })
+        }
+        #[cfg(target_os = "linux")]
+        { Err(failed()) }
+    }
+
     pub fn capture(peer: &PeerIdentity) -> PlatformResult<Self> {
         let peer_pid = peer.pid().ok_or_else(failed)?;
         let peer = ProcessExit::open(peer).map_err(|_| failed())?;

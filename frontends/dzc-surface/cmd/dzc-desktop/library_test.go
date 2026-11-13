@@ -417,6 +417,14 @@ func TestReactLibraryWithService(t *testing.T) {
 	if err := library.SetSetting(ctx, "app.sequential_mode", "false", epoch); err != nil {
 		t.Fatal(err)
 	}
+	for _, value := range []string{"true", "false"} {
+		if err := library.SetSetting(ctx, "app.move_to_top_after_paste", value, epoch); err != nil {
+			t.Fatalf("save paste ordering %s: %v", value, err)
+		}
+	}
+	if err := library.SetSetting(ctx, "app.move_to_top_after_paste", "invalid", epoch); err == nil {
+		t.Fatal("accepted invalid paste ordering")
+	}
 	changes, err := watcher.Changes(ctx, &baseline.State.EventSequence)
 	if err != nil || len(changes.Events) == 0 || changes.State.EventSequence <= baseline.State.EventSequence {
 		t.Fatalf("missing settings changes after startup: %+v %v", changes, err)
@@ -464,7 +472,7 @@ func TestReactLibraryWithService(t *testing.T) {
 	preferences, err := library.Preferences(ctx)
 	var settings map[string]string
 	if err != nil || json.Unmarshal(preferences, &settings) != nil || settings["app.capture_files"] != "false" ||
-		settings["app.window_pinned"] != "true" || settings["app.sequential_mode"] != "false" {
+		settings["app.window_pinned"] != "true" || settings["app.sequential_mode"] != "false" || settings["app.move_to_top_after_paste"] != "false" {
 		t.Fatalf("desktop preferences: %s %v", preferences, err)
 	}
 	for key, value := range viewSettings {

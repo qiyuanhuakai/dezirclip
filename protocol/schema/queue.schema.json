@@ -202,6 +202,7 @@
           "enum": [
             "app.sequential_mode",
             "app.delete_after_paste",
+            "app.move_to_top_after_paste",
             "app.paste_method"
           ]
         },

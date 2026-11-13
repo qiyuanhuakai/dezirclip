@@ -72,6 +72,7 @@ async function watchHost() {
         } else if (event === "ServiceStateChanged" && data.status && ["capture_settings_changed", "view_settings_changed", "custom_themes_changed", "PrivacyHotkeyChanged"].includes(data.status)) {
           settingsChanged = true;
         } else if (event === "ServiceStateChanged" && data.status?.startsWith("paste_queue_changed:")) {
+          settingsChanged = true;
           const count = Number(data.status.slice("paste_queue_changed:".length));
           if (Number.isSafeInteger(count) && count >= 0) dispatch("paste-queue-changed", count);
         }

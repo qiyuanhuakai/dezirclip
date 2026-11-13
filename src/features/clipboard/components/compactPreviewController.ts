@@ -69,6 +69,31 @@ let listeners: Promise<void> | null = null;
 let requestTimer: { id: number; handle: ReturnType<typeof setTimeout> } | null = null;
 const mountedWaiters = new Set<() => void>();
 let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+let lastScroll = -Infinity;
+let activityListening = false;
+const scrollObservers = new Set<() => void>();
+
+export function subscribePreviewScroll(callback: () => void): () => void {
+    previewScrollIdle();
+    scrollObservers.add(callback);
+    return () => { scrollObservers.delete(callback); };
+}
+
+export function previewScrollIdle(): boolean {
+    if (!activityListening) {
+        activityListening = true;
+        const scrolling = () => {
+            lastScroll = performance.now();
+            void hideCompactPreviewGlobal();
+            scrollObservers.forEach(callback => callback());
+        };
+        // MyGo returns before the Tauri window listeners are installed. Both
+        // paths must cancel pending content before wheel input starts a scroll.
+        window.addEventListener("wheel", scrolling, { capture: true, passive: true });
+        window.addEventListener("scroll", scrolling, { capture: true, passive: true });
+    }
+    return performance.now() - lastScroll >= 300;
+}
 
 let lastIgnoreBlur: boolean | null = null;
 let requestedIgnoreBlur = false;
@@ -172,7 +197,6 @@ async function ensureListeners() {
             const id = sessions.current();
             if (scope === "all" || id === null || sessions.get(id)?.allowSensitive) close();
         });
-        window.addEventListener("scroll", close, true);
         await Promise.all([
             getCurrentWindow().listen<{ label: string }>("compact-preview-mounted", event => {
                 if (event.payload?.label === COMPACT_PREVIEW_LABEL) mountedWaiters.forEach(resolve => resolve());
@@ -313,7 +337,7 @@ async function present(layout: PreviewLayout) {
 export async function showCompactPreview(owner: object, anchor: CompactPreviewAnchor, options: RequestOptions,
     stillHovered: () => boolean, sourceIsCurrent: () => boolean = stillHovered) {
     const access = beginPrivacyAccess(options.allowSensitive ? "reveal" : "list");
-    if (!access || !stillHovered()) return;
+    if (!access || !stillHovered() || !previewScrollIdle()) return;
     if (import.meta.env.MODE === "mygo") {
         if (!options.expectedHostInstanceId || !sourceIsCurrent()) return;
         nativeOwner = owner;

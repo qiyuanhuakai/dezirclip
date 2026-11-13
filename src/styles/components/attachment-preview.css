@@ -10,6 +10,9 @@
 .attachment-gallery[data-columns="4"] { --attachment-columns: 4; }
 .attachment-items, .attachment-overflow { display: grid; grid-template-columns: repeat(var(--attachment-columns), minmax(0, 1fr)); column-gap: 6px; row-gap: 0; min-width: 0; }
 .attachment-tile { min-width: 0; margin: 0; padding: 0; color: var(--text-primary); }
+.attachment-items[data-last-span="2"] > .attachment-tile:last-child { grid-column: span 2; }
+.attachment-items[data-last-span="3"] > .attachment-tile:last-child { grid-column: span 3; }
+.attachment-items[data-last-span="4"] > .attachment-tile:last-child { grid-column: span 4; }
 .attachment-tile figcaption, .attachment-name { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: inherit; line-height: inherit; }
 .attachment-tile figcaption > span, .attachment-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .attachment-gallery svg { flex: 0 0 16px; width: 16px; height: 16px; color: var(--text-secondary); }

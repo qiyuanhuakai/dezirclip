@@ -61,6 +61,9 @@ pub fn main_entry() -> Result<(), String> {
         // A migration may own the target endpoint before it publishes clipboard.db.
         // A competing startup must not create or initialize that database.
         let listener = endpoint.bind().map_err(|_| "HostAlreadyRunning")?;
+        if dzc_platform::runtime::start_window_target_tracking().is_err() {
+            eprintln!("Desktop focus tracking unavailable; direct foreground paste remains available");
+        }
         let history = HistoryService::open(&database).map_err(|_| "HostDatabaseUnavailable")?;
         let host = Host::new(HostOptions { mode: HostMode::Service, history, directory: directory.clone(), actions: Arc::new(NativeActions { writer: Default::default() }) }).map_err(|_| "HostInitializationFailed")?;
         let _credentials = ControlFile::publish(&host, &endpoint).map_err(|_| "HostCredentialsUnavailable")?;

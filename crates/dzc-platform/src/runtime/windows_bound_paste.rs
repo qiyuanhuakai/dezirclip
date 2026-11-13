@@ -33,8 +33,13 @@ unsafe impl Send for WindowsBoundPaste {}
 
 impl WindowsBoundPaste {
     pub fn foreground() -> PlatformResult<WindowsPasteTarget> {
+        let target = Self::describe(unsafe { GetForegroundWindow() })?;
+        Self::prepare(&target)?;
+        Ok(target)
+    }
+
+    pub(super) fn describe(hwnd: HWND) -> PlatformResult<WindowsPasteTarget> {
         unsafe {
-            let hwnd = GetForegroundWindow();
             let mut pid = 0;
             let thread_id = GetWindowThreadProcessId(hwnd, Some(&mut pid));
             if crate::windows_input::is_system_focus_window(hwnd) || thread_id == 0 || pid == std::process::id() { return Err(failed()); }
@@ -46,7 +51,6 @@ impl WindowsBoundPaste {
                 hwnd: (hwnd.0 as usize).to_string(), root_hwnd: (GetAncestor(hwnd,GA_ROOT).0 as usize).to_string(), pid, thread_id,
                 creation_time_100ns: ((u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime)).to_string(),
             };
-            Self::prepare(&target)?;
             Ok(target)
         }
     }
@@ -98,6 +102,12 @@ impl WindowsBoundPaste {
 
     // Preparation requires the restored target to be foreground with input focus in its original root.
     pub fn prepare(target: &WindowsPasteTarget) -> PlatformResult<Self> {
+        let value = Self::remember(target)?;
+        value.check()?;
+        Ok(value)
+    }
+
+    pub(super) fn remember(target: &WindowsPasteTarget) -> PlatformResult<Self> {
         let window = positive_decimal(&target.hwnd).and_then(|value| usize::try_from(value).ok()).ok_or_else(failed)?;
         let root = positive_decimal(&target.root_hwnd).and_then(|value| usize::try_from(value).ok()).ok_or_else(failed)?;
         let created = positive_decimal(&target.creation_time_100ns).ok_or_else(failed)?;
@@ -107,10 +117,10 @@ impl WindowsBoundPaste {
         let process = unsafe { OwnedHandle::from_raw_handle(handle.0) };
         let value = Self { process, window: HWND(window as *mut _), root: HWND(root as *mut _),
             pid: target.pid, thread: target.thread_id, created };
-        value.check()?;
+        value.check_identity()?;
         Ok(value)
     }
-    fn check_identity(&self) -> PlatformResult<()> {
+    pub(super) fn check_identity(&self) -> PlatformResult<()> {
         let handle = HANDLE(self.process.as_raw_handle());
         let mut created=FILETIME::default();
         let mut exited=FILETIME::default();
