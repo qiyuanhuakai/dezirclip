@@ -274,42 +274,16 @@ pub(super) fn preview_entry(
     let unavailable = |_| PrivacyError::SensitiveAccessDenied;
     match entry.content_type.as_str() {
         "file" | "files" | "video" => {
-            let names = if entry
-                .content
-                .starts_with(crate::infrastructure::protected_resources::FILES_PREFIX)
-            {
-                crate::infrastructure::protected_resources::decode_files(&entry.content)
-                    .map_err(unavailable)?
-                    .into_iter()
-                    .map(|file| file.name)
-                    .collect::<Vec<_>>()
-            } else {
-                let values: Vec<String> = if entry.content.trim_start().starts_with('[') {
-                    serde_json::from_str(&entry.content)
-                        .map_err(|_| PrivacyError::SensitiveAccessDenied)?
-                } else {
-                    entry.content.lines().map(str::to_owned).collect()
-                };
-                values
-                    .iter()
-                    .filter_map(|value| {
-                        crate::infrastructure::attachments::path_from_uri(value).ok()
-                    })
-                    .filter_map(|path| {
-                        std::path::Path::new(&path)
-                            .file_name()
-                            .and_then(|name| name.to_str())
-                            .map(str::to_owned)
-                    })
-                    .take(64)
-                    .collect()
-            };
+            let (names, html) = crate::media_preview::attachments(&entry.content, maximum.unwrap_or(560))
+                .map_err(unavailable)?;
             entry.content.clear();
-            entry.html_content = None;
+            entry.html_content = Some(html);
             entry.ocr_text = None;
-            entry.preview = names.join("\n");
+            entry.preview = names;
             entry.is_external = false;
-            entry.file_preview_exists = false;
+            entry.file_preview_exists = true;
+            entry.source_app_path = None;
+            return Ok(entry);
         }
         "image" => {
             entry.content = match maximum {

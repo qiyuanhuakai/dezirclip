@@ -38,6 +38,7 @@ impl HostActions for NativeActions {
 }
 
 pub fn main_entry() -> Result<(), String> {
+    dzc_platform::video_preview::dispatch();
     dzc_platform::dispatch_export_guardian();
     let options = Options::parse();
     if options.build_info {
@@ -53,6 +54,7 @@ pub fn main_entry() -> Result<(), String> {
     let diagnostics = diagnostics::Diagnostics::open(&directory);
     diagnostics.install_panic_hook();
     dzc_platform::install_default_key_provider();
+    dzc_platform::video_preview::install();
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_| "HostRuntimeUnavailable")?;
     let result = runtime.block_on(async {
         let endpoint = dzc_platform::ipc::Endpoint::for_current_session(&directory).map_err(|_| "HostEndpointUnavailable")?;

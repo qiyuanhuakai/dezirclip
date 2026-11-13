@@ -11,6 +11,7 @@ export function hasHistoryPreviewText(value: string): boolean {
 
 export function shouldLoadHistoryPreview(entry: ClipboardEntry, compact: boolean): boolean {
     if (isSensitiveEntry(entry)) return false;
+    if (["file", "files", "video"].includes(entry.content_type)) return !entry.html_content;
     if (entry.content_type === "rich_text" && !compact && !entry.html_content) return true;
     return ["text", "code", "url", "rich_text"].includes(entry.content_type) && !hasHistoryPreviewText(entry.preview);
 }
@@ -29,5 +30,6 @@ export function projectHistoryPreview(entry: ClipboardEntry): HistoryPreviewCont
     if (isSensitiveEntry(entry)) throw new Error("ProtectedPreviewRequiresReveal");
     const summary = hasHistoryPreviewText(entry.preview) ? entry.preview : entry.content;
     const first = readableCharacter.exec(summary);
-    return { preview: first ? prefix(summary.slice(first.index), 500) : "", html_content: entry.html_content };
+    const limit = ["file", "files", "video"].includes(entry.content_type) ? 32768 : 500;
+    return { preview: first ? prefix(summary.slice(first.index), limit) : "", html_content: entry.html_content };
 }

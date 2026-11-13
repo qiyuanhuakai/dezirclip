@@ -4,6 +4,7 @@ use dzc_host::wire::*;
 #[tauri::command]
 pub async fn copy_dropped_files(app: AppHandle, window: WebviewWindow, paths: Vec<String>, expected_host_instance_id: String, expected_privacy_epoch: u64) -> Result<(), String> {
     if window.label() != "main" { return Err("FileDropWindowUnavailable".into()); }
+    if crate::infrastructure::file_drag::active() { return Ok(()); }
     let result: OperationResult = app.state::<crate::app::ipc_host::DesktopHost>().blocking_call(Method::DesktopFilesDrop,
         FileDropParams { paths, service_instance_id: expected_host_instance_id, expected_epoch: expected_privacy_epoch }, "OperationResult").await?;
     if !result.performed { return Err("FileDropUnconfirmed".into()); }

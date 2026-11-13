@@ -213,6 +213,7 @@ func (p *Preview) selectEntry(ctx context.Context, sequence uint64, id int64, st
 type previewBody struct {
 	source, text string
 	bitmap       *ui.Bitmap
+	sourceIcon   *ui.Bitmap
 	formatted    *richtext.Document
 	kind         string
 	timestamp    int64
@@ -257,8 +258,9 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 			return nil, snapshot.State, client.ErrProtocol
 		}
 		text = ""
-	} else if row.ContentType == "rich_text" && row.HtmlContent != nil && len(*row.HtmlContent) <= 64*1024 {
-		formatted = previewDocument(richtext.ParseHTML(*row.HtmlContent))
+	} else if (row.ContentType == "rich_text" || row.ContentType == "file" || row.ContentType == "files" || row.ContentType == "video") && row.HtmlContent != nil && len(*row.HtmlContent) <= 2*1024*1024 {
+		html := strings.NewReplacer("<figure>", "<div>", "</figure>", "</div>", "<figcaption>", "<p>", "</figcaption>", "</p>").Replace(*row.HtmlContent)
+		formatted = previewDocument(richtext.ParseHTML(html))
 	} else {
 		if text == "" {
 			text = row.Preview
@@ -276,18 +278,42 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 	if bitmap == nil && formatted == nil {
 		formatted = previewDocument(richtext.NewText(text))
 	}
-	return &previewBody{source: row.SourceApp, text: text, bitmap: bitmap, formatted: formatted, kind: row.ContentType, timestamp: row.Timestamp}, snapshot.State, nil
+	var sourceIcon *ui.Bitmap
+	if !params.Reveal && row.SourceApp != "" {
+		iconParams := params
+		iconParams.ThumbnailDimension = nil
+		var iconSnapshot protocol.BodySnapshot
+		if host.Call(ctx, protocol.MethodDesktopHistorySourceIcon, iconParams, "BodySnapshot", &iconSnapshot) == nil {
+			var icon protocol.SourceAppIcon
+			if host.ReadSnapshot(ctx, iconSnapshot, "SourceAppIcon", &icon) == nil && icon.Src != nil {
+				sourceIcon = previewSourceBitmap(*icon.Src)
+			}
+		}
+	}
+	var latest protocol.RuntimeState
+	if host.Call(ctx, protocol.MethodHealth, struct{}{}, "RuntimeState", &latest) != nil || latest.PrivacyEpoch != snapshot.State.PrivacyEpoch || latest.ServiceInstanceId != snapshot.State.ServiceInstanceId {
+		return nil, snapshot.State, client.ErrProtocol
+	}
+	return &previewBody{sourceIcon: sourceIcon, source: row.SourceApp, text: text, bitmap: bitmap, formatted: formatted, kind: row.ContentType, timestamp: row.Timestamp}, snapshot.State, nil
 }
 
 func (body *previewBody) metadata(c *ui.Context) {
-	label := body.kind
-	if body.source != "" {
-		label += "   ·   " + body.source
-	}
-	if body.timestamp > 0 {
-		label += "   ·   " + time.UnixMilli(body.timestamp).Format("01-02 15:04")
-	}
-	ui.Text(c, label).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)
+	ui.Row(c).FillWidth().Gap(5).Children(func() {
+		previewMetadataIcon(c, body.kind)
+		ui.Text(c, body.kind).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)
+		if body.source != "" {
+			if body.sourceIcon != nil {
+				ui.Image(c, body.sourceIcon).Size(14, 14).Fit(ui.Contain)
+			} else {
+				previewMetadataIcon(c, "application")
+			}
+			ui.Text(c, body.source).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted).Grow(1)
+		}
+		if body.timestamp > 0 {
+			previewMetadataIcon(c, "clock")
+			ui.Text(c, time.UnixMilli(body.timestamp).Format("01-02 15:04")).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)
+		}
+	})
 }
 
 func (body *previewBody) draw(c *ui.Context) {

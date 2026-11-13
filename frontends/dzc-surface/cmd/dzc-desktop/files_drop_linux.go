@@ -130,7 +130,7 @@ var installGTKFileDrop = sync.OnceValues(func() (func(*mygo.Window), error) {
 			}
 		}
 		accepted := int32(0)
-		if len(paths) > 0 && len(paths) <= 256 {
+		if !fileDragPending.Load() && len(paths) > 0 && len(paths) <= 256 {
 			accepted = 1
 			fmt.Fprintf(os.Stderr, "Native GTK file drop: %d files\n", len(paths))
 			filesDropped.Emit(state.window, paths)

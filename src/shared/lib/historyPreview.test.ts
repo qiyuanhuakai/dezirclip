@@ -28,7 +28,12 @@ describe("history metadata preview", () => {
         expect(() => projectHistoryPreview(row({ tags: ["sensitive"], content: "Protected body" }))).toThrow("ProtectedPreviewRequiresReveal");
     });
     it("does not duplicate media thumbnail reads or fetch unknown kinds", () => {
-        for (const kind of ["image", "video", "file", "files", "unknown"]) expect(shouldLoadHistoryPreview(row({ content_type: kind }), true)).toBe(false);
+        for (const kind of ["image", "unknown"]) expect(shouldLoadHistoryPreview(row({ content_type: kind }), true)).toBe(false);
+        for (const kind of ["file", "files", "video"]) {
+            expect(shouldLoadHistoryPreview(row({ content_type: kind }), true)).toBe(true);
+            expect(shouldLoadHistoryPreview(row({ content_type: kind, html_content: "<figure></figure>" }), true)).toBe(false);
+            expect(shouldLoadHistoryPreview(row({ content_type: kind, tags: ["sensitive"] }), true)).toBe(false);
+        }
     });
     it("builds a bounded summary from the authorized body and leaves the input intact", () => {
         const input = row({ content: " \n" + "😀".repeat(2300), html_content: "<p>Rich body</p>" });

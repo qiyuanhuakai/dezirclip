@@ -93,6 +93,13 @@ Wait-FileGesture $gesture $panel
 if ($panel.Received) { throw 'Cancelled drag unexpectedly delivered files' }
 if (![MyGoInput]::IsWindowVisible($main.MainWindowHandle)) { throw 'Cancelling the native drag hid the main window' }
 if (([Windows.Forms.Clipboard]::GetFileDropList() -join '|') -ne ($files -join '|')) { throw 'Dragging unexpectedly changed the clipboard' }
+[Windows.Forms.Clipboard]::SetText('self-drop sentinel')
+$row = Get-ControlPoint $root 'drag-image.png'
+$drop = Get-ControlPoint $root $marker
+$gesture = $panel.Gesture($row, $drop, $false)
+Wait-FileGesture $gesture $panel
+Start-Sleep -Milliseconds 500
+if ([Windows.Forms.Clipboard]::GetText() -ne 'self-drop sentinel') { throw 'Dropping a card onto its own window must not copy it' }
 $bitmap = [Drawing.Bitmap]::new(240, 160)
 try {
     $paint = [Drawing.Graphics]::FromImage($bitmap)

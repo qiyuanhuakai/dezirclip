@@ -5,12 +5,14 @@ use std::{fs::{File, OpenOptions}, io::Write, path::Path, sync::{Arc, Mutex}, ti
 pub(crate) struct Diagnostics(Arc<Mutex<Option<File>>>);
 impl Diagnostics {
     pub(crate) fn open(directory: &Path) -> Self {
+        dzc_platform::crash_diagnostics::install(directory);
         let path = directory.join("service-lifecycle.log");
         if std::fs::metadata(&path).is_ok_and(|meta| meta.len() > 256 * 1024) {
             let _ = std::fs::rename(&path, directory.join("service-lifecycle.previous.log"));
         }
         let value = Self(Arc::new(Mutex::new(OpenOptions::new().create(true).append(true).open(path).ok())));
-        value.record(&format!("start version={}", env!("CARGO_PKG_VERSION")));
+        let build = dzc_protocol::build_info::BuildInfo::current(dzc_protocol::build_info::Component::Service, dzc_core::api::DATABASE_SCHEMA_VERSION);
+        value.record(&format!("start version={} revision={} state={}", env!("CARGO_PKG_VERSION"), build.source_revision.as_deref().unwrap_or("unknown"), build.source_state));
         value
     }
     pub(crate) fn record(&self, event: &str) {

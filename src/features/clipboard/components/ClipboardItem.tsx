@@ -1,3 +1,4 @@
+import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
 import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
 import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
 import { derivedCopySource, invoke } from "../../../shared/lib/desktopInvoke";
@@ -13,16 +14,8 @@ import {
     Tag,
     X,
     FileText,
-    File,
     Plus,
-    Video,
-    FileArchive,
-    Music,
-    FileCode,
-    Cpu,
-    Files,
     ImageOff,
-    FileQuestion,
     GripVertical,
     Edit2
 } from "lucide-react";
@@ -36,7 +29,6 @@ import { hasHistoryPreviewText, type HistoryPreviewContent, type HistoryPreviewP
 import { useImagePreview } from "../../../shared/hooks/useImagePreview";
 import { extractRichImageFallback, resolveRichImageSrc } from "../../../shared/lib/richPreview";
 import { getHistorySourceAppIcon, getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
-import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 import { createFrameThrottle } from "../../../shared/lib/frameThrottle";
 import { sameListById } from "../../../shared/lib/sameListById";
@@ -161,51 +153,6 @@ const renderSourceAppIcon = (iconSrc: string | null, contentType: string, source
     );
 };
 
-const getFileIcon = (filePath: string) => {
-    const ext = filePath.split('.').pop()?.toLowerCase();
-    switch (ext) {
-        case 'zip':
-        case 'rar':
-        case '7z':
-        case 'tar':
-        case 'gz':
-            return <FileArchive size={20} />;
-        case 'mp3':
-        case 'wav':
-        case 'flac':
-        case 'm4a':
-            return <Music size={20} />;
-        case 'exe':
-        case 'msi':
-        case 'bat':
-        case 'sh':
-            return <Cpu size={20} />;
-        case 'pdf':
-        case 'doc':
-        case 'docx':
-        case 'ppt':
-        case 'pptx':
-        case 'xls':
-        case 'xlsx':
-            return <FileText size={20} />;
-        case 'js':
-        case 'ts':
-        case 'tsx':
-        case 'jsx':
-        case 'py':
-        case 'rs':
-        case 'c':
-        case 'cpp':
-        case 'go':
-        case 'java':
-        case 'html':
-        case 'css':
-        case 'json':
-            return <FileCode size={20} />;
-        default:
-            return <File size={20} />;
-    }
-};
 
 const ClipboardItem = ({
     item,
@@ -872,60 +819,7 @@ const ClipboardItem = ({
         return () => window.removeEventListener(CONTEXT_MENU_OPEN_EVENT, handleOtherMenuOpen);
     }, [contextMenuState, item.id]);
 
-    const renderFilePreview = () => {
-        if (item.file_preview_exists === false) {
-            return (
-                <div className="file-thumbnail-card error-bg" title={t('file_deleted') || "File Deleted"}>
-                    <div className="file-icon-wrapper error-icon">
-                        <FileQuestion size={24} />
-                    </div>
-                    <div className="file-info-wrapper">
-                        <div className="file-name error-text">{t('file_deleted') || "Deleted"}</div>
-                        <div className="file-hint error-text">{item.content}</div>
-                    </div>
-                </div>
-            );
-        }
 
-        const paths = item.content.split('\n').filter(p => p.trim());
-        if (paths.length === 0) {
-            return (
-                <div className="file-thumbnail-card">
-                    <div className="file-icon-wrapper"><File size={24} /></div>
-                    <div className="file-info-wrapper"><div className="file-name">{item.preview}</div></div>
-                </div>
-            );
-        }
-        if (paths.length > 1) {
-            return (
-                <div className="file-thumbnail-card" title={item.content}>
-                    <div className="file-icon-wrapper">
-                        <Files size={24} />
-                    </div>
-                    <div className="file-info-wrapper">
-                        <div className="file-name">{paths.length} {t('items')}</div>
-                        <div className="file-hint">{paths[0].split(/[\\/]/).pop()} ...</div>
-                    </div>
-                </div>
-            );
-        }
-
-        const filePath = paths[0];
-        const fileName = filePath.split(/[\\/]/).pop();
-        const dirPath = filePath.split(/[\\/]/).slice(0, -1).join('\\');
-
-        return (
-            <div className="file-thumbnail-card" title={item.content}>
-                <div className="file-icon-wrapper">
-                    {getFileIcon(filePath)}
-                </div>
-                <div className="file-info-wrapper">
-                    <div className="file-name">{fileName}</div>
-                    <div className="file-hint">{dirPath}</div>
-                </div>
-            </div>
-        );
-    };
 
     return (
         <motion.div
@@ -1138,7 +1032,7 @@ const ClipboardItem = ({
                 data-privacy-protected={isSensitiveEntry(item) ? "true" : undefined}
                 onDragStart={event => { if (isSensitiveEntry(item)) event.preventDefault(); }}>
                 {isSensitiveHidden ? <div className="privacy-hidden-content">{t("privacy_sensitive_hidden")}</div>
-                    : item.content_type === "file" && !item.content ? <div className="privacy-file-metadata">{item.preview}</div>
+                    : ["file", "files", "video"].includes(item.content_type) ? <AttachmentPreview html={displayHtml} names={displayPreview || item.content} video={item.content_type === "video"} />
                     : item.content_type === "image" ? (
                     <div style={{ position: 'relative' }}>
                         {item.is_external && item.file_preview_exists === false ? (
@@ -1169,27 +1063,6 @@ const ClipboardItem = ({
                             </div>
                         )}
                     </div>
-                ) : item.content_type === "video" ? (
-                    <div className="video-thumbnail-card">
-                        <div className="video-thumbnail-wrapper">
-                            {/^data:video\/(mp4|webm);base64,[A-Za-z0-9+/=]+$/.test(item.content) && <video
-                                src={item.content}
-                                preload="metadata"
-                                muted
-                                playsInline
-                                className="video-thumbnail-element"
-                                onLoadedMetadata={(e) => seekVideoPreviewFrame(e.currentTarget)}
-                            />}
-                            <div className="video-play-overlay">
-                                <Video size={16} />
-                            </div>
-                        </div>
-                        <div className="video-info-wrapper">
-                            <div className="video-name">{item.preview || item.content.split(/[\\/]/).pop()}</div>
-                        </div>
-                    </div>
-                ) : item.content_type === "file" ? (
-                    renderFilePreview()
                 ) : item.content_type === "rich_text" && displayHtml && !isSensitiveHidden ? (
                     richTextPreviewSrc ? (
                         <img

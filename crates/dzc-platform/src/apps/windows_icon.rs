@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use windows::core::PCWSTR;
 use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject, BITMAPINFO,
+    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GdiFlush, SelectObject, BITMAPINFO,
     BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HGDIOBJ, RGBQUAD,
 };
 use windows::Win32::UI::Shell::ExtractIconExW;
@@ -110,12 +110,80 @@ pub fn get_executable_icon(executable_path: String) -> io::Result<Option<String>
         }
     }
 
-    let icon = extract_executable_icon_data_url(&executable_path)?;
+    let icon = match packaged_icon(Path::new(&executable_path)) {
+        Some(icon) => Some(icon),
+        None => extract_executable_icon_data_url(&executable_path)?,
+    };
     let mut guard = cache
         .lock()
         .map_err(|e| io::Error::other(e.to_string()))?;
     guard.insert(cache_key, icon.clone());
     Ok(icon)
+}
+
+fn package_logo(manifest: &str, executable: &str) -> Option<String> {
+    use quick_xml::{events::Event, Reader};
+    let mut reader = Reader::from_str(manifest);
+    let mut selected = false;
+    loop {
+        match reader.read_event().ok()? {
+            Event::Start(element) | Event::Empty(element) => {
+                let local = element.local_name();
+                if local.as_ref() == b"Application" {
+                    selected = element.attributes().flatten().any(|attribute| attribute.key.as_ref() == b"Executable"
+                        && attribute.unescape_value().is_ok_and(|value| value.replace('/', "\\").eq_ignore_ascii_case(executable)));
+                } else if selected && local.as_ref() == b"VisualElements" {
+                    for attribute in element.attributes().flatten() {
+                        if attribute.key.as_ref() == b"Square44x44Logo" {
+                            return attribute.unescape_value().ok().map(|value| value.into_owned());
+                        }
+                    }
+                }
+            }
+            Event::End(element) if element.local_name().as_ref() == b"Application" => selected = false,
+            Event::Eof => return None,
+            _ => {}
+        }
+    }
+}
+
+fn packaged_icon(executable: &Path) -> Option<String> {
+    use std::io::Read;
+    for root in executable.parent()?.ancestors().take(4) {
+        let manifest = root.join("AppxManifest.xml");
+        let Ok(file) = crate::local_file::open_regular_nofollow(&manifest) else { continue; };
+        if file.metadata().ok()?.len() > 256 * 1024 { continue; }
+        let mut xml = String::new();
+        file.take(256 * 1024 + 1).read_to_string(&mut xml).ok()?;
+        if xml.len() > 256 * 1024 { continue; }
+        let relative = executable.strip_prefix(root).ok()?.to_str()?;
+        let Some(logo) = package_logo(&xml, relative) else { continue; };
+        let logo = Path::new(&logo);
+        if logo.components().any(|part| !matches!(part, std::path::Component::Normal(_))) { continue; }
+        let original = root.join(logo);
+        let stem = original.file_stem()?.to_str()?;
+        let parent = original.parent()?;
+        let mut candidates = vec![parent.join(format!("{stem}.targetsize-32_altform-unplated.png")), parent.join(format!("{stem}.targetsize-32.png")), original.clone()];
+        // Packaged apps often contain only scale-qualified assets, not Logo.png.
+        for suffix in ["scale-100", "scale-125", "scale-150", "scale-200", "scale-400", "targetsize-48", "targetsize-24"] {
+            candidates.push(parent.join(format!("{stem}.{suffix}.png")));
+        }
+        for path in candidates {
+            let Ok(file) = crate::local_file::open_regular_nofollow(&path) else { continue; };
+            if file.metadata().ok()?.len() > 512 * 1024 { continue; }
+            let mut bytes = Vec::new();
+            if file.take(512 * 1024 + 1).read_to_end(&mut bytes).is_err() || bytes.len() > 512 * 1024 { continue; }
+            let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?;
+            let mut limits = image::Limits::default();
+            limits.max_image_width = Some(1024); limits.max_image_height = Some(1024); limits.max_alloc = Some(8 * 1024 * 1024);
+            reader.limits(limits);
+            let Ok(image) = reader.decode() else { continue; };
+            let mut png = std::io::Cursor::new(Vec::new());
+            image.thumbnail(32, 32).write_to(&mut png, image::ImageFormat::Png).ok()?;
+            return Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png.into_inner())));
+        }
+    }
+    None
 }
 
 pub fn get_source_app_icon(executable_path: String) -> io::Result<Option<String>> {
@@ -278,6 +346,7 @@ unsafe fn render_icon_to_png_bytes(icon: HICON) -> io::Result<Vec<u8>> {
         std::slice::from_raw_parts_mut(bits as *mut u8, pixel_len).fill(0);
         DrawIconEx(mem_dc, 0, 0, icon, width, height, 0, None, DI_NORMAL)
             .map_err(|e| io::Error::other(format!("Failed to draw executable icon: {}", e)))?;
+        GdiFlush().ok().map_err(|e| io::Error::other(e.to_string()))?;
 
         let bgra = std::slice::from_raw_parts(bits as *const u8, pixel_len);
         let mut rgba = vec![0u8; pixel_len];
@@ -309,6 +378,12 @@ unsafe fn render_icon_to_png_bytes(icon: HICON) -> io::Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::{IconCache, EXECUTABLE_ICON_CACHE_MAX};
+    #[test]
+    fn package_icon_matches_the_requested_application() {
+        let xml = r#"<Package><Applications><Application Executable="other.exe"><uap:VisualElements Square44x44Logo="other.png" /></Application><Application Executable="app\ChatGPT.exe"><uap:VisualElements Square44x44Logo="Assets\Chat&amp;GPT.png" /></Application></Applications></Package>"#;
+        assert_eq!(super::package_logo(xml, "app\\chatgpt.exe").as_deref(), Some("Assets\\Chat&GPT.png"));
+        assert!(super::package_logo(xml, "unknown.exe").is_none());
+    }
 
     #[test]
     fn source_icon_extracts_local_png_and_rejects_remote_paths() {

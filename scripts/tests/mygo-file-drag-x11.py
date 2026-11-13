@@ -135,6 +135,13 @@ def check(desktop, helpers):
         assert helpers['visible_main_window'](process.pid, desktop), 'Cancelling the native drag hid the main window'
         selection = clipboard.wait_for_contents(Gdk.Atom.intern('text/uri-list', False))
         assert selection and selection.get_uris() == uris, 'Dragging changed the clipboard'
+        clipboard.set_text('self-drop sentinel', -1)
+        pump(.5)
+        row = wait(lambda: point('drag-image.png'), 'File card missing before self-drop')
+        drop = wait(lambda: point('native file drag fixture'), 'Self-drop target missing')
+        gesture(row, drop)
+        pump(.5)
+        assert clipboard.wait_for_text() == 'self-drop sentinel', 'Dropping onto the source window must not copy'
         image = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, True, 8, 240, 160)
         image.fill(0x6699ffff)
         clipboard.set_image(image)

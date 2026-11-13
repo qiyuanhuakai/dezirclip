@@ -2,6 +2,7 @@
 pub mod api;
 pub mod domain;
 pub mod ports;
+pub mod media_preview;
 pub mod privacy;
 pub use dzc_protocol as protocol;
 pub use services::{capture, classification, qr, transforms};

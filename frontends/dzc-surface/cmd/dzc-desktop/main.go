@@ -331,6 +331,9 @@ func run() error {
 		})
 		win.OnMove(func() { preview.clear(); windowMoved.Emit(win, true) })
 		win.OnFileDrop(func(e *mygo.FileDropEvent) {
+			if fileDragPending.Load() {
+				return
+			}
 			fmt.Fprintf(os.Stderr, "Native file drop: %d files\n", len(e.Paths))
 			filesDropped.Emit(win, e.Paths)
 		})
