@@ -103,7 +103,10 @@ impl Host {
         if method == Method::DesktopScreenBegin {
             let request: ScreenBeginParams = decode(params)?;
             return self.begin_screen(session, epoch, || {
-                freeze_at(request.cursor.map(|p| (p.x, p.y))).map_err(|_| WireErrorCode::Unavailable)
+                freeze_at(request.cursor.map(|p| (p.x, p.y))).map_err(|error| {
+                    eprintln!("Screen capture failed: {error}");
+                    WireErrorCode::Unavailable
+                })
             }).and_then(encode);
         }
         let token = params["token"].as_str().ok_or(WireErrorCode::InvalidRequest)?.to_owned();

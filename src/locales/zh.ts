@@ -576,6 +576,7 @@ export const zh = {
         capture_region_now: "区域截图",
         capture_full_now: "全屏截图",
         screenshot_captured: "已复制到剪贴板",
+        screenshot_failed: "截图失败",
         ocr_engine_available: "可用",
         ocr_engine_unavailable: "暂不可用",
         search_mode_hint: "模糊/正则搜索模式",

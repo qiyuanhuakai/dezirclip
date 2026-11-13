@@ -573,6 +573,7 @@ export const en = {
         capture_region_now: "Region Capture",
         capture_full_now: "Full Screen Capture",
         screenshot_captured: "Copied to clipboard",
+        screenshot_failed: "Screenshot failed",
         ocr_engine_available: "Available",
         ocr_engine_unavailable: "Not available",
         search_mode_hint: "Fuzzy/Regex search mode",

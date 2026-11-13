@@ -232,6 +232,13 @@ jobs:
         run: |
           cp "artifacts/dzc-desktop/$(rustc --print host-tuple)/dzc-desktop" target/debug/dzc-desktop
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --file-drag
+      - name: Verify X11 screenshot pixels across color depths
+        if: runner.os == 'Linux'
+        run: |
+          cargo test --locked -p dzc-platform --features native-screen --lib --no-run
+          for depth in 16 24 30; do
+            DEZIRCLIP_RUN_SCREENSHOT_SMOKE_TESTS=1 XDG_SESSION_TYPE=x11 xvfb-run -a -s "-screen 0 640x480x${depth}" cargo test --locked -p dzc-platform --features native-screen native_x11_capture_matches_root_pixels -- --nocapture
+          done
 
   tauri:
     if: inputs.full_validation || inputs.windows_x64_mygo_test_package || inputs.windows_service_crash_stacks || inputs.linux_release_inputs
