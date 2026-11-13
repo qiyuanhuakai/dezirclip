@@ -88,4 +88,20 @@ mod tests {
         assert!(!html.contains(base.to_str().unwrap()));
         assert!(!html.contains("src="));
     }
+    #[test]
+    fn archived_images_share_one_gallery_without_exporting_plaintext_files() {
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(8, 6, image::Rgba([10, 20, 30, 255])))
+            .write_to(&mut png, image::ImageFormat::Png).unwrap();
+        let content = format!("{}{}", resources::FILES_PREFIX, serde_json::json!({"version":1,"files":[
+            {"name":"first.png","data": STANDARD.encode(png.into_inner())},
+            {"name":"notes.txt","data": STANDARD.encode(b"not exposed in a preview")}
+        ]}));
+        let (names, html) = attachments(&content, 384).unwrap();
+        assert_eq!(names, "first.png\nnotes.txt");
+        assert_eq!(html.matches("<figure>").count(), 2);
+        assert_eq!(html.matches("data:image/png;base64,").count(), 1);
+        assert!(!html.contains("not exposed"));
+        assert!(!html.contains(resources::FILES_PREFIX));
+    }
 }

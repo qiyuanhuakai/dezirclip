@@ -126,7 +126,7 @@ mod tests {
             let call = || host.dispatch(&client, Request { request_id: "drop-copy".into(), method: Method::DesktopFilesDrop,
                 params: serde_json::json!({"paths":paths,"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch}) });
             assert!(call().error.is_none());
-            assert_eq!(*writer.0.lock().unwrap(), vec![paths]);
+            assert_eq!(*writer.0.lock().unwrap(), vec![vec![dunce::canonicalize(&file).unwrap().to_string_lossy().into_owned()]]);
             assert!(host.session.lock().unwrap().is_empty());
             assert_eq!(std::fs::read(&file).unwrap(), b"original");
         }
@@ -176,7 +176,7 @@ mod tests {
         let desktop = session(&host, ClientRole::Desktop, true);
         let request = || FileDragParams { id: -1, reveal: false, service_instance_id: state.service_instance_id.clone(), expected_epoch: state.privacy_epoch };
         let result = host.drag_files(&desktop, request()).unwrap();
-        assert_eq!(result.paths, paths);
+        assert_eq!(result.paths, vec![dunce::canonicalize(&file).unwrap().to_string_lossy().into_owned()]);
         assert_eq!(std::fs::read(&file).unwrap(), b"native drag fixture");
         host.session.lock().unwrap()[0].tags.push("sensitive".into());
         assert!(host.drag_files(&desktop, request()).is_err(), "hidden sensitive files must not escape through drag");

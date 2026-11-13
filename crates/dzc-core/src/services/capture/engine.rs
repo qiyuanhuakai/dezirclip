@@ -889,11 +889,13 @@ mod tests {
         let store = Store::default();
         let mut first_id = None;
         for _ in 0..2 {
-            let mut input = frame(CaptureData::Files(vec!["/synthetic/document.txt".into()]));
+            let mut input = frame(CaptureData::Files(vec!["/synthetic/document.txt".into(), "/synthetic/image.png".into()]));
             input.metadata.deduplicate_generated = true;
             let CaptureOutcome::Stored(capture) = CaptureEngine::capture_frame(&context, input, &store, &mut ()) else {
                 panic!("file import should store");
             };
+            assert_eq!(capture.entry.content, "/synthetic/document.txt\n/synthetic/image.png");
+            assert_eq!(capture.entry.content_type, "file");
             if let Some(id) = first_id { assert_eq!(capture.entry.id, id); }
             first_id = Some(capture.entry.id);
         }

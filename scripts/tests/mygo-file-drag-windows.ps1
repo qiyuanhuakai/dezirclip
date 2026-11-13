@@ -8,6 +8,14 @@ using System.Drawing;
 using System.Threading;
 using System.Windows.Forms;
 public sealed class FileTransferFixture : Panel {
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet=System.Runtime.InteropServices.CharSet.Unicode, SetLastError=true)]
+    static extern uint GetLongPathName(string path, System.Text.StringBuilder result, uint size);
+    public static string CanonicalPath(string path) {
+        var result = new System.Text.StringBuilder(32768);
+        uint length = GetLongPathName(path, result, (uint)result.Capacity);
+        if (length == 0 || length >= result.Capacity) throw new System.ComponentModel.Win32Exception();
+        return result.ToString();
+    }
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
@@ -74,6 +82,7 @@ $files = @((Join-Path $dir.FullName 'drag 文件 with spaces.txt'), (Join-Path $
 [IO.File]::WriteAllText($files[0], 'Native copy fixture')
 $bitmap = [Drawing.Bitmap]::new(24, 24)
 try { $bitmap.Save($files[1], [Drawing.Imaging.ImageFormat]::Png) } finally { $bitmap.Dispose() }
+$files = @($files | ForEach-Object { [FileTransferFixture]::CanonicalPath($_) })
 $panel.Source = $files
 $target = $panel.PointToScreen([Drawing.Point]::new(100,100))
 $drop = Get-ControlPoint $root $marker
