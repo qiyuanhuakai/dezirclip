@@ -802,7 +802,7 @@ jobs:
           $installer = "$env:RUNNER_TEMP/mygo-test-installer/DezirClip-v$version-windows-x64-MyGo-setup.exe"
           python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-test-package" --version "$version" --output "$installer"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-test-package" --installer "$installer" --pointer-margin 16
+          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-test-package" --installer "$installer" --pointer-margin 16 --follow-pointer
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - name: Upload Windows x64 MyGo test installer

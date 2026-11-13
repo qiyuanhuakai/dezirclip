@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$FileDrag, [switch]$Lifecycle, [switch]$WakeTiming, [switch]$WakeBackground, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$QuickPasteFollowPointer, [switch]$FileDrag, [switch]$Lifecycle, [switch]$WakeTiming, [switch]$WakeBackground, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -1425,7 +1425,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     Write-Output 'Verified shared WebView2 row click, exact clipboard and editor text, restored focus, and independent native resident'
     # The file must also parse as Windows PowerShell 5.1 without a UTF-8 BOM.
     Test-ResidentPanel $resident '^+v' ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34')) $edit $form
-    Test-QuickPastePosition $resident $edit $form
+    if ($QuickPasteInput -or $QuickPasteFollowPointer) { Test-QuickPastePosition $resident $edit $form }
     Test-ResidentPanel $resident '^+a' ([regex]::Unescape('DezirClip \u622a\u56fe')) $edit $form
     if ($edit.Text -cne $marker) { throw 'Cancelled native panel changed the editor' }
     $null = Wait-Until { [MyGoInput]::CheckClipboardText($marker, $clipboardSequence, $form.Handle) } 'Clipboard remained locked after panel cancellation' 3
