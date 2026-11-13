@@ -458,10 +458,8 @@ function Test-WinVTakeover($Main, $Root) {
             [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Children,
                 [Windows.Automation.AndCondition]::new($name, $process))
         } 'Win+V did not reach the Explorer confirmation'
-        $button = $dialog.FindFirst([Windows.Automation.TreeScope]::Descendants,
-            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $Answer))
-        if (!$button) { throw 'Explorer confirmation button missing' }
-        $button.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+        $point = Get-ControlPoint $dialog $Answer ([Windows.Automation.ControlType]::Button)
+        Click-WindowPoint ([IntPtr]$dialog.Current.NativeWindowHandle) $point
     }
     $box = Wait-Until { Get-SettingsCheckbox $Root 'Use Win+V Shortcut' } 'Win+V setting missing'
     $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
