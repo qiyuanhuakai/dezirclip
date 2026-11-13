@@ -374,6 +374,7 @@ body:not(.theme-mica):not(.theme-acrylic):not(.theme-macos) .history-item.compac
 /* Allow full height for media/file cards in compact mode */
 .history-item.compact .content-preview:has(.video-thumbnail-card),
 .history-item.compact .content-preview:has(.file-thumbnail-card),
+.history-item.compact .content-preview:has(.attachment-gallery),
 .history-item.compact .content-preview:has(.image-preview) {
     max-height: none !important;
     -webkit-line-clamp: unset !important;

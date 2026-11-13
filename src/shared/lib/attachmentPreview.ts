@@ -1,4 +1,27 @@
 export interface AttachmentTile { name: string; src: string | null }
+export function attachmentKind(name: string): string {
+    const extension = name.split('.').pop()?.toLowerCase() ?? '';
+    for (const [kind, extensions] of Object.entries({
+        image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'svg', 'ico', 'tiff'],
+        video: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'wmv', 'm4v'],
+        audio: ['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac'],
+        archive: ['zip', '7z', 'rar', 'gz', 'tar', 'bz2', 'xz'],
+        spreadsheet: ['xls', 'xlsx', 'csv', 'ods'], presentation: ['ppt', 'pptx', 'odp'],
+        document: ['pdf', 'doc', 'docx', 'txt', 'md', 'rtf', 'odt'],
+        code: ['rs', 'go', 'js', 'ts', 'tsx', 'py', 'json', 'html', 'css', 'xml', 'sh'],
+    })) if (extensions.includes(extension)) return kind;
+    return 'file';
+}
+
+export function attachmentLayout(attachments: AttachmentTile[], width: number, expanded: boolean) {
+    const media = attachments.some(file => file.src);
+    const capacity = Math.max(1, Math.min(4, Math.floor(Math.max(width, 1) / (media ? 110 : 148))));
+    const summary = !media && !expanded && attachments.length > capacity;
+    const visible = summary ? [] : attachments.slice(0, media ? capacity : expanded ? 8 : capacity);
+    const remaining = summary ? [] : attachments.slice(visible.length);
+    const names = media ? remaining.slice(0, expanded ? 6 : Math.min(3, Math.max(1, Math.floor(width / 150)))) : [];
+    return { media, summary, visible, names, omitted: remaining.length - names.length };
+}
 const entities: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" };
 const unescape = (value: string) => value.replace(/&amp;|&lt;|&gt;|&quot;|&#39;/g, entity => entities[entity]);
 

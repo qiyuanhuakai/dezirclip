@@ -157,7 +157,7 @@ impl Host {
             };
             let src = match row.source_app_path {
                 Some(path) => dzc_platform::apps::get_source_app_icon(path).map_err(|_| WireErrorCode::Unavailable)?,
-                None => None,
+                None => dzc_platform::apps::builtin_source_icon(&row.source_app),
             };
             self.history.privacy().check_read(&permit, crate::router::now_ms()?).map_err(blocked)?;
             let icon = SourceAppIcon { src };

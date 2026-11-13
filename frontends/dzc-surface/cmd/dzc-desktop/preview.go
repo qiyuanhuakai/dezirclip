@@ -201,7 +201,7 @@ func (p *Preview) selectEntry(ctx context.Context, sequence uint64, id int64, st
 		}
 		p.generation = sequence
 		p.clear()
-		if id == 0 || !p.main.IsFocused() {
+		if id == 0 || !p.main.IsVisible() || p.main.IsMinimized() || reveal && !p.main.IsFocused() {
 			return
 		}
 		ctx, cancel := context.WithCancel(context.Background())
@@ -215,6 +215,7 @@ type previewBody struct {
 	bitmap       *ui.Bitmap
 	sourceIcon   ui.ImageSource
 	formatted    *richtext.Document
+	attachments  []previewAttachment
 	kind         string
 	timestamp    int64
 }
@@ -237,6 +238,7 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 	}
 	var bitmap *ui.Bitmap
 	var formatted *richtext.Document
+	var attachments []previewAttachment
 	text := row.Content
 	if row.ContentType == "image" {
 		header, encoded, ok := strings.Cut(text, ",")
@@ -258,9 +260,14 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 			return nil, snapshot.State, client.ErrProtocol
 		}
 		text = ""
-	} else if (row.ContentType == "rich_text" || row.ContentType == "file" || row.ContentType == "files" || row.ContentType == "video") && row.HtmlContent != nil && len(*row.HtmlContent) <= 2*1024*1024 {
-		html := strings.NewReplacer("<figure>", "<div>", "</figure>", "</div>", "<figcaption>", "<p>", "</figcaption>", "</p>").Replace(*row.HtmlContent)
-		formatted = previewDocument(richtext.ParseHTML(html))
+	} else if row.ContentType == "file" || row.ContentType == "files" || row.ContentType == "video" {
+		markup := ""
+		if row.HtmlContent != nil {
+			markup = *row.HtmlContent
+		}
+		attachments = previewAttachments(markup, row.Preview)
+	} else if row.ContentType == "rich_text" && row.HtmlContent != nil && len(*row.HtmlContent) <= 2*1024*1024 {
+		formatted = previewDocument(richtext.ParseHTML(*row.HtmlContent))
 	} else {
 		if text == "" {
 			text = row.Preview
@@ -275,7 +282,7 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 			}
 		}
 	}
-	if bitmap == nil && formatted == nil {
+	if bitmap == nil && formatted == nil && len(attachments) == 0 {
 		formatted = previewDocument(richtext.NewText(text))
 	}
 	var sourceIcon ui.ImageSource
@@ -294,7 +301,7 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 	if host.Call(ctx, protocol.MethodHealth, struct{}{}, "RuntimeState", &latest) != nil || latest.PrivacyEpoch != snapshot.State.PrivacyEpoch || latest.ServiceInstanceId != snapshot.State.ServiceInstanceId {
 		return nil, snapshot.State, client.ErrProtocol
 	}
-	return &previewBody{sourceIcon: sourceIcon, source: row.SourceApp, text: text, bitmap: bitmap, formatted: formatted, kind: row.ContentType, timestamp: row.Timestamp}, snapshot.State, nil
+	return &previewBody{attachments: attachments, sourceIcon: sourceIcon, source: row.SourceApp, text: text, bitmap: bitmap, formatted: formatted, kind: row.ContentType, timestamp: row.Timestamp}, snapshot.State, nil
 }
 
 func (body *previewBody) metadata(c *ui.Context) {
@@ -317,7 +324,9 @@ func (body *previewBody) metadata(c *ui.Context) {
 }
 
 func (body *previewBody) draw(c *ui.Context) {
-	if body.bitmap != nil {
+	if len(body.attachments) > 0 {
+		drawAttachmentPreview(c, body.attachments)
+	} else if body.bitmap != nil {
 		ui.Image(c, body.bitmap).Fill().Fit(ui.Contain)
 	} else if body.formatted != nil {
 		drawRichPreview(c, body.formatted)
@@ -376,7 +385,7 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 		return
 	}
 	main.Update(func() {
-		if main != p.main || p.generation != sequence || p.cancel == nil || !main.IsFocused() {
+		if main != p.main || p.generation != sequence || p.cancel == nil || !main.IsVisible() || main.IsMinimized() || reveal && !main.IsFocused() {
 			return
 		}
 		bounds := main.ContentBounds()

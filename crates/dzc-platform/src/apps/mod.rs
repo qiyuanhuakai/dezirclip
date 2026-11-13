@@ -12,6 +12,28 @@ mod windows_icon;
 #[cfg(target_os = "windows")]
 pub use windows_icon::{get_executable_icon, get_source_app_icon};
 
+pub fn builtin_source_icon(source: &str) -> Option<String> {
+    if !matches!(source, "DezirClip Screenshot" | "DezirClip File Drop" | "DezirClip Derived" | "DezirClip") { return None; }
+    use base64::Engine;
+    Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(
+        include_bytes!("../../../../frontends/dzc-surface/cmd/dzc-desktop/tray-icon.png"))))
+}
+
+#[cfg(test)]
+mod builtin_icon_tests {
+    #[test]
+    fn generated_sources_share_a_real_embedded_application_icon() {
+        use base64::Engine;
+        for source in ["DezirClip Screenshot", "DezirClip File Drop", "DezirClip Derived"] {
+            let icon = super::builtin_source_icon(source).unwrap();
+            let bytes = base64::engine::general_purpose::STANDARD.decode(icon.strip_prefix("data:image/png;base64,").unwrap()).unwrap();
+            let image = image::load_from_memory(&bytes).unwrap().into_rgba8();
+            assert!(image.pixels().any(|pixel| pixel[3] > 0));
+        }
+        assert!(super::builtin_source_icon("other application").is_none());
+    }
+}
+
 pub fn open_url(handler: &Handler, value: &str) -> std::io::Result<()> {
     let value = value.trim();
     let normalized = if value.get(..4).is_some_and(|prefix| prefix.eq_ignore_ascii_case("www.")) {

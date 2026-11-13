@@ -296,7 +296,7 @@ func run() error {
 		windowStarted := time.Now()
 		installMemoryPolicy(func() bool { return false })
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 352, Height: 380, MinWidth: 250, MinHeight: 300,
-			Hidden: true, SkipTaskbar: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true})
+			Hidden: true, SkipTaskbar: true, DisableMaximize: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true})
 		if err := win.SetIcon(trayIcon); err != nil {
 			fmt.Fprintf(os.Stderr, "Window icon unavailable: %v\n", err)
 		}
