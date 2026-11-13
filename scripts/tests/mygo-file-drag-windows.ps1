@@ -13,7 +13,6 @@ public sealed class FileTransferFixture : Panel {
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     public string[] Source;
     public string[] Received;
-    public readonly ManualResetEventSlim GestureDone = new ManualResetEventSlim(false);
     readonly ManualResetEventSlim entered = new ManualResetEventSlim(false);
     readonly ManualResetEventSlim left = new ManualResetEventSlim(false);
     public string GestureError;
@@ -32,8 +31,8 @@ public sealed class FileTransferFixture : Panel {
             DoDragDrop(data, DragDropEffects.Copy);
         }
     }
-    public void Gesture(Point from, Point to, bool cancel) {
-        entered.Reset(); left.Reset(); GestureDone.Reset(); GestureError = null;
+    public Thread Gesture(Point from, Point to, bool cancel) {
+        entered.Reset(); left.Reset(); GestureError = null;
         var thread = new Thread(() => {
           try {
             SetCursorPos(from.X, from.Y);
@@ -54,14 +53,18 @@ public sealed class FileTransferFixture : Panel {
           finally {
             if (cancel) keybd_event(0x1b, 0, 2, UIntPtr.Zero);
             mouse_event(4, 0, 0, 0, UIntPtr.Zero);
-            GestureDone.Set();
           }
         });
         thread.IsBackground = true;
         thread.Start();
+        return thread;
     }
 }
 '@
+function Wait-FileGesture($Gesture, $Panel) {
+    $null = Wait-Until { $Gesture.Join(0) } 'Native drag gesture did not finish' 15
+    if ($Panel.GestureError) { throw $Panel.GestureError }
+}
 $panel = [FileTransferFixture]::new()
 $form.Controls.Clear()
 $form.Controls.Add($panel)
@@ -74,18 +77,19 @@ try { $bitmap.Save($files[1], [Drawing.Imaging.ImageFormat]::Png) } finally { $b
 $panel.Source = $files
 $target = $panel.PointToScreen([Drawing.Point]::new(100,100))
 $drop = Get-ControlPoint $root $marker
-$panel.Gesture($target, $drop, $false)
+$gesture = $panel.Gesture($target, $drop, $false)
 $null = Wait-Until { [Windows.Forms.Clipboard]::ContainsFileDropList() -and
     ([Windows.Forms.Clipboard]::GetFileDropList() -join '|') -eq ($files -join '|') } 'Native drop did not copy both original files'
+Wait-FileGesture $gesture $panel
 $panel.Source = $null
 $row = Get-ControlPoint $root 'drag-image.png'
-$panel.Gesture($row, $target, $false)
+$gesture = $panel.Gesture($row, $target, $false)
 $null = Wait-Until { $panel.Received -and ($panel.Received -join '|') -eq ($files -join '|') } 'Native card drag did not attach both files'
+Wait-FileGesture $gesture $panel
 if ([IO.File]::ReadAllText($files[0]) -ne 'Native copy fixture' -or !(Test-Path -LiteralPath $files[1])) { throw 'Native drag modified a source file' }
 $panel.Received = $null
-$panel.Gesture($row, $target, $true)
-$null = Wait-Until { $panel.GestureDone.IsSet } 'Native drag cancellation gesture did not finish' 15
-if ($panel.GestureError) { throw $panel.GestureError }
+$gesture = $panel.Gesture($row, $target, $true)
+Wait-FileGesture $gesture $panel
 if ($panel.Received) { throw 'Cancelled drag unexpectedly delivered files' }
 if (![MyGoInput]::IsWindowVisible($main.MainWindowHandle)) { throw 'Cancelling the native drag hid the main window' }
 if (([Windows.Forms.Clipboard]::GetFileDropList() -join '|') -ne ($files -join '|')) { throw 'Dragging unexpectedly changed the clipboard' }
@@ -96,8 +100,9 @@ try {
     [Windows.Forms.Clipboard]::SetImage($bitmap)
 } finally { $bitmap.Dispose() }
 $image = Get-ControlPoint $root 'Clipboard Image'
-$panel.Gesture($image, $target, $false)
+$gesture = $panel.Gesture($image, $target, $false)
 $null = Wait-Until { $panel.Received -and $panel.Received.Length -eq 1 } 'Image card did not export a native file'
+Wait-FileGesture $gesture $panel
 $bytes = [IO.File]::ReadAllBytes($panel.Received[0])
 if ($bytes.Length -lt 8 -or $bytes[0] -ne 137 -or $bytes[1] -ne 80 -or $bytes[2] -ne 78 -or $bytes[3] -ne 71) { throw 'Image export was not PNG' }
 if (![Windows.Forms.Clipboard]::ContainsImage()) { throw 'Dragging the image unexpectedly changed the clipboard' }
