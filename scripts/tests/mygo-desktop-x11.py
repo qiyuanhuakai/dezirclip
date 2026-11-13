@@ -489,7 +489,8 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
                  'Foreground shortcut did not hide the WebView')
         shortcut()
         wait_for(main_active, 'Resident shortcut did not reveal the same WebView')
-        wait_for(lambda: find_item('搜索此标签内容') and find_item(note, text=True),
+        wait_for(lambda: any(label == '搜索此标签内容' for _, label, _, _ in mygo_nodes(atspi, executable))
+                 and find_item(note, text=True),
                  'Shortcut wake did not preserve the selected tag and its contents')
         back = wait_for(lambda: find_item('关闭'), 'Missing tag panel back action')
         assert atspi.Action.do_action(back, 0)
