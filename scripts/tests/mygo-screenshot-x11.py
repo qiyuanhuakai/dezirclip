@@ -1,5 +1,6 @@
 """Exercise screenshot buttons and shortcuts on an isolated X11 desktop."""
 import os
+import ctypes
 import sqlite3
 import subprocess
 import time
@@ -23,6 +24,14 @@ def check(desktop, helpers):
     clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
     root = Gdk.get_default_root_window()
     width, height = root.get_width(), root.get_height()
+    x11, xtest = ctypes.CDLL('libX11.so.6'), ctypes.CDLL('libXtst.so.6')
+    x11.XOpenDisplay.argtypes, x11.XOpenDisplay.restype = [ctypes.c_char_p], ctypes.c_void_p
+    x11.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    xtest.XTestFakeMotionEvent.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_ulong]
+    xtest.XTestFakeButtonEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
+    display = x11.XOpenDisplay(None)
+    assert display
 
     def pump(seconds=.05):
         end = time.monotonic() + seconds
@@ -37,7 +46,11 @@ def check(desktop, helpers):
             result = predicate()
             if result: return result
         tree = [(name, text[:120]) for _, name, _, text in helpers['mygo_nodes'](Atspi, desktop) if name or text]
-        raise AssertionError(f'{message}; accessibility={tree}')
+        image = clipboard.wait_for_image()
+        dimensions = (image.get_width(), image.get_height()) if image is not None else None
+        active = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+        geometry = subprocess.run(['xwininfo', '-id', active], capture_output=True, text=True).stdout
+        raise AssertionError(f'{message}; clipboard image={dimensions}; active window={geometry}; accessibility={tree}')
 
     def find(label):
         return next((node for node, name, _, text in helpers['mygo_nodes'](Atspi, desktop)
@@ -78,9 +91,18 @@ def check(desktop, helpers):
         expected = Gdk.pixbuf_get_from_window(root, x+20, y+20, 1, 1).get_pixels()[:3]
         trigger()
         wait(selector, 'Region selector did not appear')
-        for px, py, action in [(x, y, 'abs'), (x, y, 'b1p'), (x+80, y+65, 'abs'), (x+80, y+65, 'b1r')]:
-            assert Atspi.generate_mouse_event(px, py, action)
-            pump(.12)
+        xtest.XTestFakeMotionEvent(display, -1, x, y, 0)
+        x11.XSync(display, False)
+        pump(.1)
+        xtest.XTestFakeButtonEvent(display, 1, True, 0)
+        x11.XSync(display, False)
+        pump(.1)
+        for step in range(1, 11):
+            xtest.XTestFakeMotionEvent(display, -1, x+80*step//10, y+65*step//10, 0)
+            x11.XSync(display, False)
+            pump(.04)
+        xtest.XTestFakeButtonEvent(display, 1, False, 0)
+        x11.XSync(display, False)
         image = wait(lambda: captured(80, 65), 'Region screenshot was not copied')
         offset = 20*image.get_rowstride()+20*image.get_n_channels()
         assert image.get_pixels()[offset:offset+3] == expected, 'Selector leaked into the captured pixels'
@@ -105,3 +127,4 @@ def check(desktop, helpers):
         with helpers['observed_service_cleanup'](cli):
             process.terminate()
             process.wait(timeout=20)
+        x11.XCloseDisplay(display)
