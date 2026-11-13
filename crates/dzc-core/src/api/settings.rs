@@ -46,7 +46,7 @@ impl HistoryService {
 
     pub fn update_queue_setting(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
         let valid = match key {
-            "app.sequential_mode" | "app.delete_after_paste" => matches!(value, "true" | "false"),
+            "app.sequential_mode" | "app.delete_after_paste" | "app.move_to_top_after_paste" => matches!(value, "true" | "false"),
             "app.paste_method" => matches!(value, "shift_insert" | "ctrl_v" | "game_mode"),
             _ => false,
         };
@@ -161,6 +161,20 @@ mod tests {
             history.update_view_setting(key, "true", epoch).unwrap();
         }
     }
+    #[test]
+    fn paste_ordering_round_trips_and_rejects_invalid_or_stale_writes() {
+        let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
+        let epoch = history.runtime_snapshot(0).unwrap().privacy_epoch;
+        let key = "app.move_to_top_after_paste";
+        for value in ["false", "true"] {
+            history.update_queue_setting(key, value, epoch).unwrap();
+            assert_eq!(history.desktop_preferences().unwrap().get(key).map(String::as_str), Some(value));
+        }
+        assert!(history.update_queue_setting(key, "false", epoch + 1).is_err());
+        assert!(history.update_queue_setting(key, "0", epoch).is_err());
+        assert_eq!(history.desktop_preferences().unwrap().get(key).map(String::as_str), Some("true"));
+    }
+
     #[test]
     fn storage_limit_validates_bounds_and_epoch() {
         let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();

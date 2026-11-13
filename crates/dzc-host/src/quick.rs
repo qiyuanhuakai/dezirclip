@@ -115,10 +115,6 @@ impl Host {
                 if !crate::same_surface_state(&current, &self.snapshot()?) {
                     return Err(WireErrorCode::HistoryRevisionChanged);
                 }
-                let (_, delete, _) = self
-                    .history
-                    .queue_preferences()
-                    .map_err(|_| WireErrorCode::Unavailable)?;
                 self.desktop_copy_bound(
                     session,
                     DesktopCopyParams {
@@ -130,7 +126,9 @@ impl Host {
                         with_format: None,
                         derived_text: None,
                         image_as_base64: None,
-                        delete_after_use: Some(delete),
+                        // Quick paste matches the Tauri panel: selecting a row
+                        // preserves history even when main-window paste consumes it.
+                        delete_after_use: Some(false),
                         move_to_top: Some(true),
                         expected_paste_target: None,
                     },

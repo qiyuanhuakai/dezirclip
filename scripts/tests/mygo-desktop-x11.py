@@ -199,14 +199,23 @@ def check_native_panels(marker, desktop, service_pid, target, editor, paste_row,
         audio_start = audio.stat().st_size
         paste_row()
         deadline = time.monotonic() + 6
-        while editor.get_text() != marker or subprocess.run(['xwininfo', '-id', main_id], capture_output=True).returncode == 0:
-            assert time.monotonic() < deadline, f'Main row did not paste into the original editor and close (text={editor.get_text()!r})'
+        while True:
+            info = subprocess.run(['xwininfo', '-id', main_id], capture_output=True, text=True)
+            if editor.get_text() == marker and 'Map State: IsUnMapped' in info.stdout:
+                break
+            assert time.monotonic() < deadline, f'Main row did not paste and hide (text={editor.get_text()!r})'
+            pump()
+            time.sleep(.05)
+        assert info.returncode == 0, 'Paste destroyed the WebView before the configured idle timeout'
+        deadline = time.monotonic() + 10
+        while subprocess.run(['xwininfo', '-id', main_id], capture_output=True).returncode == 0:
+            assert time.monotonic() < deadline, 'Hidden WebView survived the configured idle timeout'
             pump()
             time.sleep(.05)
         expect_cue(audio, audio_start, paste=True)
         assert target.is_active()
         assert subprocess.check_output(['xclip', '-selection', 'clipboard', '-o']).decode() == marker
-        print('Verified shared React row pasted complete text into the original editor and closed the main window', flush=True)
+        print('Verified shared React row pasted complete text, hid the main window and released it after idle', flush=True)
         try:
             ready, _, _ = select.select(watchers, [], [], 6)
             deadline = time.monotonic() + 6
@@ -1257,6 +1266,8 @@ def check(desktop, pinned, audio, pin_preview=False):
         if not pinned:
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.preview_keyboard_enabled','true')")
         db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.silent_start','false')")
+        db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.idle_destroy_enabled','true')")
+        db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.idle_destroy_seconds','5')")
         if audio is not None:
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.sound_enabled','true')")
         if not pinned:

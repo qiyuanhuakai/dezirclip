@@ -1,7 +1,5 @@
 # Runs only inside the disposable Windows desktop fixture.
 $null = Wait-Until { Get-ControlPoint $root $marker } 'History was not ready for tray paste'
-Click-Control $main (Get-ControlPoint $root 'Pin' ([Windows.Automation.ControlType]::Button))
-$null = Wait-Until { ([MyGoInput]::GetWindowLongPtr($main.MainWindowHandle, -20).ToInt64() -band 8) -ne 0 } 'Tray paste fixture did not pin'
 $handle = $main.MainWindowHandle
 foreach ($mode in @('left-click', 'menu', 'pinned-reactivation')) {
     if ($mode -ne 'pinned-reactivation') {
@@ -23,7 +21,10 @@ foreach ($mode in @('left-click', 'menu', 'pinned-reactivation')) {
         } else {
             if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open tray menu for paste' }
             $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($resident.Id) } 'Tray menu did not open'
-            [Windows.Forms.SendKeys]::SendWait('{HOME}{ENTER}')
+            $showRect = [MyGoInput+Rect]::new()
+            $popup = [MyGoInput]::ResidentTrayItem($resident.Id, 0, [ref]$showRect)
+            if ($popup -eq [IntPtr]::Zero) { throw 'Tray show menu item missing' }
+            Click-WindowPoint $popup ([Drawing.Point]::new(($showRect.left+$showRect.right)/2, ($showRect.top+$showRect.bottom)/2))
         }
         $null = Wait-Until { [MyGoInput]::IsWindowVisible($handle) -and [MyGoInput]::GetForegroundWindow() -eq $handle } 'Tray did not restore the main window'
         $title = Get-ControlPoint $root 'DezirClip' ([Windows.Automation.ControlType]::Text)
@@ -39,6 +40,10 @@ foreach ($mode in @('left-click', 'menu', 'pinned-reactivation')) {
             $after = [MyGoInput+Rect]::new()
             [MyGoInput]::GetWindowRect($handle, [ref]$after) -and ($after.left -ne $before.left -or $after.top -ne $before.top)
         } 'Physical title drag did not move the pinned window'
+        if ($mode -eq 'left-click') {
+            Click-Control $main (Get-ControlPoint $root 'Pin' ([Windows.Automation.ControlType]::Button))
+            $null = Wait-Until { ([MyGoInput]::GetWindowLongPtr($handle, -20).ToInt64() -band 8) -ne 0 } 'Dragged window did not pin'
+        }
     }
     Click-WindowPoint $handle (Get-ControlPoint $root $marker)
     $null = Wait-Until { $edit.Text -ceq $marker -and $edit.Focused -and [MyGoInput]::GetForegroundWindow() -eq $form.Handle } "Exact click-to-paste failed after $mode"

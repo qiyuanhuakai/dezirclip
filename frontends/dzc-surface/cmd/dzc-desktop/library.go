@@ -330,7 +330,7 @@ func (l *Library) SetSetting(ctx context.Context, key, value string, epoch uint6
 		"app.custom_background", "app.custom_background_opacity", "app.emoji_panel_enabled", "app.emoji_panel_tab", "app.emoji_favorites":
 		params := protocol.ViewSettingParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Key: key, Value: value}
 		err = l.owner.DesktopCall(ctx, protocol.MethodDesktopSettingsViewSet, params, "OperationResult", &result)
-	case "app.sequential_mode", "app.delete_after_paste", "app.paste_method":
+	case "app.sequential_mode", "app.delete_after_paste", "app.move_to_top_after_paste", "app.paste_method":
 		params := protocol.QueueSettingParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Key: key, Value: value}
 		err = l.owner.DesktopCall(ctx, protocol.MethodDesktopQueueConfigure, params, "OperationResult", &result)
 	case "app.persistent", "app.persistent_limit_enabled", "app.persistent_limit", "app.deduplicate", "app.capture_files", "app.capture_rich_text", "app.privacy_protection",

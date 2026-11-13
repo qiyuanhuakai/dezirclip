@@ -371,6 +371,11 @@ function Test-QuickPastePosition($Resident, $Editor, $Form) {
 }
 
 function Test-QuickPasteInput($Resident, $Editor, $Form, [string]$Marker) {
+    'import os, sqlite3; db=sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]); db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", ("app.delete_after_paste", "true")); db.commit()' | python -
+    if ($LASTEXITCODE) { throw 'Cannot seed quick-paste history retention setting' }
+    # Reusing the same row across mouse and keyboard pastes verifies that this
+    # panel preserves history even when main-window paste is set to delete.
+
     foreach ($method in @('click', 'enter', 'click')) {
         $Editor.Text = ''
         $Form.Activate()
@@ -797,7 +802,7 @@ try {
 import os, sqlite3
 with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
-                   [("app.hotkey", "Ctrl+Shift+F8"), ("app.silent_start", "false"), ("app.emoji_panel_enabled", "true"), ("app.language","en"), ("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false"), ("app.window_width","670"), ("app.window_height","608")])
+                   [("app.hotkey", "Ctrl+Shift+F8"), ("app.silent_start", "false"), ("app.emoji_panel_enabled", "true"), ("app.language","en"), ("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false"), ("app.window_width","670"), ("app.window_height","608"), ("app.idle_destroy_enabled","true"), ("app.idle_destroy_seconds","5")])
 '@ | python -
     if ($LASTEXITCODE) { throw 'Could not seed isolated window appearance' }
     if ($FileDrag) {
@@ -1466,7 +1471,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Write-Output 'Verified physical WebView2 emoji click pasted into the original editor using an already-running Service'
         return
     }
-    $null = Wait-Until { $main.HasExited } 'Unpinned WebView2 main window did not exit'
+    $null = Wait-Until { !$main.HasExited -and ![MyGoInput]::IsWindowVisible($main.MainWindowHandle) } 'Paste destroyed the WebView instead of hiding it'
+    $null = Wait-Until { $main.HasExited } 'Hidden WebView2 did not exit after its configured idle interval'
     if ($resident.HasExited) { throw 'Native resident exited with the main window' }
     Write-Output 'Verified shared WebView2 row click, exact clipboard and editor text, restored focus, and independent native resident'
     # The file must also parse as Windows PowerShell 5.1 without a UTF-8 BOM.
