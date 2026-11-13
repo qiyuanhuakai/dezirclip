@@ -452,9 +452,21 @@ const ClipboardItem = ({
         void hideCompactPreviewGlobal(previewOwner.current);
         if (hoverTimerRef.current !== null) clearTimeout(hoverTimerRef.current);
         hoverTimerRef.current = null;
-        // A refreshed virtual row under a stationary pointer does not get another enter event.
-        if (hoverAnchorRef.current && itemRootRef.current?.matches(":hover")) scheduleHover();
-    }, [item]);
+        const resumeHover = () => {
+            if (hoverTimerRef.current !== null) clearTimeout(hoverTimerRef.current);
+            hoverTimerRef.current = null;
+            // A refreshed or scrolled row under a stationary pointer may not
+            // receive another enter event after the previous preview is hidden.
+            if (hoverAnchorRef.current && itemRootRef.current?.matches(":hover")) scheduleHover();
+        };
+        resumeHover();
+        const stop = subscribePreviewScroll(resumeHover);
+        return () => {
+            stop();
+            if (hoverTimerRef.current !== null) clearTimeout(hoverTimerRef.current);
+            hoverTimerRef.current = null;
+        };
+    }, [item, isSensitiveHidden]);
     useEffect(() => {
         if (!previewFromKeyboard || isSensitiveHidden) return;
         let timer: ReturnType<typeof setTimeout>;
