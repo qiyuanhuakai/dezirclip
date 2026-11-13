@@ -874,6 +874,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 className="cb"
                                 type="checkbox"
                                 checked={props.registryWinVEnabled}
+                                aria-label={props.t('use_win_v_shortcut')}
                                 disabled={registryWinVChanging}
                                 onChange={async (e) => {
                                     if (registryWinVChanging) return;

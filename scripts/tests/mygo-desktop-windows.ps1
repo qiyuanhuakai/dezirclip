@@ -442,7 +442,7 @@ function Test-MainHotkeys($Main, $Root, $Resident, [string]$Executable, $Editor,
     Click-Control $reopened (Get-ControlPoint $newRoot 'Delete Ctrl+Shift+F9')
     $null = Wait-Until { (Get-SavedMainHotkeys) -ceq $original } 'Removing the new shortcut did not preserve original bindings'
     if (![MyGoInput]::MainTestShortcutAvailable()) { throw 'Removed main shortcut was not released at the OS level' }
-    Write-Host 'Verified WebView2 shortcut editing, persistence, native registration, activation, WebView recreation and removal'
+    Write-Host 'Verified WebView2 shortcut editing, persistence, native registration, same-process hide/wake and removal'
     return $reopened
 }
 
@@ -471,6 +471,7 @@ function Test-WinVTakeover($Main, $Root) {
     Answer-Restart 'OK'
     $null = Wait-Until { (Get-SavedMainHotkeys) -match '(?im)^(Win|Super)\+V$' } 'Win+V was not saved after Explorer released it'
     $window = $Main.MainWindowHandle
+    $null = [MyGoInput]::SetForegroundWindow($window)
     $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $window } 'Win+V fixture lost foreground'
     [MyGoInput]::WinV()
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($window) } 'Win+V did not hide the window'
