@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$QuickPasteFollowPointer, [switch]$FileDrag, [switch]$Lifecycle, [switch]$WakeTiming, [switch]$WakeBackground, [switch]$TrayPaste, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$QuickPasteFollowPointer, [switch]$FileDrag, [switch]$Lifecycle, [switch]$WakeTiming, [switch]$WakeBackground, [switch]$TrayPaste, [switch]$LegacyCloseAfterPaste, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -1471,7 +1471,9 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Write-Output 'Verified physical WebView2 emoji click pasted into the original editor using an already-running Service'
         return
     }
-    $null = Wait-Until { !$main.HasExited -and ![MyGoInput]::IsWindowVisible($main.MainWindowHandle) } 'Paste destroyed the WebView instead of hiding it'
+    if (!$LegacyCloseAfterPaste) {
+        $null = Wait-Until { !$main.HasExited -and ![MyGoInput]::IsWindowVisible($main.MainWindowHandle) } 'Paste destroyed the WebView instead of hiding it'
+    }
     $null = Wait-Until { $main.HasExited } 'Hidden WebView2 did not exit after its configured idle interval'
     if ($resident.HasExited) { throw 'Native resident exited with the main window' }
     Write-Output 'Verified shared WebView2 row click, exact clipboard and editor text, restored focus, and independent native resident'
