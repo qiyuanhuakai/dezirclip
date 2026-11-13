@@ -99,6 +99,10 @@ type SurfaceActionParams struct {
     ServiceInstanceId *string `json:"service_instance_id,omitempty"`
 }
 
+type WindowTargetParams struct {
+    AllowPrevious *bool `json:"allow_previous,omitempty"`
+}
+
 type ActionHotkeyParams struct {
     ServiceInstanceId string `json:"service_instance_id"`
     ExpectedEpoch uint64 `json:"expected_epoch"`

@@ -136,6 +136,13 @@ pub struct SurfaceActionParams {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct WindowTargetParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_previous: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ActionHotkeyParams {
     pub service_instance_id: String,
     pub expected_epoch: u64,

@@ -388,6 +388,15 @@
         }
       ]
     },
+    "WindowTargetParams": {
+      "type": "object",
+      "properties": {
+        "allow_previous": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "ActionHotkeyParams": {
       "type": "object",
       "properties": {
@@ -2608,7 +2617,7 @@
           "then": {
             "properties": {
               "params": {
-                "$ref": "#/$defs/ToolCatalogParams"
+                "$ref": "#/$defs/WindowTargetParams"
               }
             }
           }
