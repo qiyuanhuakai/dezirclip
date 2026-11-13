@@ -637,6 +637,8 @@ jobs:
         run: |
           cargo test --locked -p dzc-platform capture::windows_access::tests::reader_window_owns_the_lock_until_drop -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked -p dzc-platform native_clipboard::windows_public::tests::own_notification_is_identified_without_acquiring_the_clipboard -- --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked -p dzc-platform native_clipboard::windows_image::tests
 
       - name: Diagnose Windows Service startup crashes with local symbols

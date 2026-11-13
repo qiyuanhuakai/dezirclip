@@ -13,6 +13,8 @@ pub mod windows_clipboard;
 #[cfg(target_os = "windows")]
 mod windows_access;
 #[cfg(target_os = "windows")]
+pub(crate) mod windows_echo;
+#[cfg(target_os = "windows")]
 pub mod windows_privacy;
 #[cfg(target_os = "linux")]
 pub mod x11_clipboard;
@@ -30,6 +32,14 @@ pub use subscription::{subscribe_clipboard, ClipboardSubscription};
 #[derive(Debug, Clone, Copy)]
 pub struct ClipboardChange {
     pub sequence: u32,
+}
+
+/// Only suppress an explicit local copy echo; this never reads clipboard data.
+pub fn owns_notification(sequence: u32) -> bool {
+    #[cfg(target_os = "windows")]
+    { windows_echo::owns_notification(sequence) }
+    #[cfg(target_os = "linux")]
+    { let _ = sequence; false }
 }
 
 pub fn sequence_number() -> u32 {

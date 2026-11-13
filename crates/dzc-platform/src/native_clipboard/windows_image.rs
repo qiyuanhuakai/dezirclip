@@ -70,6 +70,11 @@ pub(super) fn write(image: image::RgbaImage) -> Result<(), String> {
     let (png, dib) = representations(image)?;
     let format = unsafe { RegisterClipboardFormatW(w!("PNG")) };
     if format == 0 { return Err(native_failure("register-png", windows::core::Error::from_thread())); }
+    write_formats(vec![(format, png), (17, dib)])
+}
+
+pub(super) fn write_formats(formats: Vec<(u32, Vec<u8>)>) -> Result<(), String> {
+    let marker = crate::capture::windows_echo::format()?;
     let window = Window(unsafe {
         CreateWindowExW(WINDOW_EX_STYLE::default(), w!("STATIC"), w!("DezirClip image clipboard"),
             WINDOW_STYLE::default(), 0, 0, 0, 0, Some(HWND_MESSAGE), None, None, None)
@@ -86,8 +91,10 @@ pub(super) fn write(image: image::RgbaImage) -> Result<(), String> {
         return Err("ClipboardWriteIdentityChanged".into());
     }
     unsafe { EmptyClipboard() }.map_err(|error| native_failure("empty", error))?;
-    // Publish PNG first, as before. No delayed rendering survives this transaction.
-    let result = publish(format, &png).and_then(|()| publish(17, &dib));
+    // No delayed rendering survives this transaction. The marker and payload
+    // become visible together, before any capture notification can read them.
+    let result = formats.iter().try_for_each(|(format, bytes)| publish(*format, bytes))
+        .and_then(|()| publish(marker, &[1]));
     if result.is_err() {
         // The same lock still excludes later owners; do not leave a partial image.
         let _ = unsafe { EmptyClipboard() };
