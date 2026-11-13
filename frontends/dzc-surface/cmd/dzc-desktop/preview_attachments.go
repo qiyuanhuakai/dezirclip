@@ -1,0 +1,116 @@
+package main
+
+import (
+	"bytes"
+	"encoding/base64"
+	"fmt"
+	"html"
+	"image"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"github.com/egoist/mygo/ui"
+)
+
+type previewAttachment struct {
+	name  string
+	image *ui.Bitmap
+}
+
+var attachmentFigure = regexp.MustCompile(`<figure>(?:<img src="(data:image/png;base64,[A-Za-z0-9+/=]+)" alt="[^"]*">)?<figcaption>([^<]*)</figcaption></figure>`)
+
+func previewAttachments(markup, names string) []previewAttachment {
+	if len(markup) <= 2*1024*1024 {
+		matches := attachmentFigure.FindAllStringSubmatchIndex(markup, 256)
+		rows := make([]previewAttachment, 0, len(matches))
+		offset := 0
+		for _, match := range matches {
+			if match[0] != offset {
+				break
+			}
+			row := previewAttachment{name: html.UnescapeString(markup[match[4]:match[5]])}
+			if match[2] >= 0 && len(rows) < 4 {
+				encoded := strings.TrimPrefix(markup[match[2]:match[3]], "data:image/png;base64,")
+				if len(encoded) <= 768*1024 {
+					if raw, err := base64.StdEncoding.DecodeString(encoded); err == nil {
+						config, _, err := image.DecodeConfig(bytes.NewReader(raw))
+						if err == nil && config.Width > 0 && config.Height > 0 && config.Width <= 1024 && config.Height <= 1024 {
+							row.image, _ = ui.DecodeBitmap(raw)
+						}
+						clear(raw)
+					}
+				}
+			}
+			rows = append(rows, row)
+			offset = match[1]
+		}
+		if offset == len(markup) && len(rows) > 0 {
+			return rows
+		}
+	}
+	var rows []previewAttachment
+	for _, name := range strings.Split(names, "\n") {
+		if name != "" && len(rows) < 256 {
+			rows = append(rows, previewAttachment{name: filepath.Base(strings.ReplaceAll(name, "\\", "/"))})
+		}
+	}
+	return rows
+}
+
+func attachmentIconKind(name string) string {
+	extension := strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))
+	for kind, extensions := range map[string]string{
+		"image": " png jpg jpeg gif webp bmp avif svg ico tiff ", "video": " mp4 mov mkv webm avi wmv m4v ",
+		"audio": " mp3 wav flac ogg m4a aac ", "archive": " zip 7z rar gz tar bz2 xz ",
+		"spreadsheet": " xls xlsx csv ods ", "presentation": " ppt pptx odp ",
+		"document": " pdf doc docx txt md rtf odt ", "code": " rs go js ts tsx py json html css xml sh ",
+	} {
+		if extension != "" && strings.Contains(extensions, " "+extension+" ") {
+			return kind
+		}
+	}
+	return "file"
+}
+
+func drawAttachmentPreview(c *ui.Context, rows []previewAttachment) {
+	media := false
+	for _, row := range rows {
+		media = media || row.image != nil
+	}
+	ui.Scroll(c).Fill().Children(func() {
+		ui.Column(c).FillWidth().Gap(8).Children(func() {
+			if len(rows) > 1 {
+				ui.Text(c, fmt.Sprintf("× %d", len(rows))).FontSize(12).TextColor(c.Theme().TextMuted)
+			}
+			shown := 0
+			if media {
+				shown = min(4, len(rows))
+				ui.Row(c).FillWidth().Gap(6).Children(func() {
+					for _, row := range rows[:shown] {
+						ui.Column(c).Width(0).Grow(1).Gap(4).Children(func() {
+							if row.image != nil {
+								ui.Image(c, row.image).FillWidth().Height(100).Fit(ui.Contain)
+							}
+							drawAttachmentName(c, row.name)
+						})
+					}
+				})
+			}
+			limit := min(len(rows), shown+6)
+			for _, row := range rows[shown:limit] {
+				drawAttachmentName(c, row.name)
+			}
+			if limit < len(rows) {
+				ui.Text(c, "…").FontSize(13).TextColor(c.Theme().TextMuted)
+			}
+		})
+	})
+}
+
+func drawAttachmentName(c *ui.Context, name string) {
+	ui.Row(c).FillWidth().Height(22).Gap(5).Children(func() {
+		previewMetadataIcon(c, attachmentIconKind(name))
+		ui.Text(c, name).Grow(1).SingleLine().FontSize(12)
+	})
+}

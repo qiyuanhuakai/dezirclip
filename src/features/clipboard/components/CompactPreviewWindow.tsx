@@ -314,7 +314,7 @@ const CompactPreviewWindow = () => {
                 onFitZoom={setFitZoom} onLoad={() => requestResizeRef.current?.()} />;
         }
         if (["file", "files", "video"].includes(payload.contentType)) {
-            return <AttachmentPreview html={payload.htmlContent} names={payload.content} video={payload.contentType === "video"} />;
+            return <AttachmentPreview fileLabel={translations[payload.language ?? "zh"].type_file} expanded html={payload.htmlContent} names={payload.content} video={payload.contentType === "video"} />;
         }
 
         if (payload.contentType === "rich_text" && payload.htmlContent) {

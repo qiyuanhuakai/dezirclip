@@ -1,16 +1,44 @@
-import { File, Image as ImageIcon, Video } from "lucide-react";
-import { useMemo } from "react";
-import { attachmentTiles } from "../lib/attachmentPreview";
+import { File, FileText, FileArchive, FileCode, FileSpreadsheet, FileChartColumn, Image as ImageIcon, Video, Music, Files } from "lucide-react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { attachmentKind, attachmentLayout, attachmentTiles } from "../lib/attachmentPreview";
 import "../../styles/components/attachment-preview.css";
 
-// Accept only the generated RAM-image gallery; never mount arbitrary attachment HTML.
-export function AttachmentPreview({ html, names, video = false }: { html?: string | null; names: string; video?: boolean }) {
+function FileIcon({ name }: { name: string }) {
+    const Icon = ({ image: ImageIcon, video: Video, audio: Music, archive: FileArchive, code: FileCode,
+        spreadsheet: FileSpreadsheet, presentation: FileChartColumn, document: FileText } as Record<string, typeof File>)[attachmentKind(name)] ?? File;
+    return <Icon size={16} aria-hidden="true" />;
+}
+
+// All attachments remain in their original history entry, with one group action.
+export function AttachmentPreview({ html, names, video = false, fileLabel, expanded = false }: {
+    html?: string | null; names: string; video?: boolean; fileLabel: string; expanded?: boolean;
+}) {
     const attachments = useMemo(() => attachmentTiles(html, names), [html, names]);
-    return <div className={`attachment-gallery${video ? " attachment-video" : ""}`}>
-        {attachments.map((file, index) => <figure className="attachment-tile" key={`${index}:${file.name}`} title={file.name}>
-            {file.src ? <img src={file.src} alt={file.name} loading="lazy" draggable={false} />
-                : video ? <Video size={24} /> : /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(file.name) ? <ImageIcon size={24} /> : <File size={24} />}
-            <figcaption>{file.name}</figcaption>
-        </figure>)}
+    const container = useRef<HTMLDivElement>(null);
+    const [width, setWidth] = useState(320);
+    useLayoutEffect(() => {
+        const element = container.current;
+        if (!element) return;
+        const update = () => setWidth(element.clientWidth);
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, []);
+    const layout = attachmentLayout(attachments, width, expanded);
+    return <div ref={container} className={`attachment-gallery${video ? " attachment-video" : ""}${expanded ? " attachment-expanded" : ""}`}>
+        {(layout.summary || attachments.length > 1) && <div className="attachment-count" title={attachments.map(file => file.name).join('\n')}>
+            <Files size={16} /><span>{fileLabel} × {attachments.length}</span>
+        </div>}
+        {!layout.summary && <div className={`attachment-items${layout.media ? " attachment-media" : ""}`}>
+            {layout.visible.map((file, index) => <figure className="attachment-tile" key={`${index}:${file.name}`} title={file.name}>
+                {file.src && <img src={file.src} alt={file.name} loading="lazy" draggable={false} />}
+                <figcaption><FileIcon name={file.name} /><span>{file.name}</span></figcaption>
+            </figure>)}
+        </div>}
+        {(layout.names.length > 0 || layout.omitted > 0) && <div className="attachment-overflow">
+            {layout.names.map((file, index) => <span className="attachment-name" key={`${index}:${file.name}`} title={file.name}><FileIcon name={file.name} /><span>{file.name}</span></span>)}
+            {layout.omitted > 0 && <span className="attachment-ellipsis" title={`+${layout.omitted}`}>…</span>}
+        </div>}
     </div>;
 }

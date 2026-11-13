@@ -43,6 +43,8 @@ public sealed class MyGoPasteTargetTextBox : System.Windows.Forms.TextBox {
 }
 public static class MyGoInput {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr window);
+    [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
     [DllImport("user32.dll")] static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     public static void WinV() {
         keybd_event(0x5B, 0, 0, UIntPtr.Zero);
@@ -605,6 +607,41 @@ function Test-TransparentPreview($root, $main, [string]$marker) {
     if (![MyGoInput]::SetCursorPos($away.X,$away.Y)) { throw 'Could not leave the selected row' }
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($preview) } 'Preview remained after leaving the row'
 
+}
+
+function Test-UnfocusedPreviewAndTitleBar($root, $main, [string]$marker, $Editor, $Form) {
+    $title = Get-ControlPoint $root 'DezirClip' ([Windows.Automation.ControlType]::Text)
+    $before = New-Object MyGoInput+Rect
+    $null = [MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$before)
+    Click-Control $main $title
+    Click-Control $main $title
+    Start-Sleep -Milliseconds 250
+    [Windows.Forms.Application]::DoEvents()
+    $after = New-Object MyGoInput+Rect
+    $null = [MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$after)
+    if ([MyGoInput]::IsZoomed($main.MainWindowHandle) -or ($after.right-$after.left) -ne ($before.right-$before.left) -or ($after.bottom-$after.top) -ne ($before.bottom-$before.top)) {
+        throw 'Double-clicking the title bar maximized or resized the main window'
+    }
+    Click-Control $main (Get-ControlPoint $root 'Pin' ([Windows.Automation.ControlType]::Button))
+    $null = Wait-Until { ([MyGoInput]::GetWindowLongPtr($main.MainWindowHandle, -20).ToInt64() -band 8) -ne 0 } 'Main window pin did not apply'
+    $point = Get-ControlPoint $root $marker
+    $Form.Activate()
+    $null = $Editor.Focus()
+    $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $Form.Handle } 'Independent editor did not receive focus'
+    if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Cannot hover the unfocused main window' }
+    $preview = Wait-Until {
+        $handle = [MyGoInput]::WindowWithTitle([regex]::Unescape('DezirClip \u60ac\u6d6e\u9884\u89c8'))
+        if ($handle -and [MyGoInput]::IsWindowVisible($handle)) { return $handle }
+    } 'Visible unfocused main window did not show its hover preview'
+    if ([MyGoInput]::GetForegroundWindow() -ne $Form.Handle) { throw 'Unfocused preview stole the editor focus' }
+    $away = Get-ControlPoint $root 'Settings'
+    $null = [MyGoInput]::SetCursorPos($away.X, $away.Y)
+    $null = Wait-Until { ![MyGoInput]::IsWindowVisible($preview) } 'Unfocused preview remained after leaving the row'
+    $null = [MyGoInput]::SetForegroundWindow($main.MainWindowHandle)
+    $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $main.MainWindowHandle } 'Main window could not regain focus'
+    Click-Control $main (Get-ControlPoint $root 'Pin' ([Windows.Automation.ControlType]::Button))
+    $null = Wait-Until { ([MyGoInput]::GetWindowLongPtr($main.MainWindowHandle, -20).ToInt64() -band 8) -eq 0 } 'Main window did not unpin'
+    Write-Output 'Verified title-bar double click stays normal and unfocused hover preview preserves editor focus'
 }
 
 function Test-PinnedPreview($root, $main, $resident, [string]$marker) {
@@ -1338,6 +1375,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     if ($Capture) {
         Assert-CustomBackgroundPresent $main
         Test-TransparentPreview $root $main $marker
+        Test-UnfocusedPreviewAndTitleBar $root $main $marker $edit $form
         Test-ExternalEdit $root $main $marker
         $main = Test-OcrAfterReopen $main $resident $exe $form $edit
         Assert-CustomBackgroundPresent $main

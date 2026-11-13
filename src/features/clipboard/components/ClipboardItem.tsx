@@ -1032,7 +1032,7 @@ const ClipboardItem = ({
                 data-privacy-protected={isSensitiveEntry(item) ? "true" : undefined}
                 onDragStart={event => { if (isSensitiveEntry(item)) event.preventDefault(); }}>
                 {isSensitiveHidden ? <div className="privacy-hidden-content">{t("privacy_sensitive_hidden")}</div>
-                    : ["file", "files", "video"].includes(item.content_type) ? <AttachmentPreview html={displayHtml} names={displayPreview || item.content} video={item.content_type === "video"} />
+                    : ["file", "files", "video"].includes(item.content_type) ? <AttachmentPreview fileLabel={t("type_file")} html={displayHtml} names={displayPreview || item.content} video={item.content_type === "video"} />
                     : item.content_type === "image" ? (
                     <div style={{ position: 'relative' }}>
                         {item.is_external && item.file_preview_exists === false ? (

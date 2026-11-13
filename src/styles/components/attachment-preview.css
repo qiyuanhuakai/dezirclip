@@ -1,27 +1,21 @@
-.attachment-gallery {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(132px, 100%), 1fr));
-    gap: 8px;
-    width: 100%;
-    max-height: 300px;
-    overflow: auto;
-    scrollbar-width: thin;
+.content-preview:has(> .attachment-gallery) {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+    max-height: none;
 }
-.attachment-tile {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0;
-    padding: 8px;
-    min-width: 0;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--bg-secondary);
-    color: var(--text-primary);
-}
-.attachment-tile:has(img) { flex-direction: column; }
-.attachment-tile > svg { flex-shrink: 0; color: var(--text-secondary); }
-.attachment-tile img { width: 100%; height: 96px; object-fit: contain; border-radius: 5px; }
-.attachment-tile figcaption { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.attachment-video .attachment-tile img { height: 160px; }
-.compact-preview-content .attachment-gallery { max-height: none; }
+.attachment-gallery { display: flex; flex-direction: column; gap: 6px; width: 100%; min-width: 0; }
+.attachment-count { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.attachment-items { display: flex; gap: 6px; min-width: 0; }
+.attachment-tile { flex: 1 1 0; min-width: 0; margin: 0; padding: 4px; border-radius: 6px; color: var(--text-primary); }
+.attachment-tile figcaption, .attachment-name { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 12px; }
+.attachment-tile figcaption > span, .attachment-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.attachment-gallery svg { flex: 0 0 16px; width: 16px; height: 16px; color: var(--text-secondary); }
+.attachment-media .attachment-tile { display: flex; flex-direction: column; justify-content: flex-end; gap: 5px; background: var(--bg-secondary); border: 1px solid var(--border-color); }
+.attachment-tile img { display: block; width: 100%; height: 96px; object-fit: contain; border-radius: 4px; }
+.attachment-video .attachment-tile img { height: 144px; }
+.attachment-overflow { display: flex; gap: 8px; min-width: 0; overflow: hidden; }
+.attachment-name { flex: 1 1 0; }
+.attachment-ellipsis { flex: 0 0 auto; color: var(--text-secondary); }
+.attachment-expanded .attachment-items:not(.attachment-media) { flex-direction: column; }
+.attachment-expanded .attachment-tile img { height: 160px; }

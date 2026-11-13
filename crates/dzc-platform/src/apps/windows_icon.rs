@@ -170,12 +170,31 @@ fn packaged_icon(executable: &Path) -> Option<String> {
             limits.max_image_width = Some(1024); limits.max_image_height = Some(1024); limits.max_alloc = Some(8 * 1024 * 1024);
             reader.limits(limits);
             let Ok(image) = reader.decode() else { continue; };
+            let Some(image) = legible_icon(image) else { continue; };
             let mut png = std::io::Cursor::new(Vec::new());
             image.thumbnail(32, 32).write_to(&mut png, image::ImageFormat::Png).ok()?;
             return Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png.into_inner())));
         }
     }
     None
+}
+
+// Package logos may be white-only transparent glyphs intended for a dark tile.
+// Preserve their colors while supplying contrast on both application themes.
+fn legible_icon(image: image::DynamicImage) -> Option<image::DynamicImage> {
+    let image = image.thumbnail(32, 32).into_rgba8();
+    let pixels: Vec<_> = image.pixels().filter(|pixel| pixel[3] >= 32).collect();
+    if pixels.is_empty() { return None; }
+    let background = if pixels.iter().all(|p| p[0] > 220 && p[1] > 220 && p[2] > 220) {
+        Some(Rgba([40, 40, 44, 255]))
+    } else if pixels.iter().all(|p| p[0] < 40 && p[1] < 40 && p[2] < 40) {
+        Some(Rgba([240, 240, 244, 255]))
+    } else { None };
+    if let Some(background) = background {
+        let mut tile = ImageBuffer::from_pixel(36, 36, background);
+        image::imageops::overlay(&mut tile, &image, (36 - image.width()) as i64 / 2, (36 - image.height()) as i64 / 2);
+        Some(image::DynamicImage::ImageRgba8(tile))
+    } else { Some(image::DynamicImage::ImageRgba8(image)) }
 }
 
 pub fn get_source_app_icon(executable_path: String) -> io::Result<Option<String>> {
@@ -370,6 +389,18 @@ unsafe fn render_icon_to_png_bytes(icon: HICON) -> io::Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::{IconCache, EXECUTABLE_ICON_CACHE_MAX};
+    #[test]
+    fn transparent_monochrome_logos_gain_contrast_and_empty_icons_are_rejected() {
+        use image::{DynamicImage, ImageBuffer, Rgba};
+        for color in [Rgba([255, 255, 255, 255]), Rgba([0, 0, 0, 255])] {
+            let mut pixels = ImageBuffer::new(32, 32);
+            pixels.put_pixel(16, 16, color);
+            let icon = super::legible_icon(DynamicImage::ImageRgba8(pixels)).unwrap().into_rgba8();
+            assert_eq!(icon.get_pixel(0, 0)[3], 255);
+            assert_ne!(icon.get_pixel(0, 0)[0], color[0]);
+        }
+        assert!(super::legible_icon(DynamicImage::ImageRgba8(ImageBuffer::new(32, 32))).is_none());
+    }
     #[test]
     fn package_icon_matches_the_requested_application() {
         let xml = r#"<Package><Applications><Application Executable="other.exe"><uap:VisualElements Square44x44Logo="other.png" /></Application><Application Executable="app\ChatGPT.exe"><uap:VisualElements Square44x44Logo="Assets\Chat&amp;GPT.png" /></Application></Applications></Package>"#;
