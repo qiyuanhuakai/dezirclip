@@ -61,6 +61,8 @@ func refreshMainShortcuts(owner *client.Client, registered map[string]bool, togg
 // Only the main window loads the WebView runtime. Parent and child use
 // inherited pipes for window lifecycle, and authenticate separately to Rust.
 func runResident(owner *client.Client, minimized bool, activation string) error {
+	stopObserving := observeServiceExit(owner)
+	defer stopObserving()
 	executable, err := os.Executable()
 	if err != nil {
 		return err

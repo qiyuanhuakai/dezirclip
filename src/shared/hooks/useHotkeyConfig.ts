@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { invoke } from "../lib/desktopInvoke";
 import { useHotkeyRecording } from "./useHotkeyRecording";
 
@@ -48,6 +48,10 @@ export const useHotkeyConfig = ({
   t,
   pushToast
 }: UseHotkeyConfigOptions) => {
+  // A Win+V transaction can add/remove and then roll back before its original
+  // async handler receives new props. Always mutate the last confirmed list.
+  const confirmedHotkeys = useRef(hotkey);
+  useEffect(() => { confirmedHotkeys.current = hotkey; }, [hotkey]);
   const parseMainHotkeys = useCallback(
     (value: string): string[] =>
       value
@@ -71,9 +75,11 @@ export const useHotkeyConfig = ({
       const serialized = serializeMainHotkeys(items);
       if (import.meta.env.MODE === "mygo") {
         await invoke("register_hotkey", { hotkey: serialized });
+        confirmedHotkeys.current = serialized;
         setHotkey(serialized);
         return;
       }
+      confirmedHotkeys.current = serialized;
       setHotkey(serialized);
       saveAppSetting("hotkey", serialized);
       await invoke("register_hotkey", { hotkey: serialized }).catch((err) => {
@@ -102,7 +108,10 @@ export const useHotkeyConfig = ({
     (value: string): string =>
       value
         .split("+")
-        .map((item) => item.trim().toUpperCase())
+        .map((item) => {
+          const part = item.trim().toUpperCase();
+          return ["WIN", "WINDOWS", "META", "CMD", "COMMAND"].includes(part) ? "SUPER" : part;
+        })
         .filter((item) => !!item)
         .join("+"),
     []
@@ -186,7 +195,7 @@ export const useHotkeyConfig = ({
         }
       }
 
-      const existing = parseMainHotkeys(hotkey);
+      const existing = parseMainHotkeys(confirmedHotkeys.current);
       const normalizedValue = normalizeHotkeyForCompare(value);
       const hasExisting = existing.some((item) => normalizeHotkeyForCompare(item) === normalizedValue);
       if (hasExisting) {
@@ -203,7 +212,7 @@ export const useHotkeyConfig = ({
 
   const removeMainHotkey = useCallback(
     async (targetHotkey: string) => {
-      const existing = parseMainHotkeys(hotkey);
+      const existing = parseMainHotkeys(confirmedHotkeys.current);
       const normalizedTarget = normalizeHotkeyForCompare(targetHotkey);
       const next = existing.filter((item) => normalizeHotkeyForCompare(item) !== normalizedTarget);
       if (next.length === existing.length) return false;

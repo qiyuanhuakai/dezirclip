@@ -303,7 +303,7 @@ func run() error {
 		preview.main = win
 		dock := &shell.dock
 		dock.window, dock.preview, dock.history = win, preview, history
-		dock.show = func() { shell.requestShow(win) }
+		dock.show = func() { shell.requestShow(win); shell.resumeDocked = true }
 		dock.configure(settings.EdgeDocking == "true")
 		win.OnBlur(func() {
 			history.targetInvalid.Store(true)
@@ -433,8 +433,12 @@ func run() error {
 				} else if command == "show" || command == "toggle" || command == "settings" || command == "search" || command == "rebuild" {
 					mygo.RunOnMain(trayState.cancel)
 				}
-				if command == "rebuild" || command == "toggle" && mainWindowFocused(win) {
+				if command == "rebuild" {
 					mygo.RunOnMain(func() { win.Close() })
+					continue
+				}
+				if command == "toggle" && mainWindowFocused(win) {
+					mygo.RunOnMain(func() { shell.hideMain(win) })
 					continue
 				}
 				if command == "show" || command == "toggle" || command == "settings" || command == "search" {

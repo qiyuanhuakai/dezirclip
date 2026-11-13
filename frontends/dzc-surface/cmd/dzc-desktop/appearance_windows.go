@@ -52,7 +52,7 @@ var (
 
 func dockingAvailable() bool { return true }
 
-func restoreMainPosition(w *mygo.Window) {
+func restoreMainPosition(w *mygo.Window, docked bool) {
 	type rect struct{ left, top, right, bottom int32 }
 	var bounds rect
 	if ok, _, _ := windowRect.Call(w.NativeHandle(), uintptr(unsafe.Pointer(&bounds))); ok == 0 {
@@ -69,7 +69,7 @@ func restoreMainPosition(w *mygo.Window) {
 		return
 	}
 	point := visibleMainPosition(mygo.Rectangle{X: int(bounds.left), Y: int(bounds.top), Width: int(bounds.right - bounds.left), Height: int(bounds.bottom - bounds.top)},
-		mygo.Rectangle{X: int(info.work.left), Y: int(info.work.top), Width: int(info.work.right - info.work.left), Height: int(info.work.bottom - info.work.top)})
+		mygo.Rectangle{X: int(info.work.left), Y: int(info.work.top), Width: int(info.work.right - info.work.left), Height: int(info.work.bottom - info.work.top)}, docked)
 	moveWindow.Call(w.NativeHandle(), 0, uintptr(point.X), uintptr(point.Y), 0, 0, 0x0001|0x0004|0x0010)
 }
 

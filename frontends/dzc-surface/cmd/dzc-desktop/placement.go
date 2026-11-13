@@ -44,9 +44,12 @@ func scaledSize(width, height int, scale float64) mygo.Size {
 	return mygo.Size{Width: int(math.Round(float64(width) * scale)), Height: int(math.Round(float64(height) * scale))}
 }
 
-func visibleMainPosition(bounds, area mygo.Rectangle) mygo.Point {
+func visibleMainPosition(bounds, area mygo.Rectangle, docked bool) mygo.Point {
 	axis := func(value, origin, space, size int) int {
 		margin := min(16, max(0, (space-size)/2))
+		if docked {
+			margin = 0
+		}
 		return max(origin+margin, min(value, origin+max(0, space-size)-margin))
 	}
 	return mygo.Point{X: axis(bounds.X, area.X, area.Width, bounds.Width), Y: axis(bounds.Y, area.Y, area.Height, bounds.Height)}

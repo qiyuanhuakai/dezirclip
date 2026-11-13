@@ -874,6 +874,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 className="cb"
                                 type="checkbox"
                                 checked={props.registryWinVEnabled}
+                                aria-label={props.t('use_win_v_shortcut')}
                                 disabled={registryWinVChanging}
                                 onChange={async (e) => {
                                     if (registryWinVChanging) return;
@@ -886,14 +887,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                     const hasWinV = !!matchedWinV;
                                     props.setRegistryWinVEnabled(enabled);
                                     try {
-                                        if (enabled && !hasWinV) {
-                                            const added = await props.addMainHotkey("Win+V", { skipAvailabilityCheck: true });
-                                            if (!added) {
-                                                props.setRegistryWinVEnabled(previousEnabled);
-                                                setRegistryWinVChanging(false);
-                                                return;
-                                            }
-                                        }
                                         if (!enabled && matchedWinV) {
                                             const removed = await props.removeMainHotkey(matchedWinV);
                                             if (!removed) {
@@ -929,14 +922,18 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                             }
                                         }
                                         if (rollbackToken !== undefined) {
+                                            // Explorer must release its system claim before MyGo can
+                                            // acquire the same Windows shortcut. Keep the receipt until
+                                            // registration succeeds so failures restore the original state.
+                                            if (enabled && !hasWinV) {
+                                                const added = await props.addMainHotkey("Win+V", { skipAvailabilityCheck: true });
+                                                if (!added) throw new Error("Win+V registration was not completed");
+                                            } else if (enabled) {
+                                                await invoke("register_hotkey", { hotkey: props.mainHotkeys.join("\n") });
+                                            }
                                             await invoke("finish_registry_win_v_change", { token: rollbackToken, rollback: false });
                                             rollbackToken = undefined;
                                             if (explorerRestarted) {
-                                                if (enabled) {
-                                                    setTimeout(() => {
-                                                        props.addMainHotkey("Win+V", { skipAvailabilityCheck: true });
-                                                    }, 1500);
-                                                }
                                                 setTimeout(async () => {
                                                     try {
                                                         await invoke("set_theme", {
@@ -955,6 +952,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                             if (rollbackToken !== undefined) {
                                                 await invoke("finish_registry_win_v_change", { token: rollbackToken, rollback: true });
                                                 rollbackToken = undefined;
+                                                if (explorerRestarted) await invoke("restart_explorer");
                                             }
                                         } catch (registryErr) {
                                             console.error("Rollback registry optimization failed:", registryErr);
