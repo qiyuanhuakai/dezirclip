@@ -3,8 +3,7 @@ use ::windows::Win32::{
     Foundation::CloseHandle,
     System::{
         DataExchange::{CloseClipboard, GetClipboardOwner, OpenClipboard},
-        ProcessStatus::GetModuleFileNameExW,
-        Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ},
+        Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION},
     },
     UI::{
         Input::KeyboardAndMouse::{
@@ -59,15 +58,16 @@ pub fn source() -> PlatformResult<SourceIdentity> {
             ..Default::default()
         };
         if let Ok(process) = OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
+            PROCESS_QUERY_LIMITED_INFORMATION,
             false,
             pid,
         ) {
             let mut path = [0u16; 32768];
-            let len = GetModuleFileNameExW(Some(process), None, &mut path) as usize;
+            let mut len = path.len() as u32;
+            let queried = QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, ::windows::core::PWSTR(path.as_mut_ptr()), &mut len).is_ok();
             let _ = CloseHandle(process);
-            if len > 0 && len < path.len() {
-                let path = String::from_utf16_lossy(&path[..len]);
+            if queried && len > 0 && (len as usize) < path.len() {
+                let path = String::from_utf16_lossy(&path[..len as usize]);
                 identity.app_name = std::path::Path::new(&path)
                     .file_stem()
                     .map(|part| part.to_string_lossy().into_owned());

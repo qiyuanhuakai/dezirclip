@@ -215,12 +215,19 @@ jobs:
             sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt
           fi
           sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev libxcb1-dev libx11-dev libxi-dev libxtst-dev libxrandr-dev libpipewire-0.3-dev libgbm-dev libwayland-dev libegl-dev libfontconfig1-dev libwebkit2gtk-4.1-0 libayatana-appindicator3-1 python3-gi python3-psutil python3-pil gir1.2-gtk-3.0 gir1.2-atspi-2.0 at-spi2-core xvfb dbus-x11 openbox x11-utils gnome-keyring fonts-noto-cjk pulseaudio pulseaudio-utils xclip
+          sudo apt-get install -y libdbus-1-dev libxcb1-dev libx11-dev libxi-dev libxtst-dev libxrandr-dev libpipewire-0.3-dev libgbm-dev libwayland-dev libegl-dev libfontconfig1-dev libwebkit2gtk-4.1-0 libayatana-appindicator3-1 python3-gi python3-psutil python3-pil gir1.2-gtk-3.0 gir1.2-atspi-2.0 at-spi2-core xvfb dbus-x11 openbox x11-utils gnome-keyring fonts-noto-cjk pulseaudio pulseaudio-utils xclip ffmpeg
       - name: Build Service and native Desktop
         run: |
           pnpm install --frozen-lockfile
           pnpm run desktop:mygo:build
           cargo build --locked --no-default-features --features native-screen --bin dzc --bin dzc-service
+      - name: Ensure the synthetic Windows video encoder is available
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg -y --no-progress }
+      - name: Verify isolated video frames and native crash evidence
+        run: python scripts/tests/media-preview.py
       - name: Verify actual Windows file transfers
         if: runner.os == 'Windows'
         shell: powershell
@@ -363,7 +370,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
-            libwebkitgtk-6.0-4 gir1.2-atspi-2.0 python3-gi at-spi2-core xvfb xauth xclip x11-utils openbox pulseaudio pulseaudio-utils dbus-x11 gnome-keyring tesseract-ocr tesseract-ocr-eng \
+            libwebkitgtk-6.0-4 gir1.2-atspi-2.0 python3-gi at-spi2-core xvfb xauth xclip x11-utils openbox pulseaudio pulseaudio-utils dbus-x11 gnome-keyring tesseract-ocr tesseract-ocr-eng ffmpeg \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
@@ -571,6 +578,16 @@ jobs:
         if: runner.os == 'Windows' && matrix.can_test
         run: python scripts/tests/windows-executable-icons.py target/debug/dzc-service.exe artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe
 
+      - name: Ensure Windows media fixture encoder
+        if: runner.os == 'Windows' && matrix.can_test
+        shell: pwsh
+        run: |
+          if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg -y --no-progress }
+
+      - name: Verify isolated media and native exception diagnostics
+        if: matrix.can_test
+        run: python scripts/tests/media-preview.py
+
       - name: Verify independent MyGo WebView history and native clipboard on X11
         if: runner.os == 'Linux' && matrix.can_test
         run: |
@@ -619,6 +636,8 @@ jobs:
           DZC_TEST_CLIPBOARD_READER: '1'
         run: |
           cargo test --locked -p dzc-platform capture::windows_access::tests::reader_window_owns_the_lock_until_drop -- --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked -p dzc-platform native_clipboard::windows_public::tests::own_notification_is_identified_without_acquiring_the_clipboard -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked -p dzc-platform native_clipboard::windows_image::tests
 

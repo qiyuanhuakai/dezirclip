@@ -316,7 +316,7 @@ fn process(
     {
         return CaptureOutcome::Rejected(CaptureRejection::Oversized);
     }
-    if context.settings.deduplicate && persistent {
+    if (context.settings.deduplicate || frame.metadata.deduplicate_generated) && persistent {
         prepared.image_hash = if entry.content_type == "image" {
             prepared
                 .image_hash
@@ -363,7 +363,7 @@ fn process(
     }
     let mut pending_removals = Vec::new();
     let mut reused = None;
-    if context.settings.deduplicate {
+    if context.settings.deduplicate || frame.metadata.deduplicate_generated {
         let session = match context.session.lock() {
             Ok(session) => session,
             Err(_) => {
@@ -880,6 +880,26 @@ mod tests {
         assert_eq!(session.lock().unwrap().len(), 1);
         assert_eq!(store.preparations.get(), 0);
         assert_eq!(store.commits.get(), 0);
+    }
+    #[test]
+    fn explicit_file_import_deduplicates_even_when_ordinary_capture_does_not() {
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
+        let context = context(&session);
+        assert!(!context.settings.deduplicate);
+        let store = Store::default();
+        let mut first_id = None;
+        for _ in 0..2 {
+            let mut input = frame(CaptureData::Files(vec!["/synthetic/document.txt".into(), "/synthetic/image.png".into()]));
+            input.metadata.deduplicate_generated = true;
+            let CaptureOutcome::Stored(capture) = CaptureEngine::capture_frame(&context, input, &store, &mut ()) else {
+                panic!("file import should store");
+            };
+            assert_eq!(capture.entry.content, "/synthetic/document.txt\n/synthetic/image.png");
+            assert_eq!(capture.entry.content_type, "file");
+            if let Some(id) = first_id { assert_eq!(capture.entry.id, id); }
+            first_id = Some(capture.entry.id);
+        }
+        assert_eq!(session.lock().unwrap().len(), 1);
     }
     #[test]
     fn explicit_hint_precedes_excluded_source_and_selection_changes_reject_the_body() {

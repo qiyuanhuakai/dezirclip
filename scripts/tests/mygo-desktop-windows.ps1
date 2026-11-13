@@ -1350,11 +1350,14 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         if ($LASTEXITCODE -or !$originalHost) { throw 'Cannot identify Service before GPU change' }
         foreach ($disabled in @($true, $false)) {
             if (!(Get-SettingsCheckbox $root)) { Click-Control $main (Get-ControlPoint $root 'General Settings') }
-            $box = Wait-Until { Get-SettingsCheckbox $root } 'GPU setting not available'
+            $box = Wait-Until {
+                $candidate = Get-SettingsCheckbox $root
+                if (!$candidate) { return $null }
+                $state = $candidate.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Current.ToggleState
+                if (($state -eq [Windows.Automation.ToggleState]::On) -ne $disabled) { return $candidate }
+                return $null
+            } 'GPU setting did not hydrate its previously committed value'
             $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
-            if (($toggle.Current.ToggleState -eq [Windows.Automation.ToggleState]::On) -eq $disabled) {
-                throw 'Unexpected GPU setting before changing it'
-            }
             $toggle.Toggle()
             $null = Wait-Until { $main.HasExited } 'GPU change did not close the previous WebView'
             $main = Wait-Until {
@@ -1494,6 +1497,13 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 12 | Write-Host }
     $serviceLog = Join-Path $dir.FullName 'service.log'
     if (Test-Path -LiteralPath $serviceLog) { Get-Content -LiteralPath $serviceLog -Tail 12 | Write-Host }
+    foreach ($name in @('service-lifecycle.log', 'service-native-exit.log', 'desktop-service-exit.log')) {
+        $diagnostic = Join-Path $dir.FullName $name
+        if (Test-Path -LiteralPath $diagnostic) {
+            Write-Host "Synthetic Service evidence: $name"
+            Get-Content -LiteralPath $diagnostic -Tail 12 | Write-Host
+        }
+    }
     if (($Emoji -or $Elevation) -and ($startedService -or $startedServiceProcess)) {
         if ($startedServiceProcess) {
             $startedServiceProcess.Refresh()

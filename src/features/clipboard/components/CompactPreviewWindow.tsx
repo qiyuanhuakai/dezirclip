@@ -1,3 +1,4 @@
+import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
 import { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
 import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -14,7 +15,6 @@ import { getRichPreviewData } from "../../../shared/lib/richPreviewState";
 import { richPreviewPresentation } from "../../../shared/lib/richPreviewPresentation";
 import { applyModeClass, applyThemeClass } from "../../../shared/lib/themeRuntime";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
-import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 import { usePrivacySession } from "../../../shared/hooks/usePrivacySession";
 import { prepareOwnedPreview, invokePrivacyBound, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
@@ -313,31 +313,10 @@ const CompactPreviewWindow = () => {
                 hoverBounds={pinned ? undefined : { width: bounds.mediaWidth, height: bounds.mediaHeight }}
                 onFitZoom={setFitZoom} onLoad={() => requestResizeRef.current?.()} />;
         }
-        if (payload.contentType === "video") {
-            const src = /^data:video\/(mp4|webm);base64,[A-Za-z0-9+/=]+$/.test(payload.content) ? payload.content : undefined;
-            return (
-                <video
-                    src={src}
-                    preload="metadata"
-                    muted
-                    playsInline
-                    onError={() => requestResizeRef.current?.()}
-                    onLoadedMetadata={(e) => {
-                        compactPreviewLog("video metadata loaded", {
-                            duration: e.currentTarget.duration
-                        });
-                        seekVideoPreviewFrame(e.currentTarget);
-                        requestResizeRef.current?.();
-                    }}
-                    style={{
-                        width: "auto",
-                        height: "auto",
-                        borderRadius: "4px",
-                        background: "#000"
-                    }}
-                />
-            );
+        if (["file", "files", "video"].includes(payload.contentType)) {
+            return <AttachmentPreview html={payload.htmlContent} names={payload.content} video={payload.contentType === "video"} />;
         }
+
         if (payload.contentType === "rich_text" && payload.htmlContent) {
             if (effectiveRichImageFallbackSrc && !richPresentation.html) {
                 compactPreviewLog("render rich_text as fallback image");

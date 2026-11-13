@@ -6,6 +6,8 @@ mod selection_lease;
 mod private_windows;
 #[cfg(target_os = "windows")]
 mod windows_image;
+#[cfg(target_os = "windows")]
+mod windows_public;
 #[cfg(target_os = "linux")]
 mod private_x11_files;
 #[cfg(target_os = "linux")]
@@ -439,6 +441,18 @@ pub fn formats() -> Result<Vec<String>, String> {
     Ok(result.into_iter().map(str::to_owned).collect())
 }
 
+#[cfg(target_os = "windows")]
+fn set(_cb: &mut arboard::Clipboard, payload: Payload) -> Result<(), String> {
+    match payload {
+        Payload::Image(bytes) => {
+            let image = image::load_from_memory(&bytes).map_err(|_| "ClipboardImageRejected")?.into_rgba8();
+            windows_image::write(image)
+        }
+        payload => windows_public::write(payload),
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn set(cb: &mut arboard::Clipboard, payload: Payload) -> Result<(), String> {
     let (payload, private) = match payload {
         Payload::Private(payload) => (*payload, true),
@@ -448,25 +462,8 @@ fn set(cb: &mut arboard::Clipboard, payload: Payload) -> Result<(), String> {
     let image = if let Payload::Image(bytes) = &payload {
         Some(image::load_from_memory(bytes).map_err(|_| "ClipboardImageRejected")?.into_rgba8())
     } else { None };
-    #[cfg(target_os = "windows")]
-    if let Some(image) = image {
-        if private { return Err("NativeLeaseOwnerRequired".into()); }
-        return windows_image::write(image);
-    }
-    #[cfg(target_os = "windows")]
-    let image: Option<image::RgbaImage> = None;
     let image_write = image.is_some();
     let setter = cb.set();
-    #[cfg(target_os = "windows")]
-    let setter = {
-        use arboard::SetExtWindows;
-        if private {
-            setter.exclude_from_monitoring()
-        } else {
-            setter
-        }
-    };
-    #[cfg(target_os = "linux")]
     let setter = {
         use arboard::SetExtLinux;
         if private {

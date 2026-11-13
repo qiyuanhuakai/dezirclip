@@ -14,6 +14,9 @@ func (l *Library) DropFiles(ctx context.Context, params protocol.FileDropParams)
 	if mygo.CallerWindow(ctx) == nil {
 		return errors.New("WindowUnavailable")
 	}
+	if fileDragPending.Load() {
+		return nil
+	}
 	var result protocol.OperationResult
 	if err := l.owner.DesktopCall(ctx, protocol.MethodDesktopFilesDrop, params, "OperationResult", &result); err != nil {
 		return err

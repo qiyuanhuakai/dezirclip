@@ -411,7 +411,7 @@ fn run(representations: Vec<(u32, Vec<u8>)>, leases: Vec<NativeReadLease>, mut e
     Ok(())
 }
 
-fn unicode(value: &str) -> Result<Vec<u8>, String> {
+pub(super) fn unicode(value: &str) -> Result<Vec<u8>, String> {
     if value.contains('\0') { return Err("PrivateClipboardPayloadRejected".into()); }
     Ok(value.encode_utf16().chain(Some(0)).flat_map(u16::to_le_bytes).collect())
 }
@@ -435,7 +435,7 @@ fn publication_locale() -> Result<Vec<u8>, String> {
     let locale = (size > 1).then(|| resolved_publication_locale(&name[..size as usize - 1])).flatten();
     locale.map(|locale| locale.to_le_bytes().to_vec()).ok_or_else(|| "PrivateClipboardLocaleUnavailable".into())
 }
-fn html_bytes(fragment: &str) -> Vec<u8> {
+pub(super) fn html_bytes(fragment: &str) -> Vec<u8> {
     let prefix = "<html><body><!--StartFragment-->";
     let suffix = "<!--EndFragment--></body></html>";
     let header = |start, end, fragment_start, fragment_end| format!("Version:1.0\r\nStartHTML:{start:010}\r\nEndHTML:{end:010}\r\nStartFragment:{fragment_start:010}\r\nEndFragment:{fragment_end:010}\r\n");

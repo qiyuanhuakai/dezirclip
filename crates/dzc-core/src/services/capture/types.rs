@@ -68,6 +68,8 @@ pub struct CaptureReadMetadata {
     pub privacy_hints_checked: bool,
     /// Trusted generated transformations preserve the protection of their source.
     pub inherited_protection: bool,
+    /// Explicit generated file imports reuse matching rows even when ordinary capture keeps duplicates.
+    pub deduplicate_generated: bool,
     pub fingerprint: Option<u64>,
     pub echo_hash: Option<u64>,
     pub image: bool,

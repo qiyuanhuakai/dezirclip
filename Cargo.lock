@@ -1578,6 +1578,7 @@ version = "0.2.0-beta.1"
 dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",
+ "dunce",
  "dzc-core",
  "dzc-platform",
  "dzc-protocol",
@@ -1607,6 +1608,7 @@ dependencies = [
  "keyring",
  "libc",
  "libloading 0.8.9",
+ "quick-xml 0.39.4",
  "rand 0.8.6",
  "rusqlite",
  "serde",

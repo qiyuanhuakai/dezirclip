@@ -124,6 +124,7 @@ fn apply_webview2_gpu_switch() {
 }
 
 fn main() {
+    dzc_platform::video_preview::dispatch();
     dzc_platform::dispatch_export_guardian();
     #[cfg(target_os = "windows")]
     if let Some(exit_code) = infrastructure::windows_api::system_settings::run_maintenance_command() {
@@ -132,6 +133,7 @@ fn main() {
 
     dzc_platform::set_diagnostic_sink(crate::logger::log_diagnostic);
     dzc_platform::install_default_key_provider();
+    dzc_platform::video_preview::install();
     let _ = dotenvy::dotenv();
     apply_webview2_gpu_switch();
 

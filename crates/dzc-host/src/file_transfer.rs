@@ -7,13 +7,19 @@ fn local_files(paths: Vec<String>) -> Result<Vec<String>, WireErrorCode> {
     if paths.is_empty() || paths.len() > 256 || paths.iter().map(String::len).sum::<usize>() > 512 * 1024 {
         return Err(WireErrorCode::InvalidRequest);
     }
-    for path in &paths {
-        let file = std::path::Path::new(path);
+    let mut seen = std::collections::HashSet::new();
+    let mut unique = Vec::new();
+    for path in paths {
+        let file = std::path::Path::new(&path);
         if path.contains(['\0', '\n', '\r']) || !file.is_absolute() || !file.is_file() {
             return Err(WireErrorCode::InvalidRequest);
         }
+        let canonical = dunce::canonicalize(file).map_err(|_| WireErrorCode::InvalidRequest)?;
+        let value = canonical.to_str().ok_or(WireErrorCode::InvalidRequest)?.to_owned();
+        let key = if cfg!(target_os = "windows") { value.to_lowercase() } else { value.clone() };
+        if seen.insert(key) { unique.push(value); }
     }
-    Ok(paths)
+    Ok(unique)
 }
 
 impl Host {
@@ -32,7 +38,7 @@ impl Host {
             match privacy.capture_ticket(now) {
                 Ok(ticket) => {
                     self.capture_generated(CaptureFrame { data: CaptureData::Files(paths),
-                        metadata: CaptureReadMetadata { files: true, privacy_ticket: Some(ticket), ..Default::default() } },
+                        metadata: CaptureReadMetadata { files: true, deduplicate_generated: true, privacy_ticket: Some(ticket), ..Default::default() } },
                         CaptureSource { app_name: "DezirClip File Drop".into(), process_path: None }, now)?;
                 }
                 Err(dzc_core::api::PrivacyError::PrivacySessionActive) => {},
@@ -120,7 +126,7 @@ mod tests {
             let call = || host.dispatch(&client, Request { request_id: "drop-copy".into(), method: Method::DesktopFilesDrop,
                 params: serde_json::json!({"paths":paths,"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch}) });
             assert!(call().error.is_none());
-            assert_eq!(*writer.0.lock().unwrap(), vec![paths]);
+            assert_eq!(*writer.0.lock().unwrap(), vec![vec![dunce::canonicalize(&file).unwrap().to_string_lossy().into_owned()]]);
             assert!(host.session.lock().unwrap().is_empty());
             assert_eq!(std::fs::read(&file).unwrap(), b"original");
         }
@@ -170,7 +176,7 @@ mod tests {
         let desktop = session(&host, ClientRole::Desktop, true);
         let request = || FileDragParams { id: -1, reveal: false, service_instance_id: state.service_instance_id.clone(), expected_epoch: state.privacy_epoch };
         let result = host.drag_files(&desktop, request()).unwrap();
-        assert_eq!(result.paths, paths);
+        assert_eq!(result.paths, vec![dunce::canonicalize(&file).unwrap().to_string_lossy().into_owned()]);
         assert_eq!(std::fs::read(&file).unwrap(), b"native drag fixture");
         host.session.lock().unwrap()[0].tags.push("sensitive".into());
         assert!(host.drag_files(&desktop, request()).is_err(), "hidden sensitive files must not escape through drag");
@@ -183,5 +189,18 @@ mod tests {
             vec!["/dzc-nonexistent-dropped-file".into()], vec!["x".into(); 257]] {
             assert_eq!(local_files(paths).unwrap_err(), WireErrorCode::InvalidRequest);
         }
+    }
+    #[test]
+    fn drop_removes_path_aliases_and_preserves_first_attachment_order() {
+        let root = std::env::temp_dir().join(format!("dzc-drop-dedup-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let a = root.join("a.txt");
+        let b = root.join("b.txt");
+        std::fs::write(&a, b"a").unwrap();
+        std::fs::write(&b, b"b").unwrap();
+        let alias = root.join(".").join("b.txt");
+        let result = local_files(vec![b.to_string_lossy().into(), a.to_string_lossy().into(), alias.to_string_lossy().into()]).unwrap();
+        assert_eq!(result, vec![dunce::canonicalize(&b).unwrap().to_string_lossy(), dunce::canonicalize(&a).unwrap().to_string_lossy()]);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

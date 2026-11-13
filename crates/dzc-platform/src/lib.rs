@@ -10,6 +10,8 @@ pub mod runtime_display;
 pub mod native_clipboard;
 pub mod runtime;
 pub mod process_memory;
+pub mod crash_diagnostics;
+pub mod video_preview;
 #[cfg(target_os = "windows")]
 mod export_guard;
 

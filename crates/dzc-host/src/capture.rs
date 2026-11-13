@@ -104,6 +104,14 @@ impl CaptureManager {
             let Ok(mut notifications) = notifications.lock() else { return; };
             if !notifications.accept_sequence(change.sequence) { return; }
             let Ok(timestamp) = crate::router::now_ms() else { return; };
+            let owner_copy = host.own_copy(timestamp);
+            let own_copy = if owner_copy.primary != 0 { owner_copy } else { hooks.own_copy(timestamp) };
+            if own_copy.primary != 0 && own_copy.age_seconds < 10 && native::owns_notification(change.sequence) {
+                host.clear_copy_echo();
+                hooks.clear_own_copy();
+                HostEvents(&host, hooks.as_ref()).emit(CaptureEvent::Skipped(CaptureSkip::OwnClipboard));
+                return;
+            }
             let Ok(settings) = host.history.capture_settings_snapshot() else { diagnostic(&host, "CaptureSettingsUnavailable"); return; };
             let source = hooks.source().unwrap_or_else(|| {
                 let source = NativeSourceResolver.resolve_source().unwrap_or_default();

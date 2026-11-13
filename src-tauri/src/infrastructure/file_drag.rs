@@ -1,6 +1,9 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+static ACTIVE: AtomicBool = AtomicBool::new(false);
+
+pub fn active() -> bool { ACTIVE.load(Ordering::Acquire) }
+
 pub fn start(window: &tauri::WebviewWindow, paths: Vec<String>, done: impl FnOnce(Result<(), String>) + Send + 'static) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static ACTIVE: AtomicBool = AtomicBool::new(false);
     if ACTIVE.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
         done(Err("FileDragBusy".into()));
         return;
