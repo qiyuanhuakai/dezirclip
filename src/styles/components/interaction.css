@@ -1,19 +1,5 @@
 /* Interaction cost control — see useDragDegradation.ts for the driver. */
 
-/* Scale the live page during a burst of size changes. Privacy updates continue
-   to render; the virtual list lays out once at the settled dimensions. */
-#root[data-viewport-resizing] {
-  width: var(--resize-layout-width) !important;
-  height: var(--resize-layout-height) !important;
-  min-width: 0;
-  min-height: 0;
-  flex: none;
-  transform-origin: 0 0;
-  transform: scale(var(--resize-scale-x, 1), var(--resize-scale-y, 1));
-  will-change: transform;
-  contain: layout paint;
-}
-
 /* A window drag is a per-frame event. Every pixel the window travels
    invalidates whatever is painted behind it, so every `backdrop-filter` layer
    in the active theme is re-blurred from scratch on each frame. The blur is

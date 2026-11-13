@@ -3,6 +3,7 @@ pub mod classification_cmd;
 pub mod clipboard_cmd;
 pub mod export_cmd;
 pub mod file_cmd;
+pub mod file_transfer_cmd;
 pub mod font_cmd;
 pub mod history_cmd;
 pub mod hotkey_cmd;

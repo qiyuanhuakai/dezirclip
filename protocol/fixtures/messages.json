@@ -656,5 +656,63 @@
       }
     },
     "valid": false
+  },
+  {
+    "name": "native-files-drop",
+    "schema": "Request",
+    "value": {
+      "request_id": "native-files-drop",
+      "method": "desktop.files.drop",
+      "params": {
+        "paths": [
+          "C:\\fixture\\文件.png"
+        ],
+        "service_instance_id": "fixture",
+        "expected_epoch": 0
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "native-files-drop-empty",
+    "schema": "Request",
+    "value": {
+      "request_id": "native-files-drop-empty",
+      "method": "desktop.files.drop",
+      "params": {
+        "paths": [],
+        "service_instance_id": "fixture",
+        "expected_epoch": 0
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "native-files-drag",
+    "schema": "Request",
+    "value": {
+      "request_id": "native-files-drag",
+      "method": "desktop.files.drag",
+      "params": {
+        "id": -1,
+        "reveal": false,
+        "service_instance_id": "fixture",
+        "expected_epoch": 0
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "native-files-drag-without-state",
+    "schema": "Request",
+    "value": {
+      "request_id": "native-files-drag-without-state",
+      "method": "desktop.files.drag",
+      "params": {
+        "id": 1,
+        "reveal": true
+      }
+    },
+    "valid": false
   }
 ]

@@ -38,6 +38,10 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  copy_dropped_files: args => library("DropFiles", { paths: args.paths,
+    service_instance_id: args.expectedHostInstanceId, expected_epoch: args.expectedPrivacyEpoch }),
+  start_file_drag: args => library("DragFiles", { id: args.id, reveal: args.allowSensitive,
+    service_instance_id: args.expectedHostInstanceId, expected_epoch: args.expectedPrivacyEpoch }),
   get_main_window_resume_request: () => shellCall("ResumeRequest"),
   complete_main_window_resume: args => shellCall("CompleteResume", args.requestId, args.expectedHostInstanceId, args.expectedEpoch),
   set_ignore_blur: args => shellCall("SetIgnoreBlur", args.ignore),

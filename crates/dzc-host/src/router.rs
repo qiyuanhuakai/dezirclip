@@ -377,6 +377,8 @@ impl Host {
                 methods.push("desktop.appearance.background");
                 methods.push("desktop.applications.select");
                 methods.push("desktop.history.open");
+                methods.push("desktop.files.drag");
+                if self.actions.can_copy() { methods.push("desktop.files.drop"); }
                 methods.push("desktop.settings.preferences");
                 methods.push("desktop.quick.preferences");
                 methods.push("desktop.screen.preferences");
@@ -449,7 +451,7 @@ impl Host {
     pub(crate) fn independent_dispatch(method: Method) -> bool {
         matches!(method, Method::Health | Method::ServiceStatus | Method::PrivacyGet |
             Method::DesktopScreenBegin | Method::DesktopScreenRead | Method::DesktopScreenCrop | Method::DesktopScreenCancel | Method::DesktopScreenFinish |
-            Method::DesktopHistoryOpen | Method::DesktopApplicationsSelect | Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
+            Method::DesktopHistoryOpen | Method::DesktopFilesDrop | Method::DesktopFilesDrag | Method::DesktopApplicationsSelect | Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
             Method::DesktopWindowPaste | Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
             Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview | Method::DesktopSystemExplorerRestart)
     }
@@ -474,7 +476,7 @@ impl Host {
         // Keep another IPC writer from replacing the clipboard between copy and input.
         let _delivery = if matches!(request.method, Method::DesktopWindowPaste | Method::DesktopQuickPaste | Method::DesktopQueueNext |
             Method::DesktopClipboardCopy | Method::DesktopSurfaceCopy | Method::SurfaceCopy | Method::ClipboardCopy |
-            Method::SurfacePaste | Method::DesktopScreenFinish | Method::DesktopCaptureFinish) {
+            Method::SurfacePaste | Method::DesktopFilesDrop | Method::DesktopScreenFinish | Method::DesktopCaptureFinish) {
             Some(self.delivery.try_lock().map_err(|_| WireErrorCode::Busy)?)
         } else { None };
         if _delivery.is_some() && self.is_stopping() { return Err(WireErrorCode::Busy); }
@@ -608,6 +610,11 @@ impl Host {
                 self.open_history_item(session, params(request.params)?)?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            Method::DesktopFilesDrop => {
+                self.drop_files(session, params(request.params)?)?;
+                result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopFilesDrag => result("FileDragResult", self.drag_files(session, params(request.params)?)?),
             Method::DesktopApplicationsSelect => {
                 let input: ApplicationSelection = params(request.params)?;
                 self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;

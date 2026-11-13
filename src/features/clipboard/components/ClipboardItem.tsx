@@ -1,6 +1,7 @@
 import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
 import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
 import { derivedCopySource, invoke } from "../../../shared/lib/desktopInvoke";
+import { startNativeFileDrag } from "../../../shared/lib/nativeFileDrag";
 import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -261,6 +262,7 @@ const ClipboardItem = ({
     const displayHtml = previewContent?.html_content ?? item.html_content;
     const tagInputRef = useRef<HTMLInputElement>(null);
     const itemRootRef = useRef<HTMLDivElement>(null);
+    const fileDragGesture = useRef(false);
     const keyboardPreviewRef = useRef(previewFromKeyboard);
     keyboardPreviewRef.current = previewFromKeyboard;
     const hiddenRef = useRef(isSensitiveHidden);
@@ -930,6 +932,25 @@ const ClipboardItem = ({
             ref={itemRootRef}
             id={id}
             data-test-clipboard-item
+            draggable={!isSensitiveHidden && ["image", "file", "files", "video"].includes(item.content_type)}
+            onDragStartCapture={event => {
+                if (!["image", "file", "files", "video"].includes(item.content_type)) return;
+                event.preventDefault();
+                event.stopPropagation();
+                // A cancelled HTML drag has no browser dragend. End its bridge
+                // bookkeeping before handing the gesture to the native source.
+                window.dispatchEvent(new DragEvent("dragend"));
+                if (isSensitiveHidden || !(event.target instanceof Element)
+                    || event.target.closest("button, input, textarea, .drag-handle")
+                    || !["image", "file", "files", "video"].includes(item.content_type)) return;
+                const access = beginPrivacyAccess();
+                if (!access || !item.host_instance_id) return;
+                fileDragGesture.current = true;
+                void hideCompactPreviewGlobal();
+                void startNativeFileDrag({ id: item.id, expectedHostInstanceId: item.host_instance_id,
+                    expectedPrivacyEpoch: access.epoch, allowSensitive: isSensitiveEntry(item) })
+                    .catch(error => onTransformItemError?.("file_drag", String(error)));
+            }}
             layout={!disableLayout}
             initial={false}
             animate={disableLayout ? undefined : { marginBottom: 0 }}
@@ -937,6 +958,7 @@ const ClipboardItem = ({
             transition={disableLayout ? undefined : { duration: 0.1 }}
             className={`history-item ${isSelected ? "selected" : ""} ${compactMode ? "compact" : ""} ${item.is_pinned ? "pinned" : ""} ${className || ''}`}
             onMouseDown={(e) => {
+                fileDragGesture.current = false;
                 if (!windowPinned) return;
                 const target = e.target as HTMLElement;
                 if (target.closest('button, input, textarea, [role="button"], .drag-handle')) {
@@ -948,6 +970,7 @@ const ClipboardItem = ({
                 // Removed e.preventDefault() to allow blur of search box
             }}
             onClick={(e) => {
+                if (fileDragGesture.current) { e.preventDefault(); e.stopPropagation(); return; }
                 const target = e.target as HTMLElement;
                 if (target.closest('button') || target.closest('input') || target.closest('textarea')) {
                     return;

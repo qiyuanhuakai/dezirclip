@@ -1555,6 +1555,8 @@
         "desktop.profile.move",
         "desktop.appearance.background",
         "desktop.history.open",
+        "desktop.files.drop",
+        "desktop.files.drag",
         "desktop.applications.select",
         "desktop.window.target",
         "desktop.window.pin",
@@ -2430,6 +2432,44 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.files.drop"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/FileDropParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.files.drag"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/FileDragParams"
               }
             }
           }
@@ -4181,6 +4221,89 @@
         "resync_required"
       ],
       "additionalProperties": true
+    },
+    "FileDropParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32768
+          }
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "paths"
+      ]
+    },
+    "FileDragParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "reveal": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "id",
+        "reveal"
+      ]
+    },
+    "FileDragResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32768
+          }
+        }
+      },
+      "required": [
+        "paths"
+      ]
     },
     "HistoryPageParams": {
       "type": "object",

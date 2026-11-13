@@ -82,6 +82,19 @@ const ToolsCaptureSection = ({
     const [ocrLoading, setOcrLoading] = useState(false);
     const [panelSaving, setPanelSaving] = useState(false);
     const [hotkeyError, setHotkeyError] = useState<string | null>(null);
+    const [captureError, setCaptureError] = useState<string | null>(null);
+    const [capturing, setCapturing] = useState(false);
+    const captureNow = async (command: "show_region_selector" | "capture_full_screen") => {
+        setCapturing(true);
+        setCaptureError(null);
+        try {
+            await invoke(command);
+        } catch (error) {
+            setCaptureError(`${t("screenshot_failed")}: ${String(error)}`);
+        } finally {
+            setCapturing(false);
+        }
+    };
     const savePanelEnabled = async (key: string, enabled: boolean, apply: (value: boolean) => void) => {
         setPanelSaving(true);
         try {
@@ -130,10 +143,11 @@ const ToolsCaptureSection = ({
                     <div className="setting-item setting-item--detail">
                         <div className="item-label-group"><span className="item-label">{t("capture_now")}</span></div>
                         <div className="setting-btn-group">
-                            <button className="setting-btn" onClick={() => invoke("show_region_selector").catch(console.error)}><Camera size={14} />{t("capture_region_now")}</button>
-                            <button className="setting-btn" onClick={() => invoke("capture_full_screen").catch(console.error)}><Camera size={14} />{t("capture_full_now")}</button>
+                            <button className="setting-btn" disabled={capturing} onClick={() => { void captureNow("show_region_selector"); }}><Camera size={14} />{t("capture_region_now")}</button>
+                            <button className="setting-btn" disabled={capturing} onClick={() => { void captureNow("capture_full_screen"); }}><Camera size={14} />{t("capture_full_now")}</button>
                         </div>
                     </div>
+                    {captureError && <p role="alert" className="hotkey-recording-error">{captureError}</p>}
                 </>
             )}
             <div className="setting-item">

@@ -337,6 +337,7 @@ func (s *Selector) crop(shot *selection, w, h float32) {
 	}
 	x1, x2 := px(min(shot.start.X, shot.end.X), w, frame.Width), px(max(shot.start.X, shot.end.X), w, frame.Width)
 	y1, y2 := px(min(shot.start.Y, shot.end.Y), h, frame.Height), px(max(shot.start.Y, shot.end.Y), h, frame.Height)
+	log.Printf("Screenshot selection: %dx%d pixels, viewport %.0fx%.0f", x2-x1, y2-y1, w, h)
 	if x1 == x2 || y1 == y2 {
 		return
 	}

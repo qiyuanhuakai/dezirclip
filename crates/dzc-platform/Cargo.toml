@@ -13,7 +13,7 @@ required-features = ["ipc"]
 [features]
 portable = ["dzc-core/portable"]
 ipc = ["dep:tokio", "dzc-protocol/wire", "dep:sha2"]
-native-screen = ["dep:xcap", "dep:zeroize"]
+native-screen = ["dep:xcap", "dep:zeroize", "x11rb/image"]
 native-fonts = ["dep:font-kit", "dzc-protocol/wire"]
 native-ocr = ["dep:windows-core", "windows/Win32_System_WinRT"]
 

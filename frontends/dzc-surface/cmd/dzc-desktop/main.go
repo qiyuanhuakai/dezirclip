@@ -330,7 +330,11 @@ func run() error {
 			fmt.Fprintln(os.Stdout, "recording-cancel")
 		})
 		win.OnMove(func() { preview.clear(); windowMoved.Emit(win, true) })
-		win.OnFileDrop(func(e *mygo.FileDropEvent) { filesDropped.Emit(win, e.Paths) })
+		win.OnFileDrop(func(e *mygo.FileDropEvent) {
+			fmt.Fprintf(os.Stderr, "Native file drop: %d files\n", len(e.Paths))
+			filesDropped.Emit(win, e.Paths)
+		})
+		installNativeFileDrop(win)
 		win.OnClose(func(*mygo.CloseEvent) { fmt.Fprintln(os.Stdout, "closing") })
 		win.OnClosed(func() {
 			shell.idle.cancel()

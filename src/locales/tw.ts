@@ -572,6 +572,7 @@ export const tw = {
         capture_region_now: "區域截圖",
         capture_full_now: "全螢幕截圖",
         screenshot_captured: "已複製到剪貼簿",
+        screenshot_failed: "截圖失敗",
         ocr_engine_available: "可用",
         ocr_engine_unavailable: "暫不可用",
         search_mode_hint: "模糊/正則搜尋模式",

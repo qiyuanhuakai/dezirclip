@@ -1958,7 +1958,7 @@ def check_profile_move(executable, home):
 
 if __name__ == '__main__':
     desktop = Path(sys.argv[1]).resolve(strict=True)
-    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview', '--idle', '--paste-hotkeys', '--middle-paste-hotkeys', '--reset-settings'):
+    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview', '--idle', '--paste-hotkeys', '--middle-paste-hotkeys', '--reset-settings', '--file-drag', '--screenshots'):
         with tempfile.TemporaryDirectory(prefix='dzc-mygo-') as path:
             home = Path(path)
             for name in ('runtime', 'data', 'config', 'cache'):
@@ -1969,6 +1969,8 @@ if __name__ == '__main__':
                    'GTK_A11Y':'atspi', 'NO_AT_BRIDGE':'0'}
             for name in ('DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY', 'AT_SPI_BUS_ADDRESS'):
                 env.pop(name, None)
+            if '--screenshots' in sys.argv[2:]:
+                env.update(WAYLAND_DISPLAY='', WAYLAND_SOCKET='', XDG_CURRENT_DESKTOP='X-Cinnamon')
             if '--pinned' in sys.argv[2:]:
                 env.update(HTTPS_PROXY='http://127.0.0.1:0', NO_PROXY='', no_proxy='')
                 applications = home/'data/applications'
@@ -2036,7 +2038,11 @@ with open(sys.argv[1], 'r+') as document:
                 assert wm.poll() is None and time.monotonic() < deadline, 'Window manager failed to start'
                 time.sleep(.05)
             pinned = '--pinned' in sys.argv[3:]
-            if '--reset-settings' in sys.argv[3:]:
+            if '--file-drag' in sys.argv[3:]:
+                runpy.run_path(str(Path(__file__).with_name('mygo-file-drag-x11.py')))['check'](desktop, globals())
+            elif '--screenshots' in sys.argv[3:]:
+                runpy.run_path(str(Path(__file__).with_name('mygo-screenshot-x11.py')))['check'](desktop, globals())
+            elif '--reset-settings' in sys.argv[3:]:
                 check_reset_settings(desktop)
             elif '--paste-hotkeys' in sys.argv[3:] or '--middle-paste-hotkeys' in sys.argv[3:]:
                 check_paste_hotkeys(desktop, middle='--middle-paste-hotkeys' in sys.argv[3:])

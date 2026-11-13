@@ -1,5 +1,16 @@
 # Local protocol v1
 
+The authenticated Desktop may copy native file drops with `desktop.files.drop`
+or resolve a selected image/file card for a native copy drag with
+`desktop.files.drag`. Both require the current service instance, privacy epoch,
+Desktop control grant and clipboard-copy permission. Drag resolution returns
+local paths only to the native Desktop; the WebView command returns completion
+without exposing those paths. Sensitive cards require explicit reveal. Image
+and archived-file exports use the existing revocable private export lifetime.
+Native drag uses Windows OLE `CF_HDROP` or Linux GTK `text/uri-list`, with copy
+as the only allowed action; cancellation never deletes original files or
+injects a paste shortcut. File drops preserve the existing capture policy.
+
 `schema/*.schema.json` is the wire contract. `scripts/generate-protocol.py`
 generates Rust/Go DTOs and their offline schema bundle. Run it with `--check`
 to detect drift. Shared accepted/rejected messages live in

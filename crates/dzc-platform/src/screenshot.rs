@@ -1,15 +1,31 @@
 // Screenshot service — xcap wrapper with platform-agnostic flat functions.
 //
-// Platform selection is delegated entirely to xcap:
-//   - Linux: X11 + Xrandr + pipewire (xcap picks the right backend at runtime)
-//   - Windows: Win32 GDI
-//
-// Service layer is platform-agnostic; all cfg(target_os = ...) blocks live inside
-// xcap and are not duplicated here.
+// xcap enumerates monitors and captures Windows pixels. X11 reads the root
+// visual's actual channel masks and image format, including 30-bit displays.
 
 use serde::Serialize;
 use xcap::image::{ExtendedColorType, ImageEncoder};
 use xcap::Monitor;
+
+#[cfg(target_os = "linux")]
+#[path = "screenshot_x11.rs"]
+mod x11;
+
+fn capture_pixels(monitor: &Monitor, rect: MonitorRect) -> Result<xcap::image::RgbaImage, ScreenshotError> {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = monitor;
+        if crate::runtime::is_native_wayland() {
+            return Err(ScreenshotError::XcapError("Native Wayland screenshot is unavailable".into()));
+        }
+        x11::capture(rect)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = rect;
+        monitor.capture_image().map_err(map_xcap)
+    }
+}
 
 #[cfg(test)]
 const RUN_SCREENSHOT_SMOKE: &str = "DEZIRCLIP_RUN_SCREENSHOT_SMOKE_TESTS";
@@ -98,7 +114,7 @@ pub fn freeze_at(cursor: Option<(i32, i32)>) -> Result<FrozenScreenFrame, Screen
     let rect = rects[index];
     // Bound the native read before allocating the full RGBA image.
     if u64::from(rect.width) * u64::from(rect.height) > 40_000_000 { return Err(ScreenshotError::RegionOutOfBounds); }
-    FrozenScreenFrame::from_pixels(rect, monitors[index].capture_image().map_err(map_xcap)?)
+    FrozenScreenFrame::from_pixels(rect, capture_pixels(&monitors[index], rect)?)
 }
 
 pub fn freeze_monitor(rect: MonitorRect) -> Result<FrozenScreenFrame, ScreenshotError> {
@@ -107,7 +123,7 @@ pub fn freeze_monitor(rect: MonitorRect) -> Result<FrozenScreenFrame, Screenshot
     let index = rects.iter().position(|candidate| candidate.x == rect.x && candidate.y == rect.y
         && candidate.width == rect.width && candidate.height == rect.height)
         .ok_or(ScreenshotError::RegionOutOfBounds)?;
-    let pixels = monitors[index].capture_image().map_err(map_xcap)?;
+    let pixels = capture_pixels(&monitors[index], rect)?;
     FrozenScreenFrame::from_pixels(rect, pixels)
 }
 
@@ -238,7 +254,7 @@ pub fn capture_full_screen(cursor: Option<(i32, i32)>) -> Result<ScreenshotResul
     }
     let rects = read_monitor_rects(&monitors)?;
     let index = pick_capture_monitor(&rects, cursor).ok_or(ScreenshotError::NoMonitor)?;
-    let rgba = monitors[index].capture_image().map_err(map_xcap)?;
+    let rgba = capture_pixels(&monitors[index], rects[index])?;
     let (width, height) = rgba.dimensions();
     let png_bytes = encode_png(&rgba)?;
     Ok(ScreenshotResult {
@@ -282,9 +298,15 @@ pub fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<ScreenshotResult
 
     let (monitor, rel_x, rel_y) = target.ok_or(ScreenshotError::RegionOutOfBounds)?;
 
+    #[cfg(target_os = "windows")]
     let rgba = monitor
         .capture_region(rel_x, rel_y, w, h)
         .map_err(map_xcap)?;
+    #[cfg(target_os = "linux")]
+    let rgba = {
+        let _ = (rel_x, rel_y);
+        capture_pixels(monitor, MonitorRect { x, y, width: w, height: h, is_primary: false })?
+    };
     let (width, height) = rgba.dimensions();
     let png_bytes = encode_png(&rgba)?;
     Ok(ScreenshotResult { width, height, png_bytes })

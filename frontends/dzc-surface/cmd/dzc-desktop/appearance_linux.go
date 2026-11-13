@@ -25,6 +25,10 @@ func restoreMainPosition(w *mygo.Window) {
 	w.SetPosition(point.X, point.Y)
 }
 
+func nativeWaylandRequested() bool {
+	return os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("WAYLAND_SOCKET") != "" || strings.EqualFold(os.Getenv("XDG_SESSION_TYPE"), "wayland")
+}
+
 func dockingAvailable() bool {
 	services, ok := os.LookupEnv("DEZIRCLIP_DISABLE_LINUX_SERVICES")
 	if !ok {
@@ -35,9 +39,7 @@ func dockingAvailable() bool {
 			return false
 		}
 	}
-	_, wayland := os.LookupEnv("WAYLAND_DISPLAY")
-	_, socket := os.LookupEnv("WAYLAND_SOCKET")
-	return !wayland && !socket && !strings.EqualFold(os.Getenv("XDG_SESSION_TYPE"), "wayland")
+	return !nativeWaylandRequested()
 }
 
 // GDK reports modifier and mouse-button state against the same root coordinates as GTK.
@@ -77,9 +79,7 @@ func configureSoftwareWebview(child *exec.Cmd) {
 }
 
 func placeMainAtCursor(w *mygo.Window) {
-	_, display := os.LookupEnv("WAYLAND_DISPLAY")
-	_, socket := os.LookupEnv("WAYLAND_SOCKET")
-	if display || socket || strings.EqualFold(os.Getenv("XDG_SESSION_TYPE"), "wayland") {
+	if nativeWaylandRequested() {
 		return
 	}
 	cursor := mygo.Screen.CursorScreenPoint()

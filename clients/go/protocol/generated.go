@@ -399,6 +399,8 @@ const (
     MethodDesktopProfileMove Method = "desktop.profile.move"
     MethodDesktopAppearanceBackground Method = "desktop.appearance.background"
     MethodDesktopHistoryOpen Method = "desktop.history.open"
+    MethodDesktopFilesDrop Method = "desktop.files.drop"
+    MethodDesktopFilesDrag Method = "desktop.files.drag"
     MethodDesktopApplicationsSelect Method = "desktop.applications.select"
     MethodDesktopWindowTarget Method = "desktop.window.target"
     MethodDesktopWindowPin Method = "desktop.window.pin"
@@ -590,6 +592,23 @@ type EventsResult struct {
     Events []Event `json:"events"`
     State RuntimeState `json:"state"`
     ResyncRequired bool `json:"resync_required"`
+}
+
+type FileDropParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Paths []string `json:"paths"`
+}
+
+type FileDragParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Id int64 `json:"id"`
+    Reveal bool `json:"reveal"`
+}
+
+type FileDragResult struct {
+    Paths []string `json:"paths"`
 }
 
 type HistoryPageParams struct {

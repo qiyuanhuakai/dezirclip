@@ -30,6 +30,7 @@ import { useClipboardActions } from "./shared/hooks/useClipboardActions";
 import { useWindowPinnedListener } from "./shared/hooks/useWindowPinnedListener";
 import { useCustomBackground } from "./shared/hooks/useCustomBackground";
 import { useDragDegradation } from "./shared/hooks/useDragDegradation";
+import { useNativeFileDrop } from "./shared/hooks/useNativeFileDrop";
 import { useToastListener } from "./shared/hooks/useToastListener";
 import { usePasteQueue } from "./shared/hooks/usePasteQueue";
 import { useAppBootstrap } from "./shared/hooks/useAppBootstrap";
@@ -359,6 +360,7 @@ const App = () => {
 
 
   useDragDegradation();
+  useNativeFileDrop(error => pushToast(t("common_error") + " · " + String(error)));
 
 
   const tagManagerSizeRef = useRef<{ width: number; height: number } | null>(null);

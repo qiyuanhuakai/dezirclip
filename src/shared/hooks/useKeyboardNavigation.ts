@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "../lib/desktopInvoke";
+import { nativeFileDragActive } from "../lib/nativeFileDrag";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "../lib/desktopWindow";
 import type { RefObject } from "react";
@@ -118,6 +119,10 @@ export const useKeyboardNavigation = ({
 
       if (e.key === "Escape") {
           e.preventDefault();
+          if (nativeFileDragActive()) {
+              e.stopPropagation();
+              return;
+          }
           if (isEditable) {
               searchInputRef.current?.blur();
           } else {

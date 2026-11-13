@@ -415,6 +415,27 @@ pub fn standalone_capabilities() -> PlatformCapabilities {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    fn generated_file_drop_native_writer(runtime: &std::path::Path) {
+        use dzc_core::api::{HistoryService, PrivacyAccessIntent, PrivacySessionCommand, SensitiveAccess};
+        let history = HistoryService::open(&runtime.join("generated-drop-history.db")).unwrap();
+        let file = runtime.join("native drop 文件.txt");
+        std::fs::write(&file, b"original file").unwrap();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+        history.privacy().set_session(PrivacySessionCommand::Off, now).unwrap();
+        let permit = history.privacy().authorize_read(PrivacyAccessIntent::GeneratedCopy, SensitiveAccess::Denied, None, now).unwrap();
+        let make_payload = || history.dropped_files_payload_authorized(vec![file.to_string_lossy().into_owned()], &permit, now).unwrap();
+        let stale = make_payload();
+        let writer = EmbeddedClipboardWriter::default();
+        writer.write_suppressing_recapture(make_payload()).unwrap();
+        let expected = url::Url::from_file_path(&file).unwrap().to_string();
+        let uris = String::from_utf8(NativeClipboard.read_representation("text/uri-list").unwrap()).unwrap();
+        assert!(uris.lines().any(|uri| uri.trim() == expected));
+        history.privacy().set_session(PrivacySessionCommand::On { duration_ms: None }, now).unwrap();
+        assert!(writer.write_suppressing_recapture(stale).is_err());
+        assert_eq!(std::fs::read(&file).unwrap(), b"original file");
+        writer.stop().unwrap();
+    }
     #[test]
     fn capabilities_are_local_and_do_not_claim_unattached_services() {
         let capabilities = standalone_capabilities();
@@ -451,6 +472,7 @@ mod tests {
             runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file()
         );
         assert!(std::env::var_os("DISPLAY").is_none());
+        generated_file_drop_native_writer(&runtime);
         let report = session_capabilities();
         let negotiated = report
             .wayland
@@ -915,6 +937,7 @@ mod tests {
         assert!(
             runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file()
         );
+        generated_file_drop_native_writer(&runtime);
         use dzc_core::api::{ClipboardEntry, HistoryService, SensitiveAccess};
         let history = HistoryService::open(&runtime.join("private-x11-history.db")).unwrap();
         let now = std::time::SystemTime::now()
@@ -1142,6 +1165,12 @@ pub fn private_file_export(
     export: dzc_core::ports::AuthorizedFileExport,
 ) -> PlatformResult<PrivateFileExport> {
     crate::private_files::BoundExport::new(export.files, export.authorization)
+        .map(PrivateFileExport)
+        .map_err(|_| clipboard_failure(Capability::Write))
+}
+
+pub fn private_attachment_export(export: dzc_core::ports::AuthorizedFileExport) -> PlatformResult<PrivateFileExport> {
+    crate::private_files::BoundExport::attachment(export.files, export.authorization)
         .map(PrivateFileExport)
         .map_err(|_| clipboard_failure(Capability::Write))
 }
