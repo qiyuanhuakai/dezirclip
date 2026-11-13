@@ -451,6 +451,8 @@ function Test-WinVTakeover($Main, $Root) {
     $original = Get-SavedMainHotkeys
     function Answer-Restart([string]$Answer) {
         $dialog = Wait-Until {
+            $foreground = [Windows.Automation.AutomationElement]::FromHandle([MyGoInput]::GetForegroundWindow())
+            if ($foreground.Current.ProcessId -eq $Main.Id -and $foreground.Current.Name -eq 'Restart Explorer Required') { return $foreground }
             $name = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Restart Explorer Required')
             $process = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty, $Main.Id)
             [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Children,
@@ -1425,6 +1427,13 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     Write-Host ("Editor length={0}, exact={1}, focused={2}, foreground={3}, editor window={4}" -f
         $edit.Text.Length, ($edit.Text -ceq $marker), $edit.Focused, [MyGoInput]::GetForegroundWindow(), $form.Handle)
     Write-Host ("Synthetic editor input diagnostics:`n" + $edit.InputDiagnostics())
+    if ($Lifecycle) {
+        $foreground = [Windows.Automation.AutomationElement]::FromHandle([MyGoInput]::GetForegroundWindow())
+        Write-Host ("Lifecycle foreground: {0}, pid={1}" -f $foreground.Current.Name, $foreground.Current.ProcessId)
+        $names = $foreground.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) |
+            ForEach-Object { $_.Current.Name } | Where-Object { $_ }
+        Write-Host ("Lifecycle dialog controls: " + ($names -join ' | '))
+    }
     try {
       if ($main -and !$main.HasExited -and $root) {
         $names = $root.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) |

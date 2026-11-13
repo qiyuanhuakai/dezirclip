@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
@@ -9,12 +10,19 @@ import (
 // ObserveDesktopServiceExit retains a process handle while the authenticated
 // pipe is live. It never terminates or restarts the Service, including on cancel.
 func (c *Client) ObserveDesktopServiceExit(ctx context.Context, report func(uint32, uint32)) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.desktop == nil {
 		return ErrProtocol
 	}
-	pipe, ok := c.conn.(interface{ Fd() uintptr })
+	// Desktop owners intentionally close their discovery stream. Obtain a fresh
+	// authenticated stream while acquiring the kernel process handle.
+	probe, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	host, err := c.DesktopConnection(probe)
+	if err != nil {
+		return err
+	}
+	defer host.Close()
+	pipe, ok := host.conn.(interface{ Fd() uintptr })
 	if !ok {
 		return ErrProtocol
 	}
