@@ -1181,6 +1181,10 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         # graceful protocol stop, then exercise the existing resident's tray.
         $serviceProcess.Kill()
         $null = Wait-Until { $serviceProcess.HasExited } 'Fixture Service did not exit'
+        $exitLog = Join-Path ([IO.Path]::GetDirectoryName($env:DEZIRCLIP_DB_PATH)) 'desktop-service-exit.log'
+        $null = Wait-Until {
+            (Test-Path $exitLog) -and ((Get-Content $exitLog -Raw) -match ("pid={0} exit_code=0x[0-9a-f]{{8}}" -f $serviceProcess.Id))
+        } 'Resident did not retain the unexpectedly terminated Service exit status'
         if ($recoveryAction -eq 'cancel') {
             if (![MyGoInput]::ClickResidentTray($resident.Id) -or ![MyGoInput]::ClickResidentTray($resident.Id)) {
                 throw 'Cannot toggle twice during pending Service recovery'
