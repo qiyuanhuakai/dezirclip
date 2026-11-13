@@ -73,38 +73,52 @@ func attachmentIconKind(name string) string {
 	return "file"
 }
 
+func attachmentPreviewCapacity(width, height float32, count int, media bool) (tiles, names int, thumbnail float32) {
+	// The shared preview chrome occupies at most 90 DIPs. Reserve a final
+	// complete text row for overflow instead of clipping the last filename.
+	budget := max(float32(0), height-90) - 22
+	if count > 1 {
+		budget -= 22
+	}
+	if media && budget >= 110 {
+		tiles = min(count, max(1, min(4, int((width-20)/110))))
+		thumbnail = min(float32(100), budget-30)
+		budget -= thumbnail + 30
+	}
+	names = min(count-tiles, max(0, min(6, int(budget/30))))
+	return
+}
+
 func drawAttachmentPreview(c *ui.Context, rows []previewAttachment) {
 	media := false
 	for _, row := range rows {
 		media = media || row.image != nil
 	}
-	ui.Scroll(c).Fill().Children(func() {
-		ui.Column(c).FillWidth().Gap(8).Children(func() {
-			if len(rows) > 1 {
-				ui.Text(c, fmt.Sprintf("× %d", len(rows))).FontSize(12).TextColor(c.Theme().TextMuted)
-			}
-			shown := 0
-			if media {
-				shown = min(4, len(rows))
-				ui.Row(c).FillWidth().Gap(6).Children(func() {
-					for _, row := range rows[:shown] {
-						ui.Column(c).Width(0).Grow(1).Gap(4).Children(func() {
-							if row.image != nil {
-								ui.Image(c, row.image).FillWidth().Height(100).Fit(ui.Contain)
-							}
-							drawAttachmentName(c, row.name)
-						})
-					}
-				})
-			}
-			limit := min(len(rows), shown+6)
-			for _, row := range rows[shown:limit] {
-				drawAttachmentName(c, row.name)
-			}
-			if limit < len(rows) {
-				ui.Text(c, "…").FontSize(13).TextColor(c.Theme().TextMuted)
-			}
-		})
+	width, height := c.Size()
+	shown, names, thumbnail := attachmentPreviewCapacity(width, height, len(rows), media)
+	ui.Column(c).Fill().Gap(8).Children(func() {
+		if len(rows) > 1 {
+			ui.Text(c, fmt.Sprintf("× %d", len(rows))).FontSize(12).TextColor(c.Theme().TextMuted)
+		}
+		if shown > 0 {
+			ui.Row(c).FillWidth().Gap(6).Children(func() {
+				for _, row := range rows[:shown] {
+					ui.Column(c).Width(0).Grow(1).Gap(4).Children(func() {
+						if row.image != nil {
+							ui.Image(c, row.image).FillWidth().Height(thumbnail).Fit(ui.Contain)
+						}
+						drawAttachmentName(c, row.name)
+					})
+				}
+			})
+		}
+		limit := shown + names
+		for _, row := range rows[shown:limit] {
+			drawAttachmentName(c, row.name)
+		}
+		if limit < len(rows) {
+			ui.Text(c, "…").FontSize(13).TextColor(c.Theme().TextMuted)
+		}
 	})
 }
 
