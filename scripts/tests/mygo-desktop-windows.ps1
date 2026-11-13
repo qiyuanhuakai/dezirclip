@@ -42,6 +42,7 @@ public sealed class MyGoPasteTargetTextBox : System.Windows.Forms.TextBox {
     public string InputDiagnostics() { return String.Join(Environment.NewLine, messages.ToArray()); }
 }
 public static class MyGoInput {
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     public static void WinV() {
         keybd_event(0x5B, 0, 0, UIntPtr.Zero);
