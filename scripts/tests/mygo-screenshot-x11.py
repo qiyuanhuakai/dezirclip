@@ -28,10 +28,15 @@ def check(desktop, helpers):
     x11.XOpenDisplay.argtypes, x11.XOpenDisplay.restype = [ctypes.c_char_p], ctypes.c_void_p
     x11.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
     x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    x11.XKeysymToKeycode.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
     xtest.XTestFakeMotionEvent.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_ulong]
     xtest.XTestFakeButtonEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
+    xtest.XTestFakeKeyEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
     display = x11.XOpenDisplay(None)
     assert display
+    target = Gtk.Window(title='Independent screenshot shortcut target')
+    target.set_default_size(240, 100)
+    target.add(Gtk.Entry())
 
     def pump(seconds=.05):
         end = time.monotonic() + seconds
@@ -66,14 +71,17 @@ def check(desktop, helpers):
             assert Atspi.generate_mouse_event(bounds.x + bounds.width//2, bounds.y + bounds.height//2, 'b1c')
 
     def chord(letter):
-        keymap = Gdk.Keymap.get_for_display(root.get_display())
+        target.show_all()
+        target.present()
+        wait(target.is_active, 'Independent window did not acquire focus before the shortcut')
         keys = [Gdk.KEY_Control_L, Gdk.KEY_Shift_L, letter]
         for pressed in (True, False):
             for sym in keys if pressed else reversed(keys):
-                found, entries = keymap.get_entries_for_keyval(sym)
-                assert found and entries
-                assert Atspi.generate_keyboard_event(entries[0].keycode, None,
-                    Atspi.KeySynthType.PRESS if pressed else Atspi.KeySynthType.RELEASE)
+                keycode = x11.XKeysymToKeycode(display, sym)
+                assert keycode
+                xtest.XTestFakeKeyEvent(display, keycode, pressed, 0)
+                x11.XSync(display, False)
+                pump(.03)
         pump(.1)
 
     def captured(w, h):
@@ -127,4 +135,5 @@ def check(desktop, helpers):
         with helpers['observed_service_cleanup'](cli):
             process.terminate()
             process.wait(timeout=20)
+        target.destroy()
         x11.XCloseDisplay(display)
