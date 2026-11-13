@@ -55,7 +55,7 @@ impl Host {
         let mut slot = session.window_target.lock().map_err(|_| WireErrorCode::Unavailable)?;
         *slot = None;
         let peer = session.peer.as_ref().ok_or(WireErrorCode::PermissionDenied)?;
-        *slot = Some(dzc_platform::runtime::RememberedFocus::capture(peer).map_err(|_| WireErrorCode::Unavailable)?);
+        *slot = Some(dzc_platform::runtime::RememberedFocus::capture_window(peer).map_err(|_| WireErrorCode::Unavailable)?);
         encoded(OperationResult { performed: true })
     }
 

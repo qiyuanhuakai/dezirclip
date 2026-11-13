@@ -36,7 +36,7 @@ import { ItemContextMenu } from "./ItemContextMenu";
 import type { TransformKindDto } from "./ItemContextMenu";
 import type { CompactPreviewRect } from "./compactPreviewPosition";
 import { COMPACT_PREVIEW_LABEL, hideCompactPreviewGlobal, leaveCompactPreview, showCompactPreview as requestCompactPreview,
-    holdNativeDialogBlur, setIgnoreBlurSafe, type CompactPreviewAnchor } from "./compactPreviewController";
+    holdNativeDialogBlur, setIgnoreBlurSafe, previewScrollIdle, type CompactPreviewAnchor } from "./compactPreviewController";
 export { hideCompactPreviewGlobal } from "./compactPreviewController";
 import { resolveContextMenuPoint } from "./contextMenuPosition";
 import { beginPrivacyAccess, getPrivacyViewState, invokePrivacyBound, refreshPrivacyAfterConfirmation, submitPrivacyFeedback, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
@@ -430,9 +430,14 @@ const ClipboardItem = ({
 
     const scheduleHover = () => {
         if (hoverTimerRef.current !== null || isSensitiveHidden || currentMenu.current) return;
+        previewScrollIdle();
         hoverTimerRef.current = setTimeout(() => {
             const anchor = hoverAnchorRef.current;
-            if (!currentMenu.current && anchor && itemRootRef.current?.isConnected) void showCompactPreview(anchor);
+            const node = itemRootRef.current;
+            if (!currentMenu.current && anchor && node?.isConnected && node.matches(":hover")) {
+                if (!previewScrollIdle()) { hoverTimerRef.current = null; scheduleHover(); return; }
+                void showCompactPreview({ ...anchor, itemRect: toCompactPreviewRect(node.getBoundingClientRect()) });
+            }
         }, 300);
     };
     const trackHover = (event: React.MouseEvent<HTMLElement>) => {

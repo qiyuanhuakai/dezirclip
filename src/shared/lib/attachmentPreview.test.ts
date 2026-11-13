@@ -5,7 +5,7 @@ describe("attachment gallery projection", () => {
     it("fills multiple bounded filename rows before using an ellipsis", () => {
         const files = ['a.pdf', 'b.zip', 'c.xlsx', 'd.txt'].map(name => ({ name, src: null }));
         const result = attachmentLayout(files, 320, false);
-        expect(result.columns).toBe(2);
+        expect(result.columns).toBe(1);
         expect(result.visible).toHaveLength(4);
         expect(attachmentLayout(files, 160, false).visible).toHaveLength(4);
         expect(attachmentLayout(files, 320, false, true).visible).toHaveLength(4);
@@ -14,6 +14,15 @@ describe("attachment gallery projection", () => {
         expect(compact.omitted).toBe(3);
         expect(files).toHaveLength(4);
         expect(attachmentLayout(files, 700, false).visible).toHaveLength(4);
+    });
+    it("gives a single video and a partial final filename row the unused width", () => {
+        const files = Array.from({ length: 3 }, (_, i) => ({ name: `long-attachment-${i}.mp4`, src: null }));
+        expect(attachmentLayout(files.slice(0, 1), 700, false, true).columns).toBe(1);
+        const compact = attachmentLayout(files, 700, false, true);
+        expect(compact.columns).toBe(2);
+        expect(compact.lastSpan).toBe(2);
+        expect(compact.omitted).toBe(0);
+        expect(attachmentLayout(files, 700, false).columns).toBe(1);
     });
     it("bounds media and remaining names even on a wide screen", () => {
         const files = Array.from({ length: 30 }, (_, i) => ({ name: `${i}.png`, src: 'data:image/png;base64,AAAA' }));

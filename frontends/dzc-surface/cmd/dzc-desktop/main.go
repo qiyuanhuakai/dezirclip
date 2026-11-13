@@ -306,16 +306,22 @@ func run() error {
 		dock.show = func() { shell.requestShow(win); shell.resumeDocked = true }
 		dock.configure(settings.EdgeDocking == "true")
 		win.OnBlur(func() {
-			history.targetInvalid.Store(true)
 			preview.clear()
 			focusChanged.Emit(win, false)
 			// X11 passive shortcut grabs briefly blur GTK without switching apps.
 			// Only an actual active-window loss cancels the native recording.
 			if !mainWindowFocused(win) {
+				history.targetInvalid.Store(true)
 				fmt.Fprintln(os.Stdout, "recording-cancel")
 			}
 		})
-		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus"); focusChanged.Emit(win, true) })
+		win.OnFocus(func() {
+			if history.targetInvalid.Load() {
+				history.rememberTarget(ctx)
+			}
+			fmt.Fprintln(os.Stdout, "focus")
+			focusChanged.Emit(win, true)
+		})
 		win.OnShow(func() {
 			fmt.Fprintln(os.Stdout, "visible")
 			shell.idle.cancel()

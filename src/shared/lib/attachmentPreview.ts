@@ -15,15 +15,19 @@ export function attachmentKind(name: string): string {
 
 export function attachmentLayout(attachments: AttachmentTile[], width: number, expanded: boolean, compact = false) {
     const media = attachments.some(file => file.src);
-    const columns = Math.max(1, Math.min(4, Math.floor((Math.max(width, 1) + 6) / (media ? compact && !expanded ? 78 : 116 : 134))));
     const rows = expanded ? 8 : compact ? 2 : 4;
+    const availableColumns = Math.max(1, Math.min(4, Math.floor((Math.max(width, 1) + 6) / (media ? compact && !expanded ? 78 : 116 : 134))));
+    // Spend the allowed filename rows before narrowing names into extra columns.
+    const columns = media ? Math.min(availableColumns, Math.max(1, attachments.length))
+        : expanded ? 1 : Math.min(availableColumns, Math.max(1, Math.ceil(attachments.length / rows)));
     const capacity = media ? columns : expanded ? rows : columns * rows;
     const overflow = !media && attachments.length > capacity;
     const visible = attachments.slice(0, overflow ? Math.max(0, capacity - 1) : capacity);
     const remaining = attachments.slice(visible.length);
     const nameCapacity = expanded ? 6 : columns;
     const names = media ? remaining.slice(0, remaining.length > nameCapacity ? nameCapacity - 1 : nameCapacity) : [];
-    return { media, columns: !media && expanded ? 1 : columns, visible, names, omitted: remaining.length - names.length };
+    const lastSpan = !media && !overflow ? columns - ((visible.length - 1) % columns) : 1;
+    return { media, columns, lastSpan, visible, names, omitted: remaining.length - names.length };
 }
 const entities: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" };
 const unescape = (value: string) => value.replace(/&amp;|&lt;|&gt;|&quot;|&#39;/g, entity => entities[entity]);
