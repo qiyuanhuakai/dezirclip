@@ -488,8 +488,13 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         wait_for(lambda: 'IsUnMapped' in subprocess.check_output(['xwininfo','-id',main], text=True),
                  'Foreground shortcut did not hide the WebView')
         shortcut()
-        wait_for(lambda: find_item('图片'), 'Resident shortcut did not reopen the shared WebView')
-        print('Verified shared tag-row paste into the second editor and closing/reopening with the configured shortcut')
+        wait_for(main_active, 'Resident shortcut did not reveal the same WebView')
+        wait_for(lambda: find_item('搜索此标签内容') and find_item(note, text=True),
+                 'Shortcut wake did not preserve the selected tag and its contents')
+        back = wait_for(lambda: find_item('关闭'), 'Missing tag panel back action')
+        assert atspi.Action.do_action(back, 0)
+        wait_for(lambda: find_item('图片'), 'Tag panel back action did not restore history')
+        print('Verified shared tag-row paste and shortcut hide/show preserve the same WebView and selected tag')
         def open_settings_group(name, control):
             if not find_item(control):
                 heading = wait_for(lambda: find_item(name) or find_item(name, text=True), f'{name} settings unavailable')
