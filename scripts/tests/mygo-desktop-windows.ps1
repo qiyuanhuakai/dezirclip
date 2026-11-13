@@ -467,10 +467,12 @@ function Test-WinVTakeover($Main, $Root) {
     $toggle.Toggle()
     Answer-Restart 'Cancel'
     $null = Wait-Until { $toggle.Current.ToggleState -eq [Windows.Automation.ToggleState]::Off } 'Cancelled Win+V takeover remained enabled'
+    $null = Wait-Until { $box.Current.IsEnabled } 'Cancelled Win+V transaction did not finish'
     if ((Get-SavedMainHotkeys) -cne $original) { throw 'Cancelled Win+V takeover changed shortcuts' }
     $toggle.Toggle()
     Answer-Restart 'OK'
     $null = Wait-Until { (Get-SavedMainHotkeys) -match '(?im)^(Win|Super)\+V$' } 'Win+V was not saved after Explorer released it'
+    $null = Wait-Until { $box.Current.IsEnabled } 'Win+V takeover did not finish'
     $window = $Main.MainWindowHandle
     $null = [MyGoInput]::SetForegroundWindow($window)
     $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $window } 'Win+V fixture lost foreground'
@@ -482,6 +484,7 @@ function Test-WinVTakeover($Main, $Root) {
     $toggle.Toggle()
     Answer-Restart 'OK'
     $null = Wait-Until { (Get-SavedMainHotkeys) -ceq $original } 'Disabling Win+V did not restore shortcuts'
+    $null = Wait-Until { $box.Current.IsEnabled } 'Win+V system restoration did not finish'
     Write-Output 'Verified cancelled and successful Win+V takeover, physical toggle, and system restoration'
 }
 
