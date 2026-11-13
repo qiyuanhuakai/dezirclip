@@ -2,11 +2,16 @@ import { describe, expect, it } from "vitest";
 import { attachmentKind, attachmentLayout, attachmentTiles } from "./attachmentPreview";
 
 describe("attachment gallery projection", () => {
-    it("summarizes a file group instead of silently dropping files that do not fit", () => {
+    it("fills multiple bounded filename rows before using an ellipsis", () => {
         const files = ['a.pdf', 'b.zip', 'c.xlsx', 'd.txt'].map(name => ({ name, src: null }));
         const result = attachmentLayout(files, 320, false);
-        expect(result.summary).toBe(true);
-        expect(result.visible).toEqual([]);
+        expect(result.columns).toBe(2);
+        expect(result.visible).toHaveLength(4);
+        expect(attachmentLayout(files, 160, false).visible).toHaveLength(4);
+        expect(attachmentLayout(files, 320, false, true).visible).toHaveLength(4);
+        const compact = attachmentLayout(files, 160, false, true);
+        expect(compact.visible).toHaveLength(1);
+        expect(compact.omitted).toBe(3);
         expect(files).toHaveLength(4);
         expect(attachmentLayout(files, 700, false).visible).toHaveLength(4);
     });
@@ -17,6 +22,7 @@ describe("attachment gallery projection", () => {
         expect(result.names.length).toBeLessThanOrEqual(6);
         expect(result.visible.length + result.names.length + result.omitted).toBe(30);
         expect(attachmentLayout(files, 200, false).visible).toHaveLength(1);
+        expect(attachmentLayout(files, 320, false, true).visible).toHaveLength(4);
     });
     it("classifies file extensions without opening files", () => {
         expect(['paper.PDF', 'book.xlsx', 'archive.zip', 'clip.mp4', 'song.flac', 'main.rs', 'unknown'].map(attachmentKind))

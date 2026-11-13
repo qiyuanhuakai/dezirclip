@@ -270,11 +270,12 @@ impl HistoryService {
 pub(super) fn preview_entry(
     mut entry: ClipboardEntry,
     maximum: Option<u32>,
+    include_video_frame: bool,
 ) -> PrivacyResult<ClipboardEntry> {
     let unavailable = |_| PrivacyError::SensitiveAccessDenied;
     match entry.content_type.as_str() {
         "file" | "files" | "video" => {
-            let (names, html) = crate::media_preview::attachments(&entry.content, maximum.unwrap_or(560))
+            let (names, html) = crate::media_preview::attachments(&entry.content, maximum.unwrap_or(560), include_video_frame)
                 .map_err(unavailable)?;
             entry.content.clear();
             entry.html_content = Some(html);
@@ -326,7 +327,7 @@ impl HistoryService {
     ) -> PrivacyResult<Option<ClipboardEntry>> {
         let result = self
             .get_entry_authorized(id, permit, now_ms)?
-            .map(|entry| preview_entry(entry, None))
+            .map(|entry| preview_entry(entry, None, true))
             .transpose()?;
         self.privacy().check_read(permit, now_ms)?;
         Ok(result)
@@ -337,7 +338,7 @@ impl HistoryService {
         permit: &PrivacyReadPermit,
         now_ms: i64,
     ) -> PrivacyResult<ClipboardEntry> {
-        let result = preview_entry(self.authorize_session_entry(entry, permit, now_ms)?, None)?;
+        let result = preview_entry(self.authorize_session_entry(entry, permit, now_ms)?, None, true)?;
         self.privacy().check_read(permit, now_ms)?;
         Ok(result)
     }
@@ -350,10 +351,11 @@ impl HistoryService {
         permit: &PrivacyReadPermit,
         now_ms: i64,
         maximum: u32,
+        include_video_frame: bool,
     ) -> PrivacyResult<Option<ClipboardEntry>> {
         let result = self
             .get_entry_authorized(id, permit, now_ms)?
-            .map(|entry| preview_entry(entry, Some(maximum)))
+            .map(|entry| preview_entry(entry, Some(maximum), include_video_frame))
             .transpose()?;
         self.privacy().check_read(permit, now_ms)?;
         Ok(result)
@@ -364,10 +366,12 @@ impl HistoryService {
         permit: &PrivacyReadPermit,
         now_ms: i64,
         maximum: u32,
+        include_video_frame: bool,
     ) -> PrivacyResult<ClipboardEntry> {
         let result = preview_entry(
             self.authorize_session_entry(entry, permit, now_ms)?,
             Some(maximum),
+            include_video_frame,
         )?;
         self.privacy().check_read(permit, now_ms)?;
         Ok(result)
@@ -386,7 +390,7 @@ mod rich_preview_tests {
             "timestamp":1, "source_app":"Fixture", "is_pinned":false
         })).unwrap();
         for bound in [Some(560), None] {
-            let result = preview_entry(entry.clone(), bound).unwrap();
+            let result = preview_entry(entry.clone(), bound, true).unwrap();
             assert_eq!(result.content_type, "rich_text");
             let html = result.html_content.unwrap();
             for value in ["<strong", "font-weight:600", "color:rgb(23,23,23)", "font-size:14px", "WinDirStat 2.9.3"] {

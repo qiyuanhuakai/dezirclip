@@ -1,4 +1,4 @@
-import { File, FileText, FileArchive, FileCode, FileSpreadsheet, FileChartColumn, Image as ImageIcon, Video, Music, Files } from "lucide-react";
+import { File, FileText, FileArchive, FileCode, FileSpreadsheet, FileChartColumn, Image as ImageIcon, Video, Music } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { attachmentKind, attachmentLayout, attachmentTiles } from "../lib/attachmentPreview";
 import "../../styles/components/attachment-preview.css";
@@ -10,10 +10,11 @@ function FileIcon({ name }: { name: string }) {
 }
 
 // All attachments remain in their original history entry, with one group action.
-export function AttachmentPreview({ html, names, video = false, fileLabel, expanded = false }: {
-    html?: string | null; names: string; video?: boolean; fileLabel: string; expanded?: boolean;
+export function AttachmentPreview({ html, names, video = false, fileLabel, expanded = false, compact = false }: {
+    html?: string | null; names: string; video?: boolean; fileLabel: string; expanded?: boolean; compact?: boolean;
 }) {
-    const attachments = useMemo(() => attachmentTiles(html, names), [html, names]);
+    const attachments = useMemo(() => attachmentTiles(html, names).map(file =>
+        !expanded && (video || attachmentKind(file.name) === 'video') ? { ...file, src: null } : file), [html, names, video, expanded]);
     const container = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(320);
     useLayoutEffect(() => {
@@ -25,20 +26,19 @@ export function AttachmentPreview({ html, names, video = false, fileLabel, expan
         observer.observe(element);
         return () => observer.disconnect();
     }, []);
-    const layout = attachmentLayout(attachments, width, expanded);
-    return <div ref={container} className={`attachment-gallery${video ? " attachment-video" : ""}${expanded ? " attachment-expanded" : ""}`}>
-        {(layout.summary || attachments.length > 1) && <div className="attachment-count" title={attachments.map(file => file.name).join('\n')}>
-            <Files size={16} /><span>{fileLabel} × {attachments.length}</span>
-        </div>}
-        {!layout.summary && <div className={`attachment-items${layout.media ? " attachment-media" : ""}`}>
+    const layout = attachmentLayout(attachments, width, expanded, compact);
+    const ellipsis = layout.omitted > 0 ? <span className="attachment-ellipsis" title={`+${layout.omitted}`}>…</span> : null;
+    return <div ref={container} aria-label={`${fileLabel} × ${attachments.length}`} data-columns={layout.columns} className={`attachment-gallery${expanded ? " attachment-expanded" : ""}`}>
+        <div className={`attachment-items${layout.media ? " attachment-media" : ""}`}>
             {layout.visible.map((file, index) => <figure className="attachment-tile" key={`${index}:${file.name}`} title={file.name}>
-                {file.src && <img src={file.src} alt={file.name} loading="lazy" draggable={false} />}
-                <figcaption><FileIcon name={file.name} /><span>{file.name}</span></figcaption>
+                {file.src && <img className={expanded ? "attachment-expanded-image" : "image-preview"} src={file.src} alt={file.name} loading="lazy" draggable={false} />}
+                {(!file.src || expanded) && <figcaption><FileIcon name={file.name} /><span>{file.name}</span></figcaption>}
             </figure>)}
-        </div>}
-        {(layout.names.length > 0 || layout.omitted > 0) && <div className="attachment-overflow">
+            {!layout.media && ellipsis}
+        </div>
+        {layout.media && (layout.names.length > 0 || layout.omitted > 0) && <div className="attachment-overflow">
             {layout.names.map((file, index) => <span className="attachment-name" key={`${index}:${file.name}`} title={file.name}><FileIcon name={file.name} /><span>{file.name}</span></span>)}
-            {layout.omitted > 0 && <span className="attachment-ellipsis" title={`+${layout.omitted}`}>…</span>}
+            {ellipsis}
         </div>}
     </div>;
 }

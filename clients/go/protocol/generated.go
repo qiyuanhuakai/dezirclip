@@ -193,6 +193,7 @@ type DesktopEntryParams struct {
     ExpectedEpoch uint64 `json:"expected_epoch"`
     Reveal bool `json:"reveal"`
     ThumbnailDimension *uint32 `json:"thumbnail_dimension,omitempty"`
+    IncludeVideoFrame *bool `json:"include_video_frame,omitempty"`
 }
 
 type DesktopEntry struct {

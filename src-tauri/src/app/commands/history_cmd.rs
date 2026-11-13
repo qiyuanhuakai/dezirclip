@@ -392,7 +392,7 @@ pub async fn get_clipboard_content(
 ) -> AppResult<String> {
     let bridge=app.state::<DesktopHost>();
     let epoch=state.history_service().runtime_snapshot(chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.privacy_epoch;
-    if let Some(entry)=bridge.entry(id,epoch,false,None,expected_host_instance_id.as_deref()).await.map_err(AppError::Validation)? {return Ok(entry.entry.content);}
+    if let Some(entry)=bridge.entry(id,epoch,false,None,expected_host_instance_id.as_deref(),None).await.map_err(AppError::Validation)? {return Ok(entry.entry.content);}
     bridge.check_instance(id,expected_host_instance_id.as_deref()).map_err(AppError::Validation)?;
     let history=state.history_service();
     let permit=history.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::InteractiveRead,dzc_core::api::SensitiveAccess::Denied,None,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;

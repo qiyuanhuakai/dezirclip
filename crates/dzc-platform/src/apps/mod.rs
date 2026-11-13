@@ -16,7 +16,7 @@ pub fn builtin_source_icon(source: &str) -> Option<String> {
     if !matches!(source, "DezirClip Screenshot" | "DezirClip File Drop" | "DezirClip Derived" | "DezirClip") { return None; }
     use base64::Engine;
     Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(
-        include_bytes!("../../../../frontends/dzc-surface/cmd/dzc-desktop/tray-icon.png"))))
+        include_bytes!("dezirclip.png"))))
 }
 
 #[cfg(test)]

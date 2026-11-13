@@ -216,6 +216,11 @@ pub fn normalize(
 
 pub fn thumbnail_data_url(value: &str, maximum: u32) -> Result<String, String> {
     let bytes = image_bytes(value)?;
+    thumbnail_bytes(&bytes, maximum)
+}
+
+pub(crate) fn thumbnail_bytes(bytes: &[u8], maximum: u32) -> Result<String, String> {
+    if bytes.len() > MAX_RESOURCE_BYTES { return Err(budget()); }
     let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|_| invalid())?;

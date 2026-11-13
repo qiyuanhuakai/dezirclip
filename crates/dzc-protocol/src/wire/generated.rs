@@ -261,6 +261,8 @@ pub struct DesktopEntryParams {
     pub reveal: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thumbnail_dimension: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_video_frame: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

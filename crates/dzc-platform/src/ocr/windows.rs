@@ -36,6 +36,19 @@ struct OcrApartment {
 }
 
 #[cfg(target_os = "windows")]
+fn retain_ocr_runtime() -> Result<(), OcrError> {
+    // windows-rs caches agile activation factories for the entire process.
+    // A thread-local apartment alone does not protect those pointers after
+    // the last probe worker exits. Keep one MTA usage reference for the same
+    // process lifetime as the factory cache; Windows reclaims both at exit.
+    static USAGE: std::sync::OnceLock<Result<usize, windows_core::HRESULT>> = std::sync::OnceLock::new();
+    USAGE.get_or_init(|| unsafe {
+        windows::Win32::System::Com::CoIncrementMTAUsage()
+            .map(|cookie| cookie.0 as usize).map_err(|error| error.code())
+    }).as_ref().map(|_| ()).map_err(|code| OcrError::OcrFailed(format!("OCR runtime initialization failed: {code}")))
+}
+
+#[cfg(target_os = "windows")]
 impl OcrApartment {
     fn new() -> Result<Self, OcrError> {
         use windows::Win32::{Foundation::RPC_E_CHANGED_MODE, System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED}};
@@ -59,6 +72,7 @@ impl Drop for OcrApartment {
 impl OcrService {
     #[cfg(target_os = "windows")]
     pub fn new() -> Result<Self, OcrError> {
+        retain_ocr_runtime()?;
         OCR_APARTMENT.with(|slot| {
             let mut slot = slot.borrow_mut();
             if slot.is_none() { *slot = Some(OcrApartment::new()?); }
@@ -144,6 +158,33 @@ fn dynamic_image_to_software_bitmap(img: &DynamicImage) -> Result<SoftwareBitmap
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn engine_probe_survives_all_calling_threads_exiting() {
+        const CHILD: &str = "DZC_OCR_PROBE_ONLY_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "ocr::windows::tests::engine_probe_survives_all_calling_threads_exiting", "--test-threads=1"])
+                .env(CHILD, "1").output().expect("isolated OCR probe test");
+            assert!(output.status.success(), "OCR probe subprocess failed: {}\n{}\n{}", output.status,
+                String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            return;
+        }
+        // No recognition runs before this gap: async OCR may otherwise keep
+        // system MTA workers alive and conceal a stale activation factory.
+        for _ in 0..12 {
+            std::thread::spawn(|| { drop(OcrService::new().expect("OCR engine probe")); })
+                .join().expect("probe thread exits");
+            unsafe { windows::Win32::System::Com::CoFreeUnusedLibrariesEx(0, None); }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        std::thread::spawn(|| {
+            let bytes = include_bytes!("../../../../frontends/dzc-surface/cmd/dzc-desktop/testdata/ocr-clipboard.png");
+            let text = OcrService::new().unwrap().recognize(bytes).unwrap();
+            assert_eq!(text.split_whitespace().collect::<Vec<_>>().join(" "), "DESKTOP TEST");
+        }).join().expect("recognition after probe-only workers exit");
+    }
 
     #[cfg(target_os = "windows")]
     #[test]

@@ -395,7 +395,7 @@ mod tests {
         let now = chrono::Utc::now().timestamp_millis();
         let permit = history.privacy().authorize_read(PrivacyAccessIntent::InteractiveRead, SensitiveAccess::Denied, None, now).unwrap();
         for _ in 0..2 {
-            let preview = history.get_entry_thumbnail_authorized(captured.entry.id, &permit, now, 560).unwrap().unwrap();
+            let preview = history.get_entry_thumbnail_authorized(captured.entry.id, &permit, now, 560, false).unwrap().unwrap();
             assert_eq!(preview.content, "Known mixed text");
             let html = preview.html_content.unwrap();
             assert!(html.contains("<p>Known mixed text</p>"));

@@ -170,6 +170,9 @@
           "minimum": 64,
           "maximum": 1024,
           "x-rust-type": "u32"
+        },
+        "include_video_frame": {
+          "type": "boolean"
         }
       },
       "required": [
