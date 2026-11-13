@@ -150,7 +150,8 @@ func (h *History) rememberTarget(ctx context.Context) {
 	h.target = host
 	var result protocol.OperationResult
 	// A desktop with no foreground editor can still display history and copy.
-	if host.Call(ctx, protocol.MethodDesktopWindowTarget, struct{}{}, "OperationResult", &result) == nil && result.Performed {
+	allowPrevious := true
+	if host.Call(ctx, protocol.MethodDesktopWindowTarget, protocol.WindowTargetParams{AllowPrevious: &allowPrevious}, "OperationResult", &result) == nil && result.Performed {
 		h.targetInvalid.Store(false)
 	}
 }

@@ -1036,7 +1036,7 @@
           "then": {
             "properties": {
               "params": {
-                "$ref": "https://dezirclip.local/protocol/v1/tools.schema.json#/$defs/ToolCatalogParams"
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/WindowTargetParams"
               }
             }
           }

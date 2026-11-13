@@ -769,7 +769,7 @@ impl Host {
             Method::DesktopClipboardCopy => self.desktop_copy(session,request.params),
             Method::DesktopEmojiFavorites => self.emoji_favorites(session, params(request.params)?),
             Method::DesktopWindowEmoji => self.send_window_emoji(session, params(request.params)?),
-            Method::DesktopWindowTarget => self.remember_window_target(session),
+            Method::DesktopWindowTarget => self.remember_window_target(session, request.params),
             Method::DesktopWindowResize => {
                 let input: WindowSizeParams = params(request.params)?;
                 self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;

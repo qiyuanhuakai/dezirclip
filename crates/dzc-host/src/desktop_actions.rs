@@ -49,13 +49,21 @@ impl Host {
         self.desktop_copy_bound(session, request, None)
     }
 
-    pub(crate) fn remember_window_target(&self, session: &Session) -> Result<Value, WireErrorCode> {
+    pub(crate) fn remember_window_target(&self, session: &Session, params: Value) -> Result<Value, WireErrorCode> {
         self.desktop_permission(session, self.instance_id())?;
         session.require(Permission::ClipboardPaste)?;
         let mut slot = session.window_target.lock().map_err(|_| WireErrorCode::Unavailable)?;
         *slot = None;
         let peer = session.peer.as_ref().ok_or(WireErrorCode::PermissionDenied)?;
-        *slot = Some(dzc_platform::runtime::RememberedFocus::capture_window(peer).map_err(|_| WireErrorCode::Unavailable)?);
+        let request: WindowTargetParams = serde_json::from_value(params).map_err(|_| WireErrorCode::InvalidRequest)?;
+        // Only presenting the main window may recover the last external target.
+        // Global paste shortcuts must reject our own foreground window upfront.
+        let target = if request.allow_previous == Some(true) {
+            dzc_platform::runtime::RememberedFocus::capture_window(peer)
+        } else {
+            dzc_platform::runtime::RememberedFocus::capture(peer)
+        };
+        *slot = Some(target.map_err(|_| WireErrorCode::Unavailable)?);
         encoded(OperationResult { performed: true })
     }
 
