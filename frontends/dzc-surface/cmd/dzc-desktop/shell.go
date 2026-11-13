@@ -19,6 +19,7 @@ type DesktopShell struct {
 	resumeSequence  atomic.Uint64
 	resumePending   atomic.Bool
 	resumeStarted   time.Time // UI-thread owned
+	resumeDocked    bool      // UI-thread owned; edge reveal keeps its anchor.
 	idle            hiddenWebView
 	dock            edgeDock
 	resident        residentBridge

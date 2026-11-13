@@ -875,13 +875,14 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         wait_for(lambda: int(subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1], 16) == search_window,
                  'Search shortcut focused the input but did not activate its native window')
         shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F8))
-        wait_for(lambda: subprocess.run(['xwininfo', '-id', str(search_window)], capture_output=True).returncode != 0,
-                 'Main shortcut did not close the search WebView')
+        wait_for(lambda: 'IsUnMapped' in subprocess.check_output(['xwininfo', '-id', str(search_window)], text=True),
+                 'Main shortcut did not hide the search WebView')
         alternate.present()
         wait_for(alternate.is_active, 'Independent editor did not regain focus before cold search')
         shortcut((Gdk.KEY_Alt_L, Gdk.KEY_f))
         wait_for(focused_search, 'Search shortcut did not recreate the WebView with a focused search input')
         grabbed_window = settings_window().get_xid()
+        assert grabbed_window == search_window, 'Shortcut wake replaced the hidden WebView'
         grabbed_pid = wait_for(main_pid, 'No main process for the keyboard grab regression')
         assert Path(f'/proc/{grabbed_pid}/exe').resolve() == executable
         assert int(next(line.split()[1] for line in Path(f'/proc/{grabbed_pid}/status').read_text().splitlines()
@@ -895,8 +896,8 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
             assert int(subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1], 16) == grabbed_window
             with open(f'/proc/{grabbed_pid}/fd/0', 'wb', buffering=0) as commands:
                 commands.write(b'toggle\n')
-            wait_for(lambda: subprocess.run(['xwininfo', '-id', str(grabbed_window)], capture_output=True).returncode != 0,
-                     'Active main window did not close while another client held the keyboard')
+            wait_for(lambda: 'IsUnMapped' in subprocess.check_output(['xwininfo', '-id', str(grabbed_window)], text=True),
+                     'Active main window did not hide while another client held the keyboard')
         alternate.present()
         wait_for(alternate.is_active, 'Editor did not regain focus after the keyboard grab')
         shortcut((Gdk.KEY_Alt_L, Gdk.KEY_f))

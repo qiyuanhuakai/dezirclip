@@ -14,6 +14,7 @@ var prepareShow = mygo.NewEvent[uint64]("main-window-prepare-show")
 // history page has committed against the same Host and privacy epoch.
 func (s *DesktopShell) requestShow(w *mygo.Window) {
 	s.idle.cancel()
+	s.resumeDocked = false
 	s.resumePending.Store(true)
 	s.resumeStarted = time.Now()
 	request := s.resumeSequence.Add(1)
@@ -50,7 +51,7 @@ func (s *DesktopShell) CompleteResume(ctx context.Context, request uint64, insta
 		if w.IsMinimized() {
 			w.Restore()
 		}
-		restoreMainPosition(w)
+		restoreMainPosition(w, s.resumeDocked)
 		s.dock.hidden = false
 		s.dock.shown = time.Now()
 		w.Show()

@@ -1,4 +1,5 @@
 //! Optional per-user service. Linking this library starts no workers.
+mod diagnostics;
 use clap::Parser;
 use dzc_host::{CaptureManager, ControlFile, Host, HostOptions, HostActions, wire::{HostMode, WireErrorCode}};
 use dzc_core::{api::HistoryService, ports::{PasteController, ClipboardWriter, ClipboardPayload}};
@@ -49,9 +50,11 @@ pub fn main_entry() -> Result<(), String> {
     }
     let database = options.database.map(Ok).unwrap_or_else(dzc_host::data::database_path)?;
     let directory = dzc_host::data::canonical_directory(&database)?;
+    let diagnostics = diagnostics::Diagnostics::open(&directory);
+    diagnostics.install_panic_hook();
     dzc_platform::install_default_key_provider();
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_| "HostRuntimeUnavailable")?;
-    runtime.block_on(async {
+    let result = runtime.block_on(async {
         let endpoint = dzc_platform::ipc::Endpoint::for_current_session(&directory).map_err(|_| "HostEndpointUnavailable")?;
         // A migration may own the target endpoint before it publishes clipboard.db.
         // A competing startup must not create or initialize that database.
@@ -73,13 +76,19 @@ pub fn main_entry() -> Result<(), String> {
         }
         let (shutdown, receiver) = tokio::sync::watch::channel(false);
         let signal_host = Arc::downgrade(&host);
+        let signal_diagnostics = diagnostics.clone();
         ctrlc::set_handler(move || {
+            signal_diagnostics.record("shutdown signal");
             if let Some(host) = signal_host.upgrade() {
                 if host.shutdown().is_ok() { let _ = shutdown.send(true); }
             }
         }).map_err(|_| "HostSignalUnavailable")?;
-        dzc_host::serve_listener(host, listener, receiver).await.map_err(|_| "HostTransportFailed".to_string())
-    })
+        let result = dzc_host::serve_listener(host.clone(), listener, receiver).await;
+        diagnostics.record(&format!("listener ended requested={} error_kind={:?} os_error={:?}", host.is_stopping(), result.as_ref().err().map(std::io::Error::kind), result.as_ref().err().and_then(std::io::Error::raw_os_error)));
+        result.map_err(|_| "HostTransportFailed".to_string())
+    });
+    diagnostics.record(match &result { Ok(()) => "exit success", Err(error) => error });
+    result
 }
 
 

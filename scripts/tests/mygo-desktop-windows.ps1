@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$FileDrag, [switch]$WakeTiming, [switch]$WakeBackground, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
+﻿param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$FileDrag, [switch]$Lifecycle, [switch]$WakeTiming, [switch]$WakeBackground, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -42,6 +42,13 @@ public sealed class MyGoPasteTargetTextBox : System.Windows.Forms.TextBox {
     public string InputDiagnostics() { return String.Join(Environment.NewLine, messages.ToArray()); }
 }
 public static class MyGoInput {
+    [DllImport("user32.dll")] static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+    public static void WinV() {
+        keybd_event(0x5B, 0, 0, UIntPtr.Zero);
+        keybd_event(0x56, 0, 0, UIntPtr.Zero);
+        keybd_event(0x56, 0, 2, UIntPtr.Zero);
+        keybd_event(0x5B, 0, 2, UIntPtr.Zero);
+    }
     [DllImport("user32.dll", SetLastError=true)] static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint key);
     [DllImport("user32.dll", SetLastError=true)] static extern bool UnregisterHotKey(IntPtr window, int id);
     public static bool MainTestShortcutAvailable() {
@@ -245,6 +252,12 @@ function Test-EdgeDocking($Main, $Root) {
     if ([MyGoInput]::IsWindowVisible($window)) { throw 'Unrelated edge position revealed the WebView' }
     $null = [MyGoInput]::SetCursorPos($screen.Right - 1, $insideY)
     $null = Wait-Until { [MyGoInput]::IsWindowVisible($window) } 'Moving onto the original edge did not reveal the WebView'
+    $revealed = [MyGoInput+Rect]::new()
+    if (![MyGoInput]::GetWindowRect($window, [ref]$revealed) -or $revealed.right -gt $screen.Right -or $revealed.left -lt $screen.Left) { throw 'Revealed window is clipped' }
+    $null = [MyGoInput]::SetCursorPos($screen.Left + 20, $insideY)
+    $null = Wait-Until { ![MyGoInput]::IsWindowVisible($window) } 'Revealed window lost its docking anchor'
+    $null = [MyGoInput]::SetCursorPos($screen.Right - 1, $insideY)
+    $null = Wait-Until { [MyGoInput]::IsWindowVisible($window) } 'Second edge reveal failed'
     $box = Wait-Until { Get-SettingsCheckbox $Root 'Edge Docking' } 'Settings did not resume after the window returned'
     $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
     $toggle.Toggle()
@@ -413,22 +426,61 @@ function Test-MainHotkeys($Main, $Root, $Resident, [string]$Executable, $Editor,
     [Windows.Forms.SendKeys]::SendWait('^+{F9}')
     $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $Main.MainWindowHandle } 'New main shortcut did not activate the WebView'
     [Windows.Forms.SendKeys]::SendWait('^+{F9}')
-    $null = Wait-Until { $Main.HasExited } 'New main shortcut did not close the foreground WebView'
+    $handle = $Main.MainWindowHandle
+    $null = Wait-Until { ![MyGoInput]::IsWindowVisible($handle) } 'New main shortcut did not hide the foreground WebView'
+    if ($Main.HasExited) { throw 'Main shortcut destroyed the foreground WebView' }
     [Windows.Forms.SendKeys]::SendWait('^+{F9}')
     $reopened = Wait-Until {
         if ($Resident.HasExited) { throw 'Main shortcut closed the resident' }
         Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
             $_.Id -ne $Resident.Id -and $_.Path -eq $Executable -and $_.MainWindowTitle -eq 'DezirClip'
         } | Select-Object -First 1
-    } 'Saved shortcut did not recreate the main WebView'
+    } 'Saved shortcut did not reveal the main WebView'
+    if ($reopened.Id -ne $Main.Id) { throw 'Shortcut wake replaced the hidden WebView' }
     $newRoot = [Windows.Automation.AutomationElement]::FromHandle($reopened.MainWindowHandle)
-    Click-Control $reopened (Get-ControlPoint $newRoot 'Settings')
     Click-Control $reopened (Get-ControlPoint $newRoot 'Clipboard')
     Click-Control $reopened (Get-ControlPoint $newRoot 'Delete Ctrl+Shift+F9')
     $null = Wait-Until { (Get-SavedMainHotkeys) -ceq $original } 'Removing the new shortcut did not preserve original bindings'
     if (![MyGoInput]::MainTestShortcutAvailable()) { throw 'Removed main shortcut was not released at the OS level' }
     Write-Host 'Verified WebView2 shortcut editing, persistence, native registration, activation, WebView recreation and removal'
     return $reopened
+}
+
+function Test-WinVTakeover($Main, $Root) {
+    $original = Get-SavedMainHotkeys
+    function Answer-Restart([string]$Answer) {
+        $dialog = Wait-Until {
+            $name = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Restart Explorer Required')
+            $process = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty, $Main.Id)
+            [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Children,
+                [Windows.Automation.AndCondition]::new($name, $process))
+        } 'Win+V did not reach the Explorer confirmation'
+        $button = $dialog.FindFirst([Windows.Automation.TreeScope]::Descendants,
+            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $Answer))
+        if (!$button) { throw 'Explorer confirmation button missing' }
+        $button.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+    }
+    $box = Wait-Until { Get-SettingsCheckbox $Root 'Use Win+V Shortcut' } 'Win+V setting missing'
+    $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+    if ($toggle.Current.ToggleState -ne [Windows.Automation.ToggleState]::Off) { throw 'Win+V fixture must start disabled' }
+    $toggle.Toggle()
+    Answer-Restart 'Cancel'
+    $null = Wait-Until { $toggle.Current.ToggleState -eq [Windows.Automation.ToggleState]::Off } 'Cancelled Win+V takeover remained enabled'
+    if ((Get-SavedMainHotkeys) -cne $original) { throw 'Cancelled Win+V takeover changed shortcuts' }
+    $toggle.Toggle()
+    Answer-Restart 'OK'
+    $null = Wait-Until { (Get-SavedMainHotkeys) -match '(?im)^(Win|Super)\+V$' } 'Win+V was not saved after Explorer released it'
+    $window = $Main.MainWindowHandle
+    $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $window } 'Win+V fixture lost foreground'
+    [MyGoInput]::WinV()
+    $null = Wait-Until { ![MyGoInput]::IsWindowVisible($window) } 'Win+V did not hide the window'
+    if ($Main.HasExited) { throw 'Win+V destroyed the WebView' }
+    [MyGoInput]::WinV()
+    $null = Wait-Until { [MyGoInput]::IsWindowVisible($window) } 'Win+V did not restore the same window'
+    $toggle.Toggle()
+    Answer-Restart 'OK'
+    $null = Wait-Until { (Get-SavedMainHotkeys) -ceq $original } 'Disabling Win+V did not restore shortcuts'
+    Write-Output 'Verified cancelled and successful Win+V takeover, physical toggle, and system restoration'
 }
 
 function Open-HoverPreview($root, $main, [string]$marker) {
@@ -1022,7 +1074,9 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         $null = $main.Handle
         [MyGoInput]::mouse_event(0x20, 0, 0, 0, [UIntPtr]::Zero)
         [MyGoInput]::mouse_event(0x40, 0, 0, 0, [UIntPtr]::Zero)
-        $null = Wait-Until { $main.HasExited } 'Middle button did not close the focused WebView'
+        $handle = $main.MainWindowHandle
+        $null = Wait-Until { ![MyGoInput]::IsWindowVisible($handle) } 'Middle button did not hide the focused WebView'
+        if ($main.HasExited) { throw 'Middle button destroyed the focused WebView' }
         $form.Activate()
         $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $form.Handle } 'Editor did not reacquire foreground'
         [MyGoInput]::mouse_event(0x20, 0, 0, 0, [UIntPtr]::Zero)
@@ -1030,12 +1084,12 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         $main = Wait-Until {
             if ($resident.HasExited) { throw 'Middle-button resident exited' }
             Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
-                $_.Id -ne $resident.Id -and $_.Id -ne $previousMainId -and $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip'
+                $_.Id -eq $previousMainId -and $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip'
             } | Select-Object -First 1
-        } 'Middle button did not recreate the WebView'
+        } 'Middle button did not reveal the same WebView'
         $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
         $null = Wait-Until { Get-ControlPoint $root $marker } 'Recreated WebView lost its history'
-        Write-Output 'Verified native middle-button toggle and WebView recreation with the same resident'
+        Write-Output 'Verified native middle-button toggle preserves the WebView process'
         return
     }
     if ($Elevation) {
@@ -1228,6 +1282,14 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             foreach ($process in $children) { $process.Dispose() }
             $serviceProcess.Dispose()
         }
+        return
+    }
+    if ($Lifecycle) {
+        Click-Control $main (Get-ControlPoint $root 'Settings')
+        Test-EdgeDocking $main $root
+        $main = Test-MainHotkeys $main $root $resident $exe $edit $form
+        $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+        Test-WinVTakeover $main $root
         return
     }
     if ($Capture) {

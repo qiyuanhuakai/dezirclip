@@ -16,12 +16,12 @@ func mainWindowScale(w *mygo.Window) float64 {
 	return mygo.Screen.DisplayMatching(w.Bounds()).ScaleFactor
 }
 
-func restoreMainPosition(w *mygo.Window) {
+func restoreMainPosition(w *mygo.Window, docked bool) {
 	if !dockingAvailable() {
 		return
 	}
 	bounds := w.Bounds()
-	point := visibleMainPosition(bounds, mygo.Screen.DisplayMatching(bounds).WorkArea)
+	point := visibleMainPosition(bounds, mygo.Screen.DisplayMatching(bounds).WorkArea, docked)
 	w.SetPosition(point.X, point.Y)
 }
 

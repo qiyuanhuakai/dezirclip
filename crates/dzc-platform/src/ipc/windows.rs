@@ -99,10 +99,29 @@ impl Endpoint {
 pub struct Listener { next: NamedPipeServer, endpoint: Endpoint }
 impl Listener {
     pub async fn accept(&mut self) -> io::Result<Stream> {
-        self.next.connect().await?;
-        let next = self.endpoint.create(false)?;
-        let pipe = std::mem::replace(&mut self.next, next);
-        Ok(Stream { pipe: Pipe::Server(pipe), identity: self.endpoint.identity.clone() })
+        loop {
+            let connected = match self.next.connect().await {
+                Ok(()) => true,
+                // A client may disappear while ConnectNamedPipe is pending,
+                // including during desktop teardown or sleep. Retire that
+                // instance, not the per-user service or its namespace lease.
+                Err(error) if matches!(error.raw_os_error(), Some(109 | 232 | 233)) => false,
+                Err(error) => return Err(error),
+            };
+            let next = loop {
+                match self.endpoint.create(false) {
+                    Ok(next) => break next,
+                    // Keep the existing instance alive while the kernel still
+                    // counts closing pipes against the instance limit.
+                    Err(error) if error.raw_os_error() == Some(231) => tokio::time::sleep(Duration::from_millis(25)).await,
+                    Err(error) => return Err(error),
+                }
+            };
+            let pipe = std::mem::replace(&mut self.next, next);
+            if connected {
+                return Ok(Stream { pipe: Pipe::Server(pipe), identity: self.endpoint.identity.clone() });
+            }
+        }
     }
 }
 
@@ -148,6 +167,33 @@ impl AsyncWrite for Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn clients_abandoned_during_pending_accept_keep_service_endpoint_alive() {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            let directory = tempfile::tempdir().unwrap();
+            let endpoint = Endpoint::for_current_session(directory.path()).unwrap();
+            let mut listener = endpoint.bind().unwrap();
+            for _ in 0..32 {
+                let address = endpoint.address.clone();
+                let client = tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    drop(ClientOptions::new().open(address).unwrap());
+                });
+                match tokio::time::timeout(Duration::from_millis(20), listener.accept()).await {
+                    Err(_) | Ok(Ok(_)) => (),
+                    Ok(Err(error)) => panic!("pending accept killed by disconnected client: {error}"),
+                }
+                client.await.unwrap();
+            }
+            let mut client = ClientOptions::new().open(&endpoint.address).unwrap();
+            let mut server = tokio::time::timeout(Duration::from_secs(2), listener.accept()).await.unwrap().unwrap();
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            client.write_all(b"alive").await.unwrap();
+            let mut bytes = [0; 5];
+            tokio::time::timeout(Duration::from_secs(2), server.read_exact(&mut bytes)).await.unwrap().unwrap();
+            assert_eq!(&bytes, b"alive");
+        });
+    }
     #[test]
     fn abandoned_client_before_accept_does_not_retire_listener() {
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {

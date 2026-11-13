@@ -227,12 +227,16 @@ jobs:
         run: |
           Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -FileDrag
+          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Lifecycle
+          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -MiddleShortcut
+          cargo test --locked -p dzc-platform --features ipc ipc::windows::tests
       - name: Verify actual Linux file transfers
         if: runner.os == 'Linux'
         run: |
           cp "artifacts/dzc-desktop/$(rustc --print host-tuple)/dzc-desktop" target/debug/dzc-desktop
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --file-drag
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --screenshots
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --idle
       - name: Verify X11 screenshot pixels across color depths
         if: runner.os == 'Linux'
         run: |
