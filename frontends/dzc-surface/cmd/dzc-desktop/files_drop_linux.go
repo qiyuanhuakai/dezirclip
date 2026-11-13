@@ -55,6 +55,9 @@ var installGTKFileDrop = sync.OnceValues(func() (func(*mygo.Window), error) {
 	var stop func(uintptr, string)
 	var selectionLength func(uintptr) int32
 	var selectionBytes func(uintptr) uintptr
+	var offeredTargets func(uintptr) uintptr
+	var offeredActions func(uintptr) uint32
+	var dragStatus func(uintptr, uint32, uint32)
 	purego.RegisterLibFunc(&children, gtk, "gtk_container_get_children")
 	purego.RegisterLibFunc(&listFree, glib, "g_list_free")
 	purego.RegisterLibFunc(&isType, object, "g_type_check_instance_is_a")
@@ -66,10 +69,33 @@ var installGTKFileDrop = sync.OnceValues(func() (func(*mygo.Window), error) {
 	purego.RegisterLibFunc(&stop, object, "g_signal_stop_emission_by_name")
 	purego.RegisterLibFunc(&selectionLength, gtk, "gtk_selection_data_get_length")
 	purego.RegisterLibFunc(&selectionBytes, gtk, "gtk_selection_data_get_data")
+	purego.RegisterLibFunc(&offeredTargets, gdk, "gdk_drag_context_list_targets")
+	purego.RegisterLibFunc(&offeredActions, gdk, "gdk_drag_context_get_actions")
+	purego.RegisterLibFunc(&dragStatus, gdk, "gdk_drag_status")
 	uriTarget := atom("text/uri-list", 0)
+	accepts := func(context uintptr) bool {
+		if offeredActions(context)&2 == 0 {
+			return false
+		}
+		for current := offeredTargets(context); current != 0; {
+			node := (*struct{ data, next, previous uintptr })(unsafe.Pointer(current))
+			if node.data == uriTarget {
+				return true
+			}
+			current = node.next
+		}
+		return false
+	}
+	motionCallback := purego.NewCallback(func(widget, context uintptr, x, y int32, stamp uint32, data uintptr) int32 {
+		if gtkFileDrops[widget] == nil || !accepts(context) {
+			return 0
+		}
+		dragStatus(context, 2, stamp)
+		return 1
+	})
 	dropCallback := purego.NewCallback(func(widget, context uintptr, x, y int32, stamp uint32, data uintptr) int32 {
 		state := gtkFileDrops[widget]
-		if state == nil {
+		if state == nil || !accepts(context) {
 			return 0
 		}
 		state.context = context
@@ -138,6 +164,7 @@ var installGTKFileDrop = sync.OnceValues(func() (func(*mygo.Window), error) {
 			return
 		}
 		gtkFileDrops[widget] = &gtkFileDropState{window: window}
+		api.connect(widget, "drag-motion", motionCallback, 0, 0, 0)
 		api.connect(widget, "drag-drop", dropCallback, 0, 0, 0)
 		api.connect(widget, "drag-data-received", dataCallback, 0, 0, 0)
 		api.connect(widget, "destroy", destroyCallback, 0, 0, 0)
