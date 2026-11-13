@@ -73,18 +73,32 @@ mod tests {
 #[cfg(target_os = "windows")]
 fn decode(bytes: &[u8], maximum: u32) -> Option<Vec<u8>> {
     use windows::Win32::{Media::MediaFoundation::*, System::Com::{CoInitializeEx, COINIT_MULTITHREADED}, UI::Shell::SHCreateMemStream};
+    use windows::{core::{Interface, HRESULT, PCSTR, w}, Win32::System::LibraryLoader::{LoadLibraryExW, GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32}};
+    type Raw = *mut std::ffi::c_void;
+    unsafe fn output<T: Interface>(call: impl FnOnce(*mut Raw) -> HRESULT) -> Option<T> {
+        let mut pointer = std::ptr::null_mut();
+        call(&mut pointer).ok().ok()?;
+        if pointer.is_null() { None } else { Some(T::from_raw(pointer)) }
+    }
     // This function only runs in the disposable decoder process. All COM and
     // Media Foundation resources are released when that process exits.
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED).ok().ok()?;
-        MFStartup(MF_VERSION, MFSTARTUP_FULL).ok()?;
+        // Load codecs only in this helper. The resident Service must still start
+        // on Windows N without the optional Media Feature Pack installed.
+        let platform = LoadLibraryExW(w!("mfplat.dll"), None, LOAD_LIBRARY_SEARCH_SYSTEM32).ok()?;
+        let readwrite = LoadLibraryExW(w!("mfreadwrite.dll"), None, LOAD_LIBRARY_SEARCH_SYSTEM32).ok()?;
+        let startup: unsafe extern "system" fn(u32, u32) -> HRESULT = std::mem::transmute(GetProcAddress(platform, PCSTR(c"MFStartup".as_ptr().cast()))?);
+        let byte_stream: unsafe extern "system" fn(Raw, *mut Raw) -> HRESULT = std::mem::transmute(GetProcAddress(platform, PCSTR(c"MFCreateMFByteStreamOnStream".as_ptr().cast()))?);
+        let attributes: unsafe extern "system" fn(*mut Raw, u32) -> HRESULT = std::mem::transmute(GetProcAddress(platform, PCSTR(c"MFCreateAttributes".as_ptr().cast()))?);
+        let media_type: unsafe extern "system" fn(*mut Raw) -> HRESULT = std::mem::transmute(GetProcAddress(platform, PCSTR(c"MFCreateMediaType".as_ptr().cast()))?);
+        let source_reader: unsafe extern "system" fn(Raw, Raw, *mut Raw) -> HRESULT = std::mem::transmute(GetProcAddress(readwrite, PCSTR(c"MFCreateSourceReaderFromByteStream".as_ptr().cast()))?);
+        startup(MF_VERSION, MFSTARTUP_FULL).ok().ok()?;
         let stream = SHCreateMemStream(Some(bytes))?;
-        let stream = MFCreateMFByteStreamOnStream(&stream).ok()?;
-        let mut attrs = None;
-        MFCreateAttributes(&mut attrs, 1).ok()?;
-        let attrs = attrs?;
+        let stream: IMFByteStream = output(|out| byte_stream(stream.as_raw(), out))?;
+        let attrs: IMFAttributes = output(|out| attributes(out, 1))?;
         attrs.SetUINT32(&MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, 1).ok()?;
-        let reader = MFCreateSourceReaderFromByteStream(&stream, &attrs).ok()?;
+        let reader: IMFSourceReader = output(|out| source_reader(stream.as_raw(), attrs.as_raw(), out))?;
         let video = MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32;
         reader.SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS.0 as u32, false).ok()?;
         reader.SetStreamSelection(video, true).ok()?;
@@ -92,7 +106,7 @@ fn decode(bytes: &[u8], maximum: u32) -> Option<Vec<u8>> {
         let dimensions = native.GetUINT64(&MF_MT_FRAME_SIZE).ok()?;
         let (w, h) = ((dimensions >> 32) as u32, dimensions as u32);
         if w == 0 || h == 0 || u64::from(w) * u64::from(h) > 16 * 1024 * 1024 { return None; }
-        let format = MFCreateMediaType().ok()?;
+        let format: IMFMediaType = output(|out| media_type(out))?;
         format.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).ok()?;
         format.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_RGB32).ok()?;
         reader.SetCurrentMediaType(video, None, &format).ok()?;
