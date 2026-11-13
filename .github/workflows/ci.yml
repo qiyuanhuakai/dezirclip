@@ -228,6 +228,7 @@ jobs:
           Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -FileDrag
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Lifecycle
+          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -MiddleShortcut
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -RecoverService
           cargo test --locked -p dzc-platform --features ipc ipc::windows::tests
@@ -236,6 +237,7 @@ jobs:
         run: |
           cp "artifacts/dzc-desktop/$(rustc --print host-tuple)/dzc-desktop" target/debug/dzc-desktop
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --file-drag
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --screenshots
           DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --idle
       - name: Verify X11 screenshot pixels across color depths

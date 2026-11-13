@@ -248,11 +248,15 @@ def check_native_panels(marker, desktop, service_pid, target, editor, paste_row,
             x11.XSync(display, False)
             chord(0xffe3, 0xffe1, ord('v'))
             deadline = time.monotonic() + 6
-            while focus() in (0, 1, original):
-                assert time.monotonic() < deadline, 'Positioned quick paste did not acquire focus'
+            while True:
+                active = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+                props = subprocess.run(['xprop', '-id', active, '_NET_WM_NAME', '_NET_WM_PID'], capture_output=True, text=True)
+                if '_NET_WM_NAME(UTF8_STRING) = "DezirClip 快速粘贴"' in props.stdout and props.stdout.split()[-1] == str(desktop.pid):
+                    panel_id = int(active, 16)
+                    break
+                assert time.monotonic() < deadline, 'Positioned quick paste did not become the active native window'
                 pump()
                 time.sleep(.025)
-            panel_id = focus()
             panel = GdkX11.X11Window.foreign_new_for_display(screen.get_display(), panel_id)
             assert panel
             _, left, top = panel.get_origin()
