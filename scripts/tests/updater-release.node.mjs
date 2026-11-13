@@ -395,6 +395,7 @@ test('only the exact conditional backfill job may be skipped on a push release',
 });
 
 for (const name of ['Full source acceptance / Published Windows memory comparison',
+  'Full source acceptance / native-file-drag',
   'Resume verified publication or synchronize update channel']) {
   for (const conclusion of ['skipped', 'failure', 'cancelled', null]) {
     test(`optional publication job ${name} accepts only success or intentional skip: ${conclusion}`, () => {
@@ -414,6 +415,36 @@ test('an incomplete paginated job listing or drifting gate source blocks every w
       assert.throws(() => invoke()); assert.deepEqual(fixture.state.mutations, []);
     });
   }
+});
+
+for (const conclusion of ['success', 'skipped', 'failure']) {
+  test(`beta.1 recovery with a manual-only native skip still requires the full Windows gate: ${conclusion}`, () => {
+    withSynchronization({ version: '0.2.0-beta.1' }, (fixture, gate, invoke) => {
+      fixture.state.run.conclusion = 'failure';
+      fixture.state.jobs.at(-1).conclusion = 'failure';
+      fixture.state.jobs.push({ ...fixture.state.jobs[0], id: 9004,
+        name: 'Full source acceptance / native-file-drag', conclusion: 'skipped' });
+      fixture.state.jobs.find(job => job.name === 'Full source acceptance / Tauri backend (windows-x86_64)').conclusion = conclusion;
+      const assets = structuredClone(fixture.state.product.assets);
+      if (conclusion === 'success') {
+        assert.equal(invoke('resume-verified-draft').status, 'synchronized');
+        assert.equal(fixture.active('preview.json').version, '0.2.0-beta.1');
+        assert.deepEqual(fixture.state.product.assets, assets);
+      } else {
+        assert.throws(() => invoke('resume-verified-draft'), /gates/);
+        assert.deepEqual(fixture.state.mutations, []);
+      }
+    });
+  });
+}
+
+test('the optional native gate exemption does not accept a skipped matrix child', () => {
+  withSynchronization({ version: '0.2.0-beta.1', running: true }, (fixture, gate, invoke) => {
+    fixture.state.jobs.push({ ...fixture.state.jobs[0], id: 9004,
+      name: 'Full source acceptance / native-file-drag (windows-latest)', conclusion: 'skipped' });
+    assert.throws(() => invoke(), /gates/);
+    assert.deepEqual(fixture.state.mutations, []);
+  });
 });
 
 for (const [label, change] of [

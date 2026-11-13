@@ -307,6 +307,7 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
       && !(['Synchronize an already published update channel', 'Supplement published MyGo installer',
         'Resume verified publication or synchronize update channel',
         'Full source acceptance / Published Windows memory comparison',
+        'Full source acceptance / native-file-drag',
         'Full source acceptance / Optional Windows Surface comparison or crash diagnostics'].includes(job.name)
         && job.status === 'completed' && job.conclusion === 'skipped')
       && !(repair && job === publishers[0] && job.status === 'completed' && job.conclusion === 'failure')
