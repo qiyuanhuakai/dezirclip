@@ -13,11 +13,16 @@ public sealed class FileTransferFixture : Panel {
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     public string[] Source;
     public string[] Received;
+    public readonly ManualResetEventSlim GestureDone = new ManualResetEventSlim(false);
+    readonly ManualResetEventSlim entered = new ManualResetEventSlim(false);
+    readonly ManualResetEventSlim left = new ManualResetEventSlim(false);
+    public string GestureError;
     public FileTransferFixture() {
         AllowDrop = true;
         BackColor = Color.LightSteelBlue;
         Dock = DockStyle.Fill;
-        DragEnter += (s, e) => { e.Effect = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; };
+        DragEnter += (s, e) => { e.Effect = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; entered.Set(); };
+        DragLeave += (s, e) => { left.Set(); };
         DragDrop += (s, e) => { Received = (string[])e.Data.GetData(DataFormats.FileDrop); };
     }
     protected override void OnMouseDown(MouseEventArgs e) {
@@ -27,8 +32,10 @@ public sealed class FileTransferFixture : Panel {
             DoDragDrop(data, DragDropEffects.Copy);
         }
     }
-    public static void Gesture(Point from, Point to, bool cancel) {
+    public void Gesture(Point from, Point to, bool cancel) {
+        entered.Reset(); left.Reset(); GestureDone.Reset(); GestureError = null;
         var thread = new Thread(() => {
+          try {
             SetCursorPos(from.X, from.Y);
             Thread.Sleep(100);
             mouse_event(2, 0, 0, 0, UIntPtr.Zero);
@@ -37,8 +44,18 @@ public sealed class FileTransferFixture : Panel {
                 Thread.Sleep(40);
             }
             Thread.Sleep(500);
-            if (cancel) { keybd_event(0x1b, 0, 0, UIntPtr.Zero); keybd_event(0x1b, 0, 2, UIntPtr.Zero); }
+            if (cancel) {
+                if (!entered.Wait(5000)) throw new Exception("Native drag never entered the cancellation target");
+                left.Reset();
+                keybd_event(0x1b, 0, 0, UIntPtr.Zero);
+                if (!left.Wait(5000)) throw new Exception("Held Escape did not cancel the native drag");
+            }
+          } catch (Exception error) { GestureError = error.Message; }
+          finally {
+            if (cancel) keybd_event(0x1b, 0, 2, UIntPtr.Zero);
             mouse_event(4, 0, 0, 0, UIntPtr.Zero);
+            GestureDone.Set();
+          }
         });
         thread.IsBackground = true;
         thread.Start();
@@ -57,18 +74,18 @@ try { $bitmap.Save($files[1], [Drawing.Imaging.ImageFormat]::Png) } finally { $b
 $panel.Source = $files
 $target = $panel.PointToScreen([Drawing.Point]::new(100,100))
 $drop = Get-ControlPoint $root $marker
-[FileTransferFixture]::Gesture($target, $drop, $false)
+$panel.Gesture($target, $drop, $false)
 $null = Wait-Until { [Windows.Forms.Clipboard]::ContainsFileDropList() -and
     ([Windows.Forms.Clipboard]::GetFileDropList() -join '|') -eq ($files -join '|') } 'Native drop did not copy both original files'
 $panel.Source = $null
 $row = Get-ControlPoint $root 'drag-image.png'
-[FileTransferFixture]::Gesture($row, $target, $false)
+$panel.Gesture($row, $target, $false)
 $null = Wait-Until { $panel.Received -and ($panel.Received -join '|') -eq ($files -join '|') } 'Native card drag did not attach both files'
 if ([IO.File]::ReadAllText($files[0]) -ne 'Native copy fixture' -or !(Test-Path -LiteralPath $files[1])) { throw 'Native drag modified a source file' }
 $panel.Received = $null
-[FileTransferFixture]::Gesture($row, $target, $true)
-$watch = [Diagnostics.Stopwatch]::StartNew()
-while ($watch.Elapsed.TotalSeconds -lt 3) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 50 }
+$panel.Gesture($row, $target, $true)
+$null = Wait-Until { $panel.GestureDone.IsSet } 'Native drag cancellation gesture did not finish' 15
+if ($panel.GestureError) { throw $panel.GestureError }
 if ($panel.Received) { throw 'Cancelled drag unexpectedly delivered files' }
 if (![MyGoInput]::IsWindowVisible($main.MainWindowHandle)) { throw 'Cancelling the native drag hid the main window' }
 if (([Windows.Forms.Clipboard]::GetFileDropList() -join '|') -ne ($files -join '|')) { throw 'Dragging unexpectedly changed the clipboard' }
@@ -79,7 +96,7 @@ try {
     [Windows.Forms.Clipboard]::SetImage($bitmap)
 } finally { $bitmap.Dispose() }
 $image = Get-ControlPoint $root 'Clipboard Image'
-[FileTransferFixture]::Gesture($image, $target, $false)
+$panel.Gesture($image, $target, $false)
 $null = Wait-Until { $panel.Received -and $panel.Received.Length -eq 1 } 'Image card did not export a native file'
 $bytes = [IO.File]::ReadAllBytes($panel.Received[0])
 if ($bytes.Length -lt 8 -or $bytes[0] -ne 137 -or $bytes[1] -ne 80 -or $bytes[2] -ne 78 -or $bytes[3] -ne 71) { throw 'Image export was not PNG' }
