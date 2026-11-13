@@ -148,14 +148,9 @@ fn package_logo(manifest: &str, executable: &str) -> Option<String> {
 }
 
 fn packaged_icon(executable: &Path) -> Option<String> {
-    use std::io::Read;
     for root in executable.parent()?.ancestors().take(4) {
         let manifest = root.join("AppxManifest.xml");
-        let Ok(file) = crate::local_file::open_regular_nofollow(&manifest) else { continue; };
-        if file.metadata().ok()?.len() > 256 * 1024 { continue; }
-        let mut xml = String::new();
-        file.take(256 * 1024 + 1).read_to_string(&mut xml).ok()?;
-        if xml.len() > 256 * 1024 { continue; }
+        let Some(xml) = crate::local_file::read_preview_file(&manifest, 256 * 1024).and_then(|bytes| String::from_utf8(bytes).ok()) else { continue; };
         let relative = executable.strip_prefix(root).ok()?.to_str()?;
         let Some(logo) = package_logo(&xml, relative) else { continue; };
         let logo = Path::new(&logo);
@@ -169,10 +164,7 @@ fn packaged_icon(executable: &Path) -> Option<String> {
             candidates.push(parent.join(format!("{stem}.{suffix}.png")));
         }
         for path in candidates {
-            let Ok(file) = crate::local_file::open_regular_nofollow(&path) else { continue; };
-            if file.metadata().ok()?.len() > 512 * 1024 { continue; }
-            let mut bytes = Vec::new();
-            if file.take(512 * 1024 + 1).read_to_end(&mut bytes).is_err() || bytes.len() > 512 * 1024 { continue; }
+            let Some(bytes) = crate::local_file::read_preview_file(&path, 512 * 1024) else { continue; };
             let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?;
             let mut limits = image::Limits::default();
             limits.max_image_width = Some(1024); limits.max_image_height = Some(1024); limits.max_alloc = Some(8 * 1024 * 1024);

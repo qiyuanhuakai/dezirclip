@@ -6,6 +6,9 @@ use crate::infrastructure::{attachments::path_from_uri, protected_resources as r
 pub type VideoFrame = fn(&[u8], u32) -> Option<Vec<u8>>;
 static VIDEO_FRAME: OnceLock<VideoFrame> = OnceLock::new();
 pub fn install_video_decoder(decoder: VideoFrame) { let _ = VIDEO_FRAME.set(decoder); }
+pub type AttachmentReader = fn(&std::path::Path, usize) -> Option<Vec<u8>>;
+static READ_ATTACHMENT: OnceLock<AttachmentReader> = OnceLock::new();
+pub fn install_attachment_reader(reader: AttachmentReader) { let _ = READ_ATTACHMENT.set(reader); }
 
 fn escape(value: &str) -> String {
     value.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#39;")
@@ -21,7 +24,6 @@ fn thumbnail(name: &str, bytes: &[u8], maximum: u32) -> Option<String> {
 }
 
 pub(crate) fn attachments(content: &str, maximum: u32) -> Result<(String, String), String> {
-    use std::io::Read;
     let mut entries = Vec::new();
     if content.starts_with(resources::FILES_PREFIX) {
         for file in resources::decode_files(content)? {
@@ -40,13 +42,9 @@ pub(crate) fn attachments(content: &str, maximum: u32) -> Result<(String, String
             // documents just to display their names, or follow remote/reparse paths.
             let visual = video(name) || image::ImageFormat::from_path(path).is_ok();
             let bytes = if entries.len() < 8 && visual {
-                crate::filesystem::open_regular_nofollow(path).ok().and_then(|file| {
-                    let length = file.metadata().ok()?.len();
-                    if length > resources::MAX_RESOURCE_BYTES as u64 || length > remaining { return None; }
-                    remaining -= length;
-                    let mut bytes = Vec::new();
-                    file.take(resources::MAX_RESOURCE_BYTES as u64 + 1).read_to_end(&mut bytes).ok()?;
-                    (bytes.len() <= resources::MAX_RESOURCE_BYTES).then_some(bytes)
+                READ_ATTACHMENT.get().and_then(|read| read(path, remaining.min(resources::MAX_RESOURCE_BYTES))).map(|bytes| {
+                    remaining = remaining.saturating_sub(bytes.len());
+                    bytes
                 })
             } else { None };
             entries.push((name.to_owned(), bytes));

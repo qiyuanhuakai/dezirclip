@@ -4,7 +4,12 @@ const MAX_INPUT: usize = 16 * 1024 * 1024;
 const MAX_OUTPUT: usize = 2 * 1024 * 1024;
 const FLAG: &str = "--dzc-video-preview";
 
-pub fn install() { dzc_core::media_preview::install_video_decoder(first_frame); }
+pub fn install() {
+    dzc_core::media_preview::install_video_decoder(first_frame);
+    dzc_core::media_preview::install_attachment_reader(crate::local_file::read_preview_file);
+}
+
+
 pub fn dispatch() {
     if std::env::args_os().nth(1).as_deref() != Some(std::ffi::OsStr::new(FLAG)) { return; }
     let result = (|| -> Option<()> {
@@ -62,6 +67,19 @@ pub fn first_frame(bytes: &[u8], maximum: u32) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn automatic_attachment_reads_are_bounded_local_files() {
+        use std::io::Write;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(b"fixture").unwrap();
+        assert_eq!(crate::local_file::read_preview_file(file.path(), 7).as_deref(), Some(b"fixture".as_slice()));
+        assert!(crate::local_file::read_preview_file(file.path(), 6).is_none());
+        assert!(crate::local_file::read_preview_file(std::path::Path::new("relative.png"), 20).is_none());
+        #[cfg(target_os = "windows")]
+        for path in [r"\\server\share\video.mp4", r"\\?\UNC\server\share\image.png"] {
+            assert!(crate::local_file::read_preview_file(std::path::Path::new(path), 20).is_none());
+        }
+    }
     #[test]
     fn decoder_rejects_empty_and_oversized_inputs_before_spawning() {
         assert!(super::first_frame(&[], 384).is_none());
