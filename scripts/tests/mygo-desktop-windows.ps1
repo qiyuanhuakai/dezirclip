@@ -340,6 +340,33 @@ function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Edito
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } "Resident did not dismiss $Title" 8
 }
 
+function Test-QuickPastePosition($Resident, $Editor, $Form) {
+    $work = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    foreach ($lower in @($false, $true)) {
+        $Form.Activate()
+        $null = $Editor.Focus()
+        $null = Wait-Until { $Editor.Focused -and [MyGoInput]::GetForegroundWindow() -eq $Form.Handle } 'Pointer placement target did not gain focus'
+        $x = if ($lower) { $work.Right - 40 } else { $work.Left + 40 }
+        $y = if ($lower) { $work.Bottom - 40 } else { $work.Top + 40 }
+        if (![MyGoInput]::SetCursorPos($x, $y)) { throw 'Cannot move the pointer for quick-paste placement' }
+        [Windows.Forms.SendKeys]::SendWait('^+v')
+        $panel = Get-ResidentPanel $Resident ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34'))
+        $bounds = New-Object MyGoInput+Rect
+        if (![MyGoInput]::GetWindowRect($panel, [ref]$bounds)) { throw 'Cannot read the native quick-paste position' }
+        if ($bounds.left -lt $work.Left -or $bounds.top -lt $work.Top -or $bounds.right -gt $work.Right -or $bounds.bottom -gt $work.Bottom) {
+            throw 'Quick paste extends outside the pointer monitor working area'
+        }
+        $edgeGap = if ($lower) { $work.Right - $bounds.right } else { $bounds.left - $work.Left }
+        $pointerGap = if ($lower) { $y - $bounds.bottom } else { $bounds.top - $y }
+        if ($edgeGap -lt 8 -or $edgeGap -gt 24 -or $pointerGap -lt 8 -or $pointerGap -gt 20) {
+            throw "Quick paste did not follow the pointer: lower=$lower edge=$edgeGap gap=$pointerGap"
+        }
+        [Windows.Forms.SendKeys]::SendWait('{ESC}')
+        $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } 'Positioned quick paste did not dismiss'
+    }
+    Write-Output 'Verified native quick paste follows each pointer position, flips above the bottom edge and stays in the working area'
+}
+
 function Test-QuickPasteInput($Resident, $Editor, $Form, [string]$Marker) {
     foreach ($method in @('click', 'enter', 'click')) {
         $Editor.Text = ''
@@ -1398,6 +1425,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     Write-Output 'Verified shared WebView2 row click, exact clipboard and editor text, restored focus, and independent native resident'
     # The file must also parse as Windows PowerShell 5.1 without a UTF-8 BOM.
     Test-ResidentPanel $resident '^+v' ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34')) $edit $form
+    Test-QuickPastePosition $resident $edit $form
     Test-ResidentPanel $resident '^+a' ([regex]::Unescape('DezirClip \u622a\u56fe')) $edit $form
     if ($edit.Text -cne $marker) { throw 'Cancelled native panel changed the editor' }
     $null = Wait-Until { [MyGoInput]::CheckClipboardText($marker, $clipboardSequence, $form.Handle) } 'Clipboard remained locked after panel cancellation' 3

@@ -152,7 +152,7 @@ def memory_sample(label, roots):
 def check_native_panels(marker, desktop, service_pid, target, editor, paste_row, audio):
     import gi
     gi.require_version('Gtk', '3.0')
-    from gi.repository import Gtk, Gdk, GdkPixbuf
+    from gi.repository import Gtk, Gdk, GdkPixbuf, GdkX11
 
     x11 = ctypes.CDLL('libX11.so.6')
     xtest = ctypes.CDLL('libXtst.so.6')
@@ -232,6 +232,49 @@ def check_native_panels(marker, desktop, service_pid, target, editor, paste_row,
         expect_cue(audio, audio_start, paste=False)
         original = focus()
         assert original not in (0, 1)
+        screen = Gdk.Screen.get_default()
+        work = screen.get_monitor_workarea(screen.get_primary_monitor())
+        for lower in (False, True):
+            target.present()
+            editor.grab_focus()
+            deadline = time.monotonic() + 6
+            while focus() != original:
+                assert time.monotonic() < deadline, 'Quick-paste placement target did not regain focus'
+                pump()
+                time.sleep(.025)
+            px = work.x + work.width - 40 if lower else work.x + 40
+            py = work.y + work.height - 40 if lower else work.y + 40
+            assert xtest.XTestFakeMotionEvent(display, -1, px, py, 0)
+            x11.XSync(display, False)
+            chord(0xffe3, 0xffe1, ord('v'))
+            deadline = time.monotonic() + 6
+            while focus() in (0, 1, original):
+                assert time.monotonic() < deadline, 'Positioned quick paste did not acquire focus'
+                pump()
+                time.sleep(.025)
+            panel_id = focus()
+            panel = GdkX11.X11Window.foreign_new_for_display(screen.get_display(), panel_id)
+            assert panel
+            _, left, top = panel.get_origin()
+            _, _, pw, ph = panel.get_geometry()
+            assert left >= work.x and top >= work.y and left+pw <= work.x+work.width and top+ph <= work.y+work.height
+            edge_gap = work.x+work.width-left-pw if lower else left-work.x
+            pointer_gap = py-top-ph if lower else top-py
+            assert 8 <= edge_gap <= 24 and 8 <= pointer_gap <= 20, (lower, left, top, pw, ph, px, py)
+            chord(0xff1b)
+            deadline = time.monotonic() + 6
+            while 'IsUnMapped' not in subprocess.check_output(['xwininfo', '-id', str(panel_id)], text=True):
+                assert time.monotonic() < deadline, 'Positioned quick paste did not dismiss'
+                pump()
+                time.sleep(.025)
+        print('Verified native quick paste follows each pointer position, flips above the bottom edge and stays in the working area', flush=True)
+        target.present()
+        editor.grab_focus()
+        deadline = time.monotonic() + 6
+        while focus() != original:
+            assert time.monotonic() < deadline, 'Original editor did not regain focus after placement checks'
+            pump()
+            time.sleep(.025)
         chord(0xffe3, 0xffe1, ord('v'))
         deadline = time.monotonic() + 6
         while focus() in (0, 1, original):

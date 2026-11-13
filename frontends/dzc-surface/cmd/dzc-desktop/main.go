@@ -347,14 +347,14 @@ func run() error {
 		win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
 		win.Page().LoadURL("mygo://localhost/")
 		if follow {
-			placeMainAtCursor(win)
+			placeWindowAtCursor(win)
 		}
 		if savedSize.Width != 0 {
 			if scale := mainWindowScale(win); scale > 0 {
 				size := scaledSize(savedSize.Width, savedSize.Height, 1/scale)
 				win.SetContentSize(size.Width, size.Height)
 				if follow {
-					placeMainAtCursor(win)
+					placeWindowAtCursor(win)
 				} else {
 					win.Center()
 				}
@@ -457,7 +457,7 @@ func run() error {
 					mygo.RunOnMain(func() {
 						if !win.IsDestroyed() && shell.idle.generation == wakeGeneration {
 							if position {
-								placeMainAtCursor(win)
+								placeWindowAtCursor(win)
 							}
 							shell.requestShow(win)
 							if command == "settings" {
