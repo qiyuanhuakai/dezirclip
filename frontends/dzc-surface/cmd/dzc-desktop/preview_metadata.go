@@ -10,7 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func previewSourceBitmap(source string) *ui.Bitmap {
+func previewSourceImage(source string) ui.ImageSource {
 	header, encoded, ok := strings.Cut(source, ",")
 	if !ok || !strings.HasPrefix(header, "data:image/") || !strings.HasSuffix(header, ";base64") || len(encoded) > 384*1024 {
 		return nil
@@ -20,11 +20,25 @@ func previewSourceBitmap(source string) *ui.Bitmap {
 		return nil
 	}
 	defer clear(raw)
+	if header == "data:image/svg+xml;base64" {
+		vector, err := ui.ParseSVG(raw)
+		if err != nil {
+			return nil
+		}
+		width, height := vector.Size()
+		if width <= 0 || height <= 0 || width > 4096 || height > 4096 || math.IsNaN(float64(width)) || math.IsNaN(float64(height)) {
+			return nil
+		}
+		return vector
+	}
 	dimensions, _, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil || dimensions.Width <= 0 || dimensions.Height <= 0 || dimensions.Width > 512 || dimensions.Height > 512 {
 		return nil
 	}
-	bitmap, _ := ui.DecodeBitmap(raw)
+	bitmap, err := ui.DecodeBitmap(raw)
+	if err != nil {
+		return nil
+	}
 	return bitmap
 }
 

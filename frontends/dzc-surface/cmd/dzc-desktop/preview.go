@@ -213,7 +213,7 @@ func (p *Preview) selectEntry(ctx context.Context, sequence uint64, id int64, st
 type previewBody struct {
 	source, text string
 	bitmap       *ui.Bitmap
-	sourceIcon   *ui.Bitmap
+	sourceIcon   ui.ImageSource
 	formatted    *richtext.Document
 	kind         string
 	timestamp    int64
@@ -278,7 +278,7 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 	if bitmap == nil && formatted == nil {
 		formatted = previewDocument(richtext.NewText(text))
 	}
-	var sourceIcon *ui.Bitmap
+	var sourceIcon ui.ImageSource
 	if !params.Reveal && row.SourceApp != "" {
 		iconParams := params
 		iconParams.ThumbnailDimension = nil
@@ -286,7 +286,7 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 		if host.Call(ctx, protocol.MethodDesktopHistorySourceIcon, iconParams, "BodySnapshot", &iconSnapshot) == nil {
 			var icon protocol.SourceAppIcon
 			if host.ReadSnapshot(ctx, iconSnapshot, "SourceAppIcon", &icon) == nil && icon.Src != nil {
-				sourceIcon = previewSourceBitmap(*icon.Src)
+				sourceIcon = previewSourceImage(*icon.Src)
 			}
 		}
 	}
