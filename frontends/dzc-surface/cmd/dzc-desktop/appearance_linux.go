@@ -78,7 +78,7 @@ func configureSoftwareWebview(child *exec.Cmd) {
 	child.Env = append(os.Environ(), "WEBKIT_DISABLE_COMPOSITING_MODE=1", "WEBKIT_DISABLE_DMABUF_RENDERER=1")
 }
 
-func placeMainAtCursor(w *mygo.Window) {
+func placeWindowAtCursor(w *mygo.Window) {
 	if nativeWaylandRequested() {
 		return
 	}

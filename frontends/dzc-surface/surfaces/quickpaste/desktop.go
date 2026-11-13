@@ -60,12 +60,13 @@ type desktopPresenter struct {
 	notice            bool
 	record            func(string) bool
 	refreshAppearance func()
+	placeAtCursor     func(*mygo.Window)
 }
 
 // NewDesktopPanel runs on the MyGo UI thread. The standalone Desktop owns
 // this native window and the connection that identifies its process to Rust.
-func NewDesktopPanel(owner *client.Client) *Panel {
-	p := &Panel{local: &desktopPresenter{owner: owner}, mode: "light", locale: "zh-CN", opacity: 1}
+func NewDesktopPanel(owner *client.Client, placeAtCursor func(*mygo.Window)) *Panel {
+	p := &Panel{local: &desktopPresenter{owner: owner, placeAtCursor: placeAtCursor}, mode: "light", locale: "zh-CN", opacity: 1}
 	p.prepareDesktopWindow()
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 		p.stopping = true
@@ -192,7 +193,7 @@ func (p *Panel) toggleDesktop() {
 	p.local.connection, p.local.ticket = host, ticket
 	p.model.Show(host.Hello().SessionId, ticket.Token, ticket.State)
 	p.model.ShowNotice, p.local.notice = p.local.notice, false
-	p.window.Center()
+	p.local.placeAtCursor(p.window)
 	p.window.Show()
 	p.window.Focus()
 	p.query(0)

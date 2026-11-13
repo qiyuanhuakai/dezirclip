@@ -276,7 +276,7 @@ jobs:
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-test-package" --version $version --output "$env:RUNNER_TEMP/DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo-setup.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-test-package" --installer "$env:RUNNER_TEMP/DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo-setup.exe"
+          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-test-package" --installer "$env:RUNNER_TEMP/DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo-setup.exe" --follow-pointer
 
       - name: Attach the verified Windows x64 MyGo installer to the release
         shell: pwsh

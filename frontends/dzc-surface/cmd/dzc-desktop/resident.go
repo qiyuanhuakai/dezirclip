@@ -75,7 +75,7 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 		mygo.App.OnWindowAllClosed(func() {})
 		mainVisible := false
 		refreshMemory := installMemoryPolicy(func() bool { return mainVisible })
-		panel := quickpaste.NewDesktopPanel(owner)
+		panel := quickpaste.NewDesktopPanel(owner, placeWindowAtCursor)
 		selector := screenshot.New(owner)
 		var tray *mygo.Tray
 		var setTrayVisible func(bool) error

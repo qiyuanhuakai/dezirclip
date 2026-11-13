@@ -215,7 +215,7 @@ jobs:
             sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt
           fi
           sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev libxcb1-dev libx11-dev libxi-dev libxtst-dev libxrandr-dev libpipewire-0.3-dev libgbm-dev libwayland-dev libegl-dev libfontconfig1-dev libwebkit2gtk-4.1-0 libayatana-appindicator3-1 python3-gi python3-psutil python3-pil gir1.2-gtk-3.0 gir1.2-atspi-2.0 at-spi2-core xvfb dbus-x11 openbox x11-utils gnome-keyring fonts-noto-cjk
+          sudo apt-get install -y libdbus-1-dev libxcb1-dev libx11-dev libxi-dev libxtst-dev libxrandr-dev libpipewire-0.3-dev libgbm-dev libwayland-dev libegl-dev libfontconfig1-dev libwebkit2gtk-4.1-0 libayatana-appindicator3-1 python3-gi python3-psutil python3-pil gir1.2-gtk-3.0 gir1.2-atspi-2.0 at-spi2-core xvfb dbus-x11 openbox x11-utils gnome-keyring fonts-noto-cjk pulseaudio pulseaudio-utils xclip
       - name: Build Service and native Desktop
         run: |
           pnpm install --frozen-lockfile
@@ -228,6 +228,7 @@ jobs:
           Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -FileDrag
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Lifecycle
+          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -MiddleShortcut
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -RecoverService
           cargo test --locked -p dzc-platform --features ipc ipc::windows::tests
@@ -236,6 +237,7 @@ jobs:
         run: |
           cp "artifacts/dzc-desktop/$(rustc --print host-tuple)/dzc-desktop" target/debug/dzc-desktop
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --file-drag
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --screenshots
           DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --idle
       - name: Verify X11 screenshot pixels across color depths
@@ -802,7 +804,7 @@ jobs:
           $installer = "$env:RUNNER_TEMP/mygo-test-installer/DezirClip-v$version-windows-x64-MyGo-setup.exe"
           python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-test-package" --version "$version" --output "$installer"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-test-package" --installer "$installer" --pointer-margin 16
+          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-test-package" --installer "$installer" --pointer-margin 16 --follow-pointer
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - name: Upload Windows x64 MyGo test installer

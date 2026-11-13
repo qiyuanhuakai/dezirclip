@@ -13,7 +13,7 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def verify(installer, stage, unicode_path_fixture=False, pointer_margin=16):
+def verify(installer, stage, unicode_path_fixture=False, pointer_margin=16, follow_pointer=False):
     if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
         raise RuntimeError('Installer execution requires a disposable GitHub-hosted runner')
     folder = 'DezirClip-MyGo-测试-Ω' if unicode_path_fixture else 'DezirClip-MyGo'
@@ -46,7 +46,8 @@ def verify(installer, stage, unicode_path_fixture=False, pointer_margin=16):
     assert shortcut.is_file()
     subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-STA', '-File',
                     str(Path(__file__).with_name('mygo-desktop-windows.ps1')),
-                    '-Desktop', str(root / 'dzc-desktop.exe'), '-ExpectedPointerMargin', str(pointer_margin)], check=True, timeout=240)
+                    '-Desktop', str(root / 'dzc-desktop.exe'), '-ExpectedPointerMargin', str(pointer_margin)]
+                   + (['-QuickPasteFollowPointer'] if follow_pointer else []), check=True, timeout=240)
     preserved = root / 'user-preserved.txt'
     preserved.write_text('Keep user data', encoding='utf-8')
     subprocess.run([str(installer), '/S'], check=True, timeout=90)
@@ -99,5 +100,6 @@ if __name__ == '__main__':
     parser.add_argument('--stage', type=Path, required=True)
     parser.add_argument('--unicode-path-fixture', action='store_true')
     parser.add_argument('--pointer-margin', type=int, choices=(5, 16), default=16)
+    parser.add_argument('--follow-pointer', action='store_true', help='Verify current builds; historical alpha.9 panels still center')
     args = parser.parse_args()
-    verify(args.installer.resolve(strict=True), args.stage.resolve(strict=True), args.unicode_path_fixture, args.pointer_margin)
+    verify(args.installer.resolve(strict=True), args.stage.resolve(strict=True), args.unicode_path_fixture, args.pointer_margin, args.follow_pointer)

@@ -152,7 +152,7 @@ def memory_sample(label, roots):
 def check_native_panels(marker, desktop, service_pid, target, editor, paste_row, audio):
     import gi
     gi.require_version('Gtk', '3.0')
-    from gi.repository import Gtk, Gdk, GdkPixbuf
+    from gi.repository import Gtk, Gdk, GdkPixbuf, GdkX11
 
     x11 = ctypes.CDLL('libX11.so.6')
     xtest = ctypes.CDLL('libXtst.so.6')
@@ -232,6 +232,53 @@ def check_native_panels(marker, desktop, service_pid, target, editor, paste_row,
         expect_cue(audio, audio_start, paste=False)
         original = focus()
         assert original not in (0, 1)
+        screen = Gdk.Screen.get_default()
+        work = screen.get_monitor_workarea(screen.get_primary_monitor())
+        for lower in (False, True):
+            target.present()
+            editor.grab_focus()
+            deadline = time.monotonic() + 6
+            while focus() != original:
+                assert time.monotonic() < deadline, 'Quick-paste placement target did not regain focus'
+                pump()
+                time.sleep(.025)
+            px = work.x + work.width - 40 if lower else work.x + 40
+            py = work.y + work.height - 40 if lower else work.y + 40
+            assert xtest.XTestFakeMotionEvent(display, -1, px, py, 0)
+            x11.XSync(display, False)
+            chord(0xffe3, 0xffe1, ord('v'))
+            deadline = time.monotonic() + 6
+            while True:
+                active = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+                props = subprocess.run(['xprop', '-id', active, '_NET_WM_NAME', '_NET_WM_PID'], capture_output=True, text=True)
+                if '_NET_WM_NAME(UTF8_STRING) = "DezirClip 快速粘贴"' in props.stdout and props.stdout.split()[-1] == str(desktop.pid):
+                    panel_id = int(active, 16)
+                    break
+                assert time.monotonic() < deadline, 'Positioned quick paste did not become the active native window'
+                pump()
+                time.sleep(.025)
+            panel = GdkX11.X11Window.foreign_new_for_display(screen.get_display(), panel_id)
+            assert panel
+            _, left, top = panel.get_origin()
+            _, _, pw, ph = panel.get_geometry()
+            assert left >= work.x and top >= work.y and left+pw <= work.x+work.width and top+ph <= work.y+work.height
+            edge_gap = work.x+work.width-left-pw if lower else left-work.x
+            pointer_gap = py-top-ph if lower else top-py
+            assert 8 <= edge_gap <= 24 and 8 <= pointer_gap <= 20, (lower, left, top, pw, ph, px, py)
+            chord(0xff1b)
+            deadline = time.monotonic() + 6
+            while 'IsUnMapped' not in subprocess.check_output(['xwininfo', '-id', str(panel_id)], text=True):
+                assert time.monotonic() < deadline, 'Positioned quick paste did not dismiss'
+                pump()
+                time.sleep(.025)
+        print('Verified native quick paste follows each pointer position, flips above the bottom edge and stays in the working area', flush=True)
+        target.present()
+        editor.grab_focus()
+        deadline = time.monotonic() + 6
+        while focus() != original:
+            assert time.monotonic() < deadline, 'Original editor did not regain focus after placement checks'
+            pump()
+            time.sleep(.025)
         chord(0xffe3, 0xffe1, ord('v'))
         deadline = time.monotonic() + 6
         while focus() in (0, 1, original):
@@ -488,8 +535,14 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         wait_for(lambda: 'IsUnMapped' in subprocess.check_output(['xwininfo','-id',main], text=True),
                  'Foreground shortcut did not hide the WebView')
         shortcut()
-        wait_for(lambda: find_item('图片'), 'Resident shortcut did not reopen the shared WebView')
-        print('Verified shared tag-row paste into the second editor and closing/reopening with the configured shortcut')
+        wait_for(main_active, 'Resident shortcut did not reveal the same WebView')
+        wait_for(lambda: any(label == '搜索此标签内容' for _, label, _, _ in mygo_nodes(atspi, executable))
+                 and find_item(note, text=True),
+                 'Shortcut wake did not preserve the selected tag and its contents')
+        back = wait_for(lambda: find_item('关闭'), 'Missing tag panel back action')
+        assert atspi.Action.do_action(back, 0)
+        wait_for(lambda: find_item('图片'), 'Tag panel back action did not restore history')
+        print('Verified shared tag-row paste and shortcut hide/show preserve the same WebView and selected tag')
         def open_settings_group(name, control):
             if not find_item(control):
                 heading = wait_for(lambda: find_item(name) or find_item(name, text=True), f'{name} settings unavailable')

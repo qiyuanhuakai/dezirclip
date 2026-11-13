@@ -113,7 +113,7 @@ func mainWindowScale(w *mygo.Window) float64 {
 	return float64(dpi) / 96
 }
 
-func placeMainAtCursor(w *mygo.Window) {
+func placeWindowAtCursor(w *mygo.Window) {
 	type rect struct{ left, top, right, bottom int32 }
 	var cursor struct{ x, y int32 }
 	if ok, _, _ := cursorPosition.Call(uintptr(unsafe.Pointer(&cursor))); ok == 0 {
