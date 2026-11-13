@@ -174,21 +174,28 @@ func (s *Selector) start(full bool, epoch *uint64, ready func(error)) {
 			s.end(shot, errors.New("ScreenshotUnavailable"))
 			return
 		}
-		host, err := s.owner.DesktopConnection(ctx)
-		if err != nil {
-			s.end(shot, err)
-			return
-		}
-		state := host.Hello().State
-		if epoch != nil && state.PrivacyEpoch != *epoch {
-			host.Close()
-			s.end(shot, errors.New("PrivacyEpochChanged"))
-			return
-		}
+		var host *client.Client
+		var state protocol.RuntimeState
 		var frame protocol.ScreenImage
-		request := protocol.ScreenBeginParams{ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Cursor: &target.point}
-		if err := host.Call(ctx, protocol.MethodDesktopScreenBegin, request, "ScreenImage", &frame); err != nil {
-			host.Close()
+		err = retryBusyBegin(ctx, func() error {
+			var connectErr error
+			host, connectErr = s.owner.DesktopConnection(ctx)
+			if connectErr != nil {
+				return connectErr
+			}
+			state = host.Hello().State
+			if epoch != nil && state.PrivacyEpoch != *epoch {
+				host.Close()
+				return errors.New("PrivacyEpochChanged")
+			}
+			request := protocol.ScreenBeginParams{ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Cursor: &target.point}
+			beginErr := host.Call(ctx, protocol.MethodDesktopScreenBegin, request, "ScreenImage", &frame)
+			if beginErr != nil {
+				host.Close()
+			}
+			return beginErr
+		})
+		if err != nil {
 			s.end(shot, err)
 			return
 		}
