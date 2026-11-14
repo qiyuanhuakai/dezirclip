@@ -133,3 +133,5 @@ cargo check --manifest-path src-tauri/Cargo.toml --bin dezirclip --locked
 依赖升级使 Tauri 使用 Windows 0.62 / WebView2 0.39，直接依赖同步对齐；前端 `@tauri-apps/api` 同步到 2.12，与 Rust 的同一 major/minor 匹配。Windows OCR 的阻塞等待改用 windows-future 0.3 的 `join()`。既有 Win32、内存管理和 OCR 行为仍需要正式包回归。
 
 参考：[Tauri Updater](https://v2.tauri.app/plugin/updater/)、[Updater 2.14 API](https://docs.rs/tauri-plugin-updater/2.14.0/tauri_plugin_updater/)、[Tauri CLI 2.12.3](https://github.com/tauri-apps/tauri/releases/tag/tauri-cli-v2.12.3)、[Minisign 格式](https://jedisct1.github.io/minisign/)、[windows-future 0.3.2](https://docs.rs/windows-future/0.3.2/windows_future/struct.IAsyncOperation.html)。
+
+发布流程部分重试时，GitHub 会保留已成功的升级汇总任务，但其产物名称仍使用最初轮次。发布及恢复入口根据指定运行最新轮次中的成功汇总任务，选择该任务执行时间内生成的唯一产物 ID，并核对原运行、提交和标签；不按当前轮次猜测文件名。缺失、过期、重复或新汇总任务未生成产物时拒绝回退。原升级报告的版本、安装包身份、摘要和签名仍由发布命令重新核验，产物选择记录与通道回执共同留存。
