@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 )
@@ -27,5 +28,5 @@ func eventTransportFailure(err error) bool {
 	}
 	var network *net.OpError
 	return errors.As(err, &network) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
-		errors.Is(err, io.ErrClosedPipe) || errors.Is(err, net.ErrClosed)
+		errors.Is(err, io.ErrClosedPipe) || errors.Is(err, net.ErrClosed) || errors.Is(err, os.ErrClosed) || nativeEventTransportFailure(err)
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"testing"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestEventReadReconnectsOnceOnlyForTransportFailure(t *testing.T) {
-	for _, failure := range []error{io.EOF, io.ErrClosedPipe, &net.OpError{Op: "read", Net: "pipe", Err: io.EOF}} {
+	for _, failure := range []error{io.EOF, io.ErrClosedPipe, os.ErrClosed, &net.OpError{Op: "read", Net: "pipe", Err: io.EOF}} {
 		calls := 0
 		err := readEventStream(t.Context(), func(fresh bool) error {
 			calls++
