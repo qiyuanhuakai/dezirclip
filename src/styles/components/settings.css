@@ -1128,6 +1128,7 @@
 }
 
 /* Labels keep a useful width; long values wrap below instead of crushing them. */
+.settings-themed-select { flex: none; max-width: 100%; }
 .settings-view .setting-item:not(.column) { flex-wrap: wrap; gap: 8px 12px; }
 .settings-view .setting-item:not(.column) > .item-label-group { flex: 1 0 9em; max-width: 100%; padding-right: 0; }
 .settings-view .setting-item.column > .item-label-group { flex: none; }
@@ -1151,7 +1152,7 @@
 .setting-help-text { display: block; flex-basis: 100%; font-size: var(--font-size-sm); font-weight: 400; color: var(--text-secondary); line-height: 1.5; overflow-wrap: anywhere; }
 .setting-help-text[hidden] { display: none; }
 .settings-disclosure-toggle { width: 100%; padding: 6px 0; border: 0; background: transparent; color: var(--text-primary); box-shadow: none; font: inherit; }
-.settings-disclosure-toggle .item-label { font-weight: 400; }
+.settings-disclosure-toggle .item-label { font-family: var(--font-main); font-size: var(--font-size-md); font-weight: 700; }
 .settings-disclosure-chevron { width: 24px; height: 24px; box-sizing: border-box; padding: 3px; }
 .update-download { flex-basis: 100%; font-size: var(--font-size-sm); }
 .update-progress { position: relative; overflow: hidden; height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--text-secondary) 20%, transparent); margin-top: 8px; }

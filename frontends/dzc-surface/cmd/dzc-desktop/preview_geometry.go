@@ -7,6 +7,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/richtext"
 )
 
 func (body *previewBody) mediaBitmap() *ui.Bitmap {
@@ -51,6 +52,72 @@ func (body *previewBody) filenameWidth(c *ui.Context) int {
 		return 0
 	}
 	return max(320, int(math.Ceil(float64(width)))+48)
+}
+
+// Match the editor's paragraph and run fonts, without laying out the whole
+// document again on every frame. Long documents use the bounded wide frame.
+func (body *previewBody) textWidth(c *ui.Context) int {
+	if body.formatted == nil || body.bitmap != nil || len(body.attachments) > 0 {
+		return 0
+	}
+	look := richtext.DefaultTheme(c.Theme())
+	base := c.Theme().FontSize
+	width, budget := float32(0), 8192
+	for index, paragraph := range body.formatted.Text().Paragraphs() {
+		if index >= 256 {
+			return 560
+		}
+		style := paragraph.Style
+		size, weight, font := base, 400, ""
+		if style.Heading > 0 {
+			heading := look.Headings[min(style.Heading, 6)-1]
+			size, weight = base*heading.Size, heading.Weight
+		} else if style.CodeBlock {
+			size, font = base*look.CodeSize, look.CodeFont
+		}
+		inset := float32(style.Indent) * base * look.Indent
+		if style.List != richtext.NoList {
+			inset += base * look.Indent
+		}
+		if style.Quote {
+			inset += base * look.Indent * 0.75
+		}
+		if style.CodeBlock {
+			inset += base * look.CodeBlockPadding[0] * 2
+		}
+		spans := make([]ui.Span, 0, len(paragraph.Runs))
+		for _, run := range paragraph.Runs {
+			budget -= len(run.Text)
+			if budget < 0 || run.Attributes.Attachment != nil {
+				return 560
+			}
+			a := run.Attributes
+			span := ui.Span{Text: run.Text, Font: font, Size: size, Weight: weight, Italic: a.Italic}
+			if a.Font != "" {
+				span.Font = a.Font
+			}
+			if a.Size > 0 {
+				span.Size = a.Size
+			}
+			if a.Weight > 0 {
+				span.Weight = a.Weight
+			}
+			if a.Code {
+				span.Font = look.CodeFont
+				if a.Size == 0 {
+					span.Size = base * look.CodeSize
+				}
+			}
+			spans = append(spans, span)
+		}
+		measured, _ := c.MeasureText(0, spans...)
+		width = max(width, measured+inset)
+		if width >= 520 {
+			return 560
+		}
+	}
+	// Panel padding, editor scrollbar and a little room for italic overhang.
+	return min(560, max(320, int(math.Ceil(float64(width)))+40))
 }
 
 func concisePreviewTime(timestamp int64, now time.Time, language string) string {

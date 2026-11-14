@@ -16,9 +16,10 @@ import (
 )
 
 type desktopDiagnostics struct {
-	mu           sync.Mutex
-	path, role   string
-	disconnected bool
+	mu                sync.Mutex
+	path, role        string
+	disconnected      bool
+	statusUnavailable bool
 }
 
 func newDesktopDiagnostics(owner *client.Client, role string) *desktopDiagnostics {
@@ -36,7 +37,7 @@ func diagnosticError(err error) string {
 	var remote *client.RemoteError
 	if errors.As(err, &remote) {
 		switch string(remote.Code) {
-		case "Busy", "Unavailable", "PrivacyBlocked", "PrivacyEpochChanged", "PermissionDenied", "SessionExpired":
+		case "busy", "unavailable", "privacy_blocked", "privacy_epoch_changed", "permission_denied", "session_expired":
 			return "remote-" + string(remote.Code)
 		default:
 			return "remote"
@@ -121,5 +122,22 @@ func (d *desktopDiagnostics) eventRead(err error) {
 		d.write("events-unavailable", 0, err, 0)
 	} else {
 		d.write("events-recovered", 0, nil, 0)
+	}
+}
+
+func (d *desktopDiagnostics) statusRead(err error) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if (err != nil) == d.statusUnavailable {
+		return
+	}
+	d.statusUnavailable = err != nil
+	if err != nil {
+		d.write("privacy-status-unavailable", 0, err, 0)
+	} else {
+		d.write("privacy-status-recovered", 0, nil, 0)
 	}
 }

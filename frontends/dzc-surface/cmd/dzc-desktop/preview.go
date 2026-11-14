@@ -422,8 +422,14 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 			appearance.panel(c).Children(func() {
 				if !measured {
 					measured = true
-					if width := body.filenameWidth(c); width > 0 {
-						fitted := previewSizedBounds(area, source, preferred, min(560, width), attachmentFilenameHeight(len(body.attachments)))
+					width, height := body.filenameWidth(c), frame.Height
+					if width > 0 {
+						height = attachmentFilenameHeight(len(body.attachments))
+					} else {
+						width = body.textWidth(c)
+					}
+					if width > 0 {
+						fitted := previewSizedBounds(area, source, preferred, min(560, width), height)
 						main.Update(func() {
 							if p.generation == sequence && p.window != nil {
 								p.window.SetSize(fitted.Width, fitted.Height)

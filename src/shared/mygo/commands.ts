@@ -189,8 +189,8 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
     derived_text: args.id === 0 && args.derivedFromId !== undefined ? args.content : undefined,
     move_to_top: args.moveToTop, delete_after_use: args.deleteAfterUse,
   }),
-  get_clipboard_host_status: () => library("Status"),
-  get_privacy_status: async () => privacySnapshot(await library("Status")),
+  get_clipboard_host_status: () => window.mygo.call("History.PrivacyStatus"),
+  get_privacy_status: async () => privacySnapshot(await window.mygo.call("History.PrivacyStatus")),
   set_privacy_protection: args => library("SetSetting", "app.privacy_protection", String(args.enabled), currentEpoch()),
   set_privacy_protection_kinds: args => {
     if (!Array.isArray(args.kinds) || args.kinds.some(kind => typeof kind !== "string" || kind.includes(","))) throw new Error("InvalidPrivacyKinds");

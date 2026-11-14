@@ -541,7 +541,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         <ThemedSelect
                             options={pasteMethodOptions}
                             value={props.pasteMethod}
-                            width="124px"
+                            width="max(160px, 12em)"
                             onChange={applyPasteMethod}
                         />
                         {pasteMethodError && <span role="alert">{props.t('common_error')}</span>}

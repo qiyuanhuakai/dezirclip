@@ -579,16 +579,6 @@ const GeneralSettingsGroup = ({
                                 console.error("Failed to restart as admin:", err);
                             });
                         }}
-                        style={{
-                            padding: '4px 12px',
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                            borderRadius: '6px',
-                            border: '1px solid rgba(128, 128, 128, 0.4)',
-                            background: 'var(--bg-secondary)',
-                            color: 'var(--text-primary)',
-                            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
-                        }}
                     >
                         {t('restart') || "Restart"}
                     </button>
