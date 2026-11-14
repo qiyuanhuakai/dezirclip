@@ -79,6 +79,21 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	owner.Close()
 	library := Library{owner}
+	t.Run("expired event stream reconnects to the same Host and cursor", func(t *testing.T) {
+		history := History{actions: owner}
+		first, err := history.Changes(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		history.events.Close()
+		next, err := history.Changes(ctx, &first.State.EventSequence)
+		if history.events != nil {
+			defer history.events.Close()
+		}
+		if err != nil || next.State.ServiceInstanceId != first.State.ServiceInstanceId || next.State.EventSequence < first.State.EventSequence {
+			t.Fatalf("event stream failed to resume on original Host: %v", err)
+		}
+	})
 	t.Run("target capture does not wait for event poll", func(t *testing.T) {
 		history := History{actions: owner}
 		history.eventMu.Lock()
@@ -731,11 +746,9 @@ func TestReactLibraryWithService(t *testing.T) {
 	// its real Service socket and reconnect before the user's first click.
 	watcher.targetInvalid.Store(false)
 	watcher.events.Close()
-	if _, err := watcher.Changes(ctx, &changes.State.EventSequence); err == nil || !watcher.targetInvalid.Load() {
-		t.Fatalf("lost subscription retained the paste target: %v", err)
-	}
-	if _, err := watcher.Changes(ctx, nil); err != nil {
-		t.Fatal(err)
+	resumed, err := watcher.Changes(ctx, &changes.State.EventSequence)
+	if err != nil || !watcher.targetInvalid.Load() || resumed.State.ServiceInstanceId != instance || resumed.State.EventSequence < changes.State.EventSequence {
+		t.Fatalf("subscription recovery failed or retained the paste target: %v", err)
 	}
 	if outcome, err := watcher.CopyEntry(ctx, paste); err != nil || outcome != "target_required" {
 		t.Fatalf("first paste after reconnect: %q %v", outcome, err)

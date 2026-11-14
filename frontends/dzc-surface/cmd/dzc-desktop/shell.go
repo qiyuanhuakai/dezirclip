@@ -16,6 +16,7 @@ import (
 )
 
 type DesktopShell struct {
+	diagnostics     *desktopDiagnostics
 	resumeSequence  atomic.Uint64
 	resumePending   atomic.Bool
 	resumeStarted   time.Time // UI-thread owned

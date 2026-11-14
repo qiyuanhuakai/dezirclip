@@ -69,6 +69,7 @@ func (s *DesktopShell) hideMain(w *mygo.Window) {
 			s.idle.timer = time.AfterFunc(time.Until(started.Add(time.Duration(seconds)*time.Second)), func() {
 				mygo.RunOnMain(func() {
 					if generation == s.idle.generation && !w.IsDestroyed() && !w.IsVisible() {
+						s.diagnostics.record("idle-destroy", 0, nil)
 						w.Close()
 					}
 				})

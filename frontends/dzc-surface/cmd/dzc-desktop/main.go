@@ -36,6 +36,7 @@ type History struct {
 	target        *client.Client
 	targetMu      sync.Mutex
 	targetInvalid atomic.Bool
+	diagnostics   *desktopDiagnostics
 }
 
 type historyRow struct {
@@ -90,27 +91,40 @@ func (h *History) Changes(ctx context.Context, cursor *uint64) (protocol.EventsR
 	var events protocol.EventsResult
 	h.eventMu.Lock()
 	defer h.eventMu.Unlock()
-	if h.events == nil {
-		host, err := h.actions.DesktopConnection(ctx)
-		if err != nil {
-			return events, err
+	var lastReadError error
+	err := readEventStream(ctx, func(fresh bool) error {
+		if fresh && h.events != nil {
+			h.events.Close()
+			h.events = nil
+			h.targetInvalid.Store(true)
+			h.diagnostics.record("events-reconnect", 0, lastReadError)
 		}
-		h.events = host
-	}
-	var err error
-	if cursor == nil {
-		// A new WebView loads current history and settings. Subscribe from that
-		// point without replaying another window's edits into its first render.
-		err = h.events.Call(ctx, protocol.MethodHealth, struct{}{}, "RuntimeState", &events.State)
-		events.Events = []protocol.Event{}
-	} else {
-		err = h.events.Call(ctx, protocol.MethodEventsSubscribe, protocol.SubscribeParams{AfterSequence: *cursor, WaitMs: &wait}, "EventsResult", &events)
-	}
+		if h.events == nil {
+			host, err := h.actions.DesktopConnection(ctx)
+			if err != nil {
+				return err
+			}
+			h.events = host
+		}
+		events = protocol.EventsResult{}
+		if cursor == nil {
+			// A new WebView loads current history and settings. Subscribe from that
+			// point without replaying another window's edits into its first render.
+			lastReadError = h.events.Call(ctx, protocol.MethodHealth, struct{}{}, "RuntimeState", &events.State)
+			events.Events = []protocol.Event{}
+			return lastReadError
+		}
+		lastReadError = h.events.Call(ctx, protocol.MethodEventsSubscribe, protocol.SubscribeParams{AfterSequence: *cursor, WaitMs: &wait}, "EventsResult", &events)
+		return lastReadError
+	})
 	if err != nil {
 		h.targetInvalid.Store(true)
-		h.events.Close()
+		if h.events != nil {
+			h.events.Close()
+		}
 		h.events = nil
 	}
+	h.diagnostics.eventRead(err)
 	if err == nil {
 		h.keepTargetAlive(ctx)
 	}
@@ -275,14 +289,17 @@ func run() error {
 	}
 	desktopTiming("child authentication", bootStarted)
 	mygo.SetFrontend(assets)
-	history := &History{actions: actions}
+	diagnostics := newDesktopDiagnostics(actions, "main")
+	diagnostics.record("start", 0, nil)
+	defer diagnostics.record("run-returned", 0, nil)
+	history := &History{actions: actions, diagnostics: diagnostics}
 	mygo.Bind(history)
 	library := &Library{owner: actions}
 	mygo.Bind(library)
 	systemSettings := &SystemSettings{owner: actions}
 	mygo.Bind(systemSettings)
 	defer systemSettings.close()
-	shell := &DesktopShell{resident: residentBridge{output: os.Stdout, grantFocus: grantResidentFocus}}
+	shell := &DesktopShell{diagnostics: diagnostics, resident: residentBridge{output: os.Stdout, grantFocus: grantResidentFocus}}
 	mygo.Bind(shell)
 	preview := &Preview{owner: actions, resident: &shell.resident}
 	mygo.Bind(preview)
@@ -345,7 +362,7 @@ func run() error {
 			filesDropped.Emit(win, e.Paths)
 		})
 		installNativeFileDrop(win)
-		win.OnClose(func(*mygo.CloseEvent) { fmt.Fprintln(os.Stdout, "closing") })
+		win.OnClose(func(*mygo.CloseEvent) { diagnostics.record("window-close", 0, nil); fmt.Fprintln(os.Stdout, "closing") })
 		win.OnClosed(func() {
 			shell.idle.cancel()
 			dock.hidden = false
@@ -355,6 +372,15 @@ func run() error {
 		})
 		win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
 		win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
+		win.Page().OnDidFinishLoad(func() { diagnostics.record("page-loaded", 0, nil) })
+		win.Page().OnRenderProcessGone(func(reason string) {
+			switch reason {
+			case "browser-exited", "crashed", "unresponsive", "exceeded memory limit", "terminated by API":
+				diagnostics.record("renderer-"+reason, 0, nil)
+			default:
+				diagnostics.record("renderer-gone", 0, nil)
+			}
+		})
 		win.Page().LoadURL("mygo://localhost/")
 		if follow {
 			placeWindowAtCursor(win)
@@ -444,6 +470,7 @@ func run() error {
 					mygo.RunOnMain(trayState.cancel)
 				}
 				if command == "rebuild" {
+					diagnostics.record("rebuild-request", 0, nil)
 					mygo.RunOnMain(func() { win.Close() })
 					continue
 				}
@@ -482,6 +509,7 @@ func run() error {
 					})
 				}
 			}
+			diagnostics.record("resident-pipe-ended", 0, commands.Err())
 			mygo.App.Quit()
 		}()
 	})
