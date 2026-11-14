@@ -1,3 +1,4 @@
+import { SettingHelp } from "../SettingHelp";
 import { useEffect, useState } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { emit } from "@tauri-apps/api/event";
@@ -52,19 +53,21 @@ export function PrivacySessionSection({ t, appSettings }: {
 
   return <section className="privacy-session-section" aria-labelledby="privacy-session-heading">
     <div className="setting-item settings-section-title">
-      <div className="item-label-group"><label className="item-label" id="privacy-session-heading" htmlFor="privacy-session-enabled">{t("privacy_session_title")}</label></div>
+      <div className="item-label-group"><div className="settings-label-line">
+        <label className="item-label" id="privacy-session-heading" htmlFor="privacy-session-enabled">{t("privacy_session_title")}</label>
+        <SettingHelp label={t("privacy_session_title")}>{t("privacy_session_hint")}</SettingHelp>
+      </div></div>
       <label className="switch">
         <input id="privacy-session-enabled" className="cb" type="checkbox" checked={active} disabled={disabled}
           onChange={event => { void changeSession(event.target.checked); }} />
         <div className="toggle"><div className="left" /><div className="right" /></div>
       </label>
     </div>
-    <p className="settings-description">{t("privacy_session_hint")}</p>
     {active && state.snapshot?.session.expires_at_ms !== null && state.snapshot?.session.expires_at_ms !== undefined
       && <p>{t("privacy_session_until")} {new Date(state.snapshot.session.expires_at_ms).toLocaleString()}</p>}
     {!ready && <div className="setting-item">
       <span className="settings-inline-note" role="status">{t(state.phase === "loading" ? "privacy_state_loading" : "privacy_state_unavailable")}</span>
-      <button type="button" className="setting-btn" disabled={state.phase === "loading"}
+      <button type="button" className="btn-icon settings-action" disabled={state.phase === "loading"}
         onClick={() => { void refreshPrivacyState(); }}>{t("privacy_retry")}</button>
     </div>}
     <HotkeyRecorder t={t} labelKey="privacy_session_hotkey" hotkey={hotkey}

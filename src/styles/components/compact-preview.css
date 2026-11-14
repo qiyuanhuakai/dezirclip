@@ -241,12 +241,12 @@ body.compact-preview #root .compact-preview-root > .compact-popover-portal.compa
 }
 body:not(.pinned-preview) .preview-toolbar-drag { cursor: default; }
 body.pinned-preview #root { width: 100vw !important; height: 100vh !important; display: flex !important; }
-body.pinned-preview .compact-preview-root { width: 100%; height: 100%; display: flex; }
-body.pinned-preview .compact-preview-root .compact-preview-window {
+body.pinned-preview .compact-preview-root:not(.preview-measuring) { width: 100%; height: 100%; display: flex; }
+body.pinned-preview .compact-preview-root:not(.preview-measuring) .compact-preview-window {
     width: 100%; height: 100%; min-width: 0; max-width: none; max-height: none;
 }
 body.pinned-preview .popover-meta, body.pinned-preview .popover-divider { flex-shrink: 0; }
-body.pinned-preview .compact-preview-root .compact-preview-window .popover-content {
+body.pinned-preview .compact-preview-root:not(.preview-measuring) .compact-preview-window .popover-content {
     flex: 1; min-height: 0; max-width: none; max-height: none; overflow: auto;
 }
 .preview-action-status, .preview-concealed { padding: 10px; font-size: var(--clipboard-item-font-size); }

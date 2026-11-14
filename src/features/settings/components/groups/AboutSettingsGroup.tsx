@@ -41,7 +41,7 @@ const BuildInfoSection = ({ t }: { readonly t: (key: string) => string }) => {
             </div>
             {failed && <div className="about-build-error" role="alert">
                 <p>{t("build_info_unavailable")}</p>
-                <button type="button" className="setting-btn" onClick={() => setAttempt(value => value + 1)}>
+                <button type="button" className="btn-icon settings-action" onClick={() => setAttempt(value => value + 1)}>
                     {t("build_info_retry")}
                 </button>
             </div>}

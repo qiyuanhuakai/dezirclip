@@ -73,19 +73,34 @@ func attachmentIconKind(name string) string {
 	return "file"
 }
 
+const (
+	attachmentChromeHeight  = 90
+	attachmentSummaryHeight = 22
+	attachmentRowHeight     = 30
+	attachmentMaxNameRows   = 6
+)
+
+func attachmentFilenameHeight(count int) int {
+	height := attachmentChromeHeight + attachmentSummaryHeight + min(attachmentMaxNameRows, count)*attachmentRowHeight
+	if count > 1 {
+		height += attachmentSummaryHeight
+	}
+	return height
+}
+
 func attachmentPreviewCapacity(width, height float32, count int, media bool) (tiles, names int, thumbnail float32) {
 	// The shared preview chrome occupies at most 90 DIPs. Reserve a final
 	// complete text row for overflow instead of clipping the last filename.
-	budget := max(float32(0), height-90) - 22
+	budget := max(float32(0), height-attachmentChromeHeight) - attachmentSummaryHeight
 	if count > 1 {
-		budget -= 22
+		budget -= attachmentSummaryHeight
 	}
 	if media && budget >= 110 {
 		tiles = min(count, max(1, min(4, int((width-20)/110))))
-		thumbnail = min(float32(100), budget-30)
-		budget -= thumbnail + 30
+		thumbnail = min(float32(100), budget-attachmentRowHeight)
+		budget -= thumbnail + attachmentRowHeight
 	}
-	names = min(count-tiles, max(0, min(6, int(budget/30))))
+	names = min(count-tiles, max(0, min(attachmentMaxNameRows, int(budget/attachmentRowHeight))))
 	return
 }
 

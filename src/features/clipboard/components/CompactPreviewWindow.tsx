@@ -1,4 +1,5 @@
 import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
+import { attachmentTiles } from "../../../shared/lib/attachmentPreview";
 import { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
 import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -161,6 +162,13 @@ const CompactPreviewWindow = () => {
     const requestResizeRef = useRef<(() => void) | null>(null);
     const previewBoundsRef = useRef({ width: 560, height: 560, mediaWidth: 520, mediaHeight: 360 });
     const lastSentSizeRef = useRef<{ requestId: string; width: number; height: number } | null>(null);
+    const singleMediaSource = useMemo(() => {
+        if (!payload) return null;
+        if (payload.contentType === "image") return isRamImageSource(payload.content) ? payload.content : null;
+        if (!["file", "files", "video"].includes(payload.contentType)) return null;
+        const files = attachmentTiles(payload.htmlContent, payload.preview || payload.content);
+        return files.length === 1 ? files[0].src : null;
+    }, [payload]);
     const richPreviewData = useMemo(() => getRichPreviewData(payload), [payload?.contentType, payload?.htmlContent]);
     const richImageFallbackSrc = richPreviewData.imageSrc;
     const effectiveRichImageFallbackSrc = richImageFallbackFailed ? null : richImageFallbackSrc;
@@ -197,8 +205,8 @@ const CompactPreviewWindow = () => {
             setActionFailed(false);
             setConcealed(false);
             lastSentSizeRef.current = null;
-            const mediaWidth = Math.min(520, request.maxWidth);
-            const mediaHeight = Math.max(1, Math.min(360, request.maxHeight - 80));
+            const mediaWidth = Math.max(1, Math.min(520, request.maxWidth - 32));
+            const mediaHeight = Math.max(1, request.maxHeight - (pinned ? 120 : 90));
             previewBoundsRef.current = { width: request.maxWidth, height: request.maxHeight, mediaWidth, mediaHeight };
             const root = document.documentElement;
             root.style.setProperty("--preview-max-width", `${request.maxWidth}px`);
@@ -239,7 +247,10 @@ const CompactPreviewWindow = () => {
     }, []);
 
     useLayoutEffect(() => {
-        if (!payload || (pinned && presented)) { requestResizeRef.current = null; return; }
+        if (!payload || (pinned && presented)) {
+            if (containerRef.current) containerRef.current.style.width = "";
+            requestResizeRef.current = null; return;
+        }
         let disposed = false;
         const updateSize = () => {
             if (disposed) return;
@@ -247,8 +258,21 @@ const CompactPreviewWindow = () => {
             if (!container) return;
             // Decode media before the first presentation. Hidden WebViews may suspend animation frames.
             if (Array.from(container.querySelectorAll("img")).some(image => !image.complete)) return;
+            if (container.querySelector('.preview-image-viewport[data-ready="false"]')) return;
             if (Array.from(container.querySelectorAll("video")).some(video => video.readyState < 1 && !video.error)) return;
             const bounds = previewBoundsRef.current;
+            const viewport = container.querySelector<HTMLElement>(".preview-image-viewport");
+            const gallery = container.querySelector<HTMLElement>(".attachment-gallery");
+            if (viewport || gallery) {
+                const style = getComputedStyle(container);
+                const bodyStyle = contentRef.current && getComputedStyle(contentRef.current);
+                const horizontal = [style.paddingLeft, style.paddingRight, style.borderLeftWidth, style.borderRightWidth,
+                    bodyStyle?.paddingLeft, bodyStyle?.paddingRight].reduce((sum, value) => sum + (parseFloat(value || "0") || 0), 0);
+                const contentWidth = viewport?.offsetWidth ?? (gallery?.querySelector("img") ? bounds.mediaWidth :
+                    Math.max(0, ...Array.from(gallery?.querySelectorAll<HTMLElement>("figcaption > span, .attachment-name > span") ?? [])
+                        .map(name => name.scrollWidth + 24)));
+                container.style.width = `${Math.min(bounds.width, Math.max(Math.min(320, bounds.width), contentWidth + horizontal))}px`;
+            } else container.style.width = "";
             const width = Math.min(Math.max(Math.ceil(container.getBoundingClientRect().width), Math.min(320, bounds.width)), bounds.width);
             const height = Math.min(Math.max(Math.ceil(container.offsetHeight), 80), bounds.height);
             const last = lastSentSizeRef.current;
@@ -267,7 +291,7 @@ const CompactPreviewWindow = () => {
             requestResizeRef.current = null;
             observer.disconnect();
         };
-    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, pinned, presented]);
+    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, pinned, presented, singleMediaSource]);
 
     useEffect(() => {
         setSnapshotFailed(false);
@@ -306,11 +330,10 @@ const CompactPreviewWindow = () => {
 
     const content = useMemo(() => {
         if (!payload) return null;
-        if (payload.contentType === "image") {
-            const src = isRamImageSource(payload.content) ? payload.content : undefined;
+        if (singleMediaSource) {
             const bounds = previewBoundsRef.current;
-            return src && <PreviewImage src={src} zoom={pinned ? zoom : "fit"} onZoomChange={setZoom}
-                hoverBounds={pinned ? undefined : { width: bounds.mediaWidth, height: bounds.mediaHeight }}
+            return <PreviewImage src={singleMediaSource} zoom={pinned ? zoom : "fit"} onZoomChange={setZoom}
+                hoverBounds={pinned && presented ? undefined : { width: bounds.mediaWidth, height: bounds.mediaHeight }}
                 onFitZoom={setFitZoom} onLoad={() => requestResizeRef.current?.()} />;
         }
         if (["file", "files", "video"].includes(payload.contentType)) {
@@ -399,7 +422,7 @@ const CompactPreviewWindow = () => {
             );
         }
         return payload.content || payload.preview || "";
-    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, richPreviewData.cleanHtml, richPresentation, pinned, zoom]);
+    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, richPreviewData.cleanHtml, richPresentation, pinned, zoom, presented, singleMediaSource]);
 
     const request = payload ?? lastRequest.current;
     const language = request?.language ?? "zh";
@@ -420,12 +443,12 @@ const CompactPreviewWindow = () => {
     };
     if (!payload && (!pinned || !concealed)) return null;
     return (
-        <div className="compact-preview-root" onMouseEnter={() => pointer(true)} onMouseLeave={() => pointer(false)}>
+        <div className={`compact-preview-root${pinned && !presented ? " preview-measuring" : ""}`} onMouseEnter={() => pointer(true)} onMouseLeave={() => pointer(false)}>
             <div
                 ref={containerRef}
-                className={`compact-popover-portal compact-preview-window ${payload?.theme || ""} ${payload?.contentType === "image" ? "compact-preview-image" : ""} ${payload?.contentType === "image" || payload?.contentType === "video" || (!!effectiveRichImageFallbackSrc && !richPresentation.html) ? "compact-preview-media" : ""} ${payload?.colorMode === "dark" ? "dark-mode" : ""}`}
+                className={`compact-popover-portal compact-preview-window ${payload?.theme || ""} ${singleMediaSource ? "compact-preview-image" : ""} ${singleMediaSource || payload?.contentType === "video" || (!!effectiveRichImageFallbackSrc && !richPresentation.html) ? "compact-preview-media" : ""} ${payload?.colorMode === "dark" ? "dark-mode" : ""}`}
             >
-                <PreviewToolbar pinned={pinned} pinPending={pinPending} opacity={opacity} image={pinned && payload?.contentType === "image"}
+                <PreviewToolbar pinned={pinned} pinPending={pinPending} opacity={opacity} image={pinned && !!singleMediaSource}
                     zoom={zoom} fitZoom={fitZoom} language={language} onOpacityChange={saveOpacity} onZoomChange={setZoom}
                     onClose={close} onPin={() => {
                         if (!payload || pinPending) return;
@@ -454,7 +477,7 @@ const CompactPreviewWindow = () => {
                     </div>
                 </div>}
                 <div ref={dividerRef} className="popover-divider" />
-                <div ref={contentRef} className={`popover-content${pinned && payload?.contentType === "image" ? " pinned-image-content" : ""}`} data-privacy-protected={payload?.protectedContent ? "true" : undefined}
+                <div ref={contentRef} className={`popover-content${pinned && presented && singleMediaSource ? " pinned-image-content" : ""}`} data-privacy-protected={payload?.protectedContent ? "true" : undefined}
                     onDragStart={event => { if (payload?.protectedContent) event.preventDefault(); }}>
                     {payload ? content : <div className="preview-concealed"><p>{text.privacy_sensitive_hidden}</p>
                         <button type="button" className="btn-secondary" onClick={restore} disabled={privacyState.phase !== "ready"}>{text.privacy_retry}</button></div>}

@@ -151,7 +151,7 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
                     <div className="item-label-group"><span className="item-label">{t(skill.label)}</span>
                         <span className="tools-path-text" title={skill.path ? displayPath(skill.path) : undefined}>{skill.path ? displayPath(skill.path) : skill.id}</span>
                     </div>
-                    <button type="button" className="setting-btn setting-btn--compact" disabled={!skill.path}
+                    <button type="button" className="btn-icon settings-action settings-action--compact" disabled={!skill.path}
                         onClick={() => void handleOpenSkillFolder(skill.id)} title={t("open_skill_folder")}
                         aria-label={`${t("open_skill_folder")}: ${t(skill.label)}`}>
                         <FolderOpen size={14} />

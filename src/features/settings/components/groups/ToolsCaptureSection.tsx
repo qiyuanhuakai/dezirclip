@@ -143,8 +143,8 @@ const ToolsCaptureSection = ({
                     <div className="setting-item setting-item--detail">
                         <div className="item-label-group"><span className="item-label">{t("capture_now")}</span></div>
                         <div className="setting-btn-group">
-                            <button className="setting-btn" disabled={capturing} onClick={() => { void captureNow("show_region_selector"); }}><Camera size={14} />{t("capture_region_now")}</button>
-                            <button className="setting-btn" disabled={capturing} onClick={() => { void captureNow("capture_full_screen"); }}><Camera size={14} />{t("capture_full_now")}</button>
+                            <button className="btn-icon settings-action" disabled={capturing} onClick={() => { void captureNow("show_region_selector"); }}><Camera size={14} />{t("capture_region_now")}</button>
+                            <button className="btn-icon settings-action" disabled={capturing} onClick={() => { void captureNow("capture_full_screen"); }}><Camera size={14} />{t("capture_full_now")}</button>
                         </div>
                     </div>
                     {captureError && <p role="alert" className="hotkey-recording-error">{captureError}</p>}
@@ -173,7 +173,7 @@ const ToolsCaptureSection = ({
                     </span>
                     <button
                         type="button"
-                        className="setting-btn setting-btn--compact"
+                        className="btn-icon settings-action settings-action--compact"
                         onClick={() => refreshOcrEngineInfo(true)}
                         disabled={ocrLoading}
                     >

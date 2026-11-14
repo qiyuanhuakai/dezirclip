@@ -13,6 +13,8 @@ interface PreviewImageProps {
 export function PreviewImage({ src, zoom, onZoomChange, onFitZoom, onLoad, hoverBounds }: PreviewImageProps) {
     const viewport = useRef<HTMLDivElement>(null);
     const [natural, setNatural] = useState({ width: 1, height: 1 });
+    const [loadedSource, setLoadedSource] = useState<string | null>(null);
+    useLayoutEffect(() => { if (loadedSource === src) onLoad(); }, [loadedSource, natural, src]);
     const [fit, setFit] = useState(1);
     const picture = useRef<HTMLImageElement>(null);
     const pan = useRef({ x: 0, y: 0 });
@@ -68,7 +70,7 @@ export function PreviewImage({ src, zoom, onZoomChange, onFitZoom, onLoad, hover
     const hoverSize = hoverFit === undefined ? undefined : {
         width: Math.round(natural.width * hoverFit), height: Math.round(natural.height * hoverFit),
     };
-    return <div style={hoverSize} className={`preview-image-viewport${dragging ? " dragging" : ""}`} ref={viewport}
+    return <div style={hoverSize} data-ready={loadedSource === src} className={`preview-image-viewport${dragging ? " dragging" : ""}`} ref={viewport}
         onPointerDown={event => {
             if (event.button !== 0) return;
             const node = event.currentTarget;
@@ -96,7 +98,7 @@ export function PreviewImage({ src, zoom, onZoomChange, onFitZoom, onLoad, hover
             width={Math.round(natural.width * scale)} height={Math.round(natural.height * scale)}
             onLoad={event => {
                 setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight });
-                onLoad();
-            }} onError={onLoad} /></div>
+                setLoadedSource(src);
+            }} onError={() => setLoadedSource(src)} /></div>
     </div>;
 }

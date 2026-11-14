@@ -11,6 +11,7 @@ export const useAppState = (): AppState => {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({
     general: true,
     clipboard: true,
+    privacy: true,
     appearance: true,
     default_apps: true,
     data: true,

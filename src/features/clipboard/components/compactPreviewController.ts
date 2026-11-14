@@ -352,7 +352,7 @@ export async function showCompactPreview(owner: object, anchor: CompactPreviewAn
             const rgb = getComputedStyle(document.documentElement).getPropertyValue("--surface-shell-rgb").trim().split(/\s+/).map(Number);
             const background = rgb.length === 3 && rgb.every(n => Number.isInteger(n) && n >= 0 && n <= 255) ? { R: rgb[0], G: rgb[1], B: rgb[2] } : null;
             const labels = translations[options.language];
-            const appearance = { Palette: nativeSurfaceAppearance(), Opacity: options.previewOpacity, Dark: options.colorMode === "dark", Background: background,
+            const appearance = { Language: options.language, Palette: nativeSurfaceAppearance(), Opacity: options.previewOpacity, Dark: options.colorMode === "dark", Background: background,
                 Title: labels.preview_toolbar_title, OpacityLabel: labels.preview_toolbar_opacity, ZoomIn: labels.preview_toolbar_zoom_in, ZoomOut: labels.preview_toolbar_zoom_out,
                 Fit: labels.preview_toolbar_fit, FitLabel: labels.preview_toolbar_fit_label, Actual: labels.preview_toolbar_actual,
                 ImageZoom: labels.preview_toolbar_zoom, Pin: labels.preview_toolbar_pin, Close: labels.preview_toolbar_close, Retry: labels.privacy_retry,

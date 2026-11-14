@@ -1,3 +1,4 @@
+import { SettingHelp } from "../SettingHelp";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import type { ComponentType, ReactNode, CSSProperties } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
@@ -346,12 +347,14 @@ const AppearanceSettingsGroup = ({
                     />
                 </div>
 
-                <h4 className="settings-section-title">{t("preview_settings")}</h4>
                 <NativeFeatureBoundary t={t}>
                     <div className="setting-item column">
-                        <div className="item-label-group">
+                        <div className="settings-range-header">
+                            <div className="settings-label-line">
                             <label className="item-label" htmlFor="preview-opacity">{t("preview_opacity")}</label>
-                            <span className="hint">{draftPreviewOpacity ?? previewPreferences.opacity}%</span>
+                            <SettingHelp label={t("preview_opacity")}>{t("preview_opacity_hint")}</SettingHelp>
+                            </div>
+                            <span className="settings-range-value">{draftPreviewOpacity ?? previewPreferences.opacity}%</span>
                         </div>
                         <input id="preview-opacity" type="range" min="0" max="100"
                             aria-label={t("preview_opacity")} value={draftPreviewOpacity ?? previewPreferences.opacity}
@@ -361,7 +364,6 @@ const AppearanceSettingsGroup = ({
                                 setDraftPreviewOpacity(value);
                                 void savePreview(() => savePreviewPreference("opacity", value));
                             }} style={buildRangeStyle(draftPreviewOpacity ?? previewPreferences.opacity, 0, 100)} />
-                        <span className="hint">{t("preview_opacity_hint")}</span>
                     </div>
                     {(previewSaveError || previewLoadError) && <p className="hint" role="alert">{t("preview_preferences_failed")}</p>}
                 </NativeFeatureBoundary>
@@ -369,10 +371,8 @@ const AppearanceSettingsGroup = ({
                 {(['mica', 'acrylic', 'liquid-glass'].includes(resolveBuiltinTheme(theme))) && (
                     <>
                         <div className="setting-item column no-border">
-                            <div className="item-label-group" style={{ marginBottom: '8px' }}>
+                            <div className="settings-background-controls">
                                 <span className="item-label">{t('custom_background') || '自定义背景'}</span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px', width: '100%', alignItems: 'center' }}>
                                 <button
                                     onClick={async () => {
                                         try {
@@ -400,8 +400,8 @@ const AppearanceSettingsGroup = ({
                                             }
                                         } catch (err) { console.error(err); }
                                     }}
-                                    className="btn-icon"
-                                    style={{ flex: 1, height: '36px', fontSize: '12px', fontWeight: 'bold' }}
+                                    type="button"
+                                    className="btn-icon settings-action settings-action--compact settings-background-choose"
                                 >
                                     {customBackground ? (t('change_background') || '更换背景') : (t('choose_background') || '选择背景')}
                                 </button>
@@ -411,9 +411,10 @@ const AppearanceSettingsGroup = ({
                                             setCustomBackground('');
                                             saveAppSetting('custom_background', '');
                                         }}
-                                        className="btn-icon"
-                                        style={{ height: '36px', fontSize: '12px', fontWeight: 'bold', padding: '0 12px' }}
+                                        type="button"
+                                        className="btn-icon settings-action settings-background-clear"
                                         title={t('clear_background') || '清除背景'}
+                                        aria-label={t('clear_background') || '清除背景'}
                                     >
                                         <X size={16} />
                                     </button>
@@ -427,9 +428,9 @@ const AppearanceSettingsGroup = ({
 
                             {customBackground && (
                                 <div className="setting-item column no-border" style={{ marginTop: '12px' }}>
-                                    <div className="item-label-group" style={{ marginBottom: '4px', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div className="settings-range-header">
                                         <span className="item-label">{t('background_opacity')}</span>
-                                        <span className="hint" style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{customBackgroundOpacity}%</span>
+                                        <span className="settings-range-value">{customBackgroundOpacity}%</span>
                                     </div>
                                     <input
                                         type="range"
@@ -449,9 +450,9 @@ const AppearanceSettingsGroup = ({
 
                         <NativeFeatureBoundary t={t}>
                         <div className="setting-item column">
-                            <div className="item-label-group" style={{ marginBottom: '4px', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div className="settings-range-header">
                                 <span className="item-label">{t('surface_opacity') || '界面底板透明度'}</span>
-                                <span className="hint" style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{surfaceOpacity}%</span>
+                                <span className="settings-range-value">{surfaceOpacity}%</span>
                             </div>
                             <input
                                 type="range"

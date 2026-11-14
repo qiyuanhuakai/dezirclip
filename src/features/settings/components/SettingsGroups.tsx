@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import GeneralSettingsGroup from "./groups/GeneralSettingsGroup";
+import PrivacySettingsGroup from "./groups/PrivacySettingsGroup";
 import ClipboardSettingsGroup from "./groups/ClipboardSettingsGroup";
 import AppearanceSettingsGroup from "./groups/AppearanceSettingsGroup";
 import DefaultAppsSettingsGroup from "./groups/DefaultAppsSettingsGroup";
@@ -177,16 +178,6 @@ const SettingsGroups = ({
                     setIsRecordingSequential={settings.setIsRecordingSequential}
                     updateSequentialHotkey={settings.updateSequentialHotkey}
                     checkHotkeyConflict={settings.checkHotkeyConflict}
-                    privacyProtection={settings.privacyProtection}
-                    setPrivacyProtection={settings.setPrivacyProtection}
-                    privacyProtectionKinds={settings.privacyProtectionKinds}
-                    setPrivacyProtectionKinds={settings.setPrivacyProtectionKinds}
-                    privacyProtectionCustomRules={settings.privacyProtectionCustomRules}
-                    setPrivacyProtectionCustomRules={settings.setPrivacyProtectionCustomRules}
-                    privacyKindsOpen={privacyKindsOpen}
-                    setPrivacyKindsOpen={setPrivacyKindsOpen}
-                    privacyRulesOpen={privacyRulesOpen}
-                    setPrivacyRulesOpen={setPrivacyRulesOpen}
                     registryWinVEnabled={settings.registryWinVEnabled}
                     setRegistryWinVEnabled={settings.setRegistryWinVEnabled}
                     isRecording={settings.isRecording}
@@ -199,6 +190,22 @@ const SettingsGroups = ({
                     appSettings={settings.appSettings}
                     theme={settings.theme}
                     colorMode={settings.colorMode}
+                />
+            </div>
+
+            <div className="settings-group-slot" hidden={!shown("privacy")}>
+                <PrivacySettingsGroup t={t} collapsed={isCollapsed("privacy")} onToggle={() => collapse("privacy")}
+                    LabelWithHint={LabelWithHint} appSettings={settings.appSettings} saveAppSetting={saveAppSetting}
+                    privacyProtection={settings.privacyProtection}
+                    setPrivacyProtection={settings.setPrivacyProtection}
+                    privacyProtectionKinds={settings.privacyProtectionKinds}
+                    setPrivacyProtectionKinds={settings.setPrivacyProtectionKinds}
+                    privacyProtectionCustomRules={settings.privacyProtectionCustomRules}
+                    setPrivacyProtectionCustomRules={settings.setPrivacyProtectionCustomRules}
+                    privacyKindsOpen={privacyKindsOpen}
+                    setPrivacyKindsOpen={setPrivacyKindsOpen}
+                    privacyRulesOpen={privacyRulesOpen}
+                    setPrivacyRulesOpen={setPrivacyRulesOpen}
                 />
             </div>
 

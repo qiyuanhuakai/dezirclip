@@ -47,7 +47,7 @@ export const ToolsPathStatus = ({
             {cliInfo?.cli_path && !cliInfo.cli_on_path && !cliInfo.cli_registered_for_user && (
                 <button
                     type="button"
-                    className="setting-btn setting-btn--compact"
+                    className="btn-icon settings-action settings-action--compact"
                     onClick={onAddToPath}
                     disabled={pathUpdating}
                 >
