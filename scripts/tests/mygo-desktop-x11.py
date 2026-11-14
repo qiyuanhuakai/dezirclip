@@ -7,6 +7,7 @@ import errno
 import os
 from pathlib import Path
 import secrets
+import re
 import runpy
 import select
 import shutil
@@ -15,6 +16,45 @@ import subprocess
 import sys
 import tempfile
 import time
+
+
+def private_portal_mounted(home, mount_table):
+    target = str(home / 'runtime/doc')
+    for line in mount_table.splitlines():
+        fields = line.split()
+        if len(fields) < 7:
+            continue
+        point = re.sub(r'\\([0-7]{3})', lambda match: chr(int(match[1], 8)), fields[4])
+        if point != target:
+            continue
+        separator = fields.index('-')
+        if fields[separator + 1] != 'fuse.portal':
+            raise RuntimeError('Unexpected filesystem at the private document portal')
+        return True
+    return False
+
+
+@contextlib.contextmanager
+def private_desktop_directory():
+    with tempfile.TemporaryDirectory(prefix='dzc-mygo-') as path:
+        home = Path(path).resolve(strict=True)
+        try:
+            yield path
+        finally:
+            # The private D-Bus session has ended. Detach its document portal
+            # before walking the temporary profile, including a disconnected FUSE mount.
+            mounts = Path('/proc/self/mountinfo')
+            if private_portal_mounted(home, mounts.read_text()):
+                runtime = home / 'runtime'
+                if runtime.is_symlink() or runtime.resolve(strict=True) != runtime:
+                    raise RuntimeError('Private runtime directory escaped the fixture')
+                helper = shutil.which('fusermount3') or shutil.which('fusermount')
+                if not helper:
+                    raise RuntimeError('Cannot detach the private document portal without fusermount')
+                result = subprocess.run([helper, '-u', '-z', str(runtime / 'doc')],
+                                        capture_output=True, text=True, timeout=10)
+                if private_portal_mounted(home, mounts.read_text()):
+                    raise RuntimeError(f'Private document portal remained mounted: {result.stderr}')
 
 
 @contextlib.contextmanager
@@ -2024,7 +2064,7 @@ def check_profile_move(executable, home):
 if __name__ == '__main__':
     desktop = Path(sys.argv[1]).resolve(strict=True)
     if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview', '--idle', '--paste-hotkeys', '--middle-paste-hotkeys', '--reset-settings', '--file-drag', '--screenshots'):
-        with tempfile.TemporaryDirectory(prefix='dzc-mygo-') as path:
+        with private_desktop_directory() as path:
             home = Path(path)
             for name in ('runtime', 'data', 'config', 'cache'):
                 (home / name).mkdir(mode=0o700)
