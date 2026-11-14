@@ -885,7 +885,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
             wait_for(lambda: db.execute('SELECT COUNT(*) FROM clipboard_history WHERE content=?', (imported_note,)).fetchone()[0] == 1,
                      'Confirmed import did not persist the previewed entry')
         print('Verified choosing a backup file in the native dialog, previewing its text and importing it through the shared React settings')
-        custom_rules = open_settings_group('Clipboard', 'Custom Rules')
+        custom_rules = open_settings_group('Privacy', 'Custom Rules')
         main_recorder = wait_for(lambda: find_item('Global Hotkey'), 'Main shortcut recorder unavailable')
         atspi.Component.scroll_to(main_recorder, atspi.ScrollType.ANYWHERE)
         assert atspi.Action.do_action(main_recorder, 0)
@@ -964,7 +964,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         wait_for(alternate.is_active, 'Editor did not regain focus after the keyboard grab')
         shortcut((Gdk.KEY_Alt_L, Gdk.KEY_f))
         wait_for(focused_search, 'Search did not recreate the window after closing during a keyboard grab')
-        custom_rules = open_appearance('Settings', 'Clipboard', 'Custom Rules')
+        custom_rules = open_appearance('Settings', 'Privacy', 'Custom Rules')
         print('Verified resident search shortcut focuses shared React search from Settings and after WebView recreation', flush=True)
         def begin_privacy_recording():
             button = wait_for(lambda: find_item('Toggle privacy session shortcut'), 'Privacy shortcut recorder unavailable')
