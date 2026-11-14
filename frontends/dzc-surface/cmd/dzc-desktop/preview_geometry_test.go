@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -45,6 +46,29 @@ func TestGalleryWidthMeasuresFilenames(t *testing.T) {
 	}, 560, 320)
 	if short != 320 || long <= short {
 		t.Fatalf("widths do not follow filenames: %d %d", short, long)
+	}
+}
+
+func TestFittedFilenameGalleryActuallyDrawsNames(t *testing.T) {
+	for _, count := range []int{1, 2, 6, 30} {
+		rows := make([]previewAttachment, count)
+		for i := range rows {
+			rows[i].name = fmt.Sprintf("document-%d.txt", i)
+		}
+		body := &previewBody{kind: "files", source: "DezirClip File Drop", attachments: rows}
+		height := attachmentFilenameHeight(count)
+		p := &pinnedPreview{body: body, opacity: previewOpacityControl{value: 85, slider: 85},
+			ticket: pinPreviewRequest{Appearance: previewAppearance{Title: "Content preview", Opacity: 85}}}
+		view := ui.NewTester(p.view, 320, height)
+		for _, row := range rows[:min(count, attachmentMaxNameRows)] {
+			rect, found := view.Find(row.name)
+			if !found || rect.W <= 0 || rect.H <= 0 || rect.Y < 0 || rect.Y+rect.H > float32(height) {
+				t.Fatalf("%d files: %s missing or clipped at height %d: %+v", count, row.name, height, rect)
+			}
+		}
+		if view.HasText("…") != (count > attachmentMaxNameRows) {
+			t.Fatalf("%d files: incorrect overflow", count)
+		}
 	}
 }
 
