@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import type { LabelWithHintProps, SettingsPanelProps } from "./SettingsPanel.types";
+import type { SettingsPanelProps } from "./SettingsPanel.types";
+import { SettingsLabel, SettingsTranslation } from "./SettingHelp";
 import SettingsGroups from "./SettingsGroups";
 import SettingsRail from "./SettingsRail";
 import SettingsFooter from "./SettingsFooter";
@@ -19,8 +20,8 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         const apply = () => {
             const request = settingsNavigation.take();
             if (!request) return;
-            setActiveGroup("clipboard");
-            if (props.collapsedGroups.clipboard) props.toggleGroup("clipboard");
+            setActiveGroup("privacy");
+            if (props.collapsedGroups.privacy) props.toggleGroup("privacy");
             setNavigationRevision(request.id);
         };
         const stop = settingsNavigation.subscribe(apply);
@@ -57,16 +58,10 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         return val !== "false";
     });
 
-    const LabelWithHint = ({ label, labelStyle }: LabelWithHintProps) => (
-        <div className="item-label-group">
-            <span className="item-label" style={labelStyle}>{label}</span>
-        </div>
-    );
-
     const groups = (
         <SettingsGroups
             settings={props}
-            LabelWithHint={LabelWithHint}
+            LabelWithHint={SettingsLabel}
             split={layout.split}
             activeGroup={activeGroup}
             privacyKindsOpen={privacyKindsOpen}
@@ -89,6 +84,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
     const paneClass = `settings-pane settings-pane--cols-${layout.paneColumns}`;
 
     return (
+        <SettingsTranslation.Provider value={t}>
         <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -115,6 +111,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
             />
 
         </motion.div>
+        </SettingsTranslation.Provider>
     );
 };
 

@@ -573,7 +573,7 @@ const GeneralSettingsGroup = ({
                         hintKey="restart_as_admin"
                     />
                     <button
-                        className="setting-btn"
+                        className="btn-icon settings-action"
                         onClick={() => {
                             invoke("restart_as_admin").catch((err) => {
                                 console.error("Failed to restart as admin:", err);

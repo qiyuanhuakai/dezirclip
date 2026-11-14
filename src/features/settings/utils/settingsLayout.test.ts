@@ -17,6 +17,7 @@ import { tw } from "../../../locales/tw";
 const COLLAPSED_GROUP_KEYS: readonly SettingsGroupId[] = [
     "general",
     "clipboard",
+    "privacy",
     "appearance",
     "default_apps",
     "data",

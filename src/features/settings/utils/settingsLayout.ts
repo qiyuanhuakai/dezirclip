@@ -23,6 +23,7 @@
 export type SettingsGroupId =
   | "general"
   | "clipboard"
+  | "privacy"
   | "appearance"
   | "default_apps"
   | "data"
@@ -39,6 +40,7 @@ export interface SettingsGroupMeta {
 export const SETTINGS_GROUPS: readonly SettingsGroupMeta[] = [
   { id: "general", labelKey: "general_settings" },
   { id: "clipboard", labelKey: "clipboard_settings" },
+  { id: "privacy", labelKey: "privacy_settings" },
   { id: "appearance", labelKey: "appearance_settings" },
   { id: "default_apps", labelKey: "default_apps" },
   { id: "data", labelKey: "data_management" },

@@ -87,15 +87,15 @@ export default function PrivacyRulesManager({ t }: { t: (key: string) => string 
           {pendingDelete === rule.id ? <div className="privacy-rule-confirm" role="group" aria-label={t("privacy_rule_delete_title")}>
             <p>{t(exact ? "privacy_rule_delete_exact_confirm" : "privacy_rule_delete_source_confirm").replace("{source}", source)}</p>
             <div className="setting-btn-group">
-              <button type="button" className="setting-btn" disabled={busy} onClick={() => setPendingDelete(null)}>{t("cancel")}</button>
-              <button type="button" className="setting-btn" disabled={disabled} onClick={() => { void remove(rule.id); }}>{t(exact ? "privacy_rule_revoke_exception" : "privacy_rule_remove")}</button>
+              <button type="button" className="btn-icon settings-action" disabled={busy} onClick={() => setPendingDelete(null)}>{t("cancel")}</button>
+              <button type="button" className="btn-icon settings-action" disabled={disabled} onClick={() => { void remove(rule.id); }}>{t(exact ? "privacy_rule_revoke_exception" : "privacy_rule_remove")}</button>
             </div>
-          </div> : <button type="button" className="setting-btn" disabled={disabled}
+          </div> : <button type="button" className="btn-icon settings-action" disabled={disabled}
             onClick={() => { setPendingDelete(rule.id); setError(false); }}>{t(exact ? "privacy_rule_revoke_exception" : "privacy_rule_remove")}</button>}
         </li>;
       })}</ul>}
     {error && <p role="alert" className="privacy-action-error">{t("privacy_rules_action_failed")}</p>}
-    {(load === "failed" || error || !ready) && <button type="button" className="setting-btn" disabled={busy || state.phase === "loading"}
+    {(load === "failed" || error || !ready) && <button type="button" className="btn-icon settings-action" disabled={busy || state.phase === "loading"}
       onClick={() => { setError(false); setAttempt(value => value + 1); void refreshPrivacyState(); }}>{t("privacy_retry")}</button>}
   </section>;
 }

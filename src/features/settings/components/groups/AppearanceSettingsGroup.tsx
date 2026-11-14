@@ -1,3 +1,4 @@
+import { SettingHelp } from "../SettingHelp";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import type { ComponentType, ReactNode, CSSProperties } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
@@ -346,12 +347,14 @@ const AppearanceSettingsGroup = ({
                     />
                 </div>
 
-                <h4 className="settings-section-title">{t("preview_settings")}</h4>
                 <NativeFeatureBoundary t={t}>
                     <div className="setting-item column">
-                        <div className="item-label-group">
+                        <div className="settings-range-header">
+                            <div className="settings-label-line">
                             <label className="item-label" htmlFor="preview-opacity">{t("preview_opacity")}</label>
-                            <span className="hint">{draftPreviewOpacity ?? previewPreferences.opacity}%</span>
+                            <SettingHelp label={t("preview_opacity")}>{t("preview_opacity_hint")}</SettingHelp>
+                            </div>
+                            <span className="settings-range-value">{draftPreviewOpacity ?? previewPreferences.opacity}%</span>
                         </div>
                         <input id="preview-opacity" type="range" min="0" max="100"
                             aria-label={t("preview_opacity")} value={draftPreviewOpacity ?? previewPreferences.opacity}
@@ -361,7 +364,6 @@ const AppearanceSettingsGroup = ({
                                 setDraftPreviewOpacity(value);
                                 void savePreview(() => savePreviewPreference("opacity", value));
                             }} style={buildRangeStyle(draftPreviewOpacity ?? previewPreferences.opacity, 0, 100)} />
-                        <span className="hint">{t("preview_opacity_hint")}</span>
                     </div>
                     {(previewSaveError || previewLoadError) && <p className="hint" role="alert">{t("preview_preferences_failed")}</p>}
                 </NativeFeatureBoundary>
@@ -427,9 +429,9 @@ const AppearanceSettingsGroup = ({
 
                             {customBackground && (
                                 <div className="setting-item column no-border" style={{ marginTop: '12px' }}>
-                                    <div className="item-label-group" style={{ marginBottom: '4px', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div className="settings-range-header">
                                         <span className="item-label">{t('background_opacity')}</span>
-                                        <span className="hint" style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{customBackgroundOpacity}%</span>
+                                        <span className="settings-range-value">{customBackgroundOpacity}%</span>
                                     </div>
                                     <input
                                         type="range"
@@ -449,9 +451,9 @@ const AppearanceSettingsGroup = ({
 
                         <NativeFeatureBoundary t={t}>
                         <div className="setting-item column">
-                            <div className="item-label-group" style={{ marginBottom: '4px', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div className="settings-range-header">
                                 <span className="item-label">{t('surface_opacity') || '界面底板透明度'}</span>
-                                <span className="hint" style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{surfaceOpacity}%</span>
+                                <span className="settings-range-value">{surfaceOpacity}%</span>
                             </div>
                             <input
                                 type="range"

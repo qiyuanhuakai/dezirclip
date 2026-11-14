@@ -1,4 +1,5 @@
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { SettingHelp, SettingsLabel } from "../SettingHelp";
 import SettingsDisclosure from "../SettingsDisclosure";
 import { Download, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
 import { checkForUpdate, getUpdaterSnapshot, installAvailableUpdate, openUpdateRelease, saveUpdatePreference, subscribeUpdater } from "../../utils/updaterClient";
@@ -25,15 +26,21 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
     const confirming = confirmationId !== null && confirmationId === available?.id;
     const percent = state.total && state.total > 0 ? Math.min(100, Math.floor(state.downloaded / state.total * 100)) : null;
     const installPhase = ["downloading", "verified", "installing"].includes(state.phase);
+    const dialog = useRef<HTMLDialogElement>(null);
+    const showConfirmation = confirming && !disabled;
+    useEffect(() => {
+        const element = dialog.current;
+        if (showConfirmation) element?.showModal();
+        else element?.close();
+    }, [showConfirmation]);
 
     return (
         <section className="update-settings" aria-labelledby="update-settings-title">
-            <h4 id="update-settings-title">{t("updater_title")}</h4>
+            <h4 id="update-settings-title" className="settings-label-line">{t("updater_title")}
+                {state.support?.canInstall && <SettingHelp label={t("updater_title")}>{t(supportKey(state.support.reason))}</SettingHelp>}
+            </h4>
             <div className="setting-item">
-                <div className="item-label-group">
-                    <span className="item-label">{t("updater_auto_check")}</span>
-                    <span className="hint">{t("updater_auto_hint")}</span>
-                </div>
+                <SettingsLabel label={t("updater_auto_check")} hintKey="updater_auto" />
                 <label className="switch">
                     <input className="cb" type="checkbox" checked={state.autoCheck} disabled={disabled}
                         aria-label={t("updater_auto_check")}
@@ -42,7 +49,8 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
                 </label>
             </div>
             <div className="setting-item update-channel-row">
-                <div className="item-label-group"><span className="item-label">{t("updater_channel")}</span></div>
+                <SettingsLabel label={t("updater_channel")} hintKey="updater_channel"
+                    hint={t(state.channel === "stable" ? "updater_stable_hint" : "updater_preview_hint")} />
                 <div className="segmented-control" role="group" aria-label={t("updater_channel")}>
                     {(["stable", "preview"] as const).map(channel => (
                         <button type="button" key={channel} disabled={disabled} aria-pressed={state.channel === channel}
@@ -54,7 +62,6 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
                 </div>
             </div>
             <p className="update-note">{t("updater_selected_channel")} <strong>{selectedChannelName}</strong></p>
-            <p className="update-note">{t(state.channel === "stable" ? "updater_stable_hint" : "updater_preview_hint")}</p>
             <div className="update-version-row">
                 <span>{t("updater_current_version")}</span><strong>{state.currentVersion ? `v${state.currentVersion}` : "—"}</strong>
             </div>
@@ -62,20 +69,32 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
                 <span>{t("updater_channel_version")}</span><strong>v{channelVersion}</strong>
             </div>}
             <div className="setting-btn-group update-actions">
-                <button type="button" className="setting-btn" disabled={disabled}
+                <button type="button" className="btn-icon settings-action" disabled={disabled}
                     onClick={() => { setConfirmationId(null); void checkForUpdate(); }}>
                     <RefreshCw size={14} />{t(state.phase === "checking" ? "updater_checking" : "updater_check_now")}
                 </button>
-                {available && state.support?.canInstall && !installPhase && (
-                    <button type="button" className="setting-btn" disabled={disabled} onClick={() => setConfirmationId(available.id)}>
+                {available && state.support?.canInstall && (
+                    <button type="button" className="btn-icon settings-action" disabled={disabled} onClick={() => setConfirmationId(available.id)}>
                         <Download size={14} />{t("updater_install")}
                     </button>
                 )}
-                <button type="button" className="setting-btn" onClick={() => void openUpdateRelease()}>
+                {installPhase && <div className="update-download" role="status" aria-live="polite">
+                    <div className="settings-range-header">
+                        <span>{t(state.phase === "downloading" ? "updater_downloading" : state.phase === "verified" ? "updater_verified" : "updater_installing")}</span>
+                        <span>{state.phase === "downloading" ? percent === null ? `${(state.downloaded / 1048576).toFixed(1)} MiB` : `${percent}%` : "100%"}</span>
+                    </div>
+                    <div className={`update-progress${state.phase === "downloading" && percent === null ? " is-indeterminate" : ""}`}
+                        role="progressbar" aria-label={t("updater_download_progress")} aria-valuemin={0} aria-valuemax={100}
+                        aria-valuenow={state.phase === "downloading" ? percent ?? undefined : 100}>
+                        <span className="update-progress-fill" style={{ transform: `scaleX(${state.phase === "downloading" ? (percent ?? 35) / 100 : 1})` }} />
+                    </div>
+                    {state.verified && <p className="update-verified"><ShieldCheck size={14} />{t("updater_verified")}</p>}
+                </div>}
+                <button type="button" className="btn-icon settings-action" onClick={() => void openUpdateRelease()}>
                     <ExternalLink size={14} />{t(available ? "updater_open_release" : "updater_all_releases")}
                 </button>
             </div>
-            <p className="update-note">{t(supportKey(state.support?.reason))}</p>
+            {!state.support?.canInstall && <p className="update-note">{t(supportKey(state.support?.reason))}</p>}
             <div className="update-status" role="status" aria-live="polite">
                 {state.phase === "current" && <p>{t("updater_current")}</p>}
                 {state.phase === "ahead" && <p>{t("updater_ahead")}</p>}
@@ -85,27 +104,21 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
                 {state.checkedAt && <p className="update-note">{t("updater_checked_at")} {new Date(state.checkedAt).toLocaleTimeString()}</p>}
                 {state.channel === "preview" && state.phase !== "unpublished" && state.unpublishedChannels.includes("preview")
                     && <p className="update-note">{t("updater_preview_index_missing")}</p>}
-                {installPhase && <>
-                    <p>{t(state.phase === "downloading" ? "updater_downloading" : state.phase === "verified" ? "updater_verified" : "updater_installing")}
-                        {state.phase === "downloading" && (percent === null ? ` ${(state.downloaded / 1048576).toFixed(1)} MiB` : ` ${percent}%`)}</p>
-                    <progress className="update-progress" aria-label={t("updater_download_progress")}
-                        max={100} value={state.phase === "downloading" ? percent ?? undefined : 100} />
-                    {state.verified && <p className="update-verified"><ShieldCheck size={14} />{t("updater_verified")}</p>}
-                </>}
             </div>
             {state.errorKey && <p className="update-error" role="alert">{t(state.errorKey)}</p>}
-            {confirming && !busy && <div className="update-confirm" role="group" aria-label={t("updater_confirm_title")}>
-                <strong>{t("updater_confirm_title")} v{available?.version}</strong>
+            <dialog ref={dialog} className="settings-update-dialog modal-content confirm-dialog" aria-labelledby="update-confirm-title"
+                onCancel={() => setConfirmationId(null)} onClose={() => setConfirmationId(null)}>
+                <h4 id="update-confirm-title">{t("updater_confirm_title")} v{available?.version}</h4>
                 <p>{t("updater_confirm_message")}</p>
                 <div className="setting-btn-group">
-                    <button type="button" className="setting-btn" onClick={() => setConfirmationId(null)}>{t("updater_cancel")}</button>
-                    <button type="button" className="setting-btn" onClick={() => {
+                    <button type="button" className="btn-icon settings-action" autoFocus onClick={() => setConfirmationId(null)}>{t("updater_cancel")}</button>
+                    <button type="button" className="btn-icon settings-action" onClick={() => {
                         const id = confirmationId;
                         setConfirmationId(null);
-                        if (id) void installAvailableUpdate(id);
+                        if (id && !disabled && id === available?.id) void installAvailableUpdate(id);
                     }}>{t("updater_confirm_install")}</button>
                 </div>
-            </div>}
+            </dialog>
             {available && <SettingsDisclosure className="update-release-notes" title={t("updater_release_notes")}>
                 <pre>{available.notes || t("updater_no_notes")}</pre>
             </SettingsDisclosure>}

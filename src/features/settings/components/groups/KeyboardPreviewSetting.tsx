@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { usePreviewPreferences } from "../../../../shared/hooks/usePreviewPreferences";
 import { savePreviewPreference } from "../../../../shared/lib/previewPreferenceClient";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
+import { SettingsLabel } from "../SettingHelp";
 
 export default function KeyboardPreviewSetting({ t, arrowKeySelection }: {
     t: (key: string) => string;
@@ -22,7 +23,7 @@ export default function KeyboardPreviewSetting({ t, arrowKeySelection }: {
     };
     return <NativeFeatureBoundary t={t}>
         <div className="setting-item setting-item--detail">
-            <div className="item-label-group"><label className="item-label" htmlFor="preview-keyboard-enabled">{t("preview_keyboard_enabled")}</label></div>
+            <SettingsLabel label={t("preview_keyboard_enabled")} hintKey="preview_keyboard_enabled" />
             <label className="switch">
                 <input id="preview-keyboard-enabled" className="cb" type="checkbox" aria-label={t("preview_keyboard_enabled")} checked={preferences.keyboardEnabled}
                     disabled={!arrowKeySelection || !ready || saving} onChange={event => { void change(event.target.checked); }} />

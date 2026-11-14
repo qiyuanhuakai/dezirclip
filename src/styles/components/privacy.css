@@ -55,7 +55,7 @@
 .privacy-rule-source { overflow-wrap: anywhere; color: var(--text-secondary); font-size: var(--font-size-sm); }
 .privacy-rule-scope, .privacy-rule-confirm p { color: var(--text-secondary); font-size: var(--font-size-sm); line-height: 1.6; margin: 8px 0; }
 .privacy-rule-metadata { display: flex; flex-direction: column; gap: 4px; color: var(--text-secondary); font-size: var(--font-size-sm); overflow-wrap: anywhere; margin: 8px 0; }
-.privacy-rule-card > .setting-btn { max-width: 100%; }
+.privacy-rule-card > .settings-action { max-width: 100%; }
 .privacy-rule-confirm .setting-btn-group { flex-wrap: wrap; }
 .privacy-rule-manager .privacy-action-error { color: var(--color-error); font-size: var(--font-size-sm); }
 .privacy-rule-manager:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 4px; }

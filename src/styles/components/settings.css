@@ -10,7 +10,7 @@
 .about-app-version { gap: 12px; }
 .about-build-details dl { margin: 8px 0 0; font-size: var(--font-size-sm); }
 .about-build-details .setting-item { flex-direction: column; align-items: flex-start; gap: 6px; }
-.about-build-details .settings-row--wide { flex-direction: row; align-items: baseline; }
+.about-build-details .settings-row--wide { grid-column: 1 / -1; }
 .about-build-details dt { color: var(--text-primary); font-weight: 700; }
 .about-build-details dd { margin: 0; }
 .about-build-error p { color: var(--text-secondary); }
@@ -531,25 +531,11 @@
   opacity: 0.85;
 }
 
-.setting-btn {
-  appearance: none;
-  -webkit-appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--control-confirm-btn-text, var(--text-primary));
-  background: var(--control-confirm-btn-bg, var(--bg-button));
-  border: 2px solid var(--control-confirm-btn-border, var(--border-dark));
-  border-radius: var(--surface-control-radius, 6px);
-  box-shadow: var(--control-confirm-btn-shadow, 2px 2px 0 var(--shadow-color));
-  padding: 7px 12px;
-  cursor: pointer;
-  transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
-}
+/* The shared btn-icon class supplies all theme paint and interaction states. */
+.settings-action { display: inline-flex; gap: 6px; padding: 7px 12px; font: inherit; font-size: var(--font-size-sm); font-weight: 600; max-width: 100%; }
+.settings-action svg { flex: none; }
+.settings-action:disabled { cursor: not-allowed; opacity: 0.6; transform: none; }
+.settings-action--compact { padding: 5px 10px; }
 
 /* Lays a row's action buttons out side by side. `min-width: 0` on the children
    is what lets them shrink instead of forcing the grid track wider than the
@@ -561,29 +547,8 @@
   align-items: center;
 }
 
-.setting-btn-group > .setting-btn {
+.setting-btn-group > .settings-action {
   min-width: 0;
-}
-
-.setting-btn:hover {
-  background: var(--control-confirm-btn-hover-bg, var(--bg-input));
-  box-shadow: var(--control-confirm-btn-hover-shadow, 3px 3px 0 var(--shadow-color));
-  transform: translate(-1px, -1px);
-}
-
-.setting-btn:active {
-  transform: translate(1px, 1px);
-  box-shadow: 1px 1px 0 var(--shadow-color);
-}
-
-.setting-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-  transform: none;
-}
-
-.setting-btn--compact {
-  padding: 5px 10px;
 }
 
 .tools-action-row {
@@ -736,7 +701,7 @@
 .privacy-kind-option .switch { flex: none; }
 .privacy-kind-option .switch:has(input:focus-visible) { outline: 2px solid var(--accent-color); outline-offset: 4px; }
 .tools-action-row > .item-label-group { flex: 1; }
-.tools-action-row > .setting-btn { flex: none; }
+.tools-action-row > .settings-action { flex: none; }
 
 .setting-item {
   display: flex;
@@ -806,9 +771,8 @@
   font-size: var(--font-size-md);
   display: block;
   /* min-height: 32px; Removed to allow denser layout */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .settings-view :where(button, input, select, textarea),
@@ -1157,3 +1121,40 @@
   color: var(--bg-window);
   box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
 }
+
+/* Labels keep a useful width; long values wrap below instead of crushing them. */
+.settings-view .setting-item:not(.column) { flex-wrap: wrap; gap: 8px 12px; }
+.settings-view .setting-item:not(.column) > .item-label-group { flex: 1 0 9em; max-width: 100%; padding-right: 0; }
+.settings-view .setting-item.column > .item-label-group { flex: none; }
+.settings-view .setting-item > .tools-path-text { flex: 1 1 15em; }
+.settings-view .setting-item > .settings-value { flex: 1 1 15em; }
+.settings-view .about-build-details .setting-item { flex-direction: column; align-items: stretch; }
+.settings-view .about-build-details .setting-item > .item-label-group { flex: none; }
+.settings-view .about-build-details .settings-value { flex: none; }
+.settings-view .tools-path-status-actions,
+.settings-view .tools-engine-status-actions { min-width: 0; max-width: 100%; flex: 0 1 auto; }
+.settings-view .capture-engine-badge { max-width: 100%; line-height: 1.4; overflow-wrap: anywhere; }
+.settings-view .settings-section-title { width: 100%; }
+.settings-view .settings-section-title h3 { margin: 0; }
+.settings-view .settings-range-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; width: 100%; }
+.settings-range-value { margin-inline-start: auto; font-size: var(--font-size-sm); color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.settings-label-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.setting-help { display: contents; }
+.setting-help-button { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; padding: 3px; border: 0; border-radius: 50%; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.setting-help-button:hover { color: var(--text-primary); background: var(--bg-button); }
+.setting-help-button:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+.setting-help-text { display: block; flex-basis: 100%; font-size: var(--font-size-sm); font-weight: 400; color: var(--text-secondary); line-height: 1.5; overflow-wrap: anywhere; }
+.setting-help-text[hidden] { display: none; }
+.settings-disclosure-toggle { width: 100%; padding: 6px 0; border: 0; background: transparent; color: var(--text-primary); box-shadow: none; font: inherit; }
+.settings-disclosure-toggle .item-label { font-weight: 400; }
+.settings-disclosure-chevron { width: 24px; height: 24px; box-sizing: border-box; padding: 3px; }
+.update-download { flex-basis: 100%; font-size: var(--font-size-sm); }
+.update-progress { position: relative; overflow: hidden; height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--text-secondary) 20%, transparent); margin-top: 8px; }
+.update-progress-fill { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--accent-color); transform-origin: left; transition: transform 180ms ease; }
+.update-progress.is-indeterminate .update-progress-fill { animation: settings-download 1.5s ease-in-out infinite; }
+@keyframes settings-download { from { translate: -35% 0; } to { translate: 100% 0; } }
+@media (prefers-reduced-motion: reduce) { .update-progress-fill { transition: none; } .update-progress.is-indeterminate .update-progress-fill { animation: none; } }
+dialog.settings-update-dialog { position: fixed; inset: 0; margin: auto; width: min(420px, calc(100vw - 40px)); max-height: calc(100vh - 40px); box-sizing: border-box; overflow: auto; color: var(--text-primary); }
+dialog.settings-update-dialog:not([open]) { display: none; }
+.settings-update-dialog::backdrop { background: rgb(0 0 0 / 35%); }
+.settings-update-dialog .setting-btn-group { justify-content: flex-end; }

@@ -1,3 +1,4 @@
+import { displayPath } from "../../utils/displayPath";
 import { useEffect, useRef, useState } from "react";
 import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
@@ -395,8 +396,8 @@ const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGro
                                 </button>
                             </div>
                         </div>
-                        <div className="data-panel">
-                            {dataPath}
+                        <div className="data-panel" title={displayPath(dataPath)}>
+                            {displayPath(dataPath)}
                         </div>
                     </div>
 
