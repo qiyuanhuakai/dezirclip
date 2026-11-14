@@ -162,7 +162,7 @@ jobs:
         run: python scripts/generate-protocol.py --check
 
       - name: Test updater release gates
-        run: node --test scripts/tests/set-release-version.node.mjs scripts/tests/updater-release.node.mjs scripts/tests/release-windows-upgrade.node.mjs
+        run: node --test scripts/tests/set-release-version.node.mjs scripts/tests/updater-release.node.mjs scripts/tests/release-windows-upgrade.node.mjs scripts/tests/release-upgrade-artifact.node.mjs
 
       - name: Check final Windows upgrade source boundary
         run: python -I -B scripts/tests/release-windows-upgrade-ps.py

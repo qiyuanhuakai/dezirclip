@@ -480,11 +480,20 @@ jobs:
         with:
           node-version: 22
 
+      - name: Locate the successful Windows upgrade aggregate artifact
+        if: github.event_name == 'push'
+        id: upgrade-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DZC_RELEASE_TAG: ${{ needs.create-release.outputs.tag }}
+        run: node scripts/release-upgrade-artifact.mjs "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$DZC_RELEASE_TAG" "$RUNNER_TEMP/updater-upgrade-artifact.json"
+
       - name: Download the exact final Windows upgrade gate
         if: github.event_name == 'push'
         uses: actions/download-artifact@v4
         with:
-          name: release-windows-upgrade-gate-attempt-${{ github.run_attempt }}
+          artifact-ids: ${{ steps.upgrade-artifact.outputs.artifact_id }}
+          merge-multiple: true
           path: ${{ runner.temp }}/updater-release-gates
 
       - name: Verify, publish and synchronize the signed updater channel
@@ -510,7 +519,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: updater-channel-sync-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/updater-channel-sync.json
+          path: |
+            ${{ runner.temp }}/updater-channel-sync.json
+            ${{ runner.temp }}/updater-upgrade-artifact.json
           if-no-files-found: error
 
   sync-published-channel:
@@ -533,12 +544,22 @@ jobs:
         with:
           node-version: 22
 
+      - name: Locate the original successful Windows upgrade aggregate artifact
+        id: upgrade-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DZC_RELEASE_TAG: ${{ inputs.tag }}
+          DZC_RELEASE_RUN_ID: ${{ inputs.release-run-id }}
+          DZC_RELEASE_RUN_ATTEMPT: ${{ inputs.release-run-attempt }}
+        run: node scripts/release-upgrade-artifact.mjs "$DZC_RELEASE_RUN_ID" "$DZC_RELEASE_RUN_ATTEMPT" "$DZC_RELEASE_TAG" "$RUNNER_TEMP/updater-upgrade-artifact.json"
+
       - name: Download the original release upgrade gate
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
           run-id: ${{ inputs.release-run-id }}
-          name: release-windows-upgrade-gate-attempt-${{ inputs.release-run-attempt }}
+          artifact-ids: ${{ steps.upgrade-artifact.outputs.artifact_id }}
+          merge-multiple: true
           path: ${{ runner.temp }}/updater-release-gates
 
       - name: Verify the original release gates and publish or synchronize without rebuilding
@@ -557,7 +578,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: updater-channel-backfill-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/updater-channel-sync.json
+          path: |
+            ${{ runner.temp }}/updater-channel-sync.json
+            ${{ runner.temp }}/updater-upgrade-artifact.json
           if-no-files-found: error
 
   publish-mygo-installer:
