@@ -27,6 +27,7 @@ type pinnedPreview struct {
 	cancel    context.CancelFunc
 	body      *previewBody
 	loading   bool
+	sized     bool
 	imageView pinnedImageView
 	opacity   previewOpacityControl
 }
@@ -56,7 +57,7 @@ func openPinnedPreview(owner *client.Client, ticket *pinPreviewRequest, closed f
 	if area.Width < 1 || area.Height < 1 {
 		return errors.New("PreviewDisplayUnavailable")
 	}
-	width, height := min(480, area.Width), min(360, area.Height)
+	width, height := min(frame.Width, area.Width), min(frame.Height, area.Height)
 	p.window = mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip 固定预览", Width: width, Height: height, Hidden: true,
 		Frameless: true, SkipTaskbar: true, Transparent: true, Content: ui.View(p.view)})
 	p.opacity = previewOpacityControl{value: ticket.Appearance.Opacity, slider: float64(ticket.Appearance.Opacity), committed: ticket.Appearance.Opacity, epoch: ticket.Params.ExpectedEpoch, library: Library{owner}, window: p.window}
@@ -104,9 +105,9 @@ func (p *pinnedPreview) view(c *ui.Context) {
 			}
 		})
 		if p.body != nil {
-			p.body.metadata(c)
-			if p.body.bitmap != nil {
-				p.imageView.draw(c, p.body.bitmap, a)
+			p.body.metadata(c, a.Language)
+			if bitmap := p.body.mediaBitmap(); bitmap != nil {
+				p.imageView.draw(c, bitmap, a)
 			} else {
 				p.body.draw(c)
 			}
@@ -169,6 +170,18 @@ func (p *pinnedPreview) refresh(retry bool) {
 			p.opacity.epoch = params.ExpectedEpoch
 			p.body = body
 			p.loading = false
+			if !p.sized {
+				p.sized = true
+				if body.mediaBitmap() != nil {
+					frame := p.window.Bounds()
+					area := mygo.Screen.DisplayMatching(frame).WorkArea
+					width, height := body.preferredSize(area)
+					if width > 0 && height > 0 {
+						p.window.SetBounds(mygo.Rectangle{X: max(area.X, min(frame.X, area.X+area.Width-width)),
+							Y: max(area.Y, min(frame.Y, area.Y+area.Height-height)), Width: width, Height: height})
+					}
+				}
+			}
 		})
 		wait := uint16(500)
 		for ctx.Err() == nil {

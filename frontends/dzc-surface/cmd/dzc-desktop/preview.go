@@ -36,7 +36,11 @@ type previewPlacement struct {
 
 // Keep the flyout outside the triggering row, including when its full size cannot fit beside the main window.
 func previewBounds(area, source mygo.Rectangle, preferred mygo.Point) mygo.Rectangle {
-	width, height := min(480, area.Width), min(320, area.Height)
+	return previewSizedBounds(area, source, preferred, 480, 320)
+}
+
+func previewSizedBounds(area, source mygo.Rectangle, preferred mygo.Point, desiredWidth, desiredHeight int) mygo.Rectangle {
+	width, height := min(desiredWidth, area.Width), min(desiredHeight, area.Height)
 	if width <= 0 || height <= 0 {
 		return mygo.Rectangle{}
 	}
@@ -112,6 +116,7 @@ func (p *Preview) clear() {
 }
 
 type previewAppearance struct {
+	Language                                                  string
 	Palette                                                   *surfaceTheme.Appearance
 	Title, Pin, Close, Retry, Concealed, Failed, OpacityLabel string
 	ZoomIn, ZoomOut, Fit, FitLabel, Actual, ImageZoom         string
@@ -307,7 +312,7 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 	return &previewBody{attachments: attachments, sourceIcon: sourceIcon, source: row.SourceApp, text: text, bitmap: bitmap, formatted: formatted, kind: row.ContentType, timestamp: row.Timestamp}, snapshot.State, nil
 }
 
-func (body *previewBody) metadata(c *ui.Context) {
+func (body *previewBody) metadata(c *ui.Context, language string) {
 	ui.Row(c).FillWidth().Gap(5).Children(func() {
 		previewMetadataIcon(c, body.kind)
 		ui.Text(c, body.kind).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)
@@ -321,16 +326,16 @@ func (body *previewBody) metadata(c *ui.Context) {
 		}
 		if body.timestamp > 0 {
 			previewMetadataIcon(c, "clock")
-			ui.Text(c, time.UnixMilli(body.timestamp).Format("01-02 15:04")).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)
+			ui.Text(c, concisePreviewTime(body.timestamp, time.Now(), language)).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)
 		}
 	})
 }
 
 func (body *previewBody) draw(c *ui.Context) {
-	if len(body.attachments) > 0 {
+	if bitmap := body.mediaBitmap(); bitmap != nil {
+		ui.Image(c, bitmap).Fill().Fit(ui.Contain)
+	} else if len(body.attachments) > 0 {
 		drawAttachmentPreview(c, body.attachments)
-	} else if body.bitmap != nil {
-		ui.Image(c, body.bitmap).Fill().Fit(ui.Contain)
 	} else if body.formatted != nil {
 		drawRichPreview(c, body.formatted)
 	} else {
@@ -404,16 +409,29 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 			source.X += bounds.X
 			source.Y += bounds.Y
 		}
-		frame := previewBounds(area, source, preferred)
+		width, height := body.preferredSize(area)
+		frame := previewSizedBounds(area, source, preferred, width, height)
 		if frame.Width == 0 {
 			return
 		}
 		anchor := mygo.Rectangle{X: frame.X - bounds.X, Y: frame.Y - bounds.Y}
 		opacity := &previewOpacityControl{value: appearance.Opacity, slider: float64(appearance.Opacity), committed: appearance.Opacity, epoch: params.ExpectedEpoch, library: Library{p.owner}}
-		pinning, failed := false, false
+		pinning, failed, measured := false, false, false
 		p.window = mygo.NewFlyout(mygo.FlyoutOptions{Parent: main, Anchor: anchor, Width: frame.Width, Height: frame.Height, Hidden: true, Content: ui.View(func(c *ui.Context) {
 			appearance.Opacity = opacity.value
 			appearance.panel(c).Children(func() {
+				if !measured {
+					measured = true
+					if width := body.filenameWidth(c); width > 0 {
+						fitted := previewSizedBounds(area, source, preferred, min(560, width), min(320, 90+min(8, len(body.attachments))*30))
+						main.Update(func() {
+							if p.generation == sequence && p.window != nil {
+								p.window.SetSize(fitted.Width, fitted.Height)
+								p.window.SetAnchor(mygo.Rectangle{X: fitted.X - bounds.X, Y: fitted.Y - bounds.Y})
+							}
+						})
+					}
+				}
 				ui.Row(c).FillWidth().Height(30).Gap(6).Children(func() {
 					title := appearance.Title
 					if title == "" {
@@ -447,7 +465,7 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 						}()
 					}
 				})
-				body.metadata(c)
+				body.metadata(c, appearance.Language)
 				if failed {
 					ui.Text(c, appearance.Failed)
 				}

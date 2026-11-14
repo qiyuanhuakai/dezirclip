@@ -31,7 +31,7 @@ export function AttachmentPreview({ html, names, video = false, fileLabel, expan
     return <div ref={container} aria-label={`${fileLabel} × ${attachments.length}`} data-columns={layout.columns} className={`attachment-gallery${expanded ? " attachment-expanded" : ""}`}>
         <div data-last-span={layout.lastSpan} className={`attachment-items${layout.media ? " attachment-media" : ""}`}>
             {layout.visible.map((file, index) => <figure className="attachment-tile" key={`${index}:${file.name}`} title={file.name}>
-                {file.src && <img className={expanded ? "attachment-expanded-image" : "image-preview"} src={file.src} alt={file.name} loading="lazy" draggable={false} />}
+                {file.src && <img className={expanded ? "attachment-expanded-image" : "image-preview"} src={file.src} alt={file.name} loading={expanded ? "eager" : "lazy"} draggable={false} />}
                 {(!file.src || expanded) && <figcaption><FileIcon name={file.name} /><span>{file.name}</span></figcaption>}
             </figure>)}
             {!layout.media && ellipsis}

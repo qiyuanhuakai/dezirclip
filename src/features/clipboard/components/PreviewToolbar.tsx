@@ -36,7 +36,7 @@ export function PreviewToolbar({ pinned, pinPending = false, opacity, image, zoo
         event.preventDefault();
         onDrag();
     };
-    return <header className="preview-toolbar">
+    return <div className="preview-toolbar" role="toolbar" aria-label={text.preview_toolbar_title}>
         <div className="preview-toolbar-title-row">
             <div className="preview-toolbar-drag" data-tauri-drag-region={pinned && !onDrag ? "true" : undefined}
                 onPointerDown={pinned ? drag : undefined} title={pinned ? text.preview_toolbar_drag : undefined}>
@@ -74,7 +74,7 @@ export function PreviewToolbar({ pinned, pinPending = false, opacity, image, zoo
                     onClick={() => onZoomChange(1)}>100%</button>
             </div>}
         </div>
-    </header>;
+    </div>;
 }
 
 const directions: PreviewResizeDirection[] = ["North", "NorthEast", "East", "SouthEast", "South", "SouthWest", "West", "NorthWest"];
