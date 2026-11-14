@@ -77,6 +77,7 @@ const ThemedSelect = ({
 
   return (
     <div
+      className="settings-themed-select"
       style={{ width }}
       onMouseDown={() => {
         invoke("activate_window_focus").catch(console.error);

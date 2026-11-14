@@ -22,8 +22,19 @@ type hostedEntry struct {
 }
 
 func (l *Library) Status(ctx context.Context) (protocol.ServiceStatus, error) {
+	return l.readStatus(ctx, nil)
+}
+
+func (l *Library) readStatus(ctx context.Context, observe func(error)) (protocol.ServiceStatus, error) {
 	var status protocol.ServiceStatus
-	err := l.owner.DesktopCall(ctx, protocol.MethodServiceStatus, struct{}{}, "ServiceStatus", &status)
+	err := readPrivacyStatus(ctx, func() error {
+		status = protocol.ServiceStatus{}
+		err := l.owner.DesktopCall(ctx, protocol.MethodServiceStatus, struct{}{}, "ServiceStatus", &status)
+		if observe != nil {
+			observe(err)
+		}
+		return err
+	})
 	return status, err
 }
 

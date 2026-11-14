@@ -8,11 +8,13 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/richtext"
 )
 
 func TestMediaPreviewFollowsPortraitLandscapeAndSmallImages(t *testing.T) {
@@ -46,6 +48,32 @@ func TestGalleryWidthMeasuresFilenames(t *testing.T) {
 	}, 560, 320)
 	if short != 320 || long <= short {
 		t.Fatalf("widths do not follow filenames: %d %d", short, long)
+	}
+}
+
+func TestTextPreviewFitsPlainAndStyledParagraphs(t *testing.T) {
+	var short, medium, long, multiline, normal, heading, large, indented int
+	ui.NewTester(func(c *ui.Context) {
+		plain := func(text string) int {
+			return (&previewBody{formatted: previewDocument(richtext.NewText(text))}).textWidth(c)
+		}
+		html := func(text string) int {
+			return (&previewBody{formatted: previewDocument(richtext.ParseHTML(text))}).textWidth(c)
+		}
+		short = plain("短文字")
+		medium = plain(strings.Repeat("M", 32))
+		long = plain(strings.Repeat("M", 9000))
+		multiline = plain("第一行\n第二行\n第三行")
+		normal = html("<p>" + strings.Repeat("M", 24) + "</p>")
+		heading = html("<h1>" + strings.Repeat("M", 24) + "</h1>")
+		large = (&previewBody{formatted: previewDocument(richtext.TextOf(richtext.Paragraph{Runs: []richtext.Run{{Text: strings.Repeat("M", 24), Attributes: richtext.Attributes{Size: 30}}}}))}).textWidth(c)
+		indented = html("<blockquote>" + strings.Repeat("M", 32) + "</blockquote>")
+	}, 560, 320)
+	if short != 320 || multiline != short || medium <= short || medium >= 560 || long != 560 {
+		t.Fatalf("plain widths: %d %d %d %d", short, medium, long, multiline)
+	}
+	if heading <= normal || large <= normal || indented <= medium {
+		t.Fatalf("styles lost: normal=%d heading=%d large=%d indented=%d", normal, heading, large, indented)
 	}
 }
 

@@ -11,6 +11,7 @@ import { isPinnedPreviewLabel } from "./previewWindowLabels";
 import { createHiddenPreparationGate } from "./hiddenPreparation";
 import { readResumeAuthority } from "./mainWindowResume";
 import type { PageStamp } from "./resumePage";
+import { privacyStatusRecoveryDelay } from "./privacyStatusRecovery";
 export type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
 
 export interface PrivacyViewState {
@@ -30,6 +31,8 @@ const invalidators = new Set<(scope: PrivacyInvalidationScope, hidden: boolean) 
 let stopEvents: (() => void) | null = null;
 let lifecycle = 0;
 let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+let recoveryAttempts = 0;
 let refreshRequest: Promise<void> | null = null;
 let activationRequest: Promise<void> | null = null;
 let viewSuspended = false;
@@ -56,6 +59,8 @@ const publish = (next: Partial<PrivacyViewState>) => {
 };
 const revoke = (scope: PrivacyInvalidationScope = "all", hidden = false) => {
   if (scope === "all") {
+    if (recoveryTimer !== null) clearTimeout(recoveryTimer);
+    recoveryTimer = null;
     mainPageStamp = null;
     hiddenPreparation.revoke();
     listFence.revoke();
@@ -78,6 +83,9 @@ const scheduleExpiry = () => {
 };
 const accept = (value: unknown) => {
   const snapshot = parsePrivacySnapshot(value);
+  if (recoveryTimer !== null) clearTimeout(recoveryTimer);
+  recoveryTimer = null;
+  recoveryAttempts = 0;
   if (model.phase === "ready" && model.snapshot && !samePrivacyAuthority(model.snapshot, snapshot)) revoke();
   publish({ phase: "ready", snapshot });
   scheduleExpiry();
@@ -113,8 +121,22 @@ export async function refreshPrivacyState(): Promise<void> {
           const value = await invoke<unknown>("get_privacy_status");
           if (listFence.isCurrent(token)) { accept(value); return; }
         }
-      } catch {
-        if (listFence.isCurrent(token)) { revoke(); publish({ phase: "unavailable", snapshot: null }); return; }
+      } catch (error) {
+        if (listFence.isCurrent(token)) {
+          revoke();
+          publish({ phase: "unavailable", snapshot: null });
+          const delay = privacyStatusRecoveryDelay(error, recoveryAttempts);
+          if (delay !== null && !viewSuspended && observers.size > 0) {
+            recoveryAttempts++;
+            const generation = listFence.capture();
+            const started = lifecycle;
+            recoveryTimer = setTimeout(() => {
+              recoveryTimer = null;
+              if (started === lifecycle && listFence.isCurrent(generation) && !viewSuspended) void refreshPrivacyState();
+            }, delay);
+          }
+          return;
+        }
       }
       if (observers.size === 0) return;
     }
@@ -123,6 +145,7 @@ export async function refreshPrivacyState(): Promise<void> {
 }
 
 const onFocus = () => {
+  recoveryAttempts = 0;
   if (nativeBlurPending) { nativeBlurPending = false; revokeApplicationReveals(); }
   const revision = ++visibilityRevision;
   if (document.hidden) { onDomHidden(); return; }
@@ -274,6 +297,7 @@ export function subscribePrivacyState(observer: () => void): () => void {
       activeView = true;
       nativeBlurPending = false;
       activationRequest = null;
+      recoveryAttempts = 0;
       model = { phase: "loading", snapshot: null, pending: false, generation: fence.current() };
     }
   };

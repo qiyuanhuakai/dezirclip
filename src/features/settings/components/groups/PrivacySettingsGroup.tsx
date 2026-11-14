@@ -98,7 +98,7 @@ export default function PrivacySettingsGroup(props: PrivacySettingsGroupProps) {
                         </label>
                     </div>
 
-                    <div className="setting-item source-exclusion-setting">
+                    <div className="setting-item column source-exclusion-setting">
                         <props.LabelWithHint
                             label={props.t('excluded_source_apps')}
                             hintKey="excluded_source_apps"
