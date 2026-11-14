@@ -371,10 +371,8 @@ const AppearanceSettingsGroup = ({
                 {(['mica', 'acrylic', 'liquid-glass'].includes(resolveBuiltinTheme(theme))) && (
                     <>
                         <div className="setting-item column no-border">
-                            <div className="item-label-group" style={{ marginBottom: '8px' }}>
+                            <div className="settings-background-controls">
                                 <span className="item-label">{t('custom_background') || '自定义背景'}</span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px', width: '100%', alignItems: 'center' }}>
                                 <button
                                     onClick={async () => {
                                         try {
@@ -402,8 +400,8 @@ const AppearanceSettingsGroup = ({
                                             }
                                         } catch (err) { console.error(err); }
                                     }}
-                                    className="btn-icon"
-                                    style={{ flex: 1, height: '36px', fontSize: '12px', fontWeight: 'bold' }}
+                                    type="button"
+                                    className="btn-icon settings-action settings-action--compact settings-background-choose"
                                 >
                                     {customBackground ? (t('change_background') || '更换背景') : (t('choose_background') || '选择背景')}
                                 </button>
@@ -413,9 +411,10 @@ const AppearanceSettingsGroup = ({
                                             setCustomBackground('');
                                             saveAppSetting('custom_background', '');
                                         }}
-                                        className="btn-icon"
-                                        style={{ height: '36px', fontSize: '12px', fontWeight: 'bold', padding: '0 12px' }}
+                                        type="button"
+                                        className="btn-icon settings-action settings-background-clear"
                                         title={t('clear_background') || '清除背景'}
+                                        aria-label={t('clear_background') || '清除背景'}
                                     >
                                         <X size={16} />
                                     </button>
