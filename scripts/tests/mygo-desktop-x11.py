@@ -7,6 +7,7 @@ import errno
 import os
 from pathlib import Path
 import secrets
+import re
 import runpy
 import select
 import shutil
@@ -15,6 +16,45 @@ import subprocess
 import sys
 import tempfile
 import time
+
+
+def private_portal_mounted(home, mount_table):
+    target = str(home / 'runtime/doc')
+    for line in mount_table.splitlines():
+        fields = line.split()
+        if len(fields) < 7:
+            continue
+        point = re.sub(r'\\([0-7]{3})', lambda match: chr(int(match[1], 8)), fields[4])
+        if point != target:
+            continue
+        separator = fields.index('-')
+        if fields[separator + 1] != 'fuse.portal':
+            raise RuntimeError('Unexpected filesystem at the private document portal')
+        return True
+    return False
+
+
+@contextlib.contextmanager
+def private_desktop_directory():
+    with tempfile.TemporaryDirectory(prefix='dzc-mygo-') as path:
+        home = Path(path).resolve(strict=True)
+        try:
+            yield path
+        finally:
+            # The private D-Bus session has ended. Detach its document portal
+            # before walking the temporary profile, including a disconnected FUSE mount.
+            mounts = Path('/proc/self/mountinfo')
+            if private_portal_mounted(home, mounts.read_text()):
+                runtime = home / 'runtime'
+                if runtime.is_symlink() or runtime.resolve(strict=True) != runtime:
+                    raise RuntimeError('Private runtime directory escaped the fixture')
+                helper = shutil.which('fusermount3') or shutil.which('fusermount')
+                if not helper:
+                    raise RuntimeError('Cannot detach the private document portal without fusermount')
+                result = subprocess.run([helper, '-u', '-z', str(runtime / 'doc')],
+                                        capture_output=True, text=True, timeout=10)
+                if private_portal_mounted(home, mounts.read_text()):
+                    raise RuntimeError(f'Private document portal remained mounted: {result.stderr}')
 
 
 @contextlib.contextmanager
@@ -885,8 +925,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
             wait_for(lambda: db.execute('SELECT COUNT(*) FROM clipboard_history WHERE content=?', (imported_note,)).fetchone()[0] == 1,
                      'Confirmed import did not persist the previewed entry')
         print('Verified choosing a backup file in the native dialog, previewing its text and importing it through the shared React settings')
-        custom_rules = open_settings_group('Clipboard', 'Custom Rules')
-        main_recorder = wait_for(lambda: find_item('Global Hotkey'), 'Main shortcut recorder unavailable')
+        main_recorder = open_settings_group('Clipboard', 'Global Hotkey')
         atspi.Component.scroll_to(main_recorder, atspi.ScrollType.ANYWHERE)
         assert atspi.Action.do_action(main_recorder, 0)
         wait_for(lambda: main_recorder.get_state_set().contains(atspi.StateType.PRESSED)
@@ -964,7 +1003,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         wait_for(alternate.is_active, 'Editor did not regain focus after the keyboard grab')
         shortcut((Gdk.KEY_Alt_L, Gdk.KEY_f))
         wait_for(focused_search, 'Search did not recreate the window after closing during a keyboard grab')
-        custom_rules = open_appearance('Settings', 'Clipboard', 'Custom Rules')
+        open_appearance('Settings', 'Privacy', 'Toggle privacy session shortcut')
         print('Verified resident search shortcut focuses shared React search from Settings and after WebView recreation', flush=True)
         def begin_privacy_recording():
             button = wait_for(lambda: find_item('Toggle privacy session shortcut'), 'Privacy shortcut recorder unavailable')
@@ -991,7 +1030,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             assert db.execute("SELECT value FROM settings WHERE key='app.privacy_session_hotkey'").fetchone() in (None, ('',))
         print('Verified main, quick-paste and screenshot shortcuts reach the recorder and remain unavailable to the privacy shortcut')
-        snapshot = wait_for(lambda: find_item('Rich Text Snapshot Preview'), 'Snapshot setting unavailable')
+        snapshot = open_settings_group('Clipboard', 'Rich Text Snapshot Preview')
         assert atspi.Action.do_action(snapshot, 0)
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.rich_text_snapshot_preview'").fetchone() == ('true',),
@@ -1032,6 +1071,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
             shortcut((Gdk.KEY_Return,))
             wait_for(lambda: saved('app.persistent_limit') == ('52',), 'Storage limit value did not persist')
         print('Verified shared storage limit switch and numeric field save through the MyGo WebView')
+        custom_rules = open_settings_group('Privacy', 'Custom Rules')
         assert atspi.Action.do_action(custom_rules, 0)
         rules_field = wait_for(lambda: next((item for item, name, interfaces, _ in mygo_nodes(atspi, executable)
                                if name == 'Custom Rules' and item.get_state_set().contains(atspi.StateType.EDITABLE)), None),
@@ -2024,7 +2064,7 @@ def check_profile_move(executable, home):
 if __name__ == '__main__':
     desktop = Path(sys.argv[1]).resolve(strict=True)
     if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview', '--idle', '--paste-hotkeys', '--middle-paste-hotkeys', '--reset-settings', '--file-drag', '--screenshots'):
-        with tempfile.TemporaryDirectory(prefix='dzc-mygo-') as path:
+        with private_desktop_directory() as path:
             home = Path(path)
             for name in ('runtime', 'data', 'config', 'cache'):
                 (home / name).mkdir(mode=0o700)
