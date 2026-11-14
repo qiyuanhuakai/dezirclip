@@ -718,6 +718,38 @@ function Assert-CustomBackgroundPresent($window) {
     } finally { $graphics.Dispose(); $bitmap.Dispose() }
 }
 
+function Test-ScreenshotShortcutPreservesMain($Main, $Resident, [string]$Cli, [string]$Row) {
+    $original = & $Cli service status --json | ConvertFrom-Json
+    if ($LASTEXITCODE) { throw 'Could not identify Service before screenshot shortcut' }
+    $null = [MyGoInput]::SetForegroundWindow($Main.MainWindowHandle)
+    $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $Main.MainWindowHandle } 'Main did not receive screenshot shortcut focus'
+    [Windows.Forms.SendKeys]::SendWait('^+a')
+    $selector = Wait-Until {
+        $window = [MyGoInput]::WindowWithTitle([regex]::Unescape('DezirClip \u622a\u56fe'))
+        if ($window -and [MyGoInput]::IsWindowVisible($window)) { return $window }
+    } 'Region screenshot shortcut did not show the selector'
+    # Exceed the Host idle pipe interval while the full-screen native selector occludes WebView2.
+    $until = [DateTime]::UtcNow.AddSeconds(35)
+    while ([DateTime]::UtcNow -lt $until) {
+        [Windows.Forms.Application]::DoEvents()
+        if ($Main.HasExited -or $Resident.HasExited) { throw 'Screenshot selection exited the existing main or resident' }
+        Start-Sleep -Milliseconds 100
+    }
+    [Windows.Forms.SendKeys]::SendWait('{ESC}')
+    $null = Wait-Until { ![MyGoInput]::IsWindowVisible($selector) } 'Screenshot cancel left the selector visible'
+    $null = [MyGoInput]::SetForegroundWindow($Main.MainWindowHandle)
+    $tree = [Windows.Automation.AutomationElement]::FromHandle($Main.MainWindowHandle)
+    $null = Get-ControlPoint $tree $Row
+    [Windows.Forms.SendKeys]::SendWait('^+f')
+    $null = Wait-Until { [Windows.Forms.Clipboard]::ContainsImage() } 'Full screenshot shortcut did not copy an image'
+    $null = Get-ControlPoint $tree $Row
+    $after = & $Cli service status --json | ConvertFrom-Json
+    if ($LASTEXITCODE -or $after.state.service_instance_id -cne $original.state.service_instance_id -or $Main.HasExited -or $Resident.HasExited) {
+        throw 'Screenshot shortcut replaced the main, resident or Service'
+    }
+    Write-Output 'Verified region shortcut held past idle timeout and full screenshot preserve the main, history and Service'
+}
+
 function Test-OcrAfterReopen($Main, $Resident, [string]$Executable, $Form, $Editor) {
     $Form.Activate()
     $null = $Editor.Focus()
@@ -1387,6 +1419,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Test-TransparentPreview $root $main $marker
         Test-UnfocusedPreviewAndTitleBar $root $main $marker $edit $form
         Test-ExternalEdit $root $main $marker
+        Test-ScreenshotShortcutPreservesMain $main $resident $cli ($marker + ' externally edited')
         $main = Test-OcrAfterReopen $main $resident $exe $form $edit
         Assert-CustomBackgroundPresent $main
         Write-Output 'Verified custom background is present at the initial visible-window check and after WebView recreation'
@@ -1548,7 +1581,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 12 | Write-Host }
     $serviceLog = Join-Path $dir.FullName 'service.log'
     if (Test-Path -LiteralPath $serviceLog) { Get-Content -LiteralPath $serviceLog -Tail 12 | Write-Host }
-    foreach ($name in @('service-lifecycle.log', 'service-native-exit.log', 'desktop-service-exit.log')) {
+    foreach ($name in @('service-lifecycle.log', 'service-native-exit.log', 'desktop-service-exit.log', 'desktop-lifecycle-main.log', 'desktop-lifecycle-resident.log')) {
         $diagnostic = Join-Path $dir.FullName $name
         if (Test-Path -LiteralPath $diagnostic) {
             Write-Host "Synthetic Service evidence: $name"
