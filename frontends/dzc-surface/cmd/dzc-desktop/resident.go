@@ -61,6 +61,9 @@ func refreshMainShortcuts(owner *client.Client, registered map[string]bool, togg
 // Only the main window loads the WebView runtime. Parent and child use
 // inherited pipes for window lifecycle, and authenticate separately to Rust.
 func runResident(owner *client.Client, minimized bool, activation string) error {
+	diagnostics := newDesktopDiagnostics(owner, "resident")
+	diagnostics.record("start", 0, nil)
+	defer diagnostics.record("run-returned", 0, nil)
 	stopObserving := observeServiceExit(owner)
 	defer stopObserving()
 	executable, err := os.Executable()
@@ -77,6 +80,7 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 		refreshMemory := installMemoryPolicy(func() bool { return mainVisible })
 		panel := quickpaste.NewDesktopPanel(owner, placeWindowAtCursor)
 		selector := screenshot.New(owner)
+		selector.SetDiagnostic(func(event string, err error) { diagnostics.record(event, 0, err) })
 		var tray *mygo.Tray
 		var setTrayVisible func(bool) error
 		pinnedCount := 0
@@ -544,7 +548,13 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 						})
 					}
 				}
-				if err := child.Wait(); err != nil {
+				err := child.Wait()
+				code := -1
+				if child.ProcessState != nil {
+					code = child.ProcessState.ExitCode()
+				}
+				diagnostics.childExited(child.Process.Pid, code, err)
+				if err != nil {
 					log.Printf("Main window exited: %v", err)
 				}
 				close(done)

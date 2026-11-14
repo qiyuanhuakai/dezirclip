@@ -79,6 +79,21 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	owner.Close()
 	library := Library{owner}
+	t.Run("expired event stream reconnects to the same Host and cursor", func(t *testing.T) {
+		history := History{actions: owner}
+		first, err := history.Changes(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		history.events.Close()
+		next, err := history.Changes(ctx, &first.State.EventSequence)
+		if history.events != nil {
+			defer history.events.Close()
+		}
+		if err != nil || next.State.ServiceInstanceId != first.State.ServiceInstanceId || next.State.EventSequence < first.State.EventSequence {
+			t.Fatalf("event stream failed to resume on original Host: %v", err)
+		}
+	})
 	t.Run("target capture does not wait for event poll", func(t *testing.T) {
 		history := History{actions: owner}
 		history.eventMu.Lock()

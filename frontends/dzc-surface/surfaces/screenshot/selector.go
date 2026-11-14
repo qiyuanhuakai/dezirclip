@@ -16,6 +16,7 @@ import (
 )
 
 type Selector struct {
+	diagnostic    func(string, error)
 	record        func(string) bool
 	window        *mygo.Window
 	stopping      bool
@@ -40,6 +41,8 @@ type selection struct {
 }
 
 func (s *Selector) SetShortcutRecorder(record func(string) bool) { s.record = record }
+
+func (s *Selector) SetDiagnostic(record func(string, error)) { s.diagnostic = record }
 
 func (s *Selector) HasShortcut() bool { return len(s.hotkeys) != 0 }
 
@@ -158,6 +161,9 @@ func (shot *selection) notify(err error) {
 }
 
 func (s *Selector) start(full bool, epoch *uint64, ready func(error)) {
+	if s.diagnostic != nil {
+		s.diagnostic("screenshot-start", nil)
+	}
 	target, ok := cursorTarget()
 	if !ok {
 		if ready != nil {
@@ -378,6 +384,9 @@ func finish(ctx context.Context, host *client.Client, state protocol.RuntimeStat
 func (s *Selector) end(shot *selection, err error) {
 	mygo.RunOnMain(func() {
 		if s.session == shot {
+			if s.diagnostic != nil {
+				s.diagnostic("screenshot-ended", err)
+			}
 			if err != nil {
 				log.Printf("Screenshot ended: %v", err)
 			}
@@ -398,6 +407,9 @@ func (s *Selector) clear() {
 		return
 	}
 	s.session = nil
+	if s.diagnostic != nil {
+		s.diagnostic("screenshot-cleared", nil)
+	}
 	shot.notify(context.Canceled)
 	shot.cancel()
 	if shot.host != nil {
