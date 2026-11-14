@@ -746,11 +746,9 @@ func TestReactLibraryWithService(t *testing.T) {
 	// its real Service socket and reconnect before the user's first click.
 	watcher.targetInvalid.Store(false)
 	watcher.events.Close()
-	if _, err := watcher.Changes(ctx, &changes.State.EventSequence); err == nil || !watcher.targetInvalid.Load() {
-		t.Fatalf("lost subscription retained the paste target: %v", err)
-	}
-	if _, err := watcher.Changes(ctx, nil); err != nil {
-		t.Fatal(err)
+	resumed, err := watcher.Changes(ctx, &changes.State.EventSequence)
+	if err != nil || !watcher.targetInvalid.Load() || resumed.State.ServiceInstanceId != instance || resumed.State.EventSequence < changes.State.EventSequence {
+		t.Fatalf("subscription recovery failed or retained the paste target: %v", err)
 	}
 	if outcome, err := watcher.CopyEntry(ctx, paste); err != nil || outcome != "target_required" {
 		t.Fatalf("first paste after reconnect: %q %v", outcome, err)
