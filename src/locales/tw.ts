@@ -1,5 +1,8 @@
 export const tw = {
         // Native desktop controls
+        native_transformations: "文字轉換",
+        native_transform_unavailable: "無法載入文字轉換選項。",
+        native_transform_failed: "無法轉換此項目，請檢查內容是否符合所選操作的要求。",
         native_entry_type: "內容類型",
         native_editor_load_failed: "無法載入要編輯的項目。",
         native_editor_too_large: "這段文字超出編輯器支援的大小。",

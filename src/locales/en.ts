@@ -1,5 +1,8 @@
 export const en = {
         // Native desktop controls
+        native_transformations: "Text transformations",
+        native_transform_unavailable: "Could not load text transformations.",
+        native_transform_failed: "Could not transform this entry. Check that the content matches the selected operation.",
         native_entry_type: "Content type",
         native_editor_load_failed: "Could not load this entry for editing.",
         native_editor_too_large: "This text is too large for the editor.",

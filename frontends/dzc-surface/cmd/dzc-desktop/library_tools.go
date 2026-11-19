@@ -129,6 +129,15 @@ func (l *Library) Transform(ctx context.Context, params protocol.ToolTransformPa
 	return result.Text, err
 }
 
+func (l *Library) CopyTransformed(ctx context.Context, params protocol.DesktopTransformCopyParams) error {
+	var result protocol.OperationResult
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopClipboardTransformCopy, params, "OperationResult", &result)
+	if err == nil && !result.Performed {
+		return client.ErrProtocol
+	}
+	return err
+}
+
 func (l *Library) QR(ctx context.Context, params protocol.ToolQrParams) (string, error) {
 	var result protocol.ToolText
 	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopToolsQr, params, "ToolText", &result)

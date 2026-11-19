@@ -443,6 +443,16 @@ pub struct DesktopMutationResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopTransformCopyParams {
+    pub id: i64,
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub reveal: bool,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesktopCopyParams {
     pub id: i64,
     pub service_instance_id: String,
@@ -711,6 +721,8 @@ pub enum Method {
     DesktopEmojiFavorites,
     #[serde(rename = "desktop.clipboard.copy")]
     DesktopClipboardCopy,
+    #[serde(rename = "desktop.clipboard.transform_copy")]
+    DesktopClipboardTransformCopy,
     #[serde(rename = "desktop.privacy.rules")]
     DesktopPrivacyRules,
     #[serde(rename = "desktop.privacy.decision")]

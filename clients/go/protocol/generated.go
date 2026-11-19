@@ -330,6 +330,14 @@ type DesktopMutationResult struct {
     Performed bool `json:"performed"`
 }
 
+type DesktopTransformCopyParams struct {
+    Id int64 `json:"id"`
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Reveal bool `json:"reveal"`
+    Kind string `json:"kind"`
+}
+
 type DesktopCopyParams struct {
     Id int64 `json:"id"`
     ServiceInstanceId string `json:"service_instance_id"`
@@ -476,6 +484,7 @@ const (
     MethodDesktopWindowEmoji Method = "desktop.window.emoji"
     MethodDesktopEmojiFavorites Method = "desktop.emoji.favorites"
     MethodDesktopClipboardCopy Method = "desktop.clipboard.copy"
+    MethodDesktopClipboardTransformCopy Method = "desktop.clipboard.transform_copy"
     MethodDesktopPrivacyRules Method = "desktop.privacy.rules"
     MethodDesktopPrivacyDecision Method = "desktop.privacy.decision"
     MethodDesktopPrivacyFeedback Method = "desktop.privacy.feedback"

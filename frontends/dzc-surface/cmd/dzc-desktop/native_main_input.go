@@ -232,6 +232,10 @@ func (n *nativeMain) entryMenu(card ui.Element, row protocol.DesktopEntry, gener
 		if row.ContentType == "image" && menu.Item(n.text("native_copy_base64")).Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeBase64)
 		}
+		if nativeTransformable(row.ContentType) && !nativeConcealed(row) &&
+			menu.Item(n.text("native_transformations")).Disabled(disabled).Chosen() {
+			n.openTransform(row, generation)
+		}
 		if row.Id > 0 && menu.Item(n.text("open")).Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeOpen)
 		}

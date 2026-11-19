@@ -1408,6 +1408,47 @@
       ],
       "additionalProperties": true
     },
+    "DesktopTransformCopyParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "reveal": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "service_instance_id",
+        "expected_epoch",
+        "reveal",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
     "DesktopCopyParams": {
       "type": "object",
       "properties": {
@@ -1649,6 +1690,7 @@
         "desktop.window.emoji",
         "desktop.emoji.favorites",
         "desktop.clipboard.copy",
+        "desktop.clipboard.transform_copy",
         "desktop.privacy.rules",
         "desktop.privacy.decision",
         "desktop.privacy.feedback",
@@ -3836,6 +3878,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/EmojiFavoritesParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.clipboard.transform_copy"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/DesktopTransformCopyParams"
               }
             }
           }

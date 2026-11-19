@@ -49,6 +49,16 @@ impl Host {
         self.desktop_copy_bound(session, request, None)
     }
 
+    pub(crate) fn desktop_transform_copy(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
+        let request: DesktopTransformCopyParams = serde_json::from_value(parameters).map_err(|_| WireErrorCode::InvalidRequest)?;
+        let copy = DesktopCopyParams {
+            id: request.id, service_instance_id: request.service_instance_id, expected_epoch: request.expected_epoch,
+            reveal: request.reveal, paste: false, with_format: None, derived_text: None, image_as_base64: None,
+            delete_after_use: None, move_to_top: None, expected_paste_target: None,
+        };
+        self.desktop_copy_impl(session, copy, None, Some(&request.kind))
+    }
+
     pub(crate) fn remember_window_target(&self, session: &Session, params: Value) -> Result<Value, WireErrorCode> {
         self.desktop_permission(session, self.instance_id())?;
         session.require(Permission::ClipboardPaste)?;
@@ -167,11 +177,21 @@ impl Host {
     }
 
     pub(crate) fn desktop_copy_bound(&self, session: &Session, request: DesktopCopyParams, bound: Option<(dzc_platform::runtime::QueueInputTarget, RuntimeState)>) -> Result<Value,WireErrorCode> {
+        self.desktop_copy_impl(session, request, bound, None)
+    }
+
+    fn desktop_copy_impl(
+        &self,
+        session: &Session,
+        request: DesktopCopyParams,
+        bound: Option<(dzc_platform::runtime::QueueInputTarget, RuntimeState)>,
+        transformation: Option<&str>,
+    ) -> Result<Value, WireErrorCode> {
         self.desktop_permission(session,&request.service_instance_id)?;
         if !self.actions.can_copy() || request.paste && !self.actions.can_paste() {return Err(WireErrorCode::UnsupportedCapability);}
         let paste_target=if bound.is_none() { self.prepare_desktop_paste(request.paste,request.expected_paste_target.as_ref())? } else { None };
         let now=crate::router::now_ms()?;
-        let generated=request.derived_text.is_some() || request.image_as_base64.unwrap_or(false);
+        let generated=request.derived_text.is_some() || request.image_as_base64.unwrap_or(false) || transformation.is_some();
         // A Service started without capture still handles explicit copy actions.
         // An unexpectedly unavailable capture owner still fails closed.
         let capture_generated = generated && !self.capture_disabled_by_request()?;
@@ -186,6 +206,9 @@ impl Host {
         } else if let Some(entry)=session_entry.as_ref() {self.history.session_clipboard_payload_for_host_authorized(entry,&request.service_instance_id,&permit,now)}
             else {self.history.clipboard_payload_authorized(request.id,&permit,now)}.map_err(denied)?;
         if request.image_as_base64.unwrap_or(false) {payload=image_text(payload)?;}
+        if let Some(kind) = transformation {
+            payload = transform_payload(payload, kind)?;
+        }
         if request.with_format==Some(false) {payload=plain(payload);}
         if let Some(ticket)=ticket {
             let text=payload_text(&payload).ok_or(WireErrorCode::InvalidRequest)?;
@@ -329,6 +352,26 @@ fn image_text(payload:ClipboardPayload)->Result<ClipboardPayload,WireErrorCode> 
     _=>return Err(WireErrorCode::InvalidRequest),
 })}
 fn payload_text(payload:&ClipboardPayload)->Option<&str> {match payload {ClipboardPayload::Text(text)=>Some(text),ClipboardPayload::Private{payload,..}=>payload_text(payload),_=>None}}
+
+fn transform_payload(payload: ClipboardPayload, kind: &str) -> Result<ClipboardPayload, WireErrorCode> {
+    match payload {
+        ClipboardPayload::Text(text) | ClipboardPayload::Html { text, .. } => {
+            if text.chars().take(250_001).count() > 250_000 {
+                return Err(WireErrorCode::FrameTooLarge);
+            }
+            let result = dzc_core::transforms::transform_text(&text, kind).map_err(|_| WireErrorCode::InvalidRequest)?;
+            if result.chars().take(524_289).count() > 524_288 {
+                return Err(WireErrorCode::FrameTooLarge);
+            }
+            Ok(ClipboardPayload::Text(result))
+        }
+        ClipboardPayload::Private { payload, authorization } => Ok(ClipboardPayload::Private {
+            payload: Box::new(transform_payload(*payload, kind)?),
+            authorization,
+        }),
+        _ => Err(WireErrorCode::InvalidRequest),
+    }
+}
 #[cfg(test)]
 mod queue_completion_tests {
     use super::*;

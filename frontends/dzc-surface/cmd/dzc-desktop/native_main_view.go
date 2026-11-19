@@ -60,7 +60,7 @@ func (n *nativeMain) view(c *ui.Context) {
 			header.Query, header.Placeholder = &n.tagLibrary.query, n.text("tag_content_search", "Search tagged entries…")
 		} else {
 			header.Actions = append(actions[:1:1],
-				uikit.HeaderAction{Icon: "add", Label: n.text("add_item"), Disabled: !n.entryEditorReady(), Run: func() { n.addHistoryEntry("") }},
+				uikit.HeaderAction{Icon: "add", Label: n.text("add_item"), Disabled: !n.canOpenHistoryDialog(), Run: func() { n.addHistoryEntry("") }},
 				uikit.HeaderAction{Icon: "settings", Label: n.text("settings"), Run: n.openSettings},
 				actions[1])
 			if n.preferences["app.tag_manager_enabled"] != "false" {
@@ -131,6 +131,9 @@ func (n *nativeMain) view(c *ui.Context) {
 	if n.editor != nil {
 		n.entryEditorView(c, kit, n.editor)
 	}
+	if n.transform != nil {
+		n.transformView(c, kit, n.transform)
+	}
 }
 
 func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
@@ -166,13 +169,17 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 			protected := n.protectedBody(row)
 			if editableHistoryKind(row.ContentType) {
 				actions = append(actions, uikit.HeaderAction{Icon: "edit", Label: n.text("edit_item"),
-					Disabled: !n.entryEditorReady() || nativeConcealed(row) && protected == nil,
+					Disabled: !n.canOpenHistoryDialog() || nativeConcealed(row) && protected == nil,
 					Run:      func() { n.editHistoryEntry(row, generation) }})
 			}
 			if nativeConcealed(row) {
 				actions = append(actions, n.protectedRowAction(row, generation))
 				if protected != nil {
 					summary = protected.summary
+					if nativeTransformable(row.ContentType) {
+						actions = append(actions, uikit.HeaderAction{Icon: "transform", Label: n.text("native_transformations"),
+							Disabled: !n.canOpenHistoryDialog(), Run: func() { n.openTransform(row, generation) }})
+					}
 				}
 			}
 			card := kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{

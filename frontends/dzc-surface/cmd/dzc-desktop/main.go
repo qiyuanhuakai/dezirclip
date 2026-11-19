@@ -346,6 +346,10 @@ func run() error {
 					native.closeEntryEditor()
 					concealed = true
 				}
+				if native.transform != nil && native.transform.protected {
+					native.closeTransform()
+					concealed = true
+				}
 				if native.backup != nil {
 					concealed = native.backup.clearPreview() || concealed
 				}

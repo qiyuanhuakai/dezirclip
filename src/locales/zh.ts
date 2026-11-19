@@ -11,6 +11,9 @@ export const privacyStatusZh = {
 
 export const zh = {
         // Native desktop controls
+        native_transformations: "文本转换",
+        native_transform_unavailable: "无法加载文本转换选项。",
+        native_transform_failed: "无法转换此条目，请检查内容是否符合所选操作的要求。",
         native_entry_type: "内容类型",
         native_editor_load_failed: "无法读取用于编辑的条目。",
         native_editor_too_large: "这段文本超出编辑器支持的大小。",

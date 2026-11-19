@@ -73,6 +73,8 @@ type nativeMain struct {
 	tags             *nativeTagEditor
 	tagLibrary       *nativeTagLibrary
 	editor           *nativeEntryEditor
+	transform        *nativeTransformDialog
+	transformKinds   []protocol.ToolTransformKind
 }
 
 func (n *nativeMain) stopSession() {
@@ -95,6 +97,7 @@ func (n *nativeMain) stopSession() {
 	n.themeWorking, n.themeRefresh = false, false
 	n.tags = nil
 	n.closeEntryEditor()
+	n.closeTransform()
 	n.closeBackup()
 	n.tagLibrary = nil
 	n.emoji = nil

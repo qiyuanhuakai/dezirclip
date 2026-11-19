@@ -394,7 +394,7 @@ impl Host {
                 methods.extend(["desktop.history.clear", "desktop.history.reorder", "desktop.tags.create", "desktop.tags.rename", "desktop.tags.remove"]);
             }
             methods.extend(["desktop.history.page", "desktop.tags.page", "desktop.history.get", "desktop.history.summary", "desktop.history.mutate", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]);
-            if self.actions.can_copy() {methods.extend(["desktop.clipboard.copy", "desktop.surface.copy"]);}
+            if self.actions.can_copy() {methods.extend(["desktop.clipboard.copy", "desktop.clipboard.transform_copy", "desktop.surface.copy"]);}
             if can(Permission::PrivacyWrite) {methods.extend(["desktop.privacy.rules", "desktop.privacy.decision", "desktop.privacy.feedback", "desktop.privacy.remove_rule"]);}
         }
         if can(Permission::ServiceManage) {
@@ -476,7 +476,7 @@ impl Host {
         if self.is_stopping() && !matches!(request.method, Method::ServiceStatus | Method::Health | Method::ServiceStop | Method::ServiceHandoff) { return Err(WireErrorCode::Busy); }
         // Keep another IPC writer from replacing the clipboard between copy and input.
         let _delivery = if matches!(request.method, Method::DesktopWindowPaste | Method::DesktopQuickPaste | Method::DesktopQueueNext |
-            Method::DesktopClipboardCopy | Method::DesktopSurfaceCopy | Method::SurfaceCopy | Method::ClipboardCopy |
+            Method::DesktopClipboardCopy | Method::DesktopClipboardTransformCopy | Method::DesktopSurfaceCopy | Method::SurfaceCopy | Method::ClipboardCopy |
             Method::SurfacePaste | Method::DesktopFilesDrop | Method::DesktopScreenFinish | Method::DesktopCaptureFinish) {
             Some(self.delivery.try_lock().map_err(|_| WireErrorCode::Busy)?)
         } else { None };
@@ -768,6 +768,7 @@ impl Host {
             Method::DesktopHistorySummary => self.desktop_summary(session,request.params),
             Method::DesktopTagsPage => self.desktop_tag_page(session,request.params),
             Method::DesktopClipboardCopy => self.desktop_copy(session,request.params),
+            Method::DesktopClipboardTransformCopy => self.desktop_transform_copy(session, request.params),
             Method::DesktopEmojiFavorites => self.emoji_favorites(session, params(request.params)?),
             Method::DesktopWindowEmoji => self.send_window_emoji(session, params(request.params)?),
             Method::DesktopWindowTarget => self.remember_window_target(session, request.params),

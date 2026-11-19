@@ -26,7 +26,7 @@ type nativeEntryEditor struct {
 	protected, confirmed             bool
 }
 
-func (n *nativeMain) entryEditorReady() bool {
+func (n *nativeMain) canOpenHistoryDialog() bool {
 	return n.session != nil && n.history.state.ServiceInstanceId != "" && !n.mutating && !n.failed && !n.hasHistoryDialog()
 }
 
@@ -39,7 +39,7 @@ func (n *nativeMain) closeEntryEditor() {
 }
 
 func (n *nativeMain) addHistoryEntry(tag string) {
-	if !n.entryEditorReady() || n.showSettings || n.showEmoji {
+	if !n.canOpenHistoryDialog() || n.showSettings || n.showEmoji {
 		return
 	}
 	n.resetPreviewSelection()
@@ -52,7 +52,7 @@ func editableHistoryKind(kind string) bool {
 }
 
 func (n *nativeMain) editHistoryEntry(row protocol.DesktopEntry, generation uint64) {
-	if !n.entryEditorReady() || generation != n.history.generation || n.showSettings ||
+	if !n.canOpenHistoryDialog() || generation != n.history.generation || n.showSettings ||
 		!editableHistoryKind(row.ContentType) {
 		return
 	}
