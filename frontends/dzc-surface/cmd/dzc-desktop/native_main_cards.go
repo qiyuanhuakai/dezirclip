@@ -47,11 +47,11 @@ func visibleCardSummary(row protocol.DesktopEntry, language nativeLanguage) stri
 	return row.Content
 }
 
-func (n *nativeMain) cardBody(c *ui.Context, row protocol.DesktopEntry, protected *nativeProtectedBody, compact bool) func() {
+func (n *nativeMain) cardBody(c *ui.Context, row protocol.DesktopEntry, protected *nativeProtectedBody, compact bool, generation uint64) func() {
 	if nativeConcealed(row) {
 		if protected != nil {
 			if row.ContentType == "image" {
-				return func() { n.drawHistoryImage(c, protected.image, true, compact) }
+				return func() { n.imageCardBody(c, row, protected, compact, generation) }
 			}
 			if len(protected.attachments) != 0 {
 				return func() { uikit.HistoryAttachments(c, protected.attachments, compact) }
@@ -61,7 +61,7 @@ func (n *nativeMain) cardBody(c *ui.Context, row protocol.DesktopEntry, protecte
 	}
 	switch row.ContentType {
 	case "image":
-		return func() { n.historyImage(c, row, compact) }
+		return func() { n.imageCardBody(c, row, nil, compact, generation) }
 	case "file", "files", "video":
 		attachments := uikit.ParsePreviewAttachments("", visibleCardSummary(row, n.language()))
 		if len(attachments) != 0 {
@@ -69,6 +69,17 @@ func (n *nativeMain) cardBody(c *ui.Context, row protocol.DesktopEntry, protecte
 		}
 	}
 	return nil
+}
+
+func (n *nativeMain) imageCardBody(c *ui.Context, row protocol.DesktopEntry, protected *nativeProtectedBody, compact bool, generation uint64) {
+	ui.Column(c).FillWidth().Gap(4).Children(func() {
+		if protected != nil {
+			n.drawHistoryImage(c, protected.image, true, compact)
+		} else {
+			n.historyImage(c, row, compact)
+		}
+		n.drawCardOCR(c, row, protected, generation)
+	})
 }
 
 func (n *nativeMain) historyImage(c *ui.Context, row protocol.DesktopEntry, compact bool) {
@@ -110,8 +121,9 @@ func (n *nativeMain) loadCardImage(key nativeCardKey) {
 		ctx, cancel := context.WithTimeout(session, 4*time.Second)
 		defer cancel()
 		size := uint32(192)
+		omitText := true
 		row, err := n.library.Entry(ctx, protocol.DesktopEntryParams{
-			Id: key.id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, ThumbnailDimension: &size,
+			Id: key.id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, ThumbnailDimension: &size, OmitOcrText: &omitText,
 		})
 		var preview ui.ImageSource
 		if err == nil && row.Timestamp == key.timestamp && row.ContentType == "image" && !nativeConcealed(row.DesktopEntry) {

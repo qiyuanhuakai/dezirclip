@@ -818,6 +818,9 @@
         },
         "include_video_frame": {
           "type": "boolean"
+        },
+        "omit_ocr_text": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -1757,6 +1760,7 @@
         "desktop.clipboard.transform_copy",
         "desktop.history.qr",
         "desktop.clipboard.qr_copy",
+        "desktop.clipboard.ocr_copy",
         "desktop.privacy.rules",
         "desktop.privacy.decision",
         "desktop.privacy.feedback",
@@ -4009,6 +4013,25 @@
           "if": {
             "properties": {
               "method": {
+                "const": "desktop.clipboard.ocr_copy"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ManualOcrParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
                 "const": "desktop.clipboard.copy"
               }
             },
@@ -4993,6 +5016,12 @@
         },
         "reveal": {
           "type": "boolean"
+        },
+        "max_text_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536,
+          "x-rust-type": "u32"
         }
       },
       "required": [

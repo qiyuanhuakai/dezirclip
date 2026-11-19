@@ -179,6 +179,11 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 				actions = append(actions, n.protectedRowAction(row, generation))
 				if protected != nil {
 					summary = protected.summary
+					if row.ContentType == "image" && row.Id > 0 {
+						actions = append(actions, uikit.HeaderAction{Icon: "scan", Label: n.text("native_ocr_recognize"),
+							Disabled: !n.eligibleOCR(row, generation) || n.private || n.ocrJob.status == "processing" || protected.ocrStatus == "processing",
+							Run:      func() { n.recognizeOCR(row, generation) }})
+					}
 					if nativeTextToolEntry(row.ContentType) {
 						actions = append(actions,
 							uikit.HeaderAction{Icon: "qr", Label: n.text("native_qr_code"),
@@ -197,7 +202,7 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 				TextRows: 4,
 				TagSize:  float32(tagSize),
 				Tags:     n.cardTags(row.Tags),
-				Body:     n.cardBody(cell.Context, row, protected, compact),
+				Body:     n.cardBody(cell.Context, row, protected, compact, generation),
 				Activate: func() {
 					n.rowAction(row, generation, nativePaste)
 					n.resetPreviewSelection()

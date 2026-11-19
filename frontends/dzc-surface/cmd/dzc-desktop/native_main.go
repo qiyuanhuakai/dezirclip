@@ -31,6 +31,10 @@ type nativeMain struct {
 	resume           uint64
 	history          nativeHistory
 	cardImages       nativeVisibleCache[nativeCardKey, ui.ImageSource]
+	ocrPreview       *nativeOCRPreview
+	ocrJob           nativeOCRJob
+	ocrEngine        *protocol.OcrEngineInfo
+	ocrEngineLoading bool
 	protectedRows    map[nativeCardKey]*nativeProtectedRow
 	cardTagColors    map[string]string
 	readingTagColors bool
@@ -88,6 +92,7 @@ func (n *nativeMain) stopSession() {
 	n.cancelSearchTimer()
 	n.history.reset(protocol.RuntimeState{}, nativeHistoryFilter{})
 	n.cardImages = nativeVisibleCache[nativeCardKey, ui.ImageSource]{}
+	n.ocrJob, n.ocrEngine, n.ocrEngineLoading = nativeOCRJob{}, nil, false
 	n.cardTagColors, n.readingTagColors = nil, false
 	n.reading, n.failed, n.mutating, n.private = false, false, n.profile.moving || n.profile.restartPending, false
 	n.notice, n.keyboard, n.focusList = "", false, false
@@ -309,6 +314,10 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 		return
 	}
 	for _, event := range events.Events {
+		if event.Event == protocol.EventKindEntryUpdated && event.Data.EntryId != nil &&
+			*event.Data.EntryId == n.ocrJob.id && n.ocrJob.status != "processing" {
+			n.ocrJob = nativeOCRJob{}
+		}
 		if event.Event == protocol.EventKindHistoryReset {
 			n.cardTagColors = nil
 			n.tagColorRevision++
@@ -405,6 +414,7 @@ func searchTagName(query string) (string, bool) {
 
 func (n *nativeMain) resetPreviewSelection() {
 	n.clearProtectedRows()
+	n.closeOCRPreview()
 	n.keyboard = false
 	n.previewSelection = 0
 	n.hover.reset()

@@ -43,17 +43,63 @@ impl Host {
                 if changed == 0 { return Err(WireErrorCode::NotFound); }
                 self.publish(EventKind::EntryUpdated, EventData { entry_id: Some(p.id), status: Some("done".into()) })?;
                 self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?;
-                Ok((permit, ManualOcrText { status: "done".into(), text: Some(text) }))
+                Ok((permit, ManualOcrText { status: "done".into(), text: ocr_text_projection(Some(text), p.max_text_bytes) }))
             }
             Method::DesktopOcrStatus => {
-                let permit = self.history.privacy().authorize_read(PrivacyAccessIntent::AutomationRead, SensitiveAccess::Denied,
-                    Some(p.expected_epoch), now_ms()?).map_err(privacy_error)?;
+                let privacy = self.history.privacy();
+                let now = now_ms()?;
+                let permit = if p.reveal && p.max_text_bytes.is_some() {
+                    privacy.authorize_selected_copy(p.id, Some(&p.service_instance_id), SensitiveAccess::ExplicitUserAction, Some(p.expected_epoch), now)
+                } else {
+                    privacy.authorize_read(PrivacyAccessIntent::AutomationRead, SensitiveAccess::Denied, Some(p.expected_epoch), now)
+                }.map_err(privacy_error)?;
                 let row = self.history.get_entry_authorized(p.id, &permit, now_ms()?).map_err(privacy_error)?.ok_or(WireErrorCode::SensitiveAccessDenied)?;
                 self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?;
-                Ok((permit, ManualOcrText { status: row.ocr_status.unwrap_or_else(|| "pending".into()), text: row.ocr_text }))
+                Ok((permit, ManualOcrText {
+                    status: row.ocr_status.unwrap_or_else(|| "pending".into()),
+                    text: ocr_text_projection(row.ocr_text, p.max_text_bytes),
+                }))
             }
             _ => Err(WireErrorCode::InvalidRequest),
         }
+    }
+}
+
+fn ocr_text_projection(text: Option<String>, maximum: Option<u32>) -> Option<String> {
+    if maximum == Some(0) {
+        return None;
+    }
+    let mut text = text?;
+    if let Some(maximum) = maximum {
+        let maximum = maximum as usize;
+        if maximum < text.len() {
+            let ellipsis = '…';
+            let suffix = if maximum >= ellipsis.len_utf8() { ellipsis.len_utf8() } else { 0 };
+            let mut end = maximum - suffix;
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            text.truncate(end);
+            if suffix != 0 {
+                text.push(ellipsis);
+            }
+        }
+    }
+    Some(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ocr_text_projection;
+
+    #[test]
+    fn native_ocr_status_and_preview_can_omit_or_bound_the_body() {
+        let text = || Some("A中BCDE".into());
+        assert_eq!(ocr_text_projection(text(), Some(0)), None);
+        assert_eq!(ocr_text_projection(text(), Some(2)).as_deref(), Some("A"));
+        assert_eq!(ocr_text_projection(text(), Some(6)).as_deref(), Some("A…"));
+        assert_eq!(ocr_text_projection(text(), Some(7)).as_deref(), Some("A中…"));
+        assert_eq!(ocr_text_projection(text(), None).as_deref(), Some("A中BCDE"));
     }
 }
 

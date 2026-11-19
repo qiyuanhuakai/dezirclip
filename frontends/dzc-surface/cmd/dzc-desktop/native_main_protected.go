@@ -19,6 +19,7 @@ type nativeProtectedBody struct {
 	summary     string
 	image       ui.ImageSource
 	attachments []uikit.PreviewAttachment
+	ocrStatus   string
 }
 
 func (n *nativeMain) protectedBody(row protocol.DesktopEntry) *nativeProtectedBody {
@@ -37,6 +38,9 @@ func (n *nativeMain) forgetProtectedRow(key nativeCardKey) {
 	if request := n.protectedRows[key]; request != nil {
 		request.cancel()
 		delete(n.protectedRows, key)
+		if n.ocrPreview != nil && n.ocrPreview.key == key {
+			n.closeOCRPreview()
+		}
 		if n.preview != nil && n.preview.entryID == key.id {
 			n.closePreview()
 		}
@@ -107,7 +111,9 @@ func (n *nativeMain) toggleProtectedRow(row protocol.DesktopEntry, generation ui
 		}
 		if row.ContentType == "image" {
 			size := uint32(192)
+			omitText := true
 			params.ThumbnailDimension = &size
+			params.OmitOcrText = &omitText
 		}
 		result, err := n.library.Entry(ctx, params)
 		var body *nativeProtectedBody
@@ -144,6 +150,9 @@ func newProtectedBody(row protocol.DesktopEntry, language nativeLanguage) *nativ
 	switch row.ContentType {
 	case "image":
 		body.image = previewSourceImage(row.Content)
+		if row.OcrStatus != nil {
+			body.ocrStatus = *row.OcrStatus
+		}
 	case "file", "files", "video":
 		markup := ""
 		if row.HtmlContent != nil {

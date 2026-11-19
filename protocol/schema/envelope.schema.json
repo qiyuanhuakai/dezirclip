@@ -148,6 +148,7 @@
         "desktop.clipboard.transform_copy",
         "desktop.history.qr",
         "desktop.clipboard.qr_copy",
+        "desktop.clipboard.ocr_copy",
         "desktop.privacy.rules",
         "desktop.privacy.decision",
         "desktop.privacy.feedback",
@@ -2069,6 +2070,17 @@
           "then": {
             "properties": {
               "params": { "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopQrCopyParams" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "method": { "const": "desktop.clipboard.ocr_copy" } },
+            "required": ["method"]
+          },
+          "then": {
+            "properties": {
+              "params": { "$ref": "https://dezirclip.local/protocol/v1/ocr.schema.json#/$defs/ManualOcrParams" }
             }
           }
         },

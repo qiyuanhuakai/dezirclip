@@ -23,6 +23,12 @@
         },
         "reveal": {
           "type": "boolean"
+        },
+        "max_text_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536,
+          "x-rust-type": "u32"
         }
       },
       "required": [

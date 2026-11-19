@@ -825,9 +825,34 @@ impl HistoryService {
         permit: &PrivacyReadPermit,
         now_ms: i64,
     ) -> PrivacyResult<ClipboardPayload> {
+        self.derive_persistent_text(source_id, permit, now_ms, |_| Ok(text))
+    }
+
+    pub fn ocr_text_payload_authorized(
+        &self,
+        source_id: i64,
+        permit: &PrivacyReadPermit,
+        now_ms: i64,
+    ) -> PrivacyResult<ClipboardPayload> {
+        self.derive_persistent_text(source_id, permit, now_ms, |entry| {
+            if entry.content_type != "image" || entry.ocr_status.as_deref() != Some("done") {
+                return Err(PrivacyError::SensitiveAccessDenied);
+            }
+            entry.ocr_text.filter(|value| !value.trim().is_empty()).ok_or(PrivacyError::SensitiveAccessDenied)
+        })
+    }
+
+    fn derive_persistent_text(
+        &self,
+        source_id: i64,
+        permit: &PrivacyReadPermit,
+        now_ms: i64,
+        derive: impl FnOnce(ClipboardEntry) -> PrivacyResult<String>,
+    ) -> PrivacyResult<ClipboardPayload> {
         permit.require_copy()?;
-        self.get_entry_authorized(source_id, permit, now_ms)?
+        let entry = self.get_entry_authorized(source_id, permit, now_ms)?
             .ok_or(PrivacyError::SensitiveAccessDenied)?;
+        let text = derive(entry)?;
         let protected = self
             .repository
             .entry_is_protected(source_id)

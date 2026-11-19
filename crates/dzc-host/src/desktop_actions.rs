@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 enum DerivedText<'a> {
     Transform(&'a str),
     QrSvg { content_sha256: &'a str },
+    Ocr,
 }
 
 fn denied(error:impl ToString)->WireErrorCode {crate::router::privacy_error(error)}
@@ -69,7 +70,7 @@ impl Host {
     pub(crate) fn desktop_qr_preview(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
         let request: DesktopEntryParams = serde_json::from_value(parameters).map_err(|_| WireErrorCode::InvalidRequest)?;
         self.desktop_permission(session, &request.service_instance_id)?;
-        if request.id == 0 || request.thumbnail_dimension.is_some() || request.include_video_frame.is_some() {
+        if request.id == 0 || request.thumbnail_dimension.is_some() || request.include_video_frame.is_some() || request.omit_ocr_text.is_some() {
             return Err(WireErrorCode::InvalidRequest);
         }
         let now = crate::router::now_ms()?;
@@ -107,6 +108,19 @@ impl Host {
         };
         let operation = DerivedText::QrSvg { content_sha256: &request.content_sha256 };
         self.desktop_copy_impl(session, copy, None, Some(operation))
+    }
+
+    pub(crate) fn desktop_ocr_copy(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
+        let request: ManualOcrParams = serde_json::from_value(parameters).map_err(|_| WireErrorCode::InvalidRequest)?;
+        if request.max_text_bytes.is_some() {
+            return Err(WireErrorCode::InvalidRequest);
+        }
+        let copy = DesktopCopyParams {
+            id: request.id, service_instance_id: request.service_instance_id, expected_epoch: request.expected_epoch,
+            reveal: request.reveal, paste: false, with_format: None, derived_text: None, image_as_base64: None,
+            delete_after_use: None, move_to_top: None, expected_paste_target: None,
+        };
+        self.desktop_copy_impl(session, copy, None, Some(DerivedText::Ocr))
     }
 
     pub(crate) fn remember_window_target(&self, session: &Session, params: Value) -> Result<Value, WireErrorCode> {
@@ -250,13 +264,16 @@ impl Host {
             else {None};
         let permit=self.history.privacy().authorize_selected_copy(request.id,Some(&request.service_instance_id),if request.reveal {SensitiveAccess::ExplicitUserAction}else{SensitiveAccess::Denied},Some(request.expected_epoch),now).map_err(denied)?;
         let session_entry=if request.id<0 {Some(self.session.lock().map_err(|_|WireErrorCode::Unavailable)?.iter().find(|row|row.id==request.id).cloned().ok_or(WireErrorCode::NotFound)?)}else{None};
-        let mut payload=if let Some(text)=request.derived_text {
+        let ocr = matches!(derived, Some(DerivedText::Ocr));
+        let mut payload=if ocr {
+            self.history.ocr_text_payload_authorized(request.id, &permit, now)
+        } else if let Some(text)=request.derived_text {
             if let Some(entry)=session_entry.as_ref() {self.history.session_derived_text_payload_for_host_authorized(entry,&request.service_instance_id,text,&permit,now)}
                 else {self.history.derived_text_payload_authorized(request.id,text,&permit,now)}
         } else if let Some(entry)=session_entry.as_ref() {self.history.session_clipboard_payload_for_host_authorized(entry,&request.service_instance_id,&permit,now)}
             else {self.history.clipboard_payload_authorized(request.id,&permit,now)}.map_err(denied)?;
         if request.image_as_base64.unwrap_or(false) {payload=image_text(payload)?;}
-        if let Some(operation) = derived {
+        if let Some(operation) = derived.filter(|_| !ocr) {
             payload = derive_text_payload(payload, &operation)?;
         }
         if request.with_format==Some(false) {payload=plain(payload);}
@@ -415,6 +432,7 @@ fn derive_text_payload(payload: ClipboardPayload, operation: &DerivedText<'_>) -
                     }
                     dzc_core::qr::generate_qr_svg(content).map_err(|_| WireErrorCode::InvalidRequest)?
                 }
+                DerivedText::Ocr => return Err(WireErrorCode::InvalidRequest),
             };
             Ok(ClipboardPayload::Text(result))
         }

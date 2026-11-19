@@ -241,6 +241,7 @@ func (n *nativeMain) toolsSettings(c *ui.Context) {
 	}
 	n.panelCheckbox(c, "quick-paste", n.text("quick_paste_enabled", "Enable quick paste"), n.settingEnabled("app.quick_paste_enabled", true))
 	n.booleanSettings(c, nativeBooleanSetting{"app.ocr_enabled", n.text("ocr_enabled", "Recognize text in images"), true})
+	n.drawOCREngine(c)
 }
 
 func (n *nativeMain) panelCheckbox(c *ui.Context, id, label string, enabled bool) {

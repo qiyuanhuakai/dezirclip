@@ -184,3 +184,27 @@ func (l *Library) OcrText(ctx context.Context, recognize bool, params protocol.M
 	err := l.snapshot(ctx, method, params, "ManualOcrText", &result, params.ExpectedEpoch)
 	return result, err
 }
+
+func (l *Library) copyOCRText(ctx context.Context, params protocol.ManualOcrParams) error {
+	var result protocol.OperationResult
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopClipboardOcrCopy, params, "OperationResult", &result)
+	if err == nil && !result.Performed {
+		return client.ErrProtocol
+	}
+	return err
+}
+
+func (l *Library) recognizeForNative(ctx context.Context, params protocol.ManualOcrParams) error {
+	var result protocol.ManualOcrText
+	var noText uint32
+	params.MaxTextBytes = &noText
+	return l.readSnapshot(ctx, protocol.MethodDesktopOcrRecognize, params, "ManualOcrText", &result, params.ExpectedEpoch)
+}
+
+func (l *Library) nativeOCRPreview(ctx context.Context, params protocol.ManualOcrParams) (protocol.ManualOcrText, error) {
+	var result protocol.ManualOcrText
+	maximum := uint32(16 * 1024)
+	params.MaxTextBytes = &maximum
+	err := l.snapshot(ctx, protocol.MethodDesktopOcrStatus, params, "ManualOcrText", &result, params.ExpectedEpoch)
+	return result, err
+}

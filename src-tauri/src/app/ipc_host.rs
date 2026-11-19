@@ -402,7 +402,7 @@ impl DesktopHost {
         }
         let params = ManualOcrParams {
             id, service_instance_id: state.service_instance_id.clone(),
-            expected_epoch: epoch.unwrap_or(state.privacy_epoch), reveal: epoch.is_some(),
+            expected_epoch: epoch.unwrap_or(state.privacy_epoch), reveal: method == Method::DesktopOcrRecognize && epoch.is_some(), max_text_bytes: None,
         };
         let result = if let Some(host) = self.embedded()? {
             tokio::task::spawn_blocking(move || host.manual_ocr(method, params).map(|(_, output)| output))
@@ -507,7 +507,7 @@ impl DesktopHost {
         let mut client=self.service_client().await?;
         let instance=self.instance()?;
         if client.hello.state.service_instance_id!=instance {return Err("ClipboardHostInstanceChanged".into());}
-        let body:BodySnapshot=client.call(Method::DesktopHistoryGet,DesktopEntryParams{id,expected_epoch:epoch,reveal,thumbnail_dimension:thumbnail,include_video_frame,service_instance_id:instance.clone()},"BodySnapshot").await.map_err(remote_error)?;
+        let body:BodySnapshot=client.call(Method::DesktopHistoryGet,DesktopEntryParams{id,expected_epoch:epoch,reveal,thumbnail_dimension:thumbnail,include_video_frame,omit_ocr_text:None,service_instance_id:instance.clone()},"BodySnapshot").await.map_err(remote_error)?;
         let result:DesktopEntry=client.read_snapshot(body,"DesktopEntry").await.map_err(remote_error)?;
         hosted(result,&instance).map(Some)
     }
@@ -517,7 +517,7 @@ impl DesktopHost {
         let mut client=self.service_client().await?;
         let state=client.hello.state.clone();
         if state.service_instance_id!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
-        let body:BodySnapshot=client.call(Method::DesktopHistorySummary,DesktopEntryParams{id,service_instance_id:state.service_instance_id.clone(),expected_epoch:state.privacy_epoch,reveal:false,thumbnail_dimension:None,include_video_frame:None},"BodySnapshot").await.map_err(remote_error)?;
+        let body:BodySnapshot=client.call(Method::DesktopHistorySummary,DesktopEntryParams{id,service_instance_id:state.service_instance_id.clone(),expected_epoch:state.privacy_epoch,reveal:false,thumbnail_dimension:None,include_video_frame:None,omit_ocr_text:None},"BodySnapshot").await.map_err(remote_error)?;
         let result:DesktopEntry=client.read_snapshot(body,"DesktopEntry").await.map_err(remote_error)?;
         hosted(result,&state.service_instance_id).map(Some)
     }

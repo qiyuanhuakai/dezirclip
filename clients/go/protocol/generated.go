@@ -198,6 +198,7 @@ type DesktopEntryParams struct {
     Reveal bool `json:"reveal"`
     ThumbnailDimension *uint32 `json:"thumbnail_dimension,omitempty"`
     IncludeVideoFrame *bool `json:"include_video_frame,omitempty"`
+    OmitOcrText *bool `json:"omit_ocr_text,omitempty"`
 }
 
 type DesktopEntry struct {
@@ -501,6 +502,7 @@ const (
     MethodDesktopClipboardTransformCopy Method = "desktop.clipboard.transform_copy"
     MethodDesktopHistoryQr Method = "desktop.history.qr"
     MethodDesktopClipboardQrCopy Method = "desktop.clipboard.qr_copy"
+    MethodDesktopClipboardOcrCopy Method = "desktop.clipboard.ocr_copy"
     MethodDesktopPrivacyRules Method = "desktop.privacy.rules"
     MethodDesktopPrivacyDecision Method = "desktop.privacy.decision"
     MethodDesktopPrivacyFeedback Method = "desktop.privacy.feedback"
@@ -758,6 +760,7 @@ type ManualOcrParams struct {
     ExpectedEpoch uint64 `json:"expected_epoch"`
     Id int64 `json:"id"`
     Reveal bool `json:"reveal"`
+    MaxTextBytes *uint32 `json:"max_text_bytes,omitempty"`
 }
 
 type ManualOcrText struct {

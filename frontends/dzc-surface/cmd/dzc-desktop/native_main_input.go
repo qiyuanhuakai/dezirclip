@@ -232,6 +232,20 @@ func (n *nativeMain) entryMenu(card ui.Element, row protocol.DesktopEntry, gener
 		if row.ContentType == "image" && menu.Item(n.text("native_copy_base64")).Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeBase64)
 		}
+		if row.ContentType == "image" && row.Id > 0 && !nativeConcealed(row) {
+			status := n.ocrStatus(row, nil)
+			label := n.text("native_ocr_recognize")
+			if status == "processing" {
+				label = n.text("ocr_processing")
+			}
+			if menu.Item(label).Disabled(!n.eligibleOCR(row, generation) || n.private ||
+				n.ocrJob.status == "processing" || status == "processing").Chosen() {
+				n.recognizeOCR(row, generation)
+			}
+			if status == "done" && menu.Item(n.text("native_ocr_copy")).Disabled(!n.eligibleOCR(row, generation)).Chosen() {
+				n.copyOCR(row, generation)
+			}
+		}
 		if nativeTextToolEntry(row.ContentType) && !nativeConcealed(row) &&
 			menu.Item(n.text("native_qr_code")).Disabled(disabled).Chosen() {
 			n.openQR(row, generation)

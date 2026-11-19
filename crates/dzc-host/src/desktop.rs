@@ -176,7 +176,7 @@ impl Host {
             value("SourceAppIcon", &icon)?;
             return self.authorized_snapshot(session, &permit, &icon);
         }
-        let row = if request.id < 0 {
+        let mut row = if request.id < 0 {
             let session = self.session.lock().map_err(|_| WireErrorCode::Unavailable)?;
             let row = session.iter().find(|row| row.id == request.id).ok_or(WireErrorCode::NotFound)?;
             match request.thumbnail_dimension {
@@ -189,6 +189,9 @@ impl Host {
                 None => self.history.get_entry_for_preview_authorized(request.id, &permit, now),
             }.map_err(blocked)?.ok_or(WireErrorCode::NotFound)?
         };
+        if request.omit_ocr_text == Some(true) {
+            row.ocr_text = None;
+        }
         let row = entry(row, false);
         value("DesktopEntry", &row)?;
         self.history.privacy().check_read(&permit, crate::router::now_ms()?).map_err(blocked)?;

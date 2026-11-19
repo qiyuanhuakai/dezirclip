@@ -9,6 +9,7 @@ var headerIcons = map[string]*ui.SVG{
 	"reveal": icon("Eye"), "conceal": icon("EyeOff"),
 	"add": icon("Plus"), "edit": icon("Pencil"),
 	"transform": icon("CaseSensitive"), "qr": icon("QrCode"),
+	"scan": icon("Scan"),
 }
 
 type HeaderAction struct {

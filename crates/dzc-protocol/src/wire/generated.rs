@@ -270,6 +270,8 @@ pub struct DesktopEntryParams {
     pub thumbnail_dimension: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_video_frame: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omit_ocr_text: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -745,6 +747,8 @@ pub enum Method {
     DesktopHistoryQr,
     #[serde(rename = "desktop.clipboard.qr_copy")]
     DesktopClipboardQrCopy,
+    #[serde(rename = "desktop.clipboard.ocr_copy")]
+    DesktopClipboardOcrCopy,
     #[serde(rename = "desktop.privacy.rules")]
     DesktopPrivacyRules,
     #[serde(rename = "desktop.privacy.decision")]
@@ -1104,6 +1108,8 @@ pub struct ManualOcrParams {
     pub expected_epoch: u64,
     pub id: i64,
     pub reveal: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_text_bytes: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

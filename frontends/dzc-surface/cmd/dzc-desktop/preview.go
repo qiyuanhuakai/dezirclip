@@ -235,7 +235,9 @@ type previewBody struct {
 
 func readPreview(ctx context.Context, host *client.Client, params protocol.DesktopEntryParams, full bool) (*previewBody, protocol.RuntimeState, error) {
 	includeVideo := true
+	omitOCR := true
 	params.IncludeVideoFrame = &includeVideo
+	params.OmitOcrText = &omitOCR
 	size := uint32(560)
 	if !full {
 		params.ThumbnailDimension = &size

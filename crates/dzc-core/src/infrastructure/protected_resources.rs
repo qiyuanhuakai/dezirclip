@@ -418,6 +418,12 @@ mod tests {
         ));
         assert!(!before.0.contains("qvxlateprivateocr"));
         assert_eq!(fixture.conn.query_row("SELECT count(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'qvxlateprivateocr'",[],|row|row.get::<_,i64>(0)).unwrap(),0);
+        let denied = fixture.history.privacy().authorize_selected_copy(id, None, SensitiveAccess::Denied, None, 1).unwrap();
+        assert_eq!(fixture.history.ocr_text_payload_authorized(id, &denied, 1).unwrap_err(), PrivacyError::SensitiveAccessDenied);
+        let permit = fixture.permit(id);
+        let copy = fixture.history.ocr_text_payload_authorized(id, &permit, 1).unwrap();
+        assert!(matches!(copy, crate::ports::ClipboardPayload::Private { payload, .. }
+            if matches!(*payload, crate::ports::ClipboardPayload::Text(ref text) if text == "qvxlateprivateocr")));
         fixture
             .history
             .privacy()
