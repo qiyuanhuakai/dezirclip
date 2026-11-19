@@ -1,4 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { createCollapsedSettingsGroups } from "../../features/settings/utils/settingsLayout";
+import { settingsNavigation } from "../lib/settingsNavigation";
 
 interface UseSettingsPanelResetOptions {
   showSettings: boolean;
@@ -9,17 +11,12 @@ export const useSettingsPanelReset = ({
   showSettings,
   setCollapsedGroups
 }: UseSettingsPanelResetOptions) => {
+  const wasOpen = useRef(showSettings);
   useEffect(() => {
-    if (showSettings) {
-      setCollapsedGroups({
-        general: true,
-        clipboard: true,
-        appearance: true,
-        default_apps: true,
-        data: true,
-        tools: true,
-        about: true
-      });
+    if (wasOpen.current && !showSettings) {
+      setCollapsedGroups(createCollapsedSettingsGroups());
+      settingsNavigation.close();
     }
+    wasOpen.current = showSettings;
   }, [showSettings, setCollapsedGroups]);
 };

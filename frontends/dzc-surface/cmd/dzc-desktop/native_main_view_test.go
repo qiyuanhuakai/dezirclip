@@ -1,11 +1,45 @@
 package main
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
+
+func TestNativeMainPrivacySettingsAreClosedOnReentry(t *testing.T) {
+	for _, width := range []int{360, 700} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			window := nativeMain{}
+			tester := ui.NewTester(window.view, width, 650)
+			click := func(label string) {
+				t.Helper()
+				if err := tester.Click(label); err != nil {
+					t.Fatal(err)
+				}
+			}
+			assertClosed := func() {
+				t.Helper()
+				if tester.HasText("Protect sensitive clipboard content") {
+					t.Fatal("privacy settings were expanded on entry")
+				}
+			}
+			click("Settings")
+			assertClosed()
+			if width < 560 {
+				click("General")
+			}
+			click("Privacy")
+			if !tester.HasText("Protect sensitive clipboard content") {
+				t.Fatal("selecting Privacy did not open its settings")
+			}
+			click("Back")
+			click("Settings")
+			assertClosed()
+		})
+	}
+}
 
 func TestNativeMainNavigationAndDismissal(t *testing.T) {
 	for _, theme := range []string{"retro", "mica", "acrylic", "liquid-glass", "macos", "scifi"} {

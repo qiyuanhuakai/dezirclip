@@ -20,6 +20,11 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         const apply = () => {
             const request = settingsNavigation.take();
             if (!request) return;
+            if (request.destination === "closed") {
+                setActiveGroup(group => group === "privacy" ? DEFAULT_SETTINGS_GROUP : group);
+                setNavigationRevision(0);
+                return;
+            }
             setActiveGroup("privacy");
             if (props.collapsedGroups.privacy) props.toggleGroup("privacy");
             setNavigationRevision(request.id);

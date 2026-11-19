@@ -5,6 +5,7 @@ import {
     PANE_TWO_COLUMNS_MIN_WIDTH,
     SETTINGS_GROUPS,
     SPLIT_MIN_WIDTH,
+    createCollapsedSettingsGroups,
     isSettingsGroupCollapsed,
     resolveSettingsLayout,
     type SettingsGroupId,
@@ -30,6 +31,12 @@ const locales = { zh, en, tw } as const;
 describe("SETTINGS_GROUPS", () => {
     it("lists exactly the groups the accordion tracks", () => {
         expect(SETTINGS_GROUPS.map(g => g.id)).toEqual(COLLAPSED_GROUP_KEYS);
+    });
+
+    it("starts every accordion section collapsed, including Privacy", () => {
+        expect(createCollapsedSettingsGroups()).toEqual(
+            Object.fromEntries(COLLAPSED_GROUP_KEYS.map(id => [id, true]))
+        );
     });
 
     it("has no duplicate ids, so the rail cannot highlight two rows", () => {

@@ -536,7 +536,7 @@ func run() error {
 							if native != nil {
 								switch command {
 								case "settings":
-									native.showSettings, native.showEmoji = true, false
+									native.openSettings()
 								case "search":
 									native.showSettings, native.showEmoji, native.focusSearch = false, false, true
 								}

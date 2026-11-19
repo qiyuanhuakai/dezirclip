@@ -16,9 +16,17 @@ describe("settings navigation requests", () => {
     queue.request({ destination: PRIVACY_RULES_DESTINATION });
     expect(seen).toEqual([1, 2]);
   });
+  it("supersedes a previous privacy destination on close and accepts a later direct entry", () => {
+    const queue = createSettingsNavigation();
+    queue.request({ destination: PRIVACY_RULES_DESTINATION });
+    queue.close();
+    expect(queue.take()).toEqual({ id: 2, destination: "closed" });
+    queue.request({ destination: PRIVACY_RULES_DESTINATION });
+    expect(queue.take()).toEqual({ id: 3, destination: PRIVACY_RULES_DESTINATION });
+  });
   it("rejects unrelated events and never accepts arbitrary paths or groups", () => {
     const queue = createSettingsNavigation();
-    for (const value of [undefined, null, "", [], {}, { destination: "data" }, { destination: "../private" }]) {
+    for (const value of [undefined, null, "", [], {}, { destination: "closed" }, { destination: "data" }, { destination: "../private" }]) {
       expect(queue.request(value)).toBe(false);
     }
     expect(queue.take()).toBeNull();

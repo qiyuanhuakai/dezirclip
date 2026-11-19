@@ -49,7 +49,7 @@ func (n *nativeMain) view(c *ui.Context) {
 			header.Query, header.Placeholder = &n.tagLibrary.query, "Search tagged entries…"
 		} else {
 			header.Actions = append(actions[:1:1], uikit.HeaderAction{
-				Icon: "settings", Label: "Settings", Run: func() { n.resetPreviewSelection(); n.showSettings = true },
+				Icon: "settings", Label: "Settings", Run: n.openSettings,
 			}, actions[1])
 			if n.preferences["app.tag_manager_enabled"] != "false" {
 				header.Actions = append([]uikit.HeaderAction{{

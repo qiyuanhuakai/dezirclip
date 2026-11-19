@@ -3,21 +3,13 @@ import { updateRecordingTarget, type RecordingTarget } from "../../../shared/lib
 import type { ClipboardEntry, Locale } from "../../../shared/types";
 import { DEFAULT_RICH_TEXT_SNAPSHOT_CACHE } from "../../../shared/lib/richTextSnapshotCache";
 import type { AppState, DefaultAppsMap, InstalledAppOption } from "../types";
+import { createCollapsedSettingsGroups } from "../../settings/utils/settingsLayout";
 
 export const useAppState = (): AppState => {
   const [showSettings, setShowSettings] = useState(false);
   const [showTagManager, setShowTagManager] = useState(false);
   const [tagManagerEnabled, setTagManagerEnabled] = useState(true);
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({
-    general: true,
-    clipboard: true,
-    privacy: true,
-    appearance: true,
-    default_apps: true,
-    data: true,
-    tools: true,
-    about: true
-  });
+  const [collapsedGroups, setCollapsedGroups] = useState(createCollapsedSettingsGroups);
   const [history, setHistory] = useState<ClipboardEntry[]>([]);
   const [search, setSearch] = useState("");
   const [isComposing, setIsComposing] = useState(false);

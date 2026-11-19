@@ -50,6 +50,10 @@ export const SETTINGS_GROUPS: readonly SettingsGroupMeta[] = [
 
 export const DEFAULT_SETTINGS_GROUP: SettingsGroupId = "general";
 
+export function createCollapsedSettingsGroups(): Record<string, boolean> {
+    return Object.fromEntries(SETTINGS_GROUPS.map(({ id }) => [id, true]));
+}
+
 /**
  * Rail (160px, see `--settings-rail-width`) + gap + a detail pane still wider
  * than the 420px column it replaces.

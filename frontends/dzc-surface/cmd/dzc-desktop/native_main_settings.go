@@ -15,6 +15,20 @@ type nativeSettingsPane struct {
 	draw func()
 }
 
+func (n *nativeMain) openSettings() {
+	if n.showSettings {
+		return
+	}
+	n.resetPreviewSelection()
+	if n.settingsSection == "privacy" {
+		n.settingsSection = "general"
+	}
+	if privacy := n.settingsOpen["privacy"]; privacy != nil {
+		*privacy = false
+	}
+	n.showSettings, n.showEmoji = true, false
+}
+
 func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit) {
 	panes := []nativeSettingsPane{
 		{uikit.SettingsSection{ID: "general", Label: "General"}, func() { n.generalSettings(c) }},
