@@ -724,8 +724,13 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         wait_for(lambda: find_item(family, text=True), 'New WebView did not restore the selected font family')
         print('Verified saved theme, color mode, language and installed UI font selection in a newly opened WebView')
         details = open_settings_group('About', 'View build details')
-        wait_for(lambda: find_item('Portable copies need manual updates. Get the full package for your platform from the release page, keep the data directory, then replace program files.', text=True),
-                 'MyGo ZIP manual update guidance missing')
+        update_help = wait_for(lambda: find_item('Setting help: Software updates'), 'Software updates help button missing')
+        assert atspi.Action.do_action(update_help, 0)
+        portable_guidance = ('Portable copies need manual updates. Get the full package for your platform from the release page, '
+                             'keep the data directory, then replace program files.')
+        wait_for(lambda: any(portable_guidance in content for _, _, _, content in mygo_nodes(atspi, executable)),
+                 'MyGo ZIP manual update guidance missing after opening help')
+        assert atspi.Action.do_action(update_help, 0)
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             for label, key, value in [('STABLE','app.update_channel','stable'), ('PREVIEW','app.update_channel','preview'),
                                       ('Check for updates automatically','app.update_auto_check','true'),
