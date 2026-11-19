@@ -4,32 +4,10 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 )
 
-var themes = []string{"retro", "mica", "acrylic", "liquid-glass", "macos", "scifi"}
-
-func TestBuiltInPaletteAndWidgetStyles(t *testing.T) {
-	for _, name := range themes {
-		for _, mode := range []string{"light", "dark"} {
-			t.Run(name+"/"+mode, func(t *testing.T) {
-				appearance := theme.Appearance{Mode: mode, Opacity: 1, Tokens: theme.Builtin(name, mode)}
-				if !appearance.Valid() {
-					t.Fatal("invalid built-in appearance")
-				}
-				for _, widget := range []string{"select", "filter", "searchInput", "help", "disclosure", "progress", "toast", "confirm", "tag"} {
-					style := theme.BuiltinWidgetStyle(name, mode, widget)
-					if style.Width <= 0 || style.Height <= 0 || style.Opacity <= 0 {
-						t.Fatalf("missing computed geometry for %s: %+v", widget, style)
-					}
-				}
-			})
-		}
-	}
-}
-
 func TestSelectReportsChoiceAndRejectsDisabledOption(t *testing.T) {
-	kit := Kit{Name: "mica", Mode: "light"}
+	kit := Kit{}
 	choice := "a"
 	options := []SelectOption{
 		{Value: "a", Label: "First"},
@@ -58,7 +36,7 @@ func TestSelectReportsChoiceAndRejectsDisabledOption(t *testing.T) {
 }
 
 func TestSettingsNavigationAndFooterUseApplicationActions(t *testing.T) {
-	kit := Kit{Name: "retro", Mode: "light"}
+	kit := Kit{}
 	active, action := "appearance", ""
 	tester := ui.NewTester(func(c *ui.Context) {
 		kit.Apply(c)
@@ -96,7 +74,7 @@ func TestSettingsNavigationAndFooterUseApplicationActions(t *testing.T) {
 }
 
 func TestDisclosureAndModalKeyboardBehavior(t *testing.T) {
-	kit := Kit{Name: "acrylic", Mode: "dark"}
+	kit := Kit{Mode: "dark"}
 	open, dialog, busy := false, true, true
 	tester := ui.NewTester(func(c *ui.Context) {
 		kit.Apply(c)

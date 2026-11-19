@@ -2,10 +2,14 @@ import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Github, MessageSquare, Pin, PinOff, RotateCcw, Search, Settings, Smile, Tag, Trash2, X } from "lucide-react";
+import { Blend, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, File, FileArchive, FileChartColumn,
+  FileCode, FileSpreadsheet, FileText, Github, GripHorizontal, Image, MessageSquare, Minus, Music,
+  Pin, PinOff, Plus, RotateCcw, Scan, Search, Settings, Smile, Tag, Trash2, Video, X } from "lucide-react";
 
 const directory = new URL("../packages/ui-native/uikit/icons/", import.meta.url);
-const symbols = { ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Github, MessageSquare, Pin, PinOff, RotateCcw, Search, Settings, Smile, Tag, Trash2, X };
+const symbols = { Blend, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, File, FileArchive, FileChartColumn,
+  FileCode, FileSpreadsheet, FileText, Github, GripHorizontal, Image, MessageSquare, Minus, Music,
+  Pin, PinOff, Plus, RotateCcw, Scan, Search, Settings, Smile, Tag, Trash2, Video, X };
 for (const [name, symbol] of Object.entries(symbols)) {
   const path = fileURLToPath(new URL(name + ".svg", directory));
   const svg = renderToStaticMarkup(createElement(symbol)) + "\n";

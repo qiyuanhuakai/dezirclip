@@ -13,9 +13,16 @@ const flags = new URLSearchParams(process.argv.slice(2).join("&"));
 const native = flags.get("native");
 if (!native) throw Error("Pass native=<path to dzc-ui-gallery>");
 const selectedTheme = flags.get("theme");
-const selectedFixture = flags.get("fixture");
-const presets = JSON.parse(await readFile(resolve(root, "packages/ui-native/theme/builtin-presets.json"), "utf8"));
+const selectedFixtures = flags.get("fixture")?.split(",");
+const presets = JSON.parse(await readFile(resolve(root, "packages/ui-presets/builtin-presets.json"), "utf8"));
 const cases = {
+  "attachment-preview": { states: ["default", "compact", "media", "expanded"], text: "Notes.pdf" },
+  "preview-toolbar": { states: ["default", "pinned"], text: "Content preview" },
+  "preview-image": { states: ["default", "zoomed"], text: "Image preview" },
+  "preview-resize-handles": { states: ["default", "southeast"], text: "Resize preview" },
+  "wheel-hot-zone": { states: ["default", "scrolled"], text: "Wheel input" },
+  "history-card-meta": { states: ["default"], text: "Editor" },
+  "history-list": { states: ["default", "selected"], text: "Release checklist and verification notes" },
   "settings-rail": { states: ["default", "selected"], text: "Appearance" },
   "settings-footer": { states: ["default", "compact"], text: "Reset defaults" },
   "history-card": { states: ["default", "selected", "pinned"], text: "Copied from the active editor" },
@@ -33,7 +40,9 @@ const cases = {
   "tag-dialog": { states: ["default", "busy"], text: "Create tag" },
 };
 if (selectedTheme && !(selectedTheme in presets)) throw Error("Unknown theme " + selectedTheme);
-if (selectedFixture && !(selectedFixture in cases)) throw Error("Unknown component " + selectedFixture);
+for (const fixture of selectedFixtures ?? []) {
+  if (!(fixture in cases)) throw Error("Unknown component " + fixture);
+}
 const server = await createServer({ root, configFile: false, server: { host: "127.0.0.1", port: 0, hmr: false, watch: null } });
 const output = await mkdtemp(join(tmpdir(), "deziro-ui-parity-"));
 const size = { width: 560, height: 420 };
@@ -100,7 +109,7 @@ try {
   const results = [];
   for (const theme of Object.keys(presets).filter(name => !selectedTheme || name === selectedTheme)) {
     for (const mode of ["light", "dark"]) {
-      for (const [fixture, { states, text }] of Object.entries(cases).filter(([name]) => !selectedFixture || name === selectedFixture)) {
+      for (const [fixture, { states, text }] of Object.entries(cases).filter(([name]) => !selectedFixtures || selectedFixtures.includes(name))) {
         for (const state of states) {
           const id = [theme, mode, fixture, state].join("_");
           try {
@@ -118,6 +127,20 @@ try {
             if (state === "popup") await combo.click();
             if (fixture === "disclosure" && state === "expanded") await page.getByRole("button", { name: "Software updates" }).click();
             if (fixture === "help" && state === "expanded") await page.getByRole("button", { name: "Setting help: Software updates" }).click();
+            if (fixture === "preview-image") {
+              await page.locator(".preview-image-viewport[data-ready=true]").waitFor();
+            }
+            if (state === "southeast" || state === "scrolled") {
+              const target = await page.locator("[data-input-target]").boundingBox();
+              if (!target) throw Error("No input region");
+              if (state === "southeast") {
+                await page.mouse.click(target.x + target.width - 4, target.y + target.height - 4);
+              } else {
+                await page.mouse.move(target.x + 20, target.y + 20);
+                await page.mouse.wheel(0, 52);
+                await page.getByText("1 scroll", { exact: true }).waitFor();
+              }
+            }
 
             if (fixture === "toast") {
               await page.waitForFunction(() => getComputedStyle(document.querySelector(".toast-item")).opacity === "1");
@@ -134,7 +157,8 @@ try {
             const sameText = marker === "Clipboard history"
               ? ["Clipboard", "history"].every(word => comparable(webText, word) && comparable(nativeText, word))
               : comparable(webText, marker) && comparable(nativeText, marker);
-            const extra = state === "popup" ? "Light" : state === "expanded" && fixture === "disclosure" ? "Preview channel" : "";
+            const extra = state === "popup" ? "Light" : state === "expanded" && fixture === "disclosure" ? "Preview channel"
+              : state === "southeast" ? "SouthEast" : state === "scrolled" ? "1 scroll" : "";
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
             const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64") });
             const ratio = pixels.inkNative / pixels.inkWeb;

@@ -1,13 +1,15 @@
 {
   "name": "@deziro/ui-react",
   "version": "0.1.0",
+  "license": "GPL-3.0-only",
   "type": "module",
   "sideEffects": [
     "**/*.css"
   ],
   "files": [
     "src",
-    "README.md"
+    "README.md",
+    "NOTICE"
   ],
   "exports": {
     ".": "./src/index.ts",

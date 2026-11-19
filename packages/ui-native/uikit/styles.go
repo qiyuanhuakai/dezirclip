@@ -8,16 +8,34 @@ import (
 )
 
 type Kit struct {
-	Name string
-	Mode string
+	Mode    string
+	tokens  *theme.Tokens
+	widgets map[string]theme.WidgetStyle
+}
+
+// NewKit sets a palette and a catalog of widget styles supplied by the caller.
+// The caller may omit individual widgets to use the standard native style.
+// The palette and catalog should remain immutable while the Kit is in use.
+func NewKit(mode string, tokens theme.Tokens, widgets map[string]theme.WidgetStyle) Kit {
+	return Kit{Mode: mode, tokens: &tokens, widgets: widgets}
+}
+
+func (k Kit) palette() theme.Tokens {
+	if k.tokens != nil {
+		return *k.tokens
+	}
+	return theme.Select(k.Mode)
 }
 
 func (k Kit) Apply(c *ui.Context) {
-	ApplyAppearance(c, theme.Builtin(k.Name, k.Mode), k.Mode == "dark")
+	ApplyAppearance(c, k.palette(), k.Mode == "dark")
 }
 
 func (k Kit) style(widget string) theme.WidgetStyle {
-	return theme.BuiltinWidgetStyle(k.Name, k.Mode, widget)
+	if style, ok := k.widgets[widget]; ok {
+		return style
+	}
+	return standardWidgetStyle(widget, k.palette())
 }
 
 func styleColor(rgba [4]uint8) ui.Color {

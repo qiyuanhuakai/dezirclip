@@ -6,8 +6,8 @@ import { createServer } from "vite";
 import { readNativeWidgetStyles } from "./read-native-widget-styles.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const generated = resolve(root, "packages/ui-native/theme/builtin-presets.json");
-const widgetFile = resolve(root, "packages/ui-native/theme/builtin-widget-styles.json");
+const generated = resolve(root, "packages/ui-presets/builtin-presets.json");
+const widgetFile = resolve(root, "packages/ui-presets/builtin-widget-styles.json");
 const server = await createServer({ root, configFile: false, server: { host: "127.0.0.1", port: 0, hmr: false, watch: null } });
 let browser;
 try {

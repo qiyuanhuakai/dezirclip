@@ -2,9 +2,10 @@ import { useRef, useState } from "react";
 import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import { AppHeader, ConfirmDialog, FilterChips, HistoryCard, HistoryCardMeta, MatchHighlight, ProgressToast, SearchBar, SearchHistory, SettingHelp,
-  SettingsDisclosure, SettingsFooter, SettingsRail, TagDialog, ThemedSelect, ToastContainer, type SearchMode } from "../src";
+  SettingsDisclosure, SettingsFooter, SettingsRail, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
+import { AttachmentFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
 import "../src/base.css";
 import "../src/styles/components/index.css";
 import "./showcase.css";
@@ -60,6 +61,29 @@ const footerLabels: Record<string, string> = {
   feedback: "Feedback", reset_defaults: "Reset defaults", official_website: "Official website",
 };
 
+const historyRows = [
+  { id: 1, source: "Editor", time: "12:30", summary: "Copied from the active editor" },
+  { id: 2, source: "Browser", time: "12:28", summary: "Release checklist and verification notes" },
+  { id: 3, source: "Terminal", time: "12:25", summary: "Preview package ready for testing" },
+];
+
+function HistoryListFixture() {
+  const [selected, select] = useState(state === "selected" ? 1 : -1);
+  return <div className="history-list-container showcase-history-list">
+    <VirtualClipboardList items={historyRows} pinnedIds={[]} onReorder={() => undefined}
+      draggingPinned={false} compactMode={false} hasMore={false} isLoading={false}
+      selectedIndex={selected} isKeyboardMode={state === "selected"}
+      renderItem={(row, index) => <HistoryCard selected={index === selected} disableLayout onClick={() => select(index)}>
+        <HistoryCardMeta source={row.source} time={row.time} actions={<>
+          <button type="button" className="btn-icon" title="Pin"><Pin size={12} /></button>
+          <button type="button" className="btn-icon" title="Tags"><Tag size={12} /></button>
+          <button type="button" className="btn-icon" title="Delete"><X size={12} /></button>
+        </>} />
+        <div className="content-preview">{row.summary}</div>
+      </HistoryCard>} />
+  </div>;
+}
+
 function Showcase() {
   const [activeSettings, setActiveSettings] = useState(state === "selected" ? "updates" : "appearance");
   const [selection, setSelection] = useState("system");
@@ -70,6 +94,14 @@ function Showcase() {
   const [toastVisible, setToastVisible] = useState(true);
 
   const examples = {
+    "attachment-preview": <AttachmentFixture state={state} />,
+    "preview-toolbar": <PreviewToolbarFixture state={state} />,
+    "preview-image": <PreviewImageFixture state={state} />,
+    "preview-resize-handles": <ResizeFixture />,
+    "wheel-hot-zone": <WheelFixture />,
+    "history-card-meta": <HistoryCard disableLayout><HistoryCardMeta source="Editor" time="12:30"
+      sourceIcon={<Pin size={10} />} actions={<button type="button" className="btn-icon" title="Tags"><Tag size={12} /></button>} /></HistoryCard>,
+    "history-list": <HistoryListFixture />,
     "settings-rail": <SettingsRail t={key => key} groups={settingsGroups} activeGroup={activeSettings} onSelect={setActiveSettings} />,
     "settings-footer": <SettingsFooter t={key => footerLabels[key] ?? key} productName="DezirClip 0.2"
       compact={state === "compact"} onFeedback={() => undefined} onWebsite={() => undefined} onResetSettings={() => undefined} />,

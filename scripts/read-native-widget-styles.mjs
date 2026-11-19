@@ -1,4 +1,14 @@
 const samples = [
+  ["attachment-preview", "media", {
+    attachmentName: [".attachment-tile figcaption"], attachmentIcon: [".attachment-tile figcaption svg"],
+    attachmentImage: [".attachment-tile > .image-preview"],
+  }],
+  ["attachment-preview", "compact", { historyCardCompact: [".history-item.compact"] }],
+  ["preview-toolbar", "default", {
+    previewToolbar: [".preview-toolbar"], previewToolbarTitle: [".preview-toolbar-drag span"],
+    previewToolbarButton: [".preview-toolbar-actions .preview-toolbar-button"],
+    previewToolbarActive: [".preview-toolbar-button.active"], previewToolbarActual: [".preview-toolbar-actual"],
+  }],
   ["settings-rail", "default", {
     settingsRail: [".settings-rail"], settingsRailItem: [".settings-rail-item:not(.is-active)"],
     settingsRailActive: [".settings-rail-item.is-active"],
@@ -114,7 +124,7 @@ function readStyles(selectors) {
         ? { outline: { width: outlineWidth, color: color(style.outlineColor) } } : {}),
       ...(gradient ? { gradient: { angle: Number(gradient[1]), from: color(gradient[2]), to: color(gradient[3]) } } : {}),
       ...(letterSpacing ? { letterSpacing } : {}),
-      ...(id === "historyCard" || id === "historyCardSelected"
+      ...(id.startsWith("historyCard")
         ? { margin: sides.map(side => number(style["margin" + side])) } : {}),
       width: element.offsetWidth, height: element.offsetHeight, marginTop: number(style.marginTop),
       padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft].map(number),

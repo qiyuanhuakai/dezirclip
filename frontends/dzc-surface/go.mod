@@ -8,6 +8,8 @@ require (
 	github.com/egoist/mygo v0.6.4
 	github.com/qiyuanhuakai/dezirclip/clients/go v0.0.0
 	github.com/qiyuanhuakai/dezirclip/packages/ui-native v0.0.0
+	github.com/qiyuanhuakai/dezirclip/packages/ui-presets v0.0.0
+	golang.org/x/sys v0.49.0
 )
 
 require (
@@ -16,10 +18,11 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	golang.org/x/image v0.46.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )
 
 replace github.com/qiyuanhuakai/dezirclip/clients/go => ../../clients/go
 
 replace github.com/qiyuanhuakai/dezirclip/packages/ui-native => ../../packages/ui-native
+
+replace github.com/qiyuanhuakai/dezirclip/packages/ui-presets => ../../packages/ui-presets

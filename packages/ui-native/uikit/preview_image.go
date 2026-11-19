@@ -53,6 +53,25 @@ type ImageZoomLabels struct {
 // FitZoom is the unrounded scale that fits the image to the current viewport.
 func (v *PreviewImage) FitZoom() float32 { return v.fit }
 
+// Zoom reports the rendered scale and whether it follows the viewport.
+func (v *PreviewImage) Zoom() (scale float32, fit bool) { return v.factor(), v.zoom == 0 }
+
+// SetZoom preserves the viewport center. A scale of zero fits the image.
+func (v *PreviewImage) SetZoom(scale float32) {
+	if scale == 0 {
+		v.zoom, v.pan = 0, ui.Point{}
+		return
+	}
+	if math.IsNaN(float64(scale)) {
+		return
+	}
+	if v.factor() <= 0 {
+		v.zoom = max(0.1, min(8, scale))
+		return
+	}
+	v.zoomAt(scale, v.width/2, v.height/2)
+}
+
 // ViewportSize reports the dimensions of the last drawn image viewport.
 func (v *PreviewImage) ViewportSize() (width, height float32) { return v.width, v.height }
 

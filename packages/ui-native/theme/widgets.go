@@ -1,13 +1,5 @@
 package theme
 
-import (
-	_ "embed"
-	"encoding/json"
-)
-
-//go:embed builtin-widget-styles.json
-var widgetStylesJSON []byte
-
 type Shadow struct {
 	Color  [4]uint8
 	Values [4]float32
@@ -47,23 +39,4 @@ type WidgetStyle struct {
 	Opacity       float32
 	Dashed        bool
 	Shadows       []Shadow
-}
-
-var widgetStyles = func() map[string]map[string]map[string]WidgetStyle {
-	var styles map[string]map[string]map[string]WidgetStyle
-	if err := json.Unmarshal(widgetStylesJSON, &styles); err != nil {
-		panic("invalid built-in widget styles: " + err.Error())
-	}
-	return styles
-}()
-
-func BuiltinWidgetStyle(name, mode, widget string) WidgetStyle {
-	if mode != "dark" {
-		mode = "light"
-	}
-	styles := widgetStyles[name][mode]
-	if styles == nil {
-		styles = widgetStyles["mica"][mode]
-	}
-	return styles[widget]
 }

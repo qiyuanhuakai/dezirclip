@@ -10,35 +10,58 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
 )
 
 type gallery struct {
 	theme, mode, fixture, state       string
 	choice, query, searchMode, filter string
 	settingsSelection                 string
+	historyList                       uikit.HistoryListState
+	historySelected                   int
+	previewImage                      uikit.PreviewImage
+	previewOpacity                    float64
+	previewPinned                     bool
+	wheelCount                        int
+	resizeDirection                   uikit.PreviewResizeDirection
 	dialog, disclosure, help, visible bool
 	active                            map[string]bool
 }
 
 func (g *gallery) view(c *ui.Context) {
-	uikit.Kit{Name: g.theme, Mode: g.mode}.Apply(c)
-	padding := theme.BuiltinWidgetStyle(g.theme, g.mode, "gallery").Padding
+	preset := presets.Select(g.theme, g.mode)
+	kit := preset.Kit()
+	kit.Apply(c)
+	padding := preset.ShowcasePadding()
 	ui.Column(c).Fill().Padding(padding[:]...).Gap(14).Background(c.Theme().Background).Children(func() {
 		if g.fixture == "gallery" {
 			for _, name := range []string{"select", "search-bar", "filters", "highlight", "search-history", "disclosure", "help"} {
-				g.renderFixture(c, name)
+				g.renderFixture(c, kit, name)
 			}
 			return
 		}
-		g.renderFixture(c, g.fixture)
+		g.renderFixture(c, kit, g.fixture)
 	})
 }
 
-func (g *gallery) renderFixture(c *ui.Context, name string) {
-	kit := uikit.Kit{Name: g.theme, Mode: g.mode}
+func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 	switch name {
+	case "attachment-preview":
+		g.attachmentGallery(c, kit)
+	case "preview-toolbar":
+		g.previewToolbar(c, kit)
+	case "preview-image":
+		g.imageViewport(c)
+	case "preview-resize-handles", "wheel-hot-zone":
+		g.inputRegion(c, name == "wheel-hot-zone")
+	case "history-card-meta":
+		kit.HistoryCard(c, uikit.HistoryCardOptions{
+			Source: "Editor", Time: "12:30", Pinned: true, Body: func() {},
+			Actions: []uikit.HeaderAction{{Icon: "tag", Label: "Tags"}},
+		})
+	case "history-list":
+		g.renderHistoryList(c, kit)
 	case "settings-rail":
 		if g.settingsSelection == "" {
 			g.settingsSelection = "appearance"
@@ -142,11 +165,25 @@ func (g *gallery) renderFixture(c *ui.Context, name string) {
 
 func (g *gallery) prepare(tester *ui.Tester) error {
 	switch g.state {
+	case "southeast", "scrolled":
+		bounds, ok := tester.Find("Input target")
+		if !ok {
+			return fmt.Errorf("input target is absent")
+		}
+		if g.state == "southeast" {
+			tester.Press(bounds.X+bounds.W-4, bounds.Y+bounds.H-4)
+			tester.Release(bounds.X+bounds.W-4, bounds.Y+bounds.H-4)
+		} else {
+			tester.Move(bounds.X+20, bounds.Y+20)
+			tester.Wheel(bounds.X+20, bounds.Y+20, 0, 52)
+		}
 	case "expanded":
 		if g.fixture == "disclosure" {
 			return tester.Click("Software updates")
 		}
-		return tester.Click("Setting help: Software updates")
+		if g.fixture == "help" {
+			return tester.Click("Setting help: Software updates")
+		}
 	case "hover":
 		bounds, ok := tester.Find("System")
 		if !ok {
@@ -162,7 +199,7 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 }
 
 func run() error {
-	g := gallery{choice: "system", searchMode: "fts", dialog: true, visible: true, active: map[string]bool{"text": true}}
+	g := gallery{choice: "system", searchMode: "fts", dialog: true, visible: true, previewOpacity: 72, active: map[string]bool{"text": true}}
 	flag.StringVar(&g.theme, "theme", "mica", "built-in theme")
 	flag.StringVar(&g.mode, "mode", "light", "color mode")
 	flag.StringVar(&g.fixture, "fixture", "gallery", "component to render")
@@ -170,6 +207,16 @@ func run() error {
 	output := flag.String("output", "", "write a software-rendered PNG to this file")
 	inspect := flag.Bool("inspect", false, "write rendered text labels as JSON")
 	flag.Parse()
+	g.historySelected = -1
+	if g.fixture == "history-list" && g.state == "selected" {
+		g.historySelected = 1
+	}
+	if g.fixture == "preview-toolbar" {
+		g.previewPinned = g.state == "pinned"
+	}
+	if g.fixture == "preview-image" && g.state == "zoomed" {
+		g.previewImage.SetZoom(2)
+	}
 	if g.state == "filled" {
 		g.query = "Clipboard"
 	}
