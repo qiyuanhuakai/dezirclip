@@ -81,6 +81,8 @@ type nativeMain struct {
 	previewSelection int64
 	hover            nativeHoverPreview
 	tags             *nativeTagEditor
+	tagCatalog       nativeTagCatalog
+	tagSuggestions   nativeTagSuggestions
 	tagLibrary       *nativeTagLibrary
 	editor           *nativeEntryEditor
 	transform        *nativeTransformDialog
@@ -118,6 +120,8 @@ func (n *nativeMain) stopSession() {
 	n.privacyEditor = nil
 	n.privacyRules = nativePrivacyRules{}
 	n.tagLibrary = nil
+	n.tagCatalog = nativeTagCatalog{}
+	n.tagSuggestions = nativeTagSuggestions{}
 	n.emoji = nil
 	n.resetPreviewSelection()
 }
@@ -364,7 +368,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 		if n.searchTimer == nil {
 			n.loadPage()
 		}
-		n.loadTagCatalog()
+		n.tagCatalog.invalidate()
 	}
 }
 

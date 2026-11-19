@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -15,11 +13,6 @@ import (
 
 type nativeTagLibrary struct {
 	selected, query, sort, nameQuery string
-	counts                           map[string]uint64
-	names                            []string
-	cancelRead                       context.CancelFunc
-	read                             uint64
-	loading, failed                  bool
 	dialog                           *nativeTagDialog
 }
 
@@ -45,59 +38,21 @@ func (n *nativeMain) openTagLibrary() {
 		return
 	}
 	n.tagLibrary = &nativeTagLibrary{sort: "time"}
+	n.tagSuggestions.dismiss()
 	n.editQuery(false)
 	n.loadTagCatalog()
 }
 
 func (n *nativeMain) closeTagLibrary() {
-	if n.tagLibrary.cancelRead != nil {
-		n.tagLibrary.cancelRead()
-	}
 	n.tagLibrary = nil
 	n.editQuery(false)
 }
 
-func (n *nativeMain) loadTagCatalog() {
-	tags := n.tagLibrary
-	if tags == nil || n.session == nil {
-		return
-	}
-	if tags.cancelRead != nil {
-		tags.cancelRead()
-	}
-	tags.read++
-	tags.loading, tags.failed = true, false
-	session, sequence, epoch := n.session, tags.read, n.history.state.PrivacyEpoch
-	ctx, cancel := context.WithTimeout(session, 4*time.Second)
-	tags.cancelRead = cancel
-	go func() {
-		defer cancel()
-		raw, err := n.library.TagCounts(ctx, epoch)
-		var counts map[string]uint64
-		if err == nil {
-			err = json.Unmarshal(raw, &counts)
-		}
-		names := make([]string, 0, len(counts))
-		for name := range counts {
-			names = append(names, name)
-		}
-		sort.Slice(names, func(i, j int) bool {
-			left, right := strings.ToLower(names[i]), strings.ToLower(names[j])
-			return left < right || left == right && names[i] < names[j]
-		})
-		n.update(session, func() {
-			if n.tagLibrary != tags || tags.read != sequence {
-				return
-			}
-			tags.cancelRead, tags.loading, tags.failed = nil, false, err != nil
-			if err == nil {
-				tags.counts, tags.names = counts, names
-			}
-		})
-	}()
-}
-
 func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nativeTagLibrary) {
+	catalog := &n.tagCatalog
+	if !catalog.fresh && !catalog.failed {
+		n.loadTagCatalog()
+	}
 	width, _ := c.Size()
 	pickers, actionsPerRow := 2, 4
 	if width < 310 {
@@ -114,10 +69,10 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 			if name, ok := searchTagName(search); ok {
 				search = name
 			}
-			for _, name := range tags.names {
+			for _, name := range catalog.names {
 				if strings.Contains(strings.ToLower(name), search) || name == tags.selected {
 					options = append(options, uikit.SelectOption{
-						Value: name, Label: fmt.Sprintf("%s (%d)", name, tags.counts[name]),
+						Value: name, Label: fmt.Sprintf("%s (%d)", name, catalog.counts[name]),
 					})
 				}
 			}
@@ -151,13 +106,13 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 				}
 			}
 		})
-		if tags.failed {
+		if catalog.failed {
 			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry", "Retry loading tags")}).Clicked() {
 				n.loadTagCatalog()
 			}
-		} else if tags.loading && len(tags.names) == 0 {
+		} else if catalog.loading && len(catalog.names) == 0 {
 			ui.Text(c, n.text("common_loading", "Loading tags…")).TextColor(c.Theme().TextMuted)
-		} else if len(tags.names) == 0 {
+		} else if len(catalog.names) == 0 {
 			ui.Text(c, n.text("tag_library_empty", "No tags")).TextColor(c.Theme().TextMuted)
 		}
 	})
@@ -225,7 +180,7 @@ func (n *nativeMain) commitTagDialog(tags *nativeTagLibrary, dialog *nativeTagDi
 			return
 		}
 		if dialog.action == "create" {
-			for _, existing := range tags.names {
+			for _, existing := range n.tagCatalog.names {
 				if strings.EqualFold(name, existing) {
 					tags.selected, tags.nameQuery, tags.dialog = existing, "", nil
 					n.editQuery(false)
@@ -264,6 +219,7 @@ func (n *nativeMain) commitTagDialog(tags *nativeTagLibrary, dialog *nativeTagDi
 			}
 			tags.dialog = nil
 			n.editQuery(false)
+			n.tagCatalog.invalidate()
 			n.loadTagCatalog()
 		})
 	}()

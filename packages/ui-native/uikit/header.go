@@ -37,6 +37,7 @@ type HeaderOptions struct {
 	OnQueryEdit func(composing bool)
 	OnQueryKey  func(ui.TextKey) bool
 	QueryFocus  func(bool)
+	QueryPopup  func(ui.Element)
 }
 
 func (k Kit) Header(c *ui.Context, options HeaderOptions) {
@@ -105,6 +106,9 @@ func (k Kit) headerSearch(c *ui.Context, options HeaderOptions) {
 			}
 			ui.Icon(c, headerIcons["search"]).Absolute().Left(10).Top((field.Height-14)/2).Size(14, 14).
 				TextColor(c.Theme().TextMuted).PassThrough()
+			if options.QueryPopup != nil {
+				options.QueryPopup(input)
+			}
 		})
 		if len(options.Filters) == 0 || options.Filter == nil {
 			return

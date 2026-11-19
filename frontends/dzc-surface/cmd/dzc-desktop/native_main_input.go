@@ -39,6 +39,9 @@ func (n *nativeMain) searchKey(key ui.TextKey) bool {
 	if key.Mods != 0 || n.showSettings || n.hasHistoryDialog() {
 		return false
 	}
+	if n.tagLibrary == nil && n.tagSuggestionKey(key) {
+		return true
+	}
 	switch key.Key {
 	case ui.KeyEscape:
 		if !n.closePreview() {

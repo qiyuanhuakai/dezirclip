@@ -78,6 +78,7 @@ func (n *nativeMain) view(c *ui.Context) {
 			}
 			if n.preferences["app.show_search_box"] != "false" || n.temporarySearch || n.query != "" {
 				header.Query, header.Placeholder, header.Filter = &n.query, n.text("search_placeholder", "Search clipboard…"), &n.kind
+				header.QueryPopup = func(input ui.Element) { n.tagSuggestionsView(c, input) }
 				header.Filters = []uikit.HeaderFilter{
 					{ID: "text", Label: n.text("type_text")}, {ID: "image", Label: n.text("native_images")},
 					{ID: "file", Label: n.text("native_files")}, {ID: "url", Label: n.text("type_url")},
@@ -85,6 +86,10 @@ func (n *nativeMain) view(c *ui.Context) {
 					{ID: "rich_text", Label: n.text("type_rich_text")},
 				}
 			}
+		}
+		if header.QueryPopup == nil {
+			n.tagSuggestions.dismiss()
+			n.tagSuggestions.focused = false
 		}
 		if header.Query != nil {
 			header.FocusQuery = &n.focusSearch
