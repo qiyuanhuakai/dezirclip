@@ -24,6 +24,10 @@ func (n *nativeMain) navigateHistory(delta int) {
 	if n.session == nil || n.failed || len(n.history.rows) == 0 {
 		return
 	}
+	if n.hover.owns(n.preview) {
+		n.closePreview()
+	}
+	n.hover.reset()
 	if n.keyboard {
 		n.history.selected = max(0, min(len(n.history.rows)-1, n.history.selected+delta))
 	} else {
@@ -157,6 +161,7 @@ func (n *nativeMain) entryMenu(card ui.Element, row protocol.DesktopEntry, gener
 	card.ContextMenu(func(menu *ui.Menu) {
 		disabled := n.mutating || n.failed || n.history.generation != generation
 		if menu.Item("Preview").Disabled(disabled).Chosen() {
+			n.hover.reset()
 			n.showPreview(row, generation, card.Bounds())
 		}
 		if menu.Item("Copy").Disabled(disabled).Chosen() {

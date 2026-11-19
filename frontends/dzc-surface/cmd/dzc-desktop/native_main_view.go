@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
 )
@@ -76,9 +77,13 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 		ui.Text(c, "Private session").TextColor(c.Theme().TextMuted).Padding(4, 8)
 	}
 	generation := n.history.generation
+	compact := n.preferences["app.compact_mode"] == "true"
+	var hovered protocol.DesktopEntry
+	var hoverBounds ui.Rect
 	list := kit.HistoryList(c, &n.list, uikit.HistoryListOptions{
 		Count: len(n.history.rows), Label: "Clipboard history", EmptyLabel: "No clipboard entries",
 		LoadingLabel: "Loading…", MoreLabel: "Load more…", Loading: n.reading, HasMore: n.history.more && !n.failed,
+		Compact:    compact,
 		OnLoadMore: n.loadPage,
 		Row: func(cell ui.ListRow) {
 			if generation != n.history.generation || cell.Index >= len(n.history.rows) {
@@ -91,7 +96,7 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 			}
 			card := kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
 				Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: row.Preview,
-				Pinned: row.IsPinned, Selected: cell.Selected(),
+				Pinned: row.IsPinned, Selected: cell.Selected(), Compact: compact,
 				Activate: func() {
 					n.resetPreviewSelection()
 					n.rowAction(row, generation, nativePaste)
@@ -102,11 +107,15 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 				},
 			})
 			n.entryMenu(card, row, generation)
+			if card.Hovered() {
+				hovered, hoverBounds = row, card.Bounds()
+			}
 			if cell.Selected() && n.keyboard {
 				n.previewKeyboardRow(row, generation, card.Bounds())
 			}
 		},
 	})
+	n.hoverPreview(hovered, generation, hoverBounds)
 	if n.focusList {
 		list.Focus()
 		n.focusList = false
@@ -140,6 +149,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit) {
 			n.saveSetting("app.color_mode", mode)
 		}
 		for _, setting := range []struct{ key, label string }{
+			{"app.compact_mode", "Compact history"},
 			{"app.arrow_key_selection", "Select history with arrow keys"},
 			{"app.preview_keyboard_enabled", "Preview keyboard selection"},
 		} {

@@ -40,6 +40,7 @@ type nativeMain struct {
 	keyboard         bool
 	focusList        bool
 	previewSelection int64
+	hover            nativeHoverPreview
 }
 
 func (n *nativeMain) stopSession() {
@@ -225,6 +226,7 @@ func (n *nativeMain) editQuery(composing bool) {
 func (n *nativeMain) resetPreviewSelection() {
 	n.keyboard = false
 	n.previewSelection = 0
+	n.hover.reset()
 	n.closePreview()
 }
 
