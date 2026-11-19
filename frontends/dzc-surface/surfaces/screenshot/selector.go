@@ -82,10 +82,19 @@ func (s *Selector) prepareWindow() {
 }
 
 func (s *Selector) preferences() (protocol.ScreenPreferences, error) {
-	var pref protocol.ScreenPreferences
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	err := s.owner.DesktopCall(ctx, protocol.MethodDesktopScreenPreferences, protocol.EmptyParams{}, "ScreenPreferences", &pref)
+	host, err := s.owner.DesktopConnection(ctx)
+	if err != nil {
+		return protocol.ScreenPreferences{}, err
+	}
+	defer host.Close()
+	return screenPreferences(ctx, host)
+}
+
+func screenPreferences(ctx context.Context, host *client.Client) (protocol.ScreenPreferences, error) {
+	var pref protocol.ScreenPreferences
+	err := host.Call(ctx, protocol.MethodDesktopScreenPreferences, protocol.EmptyParams{}, "ScreenPreferences", &pref)
 	return pref, err
 }
 
@@ -175,31 +184,35 @@ func (s *Selector) start(full bool, epoch *uint64, ready func(error)) {
 	shot := &selection{cancel: cancel, full: full, ready: ready, started: time.Now()}
 	s.session = shot
 	go func() {
-		pref, err := s.preferences()
-		if err != nil || !pref.Enabled {
-			s.end(shot, errors.New("ScreenshotUnavailable"))
-			return
-		}
 		var host *client.Client
 		var state protocol.RuntimeState
 		var frame protocol.ScreenImage
-		err = retryBusyBegin(ctx, func() error {
-			var connectErr error
-			host, connectErr = s.owner.DesktopConnection(ctx)
-			if connectErr != nil {
-				return connectErr
+		err := retryBusyBegin(ctx, func() (attemptErr error) {
+			preflight, cancelPreflight := context.WithTimeout(ctx, 2*time.Second)
+			defer cancelPreflight()
+			host, attemptErr = s.owner.DesktopConnection(preflight)
+			if attemptErr != nil {
+				return attemptErr
 			}
+			defer func() {
+				if attemptErr != nil {
+					host.Close()
+				}
+			}()
 			state = host.Hello().State
 			if epoch != nil && state.PrivacyEpoch != *epoch {
-				host.Close()
 				return errors.New("PrivacyEpochChanged")
 			}
-			request := protocol.ScreenBeginParams{ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Cursor: &target.point}
-			beginErr := host.Call(ctx, protocol.MethodDesktopScreenBegin, request, "ScreenImage", &frame)
-			if beginErr != nil {
-				host.Close()
+			pref, err := screenPreferences(preflight, host)
+			if err != nil {
+				return err
 			}
-			return beginErr
+			if !pref.Enabled {
+				return errors.New("ScreenshotUnavailable")
+			}
+			cancelPreflight()
+			request := protocol.ScreenBeginParams{ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Cursor: &target.point}
+			return host.Call(ctx, protocol.MethodDesktopScreenBegin, request, "ScreenImage", &frame)
 		})
 		if err != nil {
 			s.end(shot, err)
