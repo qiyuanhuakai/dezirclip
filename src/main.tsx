@@ -1,8 +1,8 @@
 import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
-import "./styles/components/index.css";
-import "./styles/components/privacy-native-copy.css";
+import "@deziro/ui-react/styles/components/index.css";
+import "@deziro/ui-react/styles/components/privacy-native-copy.css";
 import { applyBootAppearance } from "./shared/lib/themeRuntime";
 import { installPrivacyNativeCopyGuard } from "./shared/lib/privacyNativeCopy";
 

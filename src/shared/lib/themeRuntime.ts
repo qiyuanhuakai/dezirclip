@@ -1,33 +1,22 @@
 import { getCustomThemes, loadCachedCustomThemes, subscribeCustomThemes } from "./themeCatalog";
 import { resolveThemeSelection, type BuiltinTheme } from "./themePackage";
 import { applyImportedThemeCss } from "./themeStylesheet";
-import "../../styles/theme-core/custom-theme-fonts.shared.css";
+import { loadBuiltinTheme, type ThemeMode } from "@deziro/ui-react/themes";
+import "@deziro/ui-react/styles/theme-core/custom-theme-fonts.shared.css";
 
-export type ThemeMode = "light" | "dark";
+export type { ThemeMode } from "@deziro/ui-react/themes";
 export type ThemeColorMode = "light" | "dark" | "system";
-
-const themeCssLoaders = import.meta.glob("../../styles/themes/*.css");
-const loadedThemes = new Set<string>();
 
 /** What the app falls back to before a theme has ever been chosen. */
 const DEFAULT_THEME = "mica";
 let currentTheme: string | null = null;
-const pendingThemeLoads = new Map<string, Promise<void>>();
 
 export const resolveBuiltinTheme = (theme: string): BuiltinTheme =>
   resolveThemeSelection(theme, getCustomThemes()).base;
 
 export const ensureThemeCssLoaded = async (theme: string) => {
   if (resolveThemeSelection(theme, getCustomThemes()).custom) return;
-  const base = resolveBuiltinTheme(theme);
-  if (loadedThemes.has(base)) return;
-  const pending = pendingThemeLoads.get(base);
-  if (pending) return pending;
-  const loader = themeCssLoaders[`../../styles/themes/${base}.css`];
-  if (!loader) return;
-  const request = loader().then(() => { loadedThemes.add(base); }).finally(() => { pendingThemeLoads.delete(base); });
-  pendingThemeLoads.set(base, request);
-  await request;
+  return loadBuiltinTheme(resolveBuiltinTheme(theme));
 };
 
 /**

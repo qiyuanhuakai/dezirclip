@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const qrDialogCss = fs.readFileSync(
-  path.resolve(here, "../../../styles/components/QrCodeDialog.css"),
+  path.resolve(here, "../../../../packages/ui-react/src/styles/components/QrCodeDialog.css"),
   "utf-8"
 );
 export default qrDialogCss;

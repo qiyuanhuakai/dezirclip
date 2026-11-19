@@ -17,7 +17,7 @@ import { entryInstanceArgs } from "../../../shared/lib/historyIdentity";
 import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { PrivacyStatusBanner } from "../../../shared/components/PrivacyStatusBanner";
 import { privacyStatusZh } from "../../../locales/zh";
-import "./QuickPasteWindow.css";
+import "@deziro/ui-react/styles/components/QuickPasteWindow.css";
 
 const MAX_ENTRIES = 10;
 

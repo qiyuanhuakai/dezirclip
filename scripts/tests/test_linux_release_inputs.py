@@ -43,6 +43,7 @@ class Inputs(unittest.TestCase):
         self.put('src-tauri/Cargo.toml', b'[package]\nname="synthetic-desktop"\n')
         self.put('dist/web/index.html', b'<html>synthetic existing frontend</html>')
         for name in ['frontends/dzc-surface/go.mod', 'frontends/dzc-surface/go.sum',
+                     'packages/ui-native/go.mod', 'packages/ui-native/go.sum',
                      'scripts/build-surface.mjs', 'scripts/mygo-surface-patch.mjs']:
             self.put(name, b'synthetic source, never executed\n')
         self.helper = self.root / 'artifacts/dzc-surface' / MODULE.TARGET / 'dzc-surface'
@@ -52,7 +53,8 @@ class Inputs(unittest.TestCase):
         expected = {'component_version': self.version, 'source_revision': self.source,
             'source_state': 'verified_checkout', 'build_id': self.version + '@' + self.source,
             'target': MODULE.TARGET, 'toolkit_patch_id': MODULE.PATCH}
-        paths = ['frontends/dzc-surface/go.mod', 'frontends/dzc-surface/go.sum', 'scripts/build-surface.mjs',
+        paths = ['frontends/dzc-surface/go.mod', 'frontends/dzc-surface/go.sum',
+                 'packages/ui-native/go.mod', 'packages/ui-native/go.sum', 'scripts/build-surface.mjs',
                  'scripts/mygo-surface-patch.mjs', 'package.json', 'Cargo.toml', 'Cargo.lock']
         self.proof = {'schema_version': 1, 'kind': 'surface-build', 'expected': expected,
             'executable': str(self.helper), 'sha256': MODULE.digest(self.helper.read_bytes()),

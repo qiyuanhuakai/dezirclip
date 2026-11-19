@@ -12,7 +12,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
-	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 )
 
 type DesktopShell struct {

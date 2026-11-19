@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@deziro/ui-react':
+        specifier: workspace:*
+        version: link:packages/ui-react
       '@tauri-apps/api':
         specifier: ^2.12.4
         version: 2.12.4
@@ -84,6 +87,30 @@ importers:
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(jsdom@29.1.1)(vite@7.3.3)
+
+  packages/ui-react:
+    dependencies:
+      framer-motion:
+        specifier: ^12.25.0
+        version: 12.39.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      fuse.js:
+        specifier: ^7.4.2
+        version: 7.4.2
+      lucide-react:
+        specifier: ^0.562.0
+        version: 0.562.0(react@19.2.6)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.6
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.6(react@19.2.6)
+      react-select:
+        specifier: ^5.10.2
+        version: 5.10.2(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      react-virtuoso:
+        specifier: ^4.18.1
+        version: 4.18.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
 
 packages:
 

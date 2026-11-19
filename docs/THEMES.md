@@ -71,4 +71,4 @@ dzc theme validate /absolute/path/to/my.theme.json --json
 
 此命令在本次改造后的版本提供。旧 CLI 请使用匹配的新发布包或源码构建。校验通过不等于视觉质量合格，仍需检查历史、标签、设置、菜单、确认框、Quick Paste、窄窗口以及亮暗模式。
 
-公共变量及派生材质位于 `src/styles/tokens/semantic.tokens.css`；内置主题保持各自的材质/装饰，新的控件消费共享契约。优先完善共享控件变量，不继续为每个新控件复制六套覆盖规则。性能和 `!important` 审计范围见[验证记录](./tag-theme-performance.md)。
+公共变量及派生材质位于 `packages/ui-react/src/styles/tokens/semantic.tokens.css`；内置主题保持各自的材质/装饰，新的控件消费共享契约。优先完善共享控件变量，不继续为每个新控件复制六套覆盖规则。性能和 `!important` 审计范围见[验证记录](./tag-theme-performance.md)。

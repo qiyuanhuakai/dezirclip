@@ -39,24 +39,6 @@ export type ClipboardRenderItem = (
   isFirst: boolean
 ) => ReactNode;
 
-export interface VirtualClipboardListProps {
-  pinnedIds: number[];
-  onReorder: (ids: number[]) => void;
-  draggingPinned: boolean;
-  items: ClipboardEntry[];
-  renderItem: ClipboardRenderItem;
-  onLoadMore?: () => void;
-  hasMore: boolean;
-  isLoading: boolean;
-  selectedIndex: number;
-  isKeyboardMode: boolean;
-  onScroll?: (offset: number) => void;
-  onScrollFrame?: (offset: number) => void;
-  compactMode: boolean;
-}
-
-export interface VirtualClipboardListHandle {
-  scrollToItem: (index: number) => void;
-  scrollToTop: () => void;
-  resetAfterIndex: (index: number) => void;
-}
+import type { VirtualClipboardListProps as ListProps } from "@deziro/ui-react/components/VirtualClipboardList";
+export type { VirtualClipboardListHandle } from "@deziro/ui-react/components/VirtualClipboardList";
+export type VirtualClipboardListProps = ListProps<ClipboardEntry>;

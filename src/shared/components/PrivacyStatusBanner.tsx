@@ -1,6 +1,6 @@
 import { usePrivacySession } from "../hooks/usePrivacySession";
 import { refreshPrivacyState, setPrivacySession } from "../lib/privacySession";
-import "../../styles/components/privacy.css";
+import "@deziro/ui-react/styles/components/privacy.css";
 
 export function PrivacyStatusBanner({ t }: { t: (key: string) => string }) {
   const state = usePrivacySession();

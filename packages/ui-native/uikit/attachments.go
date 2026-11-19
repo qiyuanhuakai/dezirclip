@@ -1,4 +1,4 @@
-package main
+package uikit
 
 import (
 	"bytes"
@@ -13,30 +13,32 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-type previewAttachment struct {
-	name  string
-	image *ui.Bitmap
+// PreviewAttachment is a filename and an optional bounded thumbnail.
+type PreviewAttachment struct {
+	Name   string
+	Bitmap *ui.Bitmap
 }
 
 var attachmentFigure = regexp.MustCompile(`<figure>(?:<img src="(data:image/png;base64,[A-Za-z0-9+/=]+)" alt="[^"]*">)?<figcaption>([^<]*)</figcaption></figure>`)
 
-func previewAttachments(markup, names string) []previewAttachment {
+// ParsePreviewAttachments reads local thumbnails from canonical markup or falls back to filenames.
+func ParsePreviewAttachments(markup, names string) []PreviewAttachment {
 	if len(markup) <= 2*1024*1024 {
 		matches := attachmentFigure.FindAllStringSubmatchIndex(markup, 256)
-		rows := make([]previewAttachment, 0, len(matches))
+		rows := make([]PreviewAttachment, 0, len(matches))
 		offset := 0
 		for _, match := range matches {
 			if match[0] != offset {
 				break
 			}
-			row := previewAttachment{name: html.UnescapeString(markup[match[4]:match[5]])}
+			row := PreviewAttachment{Name: html.UnescapeString(markup[match[4]:match[5]])}
 			if match[2] >= 0 && len(rows) < 4 {
 				encoded := strings.TrimPrefix(markup[match[2]:match[3]], "data:image/png;base64,")
 				if len(encoded) <= 768*1024 {
 					if raw, err := base64.StdEncoding.DecodeString(encoded); err == nil {
 						config, _, err := image.DecodeConfig(bytes.NewReader(raw))
 						if err == nil && config.Width > 0 && config.Height > 0 && config.Width <= 1024 && config.Height <= 1024 {
-							row.image, _ = ui.DecodeBitmap(raw)
+							row.Bitmap, _ = ui.DecodeBitmap(raw)
 						}
 						clear(raw)
 					}
@@ -49,10 +51,10 @@ func previewAttachments(markup, names string) []previewAttachment {
 			return rows
 		}
 	}
-	var rows []previewAttachment
+	var rows []PreviewAttachment
 	for _, name := range strings.Split(names, "\n") {
 		if name != "" && len(rows) < 256 {
-			rows = append(rows, previewAttachment{name: filepath.Base(strings.ReplaceAll(name, "\\", "/"))})
+			rows = append(rows, PreviewAttachment{Name: filepath.Base(strings.ReplaceAll(name, "\\", "/"))})
 		}
 	}
 	return rows
@@ -77,11 +79,11 @@ const (
 	attachmentChromeHeight  = 90
 	attachmentSummaryHeight = 22
 	attachmentRowHeight     = 30
-	attachmentMaxNameRows   = 6
+	AttachmentMaxNameRows   = 6
 )
 
-func attachmentFilenameHeight(count int) int {
-	height := attachmentChromeHeight + attachmentSummaryHeight + min(attachmentMaxNameRows, count)*attachmentRowHeight
+func AttachmentFilenameHeight(count int) int {
+	height := attachmentChromeHeight + attachmentSummaryHeight + min(AttachmentMaxNameRows, count)*attachmentRowHeight
 	if count > 1 {
 		height += attachmentSummaryHeight
 	}
@@ -100,14 +102,15 @@ func attachmentPreviewCapacity(width, height float32, count int, media bool) (ti
 		thumbnail = min(float32(100), budget-attachmentRowHeight)
 		budget -= thumbnail + attachmentRowHeight
 	}
-	names = min(count-tiles, max(0, min(attachmentMaxNameRows, int(budget/attachmentRowHeight))))
+	names = min(count-tiles, max(0, min(AttachmentMaxNameRows, int(budget/attachmentRowHeight))))
 	return
 }
 
-func drawAttachmentPreview(c *ui.Context, rows []previewAttachment) {
+// AttachmentPreview draws the attachment gallery for an expanded preview window.
+func AttachmentPreview(c *ui.Context, rows []PreviewAttachment) {
 	media := false
 	for _, row := range rows {
-		media = media || row.image != nil
+		media = media || row.Bitmap != nil
 	}
 	width, height := c.Size()
 	shown, names, thumbnail := attachmentPreviewCapacity(width, height, len(rows), media)
@@ -119,17 +122,17 @@ func drawAttachmentPreview(c *ui.Context, rows []previewAttachment) {
 			ui.Row(c).FillWidth().Gap(6).Children(func() {
 				for _, row := range rows[:shown] {
 					ui.Column(c).Width(0).Grow(1).Gap(4).Children(func() {
-						if row.image != nil {
-							ui.Image(c, row.image).FillWidth().Height(thumbnail).Fit(ui.Contain)
+						if row.Bitmap != nil {
+							ui.Image(c, row.Bitmap).FillWidth().Height(thumbnail).Fit(ui.Contain)
 						}
-						drawAttachmentName(c, row.name)
+						drawAttachmentName(c, row.Name)
 					})
 				}
 			})
 		}
 		limit := shown + names
 		for _, row := range rows[shown:limit] {
-			drawAttachmentName(c, row.name)
+			drawAttachmentName(c, row.Name)
 		}
 		if limit < len(rows) {
 			ui.Text(c, "…").FontSize(13).TextColor(c.Theme().TextMuted)
@@ -139,7 +142,7 @@ func drawAttachmentPreview(c *ui.Context, rows []previewAttachment) {
 
 func drawAttachmentName(c *ui.Context, name string) {
 	ui.Row(c).FillWidth().Height(22).Gap(5).Children(func() {
-		previewMetadataIcon(c, attachmentIconKind(name))
+		PreviewMetadataIcon(c, attachmentIconKind(name))
 		ui.Text(c, name).Grow(1).SingleLine().FontSize(12)
 	})
 }

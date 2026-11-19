@@ -108,7 +108,8 @@ export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
   copyFileSync(join(moduleRoot, 'go.sum'), sumfile);
   goRun(['mod', 'edit', `-modfile=${modfile}`,
     `-replace=${modulePath}@${version}=${patchedModule}`,
-    `-replace=github.com/qiyuanhuakai/dezirclip/clients/go=${resolve(moduleRoot, '../../clients/go')}`]);
+    `-replace=github.com/qiyuanhuakai/dezirclip/clients/go=${resolve(moduleRoot, '../../clients/go')}`,
+    `-replace=github.com/qiyuanhuakai/dezirclip/packages/ui-native=${resolve(moduleRoot, '../../packages/ui-native')}`]);
   const modfileHash = sha256(readFileSync(modfile));
   const sumfileHash = sha256(readFileSync(sumfile));
   return {

@@ -1,0 +1,42 @@
+import type { ReactNode, Ref } from "react";
+import { motion, type HTMLMotionProps } from "framer-motion";
+
+export interface HistoryCardProps extends HTMLMotionProps<"div"> {
+  selected?: boolean;
+  compact?: boolean;
+  pinned?: boolean;
+  disableLayout?: boolean;
+  ref?: Ref<HTMLDivElement>;
+}
+
+export function HistoryCard({ selected, compact, pinned, disableLayout, className = "", ...props }: HistoryCardProps) {
+  const classes = ["history-item", selected && "selected", compact && "compact", pinned && "pinned", className]
+    .filter(Boolean).join(" ");
+  return <motion.div {...props} data-test-clipboard-item className={classes}
+    layout={!disableLayout} initial={false} animate={disableLayout ? undefined : { marginBottom: 0 }}
+    exit={disableLayout ? undefined : { opacity: 0, scale: 0.95 }} transition={disableLayout ? undefined : { duration: 0.1 }} />;
+}
+
+export interface HistoryCardMetaProps {
+  source: string;
+  sourceIcon?: ReactNode;
+  leading?: ReactNode;
+  actions?: ReactNode;
+  status?: ReactNode;
+  time?: string;
+}
+
+export function HistoryCardMeta({ source, sourceIcon, leading, actions, status, time }: HistoryCardMetaProps) {
+  return <div className="item-meta">
+    <div className="item-meta-left">
+      {leading}
+      <div className="app-info">{sourceIcon}<span>{source}</span></div>
+    </div>
+    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <div className="item-actions">{actions}</div>
+      <div className="app-info" style={{ opacity: 0.6, fontSize: "10px", display: "flex", gap: "6px", alignItems: "center" }}>
+        {status}<span>{time}</span>
+      </div>
+    </div>
+  </div>;
+}

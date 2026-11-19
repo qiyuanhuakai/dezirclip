@@ -186,8 +186,9 @@ def surface(root, identity, version):
                 'Surface source reference is unsafe or duplicate')
         seen.add(path.as_posix())
         require(digest(regular(root / path, MAX_METADATA)) == item['sha256'], 'Surface source bytes changed')
-    require({'frontends/dzc-surface/go.mod', 'frontends/dzc-surface/go.sum', 'scripts/build-surface.mjs',
-             'scripts/mygo-surface-patch.mjs', 'package.json', 'Cargo.toml', 'Cargo.lock'} <= seen,
+    require({'frontends/dzc-surface/go.mod', 'frontends/dzc-surface/go.sum', 'packages/ui-native/go.mod',
+             'packages/ui-native/go.sum', 'scripts/build-surface.mjs', 'scripts/mygo-surface-patch.mjs',
+             'package.json', 'Cargo.toml', 'Cargo.lock'} <= seen,
             'Surface proof omits required source inputs')
     return data, proof_data
 

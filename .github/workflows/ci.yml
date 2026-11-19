@@ -1310,6 +1310,7 @@ jobs:
           cache-dependency-path: |
             clients/go/go.sum
             frontends/dzc-surface/go.sum
+            packages/ui-native/go.sum
       - name: Install Linux development libraries
         if: runner.os == 'Linux'
         run: |
@@ -1318,6 +1319,9 @@ jobs:
           fc-match 'sans-serif:lang=zh-cn'
       - name: Test local protocol client
         working-directory: clients/go
+        run: go test ./...
+      - name: Test reusable MyGo Native components
+        working-directory: packages/ui-native
         run: go test ./...
       - name: Test MyGo desktop and native surfaces
         working-directory: frontends/dzc-surface

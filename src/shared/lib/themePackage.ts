@@ -1,7 +1,7 @@
+import { isBuiltinTheme, type BuiltinTheme } from "@deziro/ui-react/themes";
+export { BUILTIN_THEMES, isBuiltinTheme, type BuiltinTheme } from "@deziro/ui-react/themes";
 import { validateThemeCss } from "./themeCss";
 
-export const BUILTIN_THEMES = ["retro", "mica", "acrylic", "liquid-glass", "macos", "scifi"] as const;
-export type BuiltinTheme = typeof BUILTIN_THEMES[number];
 export type ThemePackage = {
   format: "dezirclip-theme";
   version: 1;
@@ -32,7 +32,6 @@ const text = (value: unknown, max: number, required: boolean, label: string): st
 };
 const optionalText = (value: unknown, max: number, label: string): string | undefined =>
   value === undefined || value === null ? undefined : text(value, max, false, label) || undefined;
-export const isBuiltinTheme = (value: string): value is BuiltinTheme => BUILTIN_THEMES.some(theme => theme === value);
 export const resolveThemeSelection = (selection: string, catalog: readonly ThemePackage[]): { base: BuiltinTheme; custom?: ThemePackage } => {
   const custom = selection.startsWith("custom:") ? catalog.find(theme => theme.id === selection.slice(7)) : undefined;
   return { base: custom?.base ?? (isBuiltinTheme(selection) ? selection : "mica"), ...(custom ? { custom } : {}) };

@@ -1,5 +1,5 @@
 import { usePlatformCapabilities } from "../../../../shared/hooks/usePlatformCapabilities";
-import "../../../../styles/components/wayland.css";
+import "@deziro/ui-react/styles/components/wayland.css";
 
 export default function WaylandCapabilitiesSection({ t }: { t: (key: string) => string }) {
   const { report, failed } = usePlatformCapabilities();

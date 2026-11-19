@@ -1,0 +1,35 @@
+{
+  "name": "@deziro/ui-react",
+  "version": "0.1.0",
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./themes": "./src/themes.ts",
+    "./styles/base.css": "./src/base.css",
+    "./styles/*": "./src/styles/*",
+    "./fuzzy": "./src/fuzzy.ts",
+    "./components/*": "./src/components/*.tsx",
+    "./native-appearance": "./src/native-appearance.ts",
+    "./preview-image-geometry": "./src/preview-image-geometry.ts",
+    "./attachment-layout": "./src/attachment-layout.ts",
+    "./scroll-coalesce": "./src/scroll-coalesce.ts"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "lucide-react": "^0.562.0",
+    "fuse.js": "^7.4.2",
+    "react-select": "^5.10.2",
+    "framer-motion": "^12.25.0",
+    "react-virtuoso": "^4.18.1"
+  }
+}

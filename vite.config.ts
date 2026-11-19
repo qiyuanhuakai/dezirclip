@@ -58,7 +58,10 @@ export default defineConfig(async ({ mode }) => {
             if (id.includes("/src/features/settings/hooks/useSettingsPanelProps")) return;
             if (id.includes("/src/features/settings/utils/updaterClient") || id.includes("/src/features/settings/utils/updatePolicy")
               || id.includes("/src/features/settings/utils/defaultUpdateChannel")) return "updater";
-            if (id.includes("/src/features/settings/")) return "settings";
+            if (id.includes("/src/features/settings/") ||
+                /\/packages\/ui-react\/src\/components\/(ThemedSelect|SettingsDisclosure|SettingHelp)\.tsx$/.test(id)) {
+              return "settings";
+            }
             if (id.includes("/src/features/tag/")) return "tag";
             if (id.includes("/src/features/emoji/")) return "emoji";
             if (id.includes("/src/features/clipboard/components/CompactPreviewWindow")) {

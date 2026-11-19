@@ -4,7 +4,7 @@ import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { emit } from "@tauri-apps/api/event";
 import { usePrivacySession } from "../../../../shared/hooks/usePrivacySession";
 import { refreshPrivacyState, setPrivacySession } from "../../../../shared/lib/privacySession";
-import "../../../../styles/components/privacy.css";
+import "@deziro/ui-react/styles/components/privacy.css";
 import HotkeyRecorder from "../HotkeyRecorder";
 
 export function PrivacySessionSection({ t, appSettings }: {

@@ -15,6 +15,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/richtext"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
 func TestMediaPreviewFollowsPortraitLandscapeAndSmallImages(t *testing.T) {
@@ -30,7 +31,7 @@ func TestMediaPreviewFollowsPortraitLandscapeAndSmallImages(t *testing.T) {
 			t.Fatalf("small image stretched: %dx%d", width, height)
 		}
 		bitmap := ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, size[0]/10, size[1]/10)))
-		body := &previewBody{attachments: []previewAttachment{{name: "portrait.mp4", image: bitmap}}}
+		body := &previewBody{attachments: []uikit.PreviewAttachment{{Name: "portrait.mp4", Bitmap: bitmap}}}
 		if body.mediaBitmap() == nil {
 			t.Fatal("single video frame must use image viewport")
 		}
@@ -43,8 +44,8 @@ func TestMediaPreviewFollowsPortraitLandscapeAndSmallImages(t *testing.T) {
 func TestGalleryWidthMeasuresFilenames(t *testing.T) {
 	var short, long int
 	ui.NewTester(func(c *ui.Context) {
-		short = (&previewBody{attachments: []previewAttachment{{name: "a.txt"}}}).filenameWidth(c.Theme().Font)
-		long = (&previewBody{attachments: []previewAttachment{{name: "A very long document filename that requires more space than a short file.txt"}}}).filenameWidth(c.Theme().Font)
+		short = (&previewBody{attachments: []uikit.PreviewAttachment{{Name: "a.txt"}}}).filenameWidth(c.Theme().Font)
+		long = (&previewBody{attachments: []uikit.PreviewAttachment{{Name: "A very long document filename that requires more space than a short file.txt"}}}).filenameWidth(c.Theme().Font)
 	}, 560, 320)
 	if short != 320 || long <= short {
 		t.Fatalf("widths do not follow filenames: %d %d", short, long)
@@ -79,22 +80,22 @@ func TestTextPreviewFitsPlainAndStyledParagraphs(t *testing.T) {
 
 func TestFittedFilenameGalleryActuallyDrawsNames(t *testing.T) {
 	for _, count := range []int{1, 2, 6, 30} {
-		rows := make([]previewAttachment, count)
+		rows := make([]uikit.PreviewAttachment, count)
 		for i := range rows {
-			rows[i].name = fmt.Sprintf("document-%d.txt", i)
+			rows[i].Name = fmt.Sprintf("document-%d.txt", i)
 		}
 		body := &previewBody{kind: "files", source: "DezirClip File Drop", attachments: rows}
-		height := attachmentFilenameHeight(count)
+		height := uikit.AttachmentFilenameHeight(count)
 		p := &pinnedPreview{body: body, opacity: previewOpacityControl{value: 85, slider: 85},
 			ticket: pinPreviewRequest{Appearance: previewAppearance{Title: "Content preview", Opacity: 85}}}
 		view := ui.NewTester(p.view, 320, height)
-		for _, row := range rows[:min(count, attachmentMaxNameRows)] {
-			rect, found := view.Find(row.name)
+		for _, row := range rows[:min(count, uikit.AttachmentMaxNameRows)] {
+			rect, found := view.Find(row.Name)
 			if !found || rect.W <= 0 || rect.H <= 0 || rect.Y < 0 || rect.Y+rect.H > float32(height) {
-				t.Fatalf("%d files: %s missing or clipped at height %d: %+v", count, row.name, height, rect)
+				t.Fatalf("%d files: %s missing or clipped at height %d: %+v", count, row.Name, height, rect)
 			}
 		}
-		if view.HasText("…") != (count > attachmentMaxNameRows) {
+		if view.HasText("…") != (count > uikit.AttachmentMaxNameRows) {
 			t.Fatalf("%d files: incorrect overflow", count)
 		}
 	}
@@ -103,12 +104,13 @@ func TestFittedFilenameGalleryActuallyDrawsNames(t *testing.T) {
 func TestPinnedVideoFirstFrameUsesFullPortraitViewport(t *testing.T) {
 	picture := image.NewRGBA(image.Rect(0, 0, 320, 960))
 	draw.Draw(picture, picture.Bounds(), image.NewUniform(color.RGBA{40, 110, 180, 255}), image.Point{}, draw.Src)
-	body := &previewBody{kind: "video", source: "DezirClip", attachments: []previewAttachment{{name: "portrait.mp4", image: ui.NewBitmap(picture)}}}
+	body := &previewBody{kind: "video", source: "DezirClip", attachments: []uikit.PreviewAttachment{{Name: "portrait.mp4", Bitmap: ui.NewBitmap(picture)}}}
 	width, height := body.preferredSize(mygo.Rectangle{Width: 1920, Height: 1080})
 	p := &pinnedPreview{body: body, opacity: previewOpacityControl{value: 85, slider: 85},
 		ticket: pinPreviewRequest{Appearance: previewAppearance{Title: "Content preview", Language: "en", Opacity: 85, FitLabel: "Fit"}}}
 	frame := ui.NewTester(p.view, width, height).Image()
-	if p.imageView.height < 300 || p.imageView.fit <= 0 || frame.RGBAAt(width/2, height/2).B < 100 {
+	_, viewportHeight := p.imageView.ViewportSize()
+	if viewportHeight < 300 || p.imageView.FitZoom() <= 0 || frame.RGBAAt(width/2, height/2).B < 100 {
 		t.Fatalf("video frame did not fill portrait viewport: %+v", p.imageView)
 	}
 	if directory := os.Getenv("DZC_VISUAL_DIR"); directory != "" {

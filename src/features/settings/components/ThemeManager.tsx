@@ -3,7 +3,7 @@ import { invoke } from "../../../shared/lib/desktopInvoke";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { getCustomTheme, getCustomThemes, replaceCustomThemes, subscribeCustomThemes } from "../../../shared/lib/themeCatalog";
 import { BUILTIN_THEMES, MAX_CUSTOM_THEMES, parseThemePackage } from "../../../shared/lib/themePackage";
-import "../../../styles/components/theme-manager.css";
+import "@deziro/ui-react/styles/components/theme-manager.css";
 import { errorMessage } from "../../../shared/lib/errorMessage";
 
 type Props = {

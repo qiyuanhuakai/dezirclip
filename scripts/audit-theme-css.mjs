@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const postcss = createRequire(require.resolve("vite"))("postcss");
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const styleRoot = join(root, "src", "styles");
+const styleRoot = join(root, "packages", "ui-react", "src", "styles");
 
 function files(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -21,7 +21,7 @@ const references = new Map();
 const results = [];
 const palettes = new Map();
 const componentPolicyViolations = [];
-const cleanComponents = new Set(["src/styles/components/tags.css", "src/styles/components/theme-manager.css"]);
+const cleanComponents = new Set(["packages/ui-react/src/styles/components/tags.css", "packages/ui-react/src/styles/components/theme-manager.css"]);
 const paletteKeys = [
   "surface-window", "surface-panel", "surface-raised", "surface-input", "surface-hover", "surface-active",
   "text-primary", "text-secondary", "text-muted", "text-on-accent", "border", "border-strong",

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { usePlatformCapabilities } from "../../../shared/hooks/usePlatformCapabilities";
-import "../../../styles/components/wayland.css";
+import "@deziro/ui-react/styles/components/wayland.css";
 
 export default function NativeFeatureBoundary({ t, children }: { t: (key: string) => string; children: ReactNode }) {
   const { desktopInteractions, pending, failed } = usePlatformCapabilities();

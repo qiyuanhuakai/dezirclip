@@ -11,7 +11,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
-	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 )
 
 // The resident Desktop already has ordinary GUI metadata authority. Enrich

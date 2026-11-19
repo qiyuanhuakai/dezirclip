@@ -1,0 +1,18 @@
+.showcase {
+  box-sizing: border-box;
+  display: grid;
+  align-content: start;
+  min-height: 100vh;
+  padding: 20px;
+  gap: 14px;
+  color: var(--text-primary);
+  background: var(--dc-surface-window);
+  font-family: var(--font-main);
+}
+.showcase section {
+  min-width: 0;
+}
+.showcase-search-history {
+  position: relative;
+  width: 320px;
+}

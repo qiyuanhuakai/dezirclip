@@ -7,6 +7,7 @@ require (
 	github.com/ebitengine/purego v0.11.1
 	github.com/egoist/mygo v0.6.4
 	github.com/qiyuanhuakai/dezirclip/clients/go v0.0.0
+	github.com/qiyuanhuakai/dezirclip/packages/ui-native v0.0.0
 )
 
 require (
@@ -20,3 +21,5 @@ require (
 )
 
 replace github.com/qiyuanhuakai/dezirclip/clients/go => ../../clients/go
+
+replace github.com/qiyuanhuakai/dezirclip/packages/ui-native => ../../packages/ui-native

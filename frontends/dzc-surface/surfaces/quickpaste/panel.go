@@ -17,7 +17,7 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/model"
-	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 )
 
 type outgoing struct {

@@ -1,4 +1,4 @@
-package main
+package uikit
 
 import (
 	"fmt"
@@ -7,23 +7,23 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Pan is the displacement from the centered image, in viewport DIPs.
-// A zero zoom tracks the viewport as the pinned window is resized.
-type pinnedImageView struct {
+// PreviewImage is a pannable image viewport. Its zero value fits the image
+// to the available space and tracks viewport resizes.
+type PreviewImage struct {
 	zoom, fit     float32
 	width, height float32
 	pan, grab     ui.Point
 	dragging      bool
 }
 
-func (v *pinnedImageView) factor() float32 {
+func (v *PreviewImage) factor() float32 {
 	if v.zoom > 0 {
 		return v.zoom
 	}
 	return v.fit
 }
 
-func (v *pinnedImageView) zoomAt(factor, x, y float32) {
+func (v *PreviewImage) zoomAt(factor, x, y float32) {
 	before := v.factor()
 	if before <= 0 {
 		return
@@ -42,14 +42,28 @@ func pinPan(value, view, size float32) float32 {
 	return max(-limit, min(limit, value))
 }
 
-func (v *pinnedImageView) draw(c *ui.Context, bitmap *ui.Bitmap, a previewAppearance) {
-	w, h := bitmap.Size()
+type ImageZoomLabels struct {
+	In       string
+	Out      string
+	Actual   string
+	Fit      string
+	FitLabel string
+}
+
+// FitZoom is the unrounded scale that fits the image to the current viewport.
+func (v *PreviewImage) FitZoom() float32 { return v.fit }
+
+// ViewportSize reports the dimensions of the last drawn image viewport.
+func (v *PreviewImage) ViewportSize() (width, height float32) { return v.width, v.height }
+
+// ZoomControls renders zoom in, zoom out, fit and actual size controls.
+func (v *PreviewImage) ZoomControls(c *ui.Context, a ImageZoomLabels) {
 	ui.Row(c).FillWidth().Height(24).Gap(4).Children(func() {
 		button := func(text, label string) ui.Element {
 			return ui.Button(c, text).Height(24).Padding(0, 7).FontSize(12).Radius(6).Label(label).Tooltip(label)
 		}
 		factor := max(0.1, min(8, v.factor()))
-		if button("−", a.ZoomOut).Width(26).Disabled(factor <= 0.1).Clicked() {
+		if button("−", a.Out).Width(26).Disabled(factor <= 0.1).Clicked() {
 			v.zoomAt(factor*0.8, v.width/2, v.height/2)
 		}
 		label := a.FitLabel
@@ -57,7 +71,7 @@ func (v *pinnedImageView) draw(c *ui.Context, bitmap *ui.Bitmap, a previewAppear
 			label = fmt.Sprintf("%.0f%%", 100*v.zoom)
 		}
 		ui.Text(c, label).FontSize(12).Width(38)
-		if button("+", a.ZoomIn).Width(26).Disabled(factor >= 8).Clicked() {
+		if button("+", a.In).Width(26).Disabled(factor >= 8).Clicked() {
 			v.zoomAt(factor*1.25, v.width/2, v.height/2)
 		}
 		if button(a.FitLabel, a.Fit).Clicked() {
@@ -68,7 +82,12 @@ func (v *pinnedImageView) draw(c *ui.Context, bitmap *ui.Bitmap, a previewAppear
 			v.zoomAt(1, v.width/2, v.height/2)
 		}
 	})
-	ui.Box(c).Fill().Label(a.ImageZoom).HandleInput(func(e ui.InputEvent) bool {
+}
+
+// Draw places the image in a clipped viewport with drag, wheel and pinch support.
+func (v *PreviewImage) Draw(c *ui.Context, bitmap *ui.Bitmap, label string) {
+	w, h := bitmap.Size()
+	ui.Box(c).Fill().Label(label).HandleInput(func(e ui.InputEvent) bool {
 		switch e.Kind {
 		case ui.InputScroll:
 			if e.DY == 0 {

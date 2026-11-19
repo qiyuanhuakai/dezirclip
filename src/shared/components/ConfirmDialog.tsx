@@ -1,44 +1,9 @@
+import Dialog, { type ConfirmDialogProps } from "@deziro/ui-react/components/ConfirmDialog";
 import { resolveBuiltinTheme } from "../lib/themeRuntime";
 
-interface ConfirmDialogProps {
-  open: boolean;
-  title: string;
-  message: string;
-  theme: string;
-  confirmLabel: string;
-  cancelLabel: string;
-  onConfirm: () => void;
-  onClose: () => void;
+type Props = Omit<ConfirmDialogProps, "themeClass"> & { theme: string };
+
+export default function ConfirmDialog({ theme, ...props }: Props) {
+  const themeClass = theme.startsWith("custom:") ? undefined : "theme-" + resolveBuiltinTheme(theme);
+  return <Dialog {...props} themeClass={themeClass} />;
 }
-
-const ConfirmDialog = ({
-  open,
-  title,
-  message,
-  theme,
-  confirmLabel,
-  cancelLabel,
-  onConfirm,
-  onClose
-}: ConfirmDialogProps) => {
-  if (!open) return null;
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className={`confirm-dialog${theme.startsWith("custom:") ? "" : ` theme-${resolveBuiltinTheme(theme)}`}`} onClick={(e) => e.stopPropagation()}>
-        <div className="confirm-dialog-title">{title}</div>
-        <div className="confirm-dialog-message">{message}</div>
-        <div className="confirm-dialog-buttons">
-          <button className="confirm-dialog-button" onClick={onClose}>
-            {cancelLabel}
-          </button>
-          <button className="confirm-dialog-button primary" onClick={onConfirm}>
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default ConfirmDialog;

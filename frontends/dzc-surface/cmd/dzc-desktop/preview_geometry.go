@@ -15,7 +15,7 @@ func (body *previewBody) mediaBitmap() *ui.Bitmap {
 		return body.bitmap
 	}
 	if len(body.attachments) == 1 {
-		return body.attachments[0].image
+		return body.attachments[0].Bitmap
 	}
 	return nil
 }
@@ -43,10 +43,10 @@ func (body *previewBody) filenameWidth(family string) int {
 	width := float32(0)
 	font := ui.Font{Family: family, Size: 12}
 	for _, item := range body.attachments {
-		if item.image != nil {
+		if item.Bitmap != nil {
 			return 0
 		}
-		w, _ := ui.ShapeText(item.name, font, 0).Size()
+		w, _ := ui.ShapeText(item.Name, font, 0).Size()
 		width = max(width, w)
 	}
 	if width == 0 {

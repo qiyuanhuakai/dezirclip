@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import { useAuxiliaryWindowReady } from "../../../shared/hooks/useAuxiliaryWindowReady";
 import { matchesRegionFrameLayout } from "../../../shared/lib/regionFrameLayout";
-import "./RegionSelectWindow.css";
+import "@deziro/ui-react/styles/components/RegionSelectWindow.css";
 
 type Selection = {
   startX: number;

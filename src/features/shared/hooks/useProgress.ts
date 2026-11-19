@@ -1,12 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 
-export type ProgressToastItem = {
-  id: string;
-  message: string;
-  progress: number;
-  status: "running" | "done" | "error";
-};
+import type { ProgressToastItem } from "@deziro/ui-react/components/ProgressToast";
+export type { ProgressToastItem } from "@deziro/ui-react/components/ProgressToast";
 
 const MAX_VISIBLE = 3;
 const DISMISS_DELAY_MS = 3000;

@@ -15,7 +15,8 @@ import (
 	"github.com/egoist/mygo/ui/richtext"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
-	surfaceTheme "github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
+	surfaceTheme "github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
 // The WebView supplies only a row ID. The preview reads its own privacy-bound
@@ -220,7 +221,7 @@ type previewBody struct {
 	bitmap       *ui.Bitmap
 	sourceIcon   ui.ImageSource
 	formatted    *richtext.Document
-	attachments  []previewAttachment
+	attachments  []uikit.PreviewAttachment
 	kind         string
 	timestamp    int64
 }
@@ -245,7 +246,7 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 	}
 	var bitmap *ui.Bitmap
 	var formatted *richtext.Document
-	var attachments []previewAttachment
+	var attachments []uikit.PreviewAttachment
 	text := row.Content
 	if row.ContentType == "image" {
 		header, encoded, ok := strings.Cut(text, ",")
@@ -272,7 +273,7 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 		if row.HtmlContent != nil {
 			markup = *row.HtmlContent
 		}
-		attachments = previewAttachments(markup, row.Preview)
+		attachments = uikit.ParsePreviewAttachments(markup, row.Preview)
 	} else if row.ContentType == "rich_text" && row.HtmlContent != nil && len(*row.HtmlContent) <= 2*1024*1024 {
 		formatted = previewDocument(richtext.ParseHTML(*row.HtmlContent))
 	} else {
@@ -314,18 +315,18 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 
 func (body *previewBody) metadata(c *ui.Context, language string) {
 	ui.Row(c).FillWidth().Gap(5).Children(func() {
-		previewMetadataIcon(c, body.kind)
+		uikit.PreviewMetadataIcon(c, body.kind)
 		ui.Text(c, body.kind).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)
 		if body.source != "" {
 			if body.sourceIcon != nil {
 				ui.Image(c, body.sourceIcon).Size(14, 14).Fit(ui.Contain)
 			} else {
-				previewMetadataIcon(c, "application")
+				uikit.PreviewMetadataIcon(c, "application")
 			}
 			ui.Text(c, body.source).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted).Grow(1)
 		}
 		if body.timestamp > 0 {
-			previewMetadataIcon(c, "clock")
+			uikit.PreviewMetadataIcon(c, "clock")
 			ui.Text(c, concisePreviewTime(body.timestamp, time.Now(), language)).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)
 		}
 	})
@@ -335,7 +336,7 @@ func (body *previewBody) draw(c *ui.Context) {
 	if bitmap := body.mediaBitmap(); bitmap != nil {
 		ui.Image(c, bitmap).Fill().Fit(ui.Contain)
 	} else if len(body.attachments) > 0 {
-		drawAttachmentPreview(c, body.attachments)
+		uikit.AttachmentPreview(c, body.attachments)
 	} else if body.formatted != nil {
 		drawRichPreview(c, body.formatted)
 	} else {
@@ -413,7 +414,7 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 		// Fit the content before mapping the flyout, so its controls do not move under the pointer.
 		theme := appearance.theme()
 		if fitted := body.filenameWidth(theme.Font); fitted > 0 {
-			width, height = min(560, fitted), attachmentFilenameHeight(len(body.attachments))
+			width, height = min(560, fitted), uikit.AttachmentFilenameHeight(len(body.attachments))
 		} else if fitted := body.textWidth(theme); fitted > 0 {
 			width = fitted
 		}

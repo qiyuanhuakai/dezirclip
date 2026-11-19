@@ -9,7 +9,8 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
-	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/theme"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
 // Only the selection and its authority cross the pipe. Each pinned native window
@@ -28,7 +29,7 @@ type pinnedPreview struct {
 	body      *previewBody
 	loading   bool
 	sized     bool
-	imageView pinnedImageView
+	imageView uikit.PreviewImage
 	opacity   previewOpacityControl
 }
 
@@ -85,7 +86,7 @@ func (p *pinnedPreview) conceal() {
 		p.cancel = nil
 	}
 	p.body = nil
-	p.imageView = pinnedImageView{}
+	p.imageView = uikit.PreviewImage{}
 	p.loading = false
 }
 
@@ -107,7 +108,10 @@ func (p *pinnedPreview) view(c *ui.Context) {
 		if p.body != nil {
 			p.body.metadata(c, a.Language)
 			if bitmap := p.body.mediaBitmap(); bitmap != nil {
-				p.imageView.draw(c, bitmap, a)
+				p.imageView.ZoomControls(c, uikit.ImageZoomLabels{
+					In: a.ZoomIn, Out: a.ZoomOut, Actual: a.Actual, Fit: a.Fit, FitLabel: a.FitLabel,
+				})
+				p.imageView.Draw(c, bitmap, a.ImageZoom)
 			} else {
 				p.body.draw(c)
 			}

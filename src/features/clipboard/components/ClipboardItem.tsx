@@ -1,3 +1,4 @@
+import { HistoryCard, HistoryCardMeta } from "@deziro/ui-react/components/HistoryCard";
 import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
 import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
 import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
@@ -19,7 +20,6 @@ import {
     GripVertical,
     Edit2
 } from "lucide-react";
-import { motion } from "framer-motion";
 import type { ClipboardItemProps } from "../types";
 import type { ClipboardEntry } from "../../../shared/types";
 import { getConciseTime, getTagColor } from "../../../shared/lib/utils";
@@ -843,10 +843,9 @@ const ClipboardItem = ({
 
 
     return (
-        <motion.div
+        <HistoryCard
             ref={itemRootRef}
             id={id}
-            data-test-clipboard-item
             draggable={!isSensitiveHidden && ["image", "file", "files", "video"].includes(item.content_type)}
             onDragStartCapture={event => {
                 if (!["image", "file", "files", "video"].includes(item.content_type)) return;
@@ -866,12 +865,11 @@ const ClipboardItem = ({
                     expectedPrivacyEpoch: access.epoch, allowSensitive: isSensitiveEntry(item) })
                     .catch(error => onTransformItemError?.("file_drag", String(error)));
             }}
-            layout={!disableLayout}
-            initial={false}
-            animate={disableLayout ? undefined : { marginBottom: 0 }}
-            exit={disableLayout ? undefined : { opacity: 0, scale: 0.95 }}
-            transition={disableLayout ? undefined : { duration: 0.1 }}
-            className={`history-item ${isSelected ? "selected" : ""} ${compactMode ? "compact" : ""} ${item.is_pinned ? "pinned" : ""} ${className || ''}`}
+            selected={isSelected}
+            compact={compactMode}
+            pinned={item.is_pinned}
+            disableLayout={disableLayout}
+            className={className}
             onMouseDown={(e) => {
                 fileDragGesture.current = false;
                 if (!windowPinned) return;
@@ -941,9 +939,9 @@ const ClipboardItem = ({
                 leaveCompactPreview(previewOwner.current);
             }}
         >
-            <div className="item-meta">
-                <div className="item-meta-left">
-                    {dragControls && (
+            <HistoryCardMeta
+                source={item.source_app}
+                leading={dragControls && (
                         <div
                             className="drag-handle"
                             onPointerDown={(e) => dragControls.start(e)}
@@ -959,16 +957,9 @@ const ClipboardItem = ({
                             <GripVertical size={14} />
                         </div>
                     )}
-                    <div className="app-info">
-                        {item.is_pinned && !dragControls && <Pin size={10} style={{ color: 'var(--accent-color)', marginRight: '-2px' }} />}
-                        {renderSourceAppIcon(sourceAppIcon, item.content_type, item.source_app)}
-                        <span>{item.source_app}</span>
-                    </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div className="item-actions">
-                        {onEdit && !isSensitiveHidden && (item.content_type === "text" || item.content_type === "code") && (
+                sourceIcon={<>{item.is_pinned && !dragControls && <Pin size={10} style={{ color: 'var(--accent-color)', marginRight: '-2px' }} />}
+                        {renderSourceAppIcon(sourceAppIcon, item.content_type, item.source_app)}</>}
+                actions={<>{onEdit && !isSensitiveHidden && (item.content_type === "text" || item.content_type === "code") && (
                             <button className="btn-icon" title={t('common_edit')} onClick={(event) => {
                                 event.stopPropagation();
                                 onEdit();
@@ -1008,10 +999,8 @@ const ClipboardItem = ({
                         </button>
                         <button className="btn-icon" onClick={onDelete} title={t('delete')}>
                             <X size={12} />
-                        </button>
-                    </div>
-                    <div className="app-info" style={{ opacity: 0.6, fontSize: '10px', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        {ocrStatus && ocrStatus !== "pending" && (
+                        </button></>}
+                status={ocrStatus && ocrStatus !== "pending" && (
                             <span
                                 data-testid="ocr-badge"
                                 className="ocr-badge"
@@ -1039,10 +1028,8 @@ const ClipboardItem = ({
                                             : t('ocr_unsupported_label')}
                             </span>
                         )}
-                        <span>{getConciseTime(item.timestamp, language)}</span>
-                    </div>
-                </div>
-            </div>
+                time={getConciseTime(item.timestamp, language)}
+            />
 
             {compactMode && item.is_pinned && (
                 <div className="compact-pinned-indicator" title={t('pinned')}>
@@ -1350,7 +1337,7 @@ const ClipboardItem = ({
                     ocrText={ocrText}
                 />
             )}
-        </motion.div>
+        </HistoryCard>
     );
 };
 

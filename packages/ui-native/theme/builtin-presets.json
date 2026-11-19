@@ -1,0 +1,266 @@
+{
+  "retro": {
+    "light": {
+      "Background": "#e8e8e8",
+      "Panel": "#ffffff",
+      "Text": "#373737",
+      "Muted": "#707070",
+      "Accent": "#356ac8",
+      "Selected": "#dce6fa",
+      "Border": "#888888",
+      "Radius": 8,
+      "FontSize": 13,
+      "FontFamilies": [
+        "Cascadia Mono"
+      ],
+      "Padding": 12,
+      "Gap": 8,
+      "RowHeight": 52,
+      "SearchHeight": 36,
+      "TransitionMs": 120,
+      "RegularWeight": 400,
+      "EmphasisWeight": 600
+    },
+    "dark": {
+      "Background": "#1f1f1f",
+      "Panel": "#202020",
+      "Text": "#ededed",
+      "Muted": "#c2c2c2",
+      "Accent": "#759eff",
+      "Selected": "#283a5f",
+      "Border": "#454545",
+      "Radius": 8,
+      "FontSize": 13,
+      "FontFamilies": [
+        "Cascadia Mono"
+      ],
+      "Padding": 12,
+      "Gap": 8,
+      "RowHeight": 52,
+      "SearchHeight": 36,
+      "TransitionMs": 120,
+      "RegularWeight": 400,
+      "EmphasisWeight": 600
+    }
+  },
+  "mica": {
+    "light": {
+      "Background": "#fcfcfc",
+      "Panel": "#ffffff",
+      "Text": "#373737",
+      "Muted": "#626975",
+      "Accent": "#356ac8",
+      "Selected": "#e6edfb",
+      "Border": "#d6dae2",
+      "Radius": 8,
+      "FontSize": 13,
+      "FontFamilies": [
+        "Segoe UI Variable Text"
+      ],
+      "Padding": 12,
+      "Gap": 8,
+      "RowHeight": 52,
+      "SearchHeight": 36,
+      "TransitionMs": 120,
+      "RegularWeight": 400,
+      "EmphasisWeight": 600
+    },
+    "dark": {
+      "Background": "#181a20",
+      "Panel": "#252a33",
+      "Text": "#f6f7fb",
+      "Muted": "#d4d8e2",
+      "Accent": "#5c91ef",
+      "Selected": "#253a60",
+      "Border": "#424b5c",
+      "Radius": 8,
+      "FontSize": 13,
+      "FontFamilies": [
+        "Segoe UI Variable Text"
+      ],
+      "Padding": 12,
+      "Gap": 8,
+      "RowHeight": 52,
+      "SearchHeight": 36,
+      "TransitionMs": 120,
+      "RegularWeight": 400,
+      "EmphasisWeight": 600
+    }
+  },
+  "acrylic": {
+    "light": {
+      "Background": "#f6f8fd",
+      "Panel": "#ffffff",
+      "Text": "#28364b",
+      "Muted": "#536780",
+      "Accent": "#356ac8",
+      "Selected": "#e1eafa",
+      "Border": "#cdd8e9",
+      "Radius": 8,
+      "FontSize": 13,
+      "FontFamilies": [
+        "Segoe UI Variable Text"
+      ],
+      "Padding": 12,
+      "Gap": 8,
+      "RowHeight": 52,
+      "SearchHeight": 36,
+      "TransitionMs": 120,
+      "RegularWeight": 400,
+      "EmphasisWeight": 600
+    },
+    "dark": {
+      "Background": "#14161c",
+      "Panel": "#232936",
+      "Text": "#f6f7fb",
+      "Muted": "#d4d8e2",
+      "Accent": "#6aa3f5",
+      "Selected": "#263d61",
+      "Border": "#3e4c62",
+      "Radius": 8,
+      "FontSize": 13,
+      "FontFamilies": [
+        "Segoe UI Variable Text"
+      ],
+      "Padding": 12,
+      "Gap": 8,
+      "RowHeight": 52,
+      "SearchHeight": 36,
+      "TransitionMs": 120,
+      "RegularWeight": 400,
+      "EmphasisWeight": 600
+    }
+  },
+  "liquid-glass": {
+    "light": {
+      "Background": "#f5f8ff",
+      "Panel": "#ffffff",
+      "Text": "#1d1d1f",
+      "Muted": "#636366",
+      "Accent": "#006bd6",
+      "Selected": "#dfeeff",
+      "Border": "#c9d3e6",
+      "Radius": 8,
+      "FontSize": 13,
+      "FontFamilies": [
+        "SF Pro Text"
+      ],
+      "Padding": 12,
+      "Gap": 8,
+      "RowHeight": 52,
+      "SearchHeight": 36,
+      "TransitionMs": 120,
+      "RegularWeight": 400,
+      "EmphasisWeight": 600
+    },
+    "dark": {
+      "Background": "#151c2d",
+      "Panel": "#27334b",
+      "Text": "#f4f7ff",
+      "Muted": "#d1d9eb",
+      "Accent": "#6aafff",
+      "Selected": "#263e63",
+      "Border": "#455875",
+      "Radius": 8,
+      "FontSize": 13,
+      "FontFamilies": [
+        "SF Pro Text"
+      ],
+      "Padding": 12,
+      "Gap": 8,
+      "RowHeight": 52,
+      "SearchHeight": 36,
+      "TransitionMs": 120,
+      "RegularWeight": 400,
+      "EmphasisWeight": 600
+    }
+  },
+  "macos": {
+    "light": {
+      "Background": "#f5f6f8",
+      "Panel": "#ffffff",
+      "Text": "#1d1d1f",
+      "Muted": "#636366",
+      "Accent": "#006bd6",
+      "Selected": "#dfedff",
+      "Border": "#d3d6dd",
+      "Radius": 8,
+      "FontSize": 13,
+      "FontFamilies": [
+        "SF Pro Text"
+      ],
+      "Padding": 12,
+      "Gap": 8,
+      "RowHeight": 52,
+      "SearchHeight": 36,
+      "TransitionMs": 120,
+      "RegularWeight": 400,
+      "EmphasisWeight": 600
+    },
+    "dark": {
+      "Background": "#202024",
+      "Panel": "#303036",
+      "Text": "#f5f5f7",
+      "Muted": "#d1d1d6",
+      "Accent": "#66acff",
+      "Selected": "#263e5d",
+      "Border": "#4f4f57",
+      "Radius": 8,
+      "FontSize": 13,
+      "FontFamilies": [
+        "SF Pro Text"
+      ],
+      "Padding": 12,
+      "Gap": 8,
+      "RowHeight": 52,
+      "SearchHeight": 36,
+      "TransitionMs": 120,
+      "RegularWeight": 400,
+      "EmphasisWeight": 600
+    }
+  },
+  "scifi": {
+    "light": {
+      "Background": "#f5faff",
+      "Panel": "#ffffff",
+      "Text": "#0a2746",
+      "Muted": "#3f6d95",
+      "Accent": "#087d66",
+      "Selected": "#d4f8ed",
+      "Border": "#a6c9d5",
+      "Radius": 8,
+      "FontSize": 13,
+      "FontFamilies": [
+        "Orbitron"
+      ],
+      "Padding": 12,
+      "Gap": 8,
+      "RowHeight": 52,
+      "SearchHeight": 36,
+      "TransitionMs": 120,
+      "RegularWeight": 400,
+      "EmphasisWeight": 600
+    },
+    "dark": {
+      "Background": "#080e1e",
+      "Panel": "#091023",
+      "Text": "#dcfbff",
+      "Muted": "#a1d8ec",
+      "Accent": "#2de9ff",
+      "Selected": "#123647",
+      "Border": "#33576f",
+      "Radius": 8,
+      "FontSize": 13,
+      "FontFamilies": [
+        "Orbitron"
+      ],
+      "Padding": 12,
+      "Gap": 8,
+      "RowHeight": 52,
+      "SearchHeight": 36,
+      "TransitionMs": 120,
+      "RegularWeight": 400,
+      "EmphasisWeight": 600
+    }
+  }
+}
