@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { invoke } from "../../../shared/lib/desktopInvoke";
 import { copyHistorySelection } from "../../../shared/lib/copyHistorySelection";
@@ -6,6 +6,7 @@ import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Plus, X } from "lucide-react";
 import { schedulePreview } from "../../../shared/lib/previewQueue";
+import emojiData from "../../../../frontends/dzc-surface/cmd/dzc-desktop/emoji-data.json";
 
 interface EmojiPanelProps {
   t: (key: string) => string;
@@ -16,8 +17,7 @@ interface EmojiPanelProps {
   saveSetting: (key: string, val: string) => void;
 }
 
-type EmojiGroup = { name: string; emojis: string[] };
-type EmojiData = { groups?: EmojiGroup[] };
+const emojiGroups = emojiData.groups;
 
 function FavoriteImage({ path, name }: { path: string; name: string }) {
   const image = useRef<HTMLImageElement>(null);
@@ -41,49 +41,6 @@ function FavoriteImage({ path, name }: { path: string; name: string }) {
   }, [path, visible]);
   return <img ref={image} decoding="async" src={visible && result?.path === path ? result.src : undefined} alt={name} />;
 }
-
-const FALLBACK_GROUPS: EmojiGroup[] = [
-  {
-    name: "常用",
-    emojis: ["😀", "😁", "😂", "🤣", "😊", "😍", "😘", "😎", "🤔", "😅", "😭", "😡", "👍", "👎", "🙏", "👏", "🎉", "🔥", "💯", "✨", "👌", "😴", "🥳", "🤩", "😬", "😇", "🤝", "🙌"]
-  },
-  {
-    name: "表情",
-    emojis: ["🙂", "😇", "🙃", "😉", "😌", "🤗", "🤩", "🥳", "😴", "😪", "😤", "😱", "🤯", "😵", "🤐", "🫠", "🫡", "🫣", "😐", "😑", "😶", "🙄", "😮", "😯", "😲", "🥺", "😢", "😥", "😓", "😕"]
-  },
-  {
-    name: "手势",
-    emojis: ["👌", "✌️", "🤞", "🤟", "🤘", "🤙", "👊", "✊", "🤚", "🖐️", "✋", "👋", "🫶", "👉", "👈", "👇", "👆", "🫵", "🤝", "🙌", "🤲", "🤜", "🤛", "🫰", "🤌"]
-  },
-  {
-    name: "人物",
-    emojis: ["👨‍💻", "👩‍💻", "👨‍🎨", "👩‍🎨", "👨‍🚀", "👩‍🚀", "👨‍🍳", "👩‍🍳", "👨‍⚕️", "👩‍⚕️", "👨‍🏫", "👩‍🏫", "🧑‍💼", "🧑‍🔧", "🧑‍🎧", "🧑‍🚒"]
-  },
-  {
-    name: "动物",
-    emojis: ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔", "🐧", "🐦", "🐤", "🐺", "🦄"]
-  },
-  {
-    name: "美食",
-    emojis: ["🍎", "🍐", "🍊", "🍋", "🍉", "🍇", "🍓", "🍒", "🍍", "🥭", "🍔", "🍟", "🍕", "🌭", "🍣", "🍤", "🍜", "🍲", "🍰", "🍩"]
-  },
-  {
-    name: "活动",
-    emojis: ["⚽", "🏀", "🏈", "⚾", "🎾", "🏐", "🏓", "🏸", "🥊", "🏆", "🎯", "🎮", "🎲", "🎹", "🎸", "🎤", "🎧", "🏃", "🚴", "🧘"]
-  },
-  {
-    name: "旅行",
-    emojis: ["🚗", "🚕", "🚌", "🚎", "🏎️", "🚓", "🚑", "🚒", "🚀", "✈️", "🛫", "🛬", "🚢", "⛵", "🗺️", "🧭", "🏝️", "⛰️", "🌋", "🏜️"]
-  },
-  {
-    name: "物品",
-    emojis: ["📱", "💻", "🖥️", "⌨️", "🖱️", "📷", "🎥", "📺", "🔦", "💡", "🔋", "🔌", "📦", "📌", "✏️", "📚", "🧰", "🧲", "🧯", "🧪"]
-  },
-  {
-    name: "符号",
-    emojis: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❗", "❓", "✅", "❌", "⚠️", "⭕", "💯", "✨", "⭐", "🌟"]
-  }
-];
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
 
@@ -200,9 +157,6 @@ const dedupeFavoritePaths = (paths: string[]) =>
 const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveSetting }: EmojiPanelProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [emojiGroups, setEmojiGroups] = useState<EmojiGroup[]>(FALLBACK_GROUPS);
-
-  const flatEmoji = useMemo(() => emojiGroups.flatMap((g) => g.emojis), [emojiGroups]);
   const hasFavorites = favorites.length > 0;
 
   // The drag-drop listeners below are bound to the window, not to the favorites
@@ -424,26 +378,6 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
   };
 
   useEffect(() => {
-    let alive = true;
-    fetch("/emoji-data.json")
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Failed to load emoji data"))))
-      .then((data: EmojiData) => {
-        if (!alive) return;
-        const groups = Array.isArray(data?.groups) ? data.groups.filter((g) => g && Array.isArray(g.emojis)) : [];
-        if (groups.length > 0) {
-          setEmojiGroups(groups);
-        }
-      })
-      .catch(() => {
-        if (alive) setEmojiGroups(FALLBACK_GROUPS);
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
     const appWindow = getCurrentWindow();
 
     const unlistenDrop = appWindow.listen("tauri://file-drop", (e) => {
@@ -564,7 +498,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
               </div>
             </div>
           ))}
-          {flatEmoji.length === 0 && (
+          {emojiGroups.every(group => !group.emojis.length) && (
             <div className="emoji-empty">{t("emoji_empty") || "暂无表情"}</div>
           )}
         </div>

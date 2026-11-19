@@ -376,7 +376,11 @@ func run() error {
 				return
 			}
 			if native != nil {
-				native.dropFiles(e.Paths)
+				if native.showEmoji && !native.showSettings {
+					native.importEmojiPaths(e.Paths)
+				} else {
+					native.dropFiles(e.Paths)
+				}
 				return
 			}
 			fmt.Fprintf(os.Stderr, "Native file drop: %d files\n", len(e.Paths))
@@ -532,9 +536,9 @@ func run() error {
 							if native != nil {
 								switch command {
 								case "settings":
-									native.showSettings = true
+									native.showSettings, native.showEmoji = true, false
 								case "search":
-									native.showSettings, native.focusSearch = false, true
+									native.showSettings, native.showEmoji, native.focusSearch = false, false, true
 								}
 							}
 							shell.requestShow(win)

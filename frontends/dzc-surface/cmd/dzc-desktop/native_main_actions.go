@@ -100,25 +100,11 @@ func (n *nativeMain) runRowAction(ctx context.Context, row protocol.DesktopEntry
 func (n *nativeMain) transferRow(ctx context.Context, id int64, state protocol.RuntimeState, preferences map[string]string, action nativeRowAction) (bool, string, error) {
 	params := protocol.DesktopCopyParams{Id: id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch}
 	if action == nativePaste || action == nativeRichPaste {
-		raw, err := n.library.Platform(ctx)
+		paste, err := n.canAutoPaste(ctx)
 		if err != nil {
 			return false, "", err
 		}
-		type capability struct {
-			Availability struct{ Status string }
-		}
-		var platform struct {
-			NativeWayland bool `json:"native_wayland"`
-			Write         capability
-			AutoPaste     capability `json:"auto_paste"`
-		}
-		if json.Unmarshal(raw, &platform) != nil || platform.Write.Availability.Status != "available" {
-			return false, "", errors.New("clipboard write unavailable")
-		}
-		if platform.AutoPaste.Availability.Status == "" {
-			return false, "", errors.New("automatic paste capability unavailable")
-		}
-		params.Paste = !platform.NativeWayland && platform.AutoPaste.Availability.Status == "available"
+		params.Paste = paste
 	}
 	if action == nativeRichPaste {
 		withFormat := true
@@ -152,4 +138,26 @@ func (n *nativeMain) transferRow(ctx context.Context, id int64, state protocol.R
 		return true, "", nil
 	}
 	return false, "Copied to clipboard", nil
+}
+
+func (n *nativeMain) canAutoPaste(ctx context.Context) (bool, error) {
+	raw, err := n.library.Platform(ctx)
+	if err != nil {
+		return false, err
+	}
+	type capability struct {
+		Availability struct{ Status string }
+	}
+	var platform struct {
+		NativeWayland bool `json:"native_wayland"`
+		Write         capability
+		AutoPaste     capability `json:"auto_paste"`
+	}
+	if json.Unmarshal(raw, &platform) != nil || platform.Write.Availability.Status != "available" {
+		return false, errors.New("clipboard write unavailable")
+	}
+	if platform.AutoPaste.Availability.Status == "" {
+		return false, errors.New("automatic paste capability unavailable")
+	}
+	return !platform.NativeWayland && platform.AutoPaste.Availability.Status == "available", nil
 }

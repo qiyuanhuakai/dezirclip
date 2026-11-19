@@ -38,6 +38,8 @@ type nativeMain struct {
 	focusSearch      bool
 	temporarySearch  bool
 	showSettings     bool
+	showEmoji        bool
+	emoji            *nativeEmojiPanel
 	settingsSection  string
 	settingsOpen     map[string]*bool
 	capturing        bool
@@ -71,6 +73,7 @@ func (n *nativeMain) stopSession() {
 	n.capturing = false
 	n.tags = nil
 	n.tagLibrary = nil
+	n.emoji = nil
 	n.resetPreviewSelection()
 }
 
@@ -133,6 +136,9 @@ func (n *nativeMain) colorMode(ctx context.Context, settings map[string]string) 
 
 func (n *nativeMain) configured(settings map[string]string, mode string) {
 	n.preferences, n.theme, n.mode = settings, settings["app.theme"], mode
+	if settings["app.emoji_panel_enabled"] != "true" {
+		n.showEmoji = false
+	}
 	n.pinned = settings["app.window_pinned"] == "true"
 	n.window.SetAlwaysOnTop(n.pinned)
 }

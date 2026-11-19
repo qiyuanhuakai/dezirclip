@@ -106,6 +106,7 @@ func (n *nativeMain) generalSettings(c *ui.Context) {
 		nativeBooleanSetting{"app.show_search_box", "Show search box", true},
 		nativeBooleanSetting{"app.show_scroll_top_button", "Show scroll-to-top button", true},
 		nativeBooleanSetting{"app.tag_manager_enabled", "Enable tag manager", true},
+		nativeBooleanSetting{"app.emoji_panel_enabled", "Enable emoji panel", false},
 		nativeBooleanSetting{"app.arrow_key_selection", "Select history with arrow keys", false},
 		nativeBooleanSetting{"app.preview_keyboard_enabled", "Preview keyboard selection", false},
 	)

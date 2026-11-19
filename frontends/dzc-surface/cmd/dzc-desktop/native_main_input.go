@@ -162,6 +162,10 @@ func (n *nativeMain) previewAppearance() previewAppearance {
 }
 
 func (n *nativeMain) historyShortcuts(c *ui.Context, queryFocused bool) {
+	if n.showEmoji && !n.showSettings {
+		c.OnShortcut(0, ui.KeyEscape, n.closeEmoji)
+		return
+	}
 	if n.showSettings || n.hasHistoryDialog() {
 		return
 	}

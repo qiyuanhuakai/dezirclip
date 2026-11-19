@@ -40,6 +40,9 @@ func (n *nativeMain) view(c *ui.Context) {
 		if n.showSettings {
 			header.Title = "Settings"
 			header.Back = &uikit.HeaderAction{Icon: "back", Label: "Back", Run: func() { n.showSettings = false }}
+		} else if n.showEmoji {
+			header.Title = "Emoji"
+			header.Back = &uikit.HeaderAction{Icon: "back", Label: "Back", Run: n.closeEmoji, Disabled: n.mutating}
 		} else if n.tagLibrary != nil {
 			header.Title = "Tags"
 			header.Back = &uikit.HeaderAction{Icon: "back", Label: "Back", Run: n.closeTagLibrary, Disabled: n.mutating}
@@ -51,6 +54,11 @@ func (n *nativeMain) view(c *ui.Context) {
 			if n.preferences["app.tag_manager_enabled"] != "false" {
 				header.Actions = append([]uikit.HeaderAction{{
 					Icon: "tag", Label: "Tags", Run: n.openTagLibrary, Disabled: n.mutating,
+				}}, header.Actions...)
+			}
+			if n.preferences["app.emoji_panel_enabled"] == "true" {
+				header.Actions = append([]uikit.HeaderAction{{
+					Icon: "emoji", Label: "Emoji", Run: n.openEmoji, Disabled: n.mutating,
 				}}, header.Actions...)
 			}
 			if n.focusSearch {
@@ -72,6 +80,8 @@ func (n *nativeMain) view(c *ui.Context) {
 		kit.Header(c, header)
 		if n.showSettings {
 			n.settingsView(c, kit)
+		} else if n.showEmoji {
+			n.emojiView(c)
 		} else {
 			if n.tagLibrary != nil {
 				n.tagLibraryControls(c, kit, n.tagLibrary)
