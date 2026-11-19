@@ -43,7 +43,7 @@ tokio = { workspace = true, optional = true, features = ["net", "io-util", "rt",
 libloading = "0.8"
 dirs.workspace = true
 keyring.workspace = true
-x11rb = { workspace = true, features = ["xkb"] }
+x11rb = { workspace = true, features = ["randr", "xkb"] }
 libc.workspace = true
 x11-clipboard.workspace = true
 wayland-client = "0.31"

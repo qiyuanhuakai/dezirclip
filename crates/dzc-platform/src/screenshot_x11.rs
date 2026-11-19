@@ -1,6 +1,26 @@
-use super::{map_xcap, MonitorRect, ScreenshotError};
+use super::{map_monitor_enumeration_error, map_xcap, MonitorRect, ScreenshotError};
 use x11rb::{connection::Connection, image::{Image, PixelLayout}, protocol::xproto::ConnectionExt};
 use zeroize::Zeroize;
+
+pub(super) fn monitor_rects() -> Result<Vec<MonitorRect>, ScreenshotError> {
+    if crate::runtime::is_native_wayland() {
+        return Err(ScreenshotError::XcapError("Native Wayland screenshot is unavailable".into()));
+    }
+    crate::runtime_display::validate_x11_display().map_err(map_monitor_enumeration_error)?;
+    let (connection, screen_index) = x11rb::connect(None).map_err(map_monitor_enumeration_error)?;
+    let screen = connection.setup().roots.get(screen_index).ok_or(ScreenshotError::NoMonitor)?;
+    // RandR reports the same root pixels used by GetImage, independent of Xft.dpi.
+    let reply = x11rb::protocol::randr::get_monitors(&connection, screen.root, true)
+        .map_err(map_xcap)?.reply().map_err(map_xcap)?;
+    Ok(reply.monitors.into_iter().filter(|monitor| monitor.width > 0 && monitor.height > 0)
+        .map(|monitor| MonitorRect {
+            x: i32::from(monitor.x),
+            y: i32::from(monitor.y),
+            width: u32::from(monitor.width),
+            height: u32::from(monitor.height),
+            is_primary: monitor.primary,
+        }).collect())
+}
 
 pub(super) fn capture(rect: MonitorRect) -> Result<xcap::image::RgbaImage, ScreenshotError> {
     if rect.width == 0 || rect.height == 0 || u64::from(rect.width) * u64::from(rect.height) > 40_000_000 {
@@ -35,7 +55,11 @@ pub(super) fn capture(rect: MonitorRect) -> Result<xcap::image::RgbaImage, Scree
 #[cfg(test)]
 mod tests {
     use super::*;
-    use x11rb::{image::ColorComponent, protocol::xproto::CreateGCAux};
+    use x11rb::{
+        image::ColorComponent,
+        protocol::xproto::{AtomEnum, CreateGCAux, PropMode},
+        wrapper::ConnectionExt as _,
+    };
 
     #[test]
     fn native_x11_capture_matches_root_pixels() {
@@ -44,6 +68,9 @@ mod tests {
         assert_eq!(std::env::var("RUNNER_ENVIRONMENT").as_deref(), Ok("github-hosted"));
         let (connection, screen_index) = x11rb::connect(None).unwrap();
         let screen = &connection.setup().roots[screen_index];
+        let resources = connection.intern_atom(false, b"RESOURCE_MANAGER").unwrap().reply().unwrap().atom;
+        connection.change_property8(PropMode::REPLACE, screen.root, resources, AtomEnum::STRING,
+            b"Xft.dpi:\t192\n").unwrap().check().unwrap();
         let visual = screen.allowed_depths.iter().flat_map(|depth| &depth.visuals)
             .find(|visual| visual.visual_id == screen.root_visual).unwrap();
         let layout = PixelLayout::from_visual_type(*visual).unwrap();
@@ -53,8 +80,10 @@ mod tests {
         connection.free_gc(gc).unwrap().check().unwrap();
         let full = super::super::capture_full_screen(None).unwrap();
         let frozen = super::super::freeze_at(None).unwrap();
-        let crop = super::super::capture_region(7, 9, 101, 63).unwrap();
-        let frozen_crop = frozen.crop(7, 9, 101, 63).unwrap();
+        let x = i32::from(screen.width_in_pixels) - 101;
+        let y = i32::from(screen.height_in_pixels) - 63;
+        let crop = super::super::capture_region(x, y, 101, 63).unwrap();
+        let frozen_crop = frozen.crop(x, y, 101, 63).unwrap();
         for (result, width, height) in [(&full, screen.width_in_pixels as u32, screen.height_in_pixels as u32), (&crop, 101, 63), (&frozen_crop, 101, 63)] {
             let pixels = xcap::image::load_from_memory(&result.png_bytes).unwrap().to_rgba8();
             assert_eq!(pixels.dimensions(), (width, height));

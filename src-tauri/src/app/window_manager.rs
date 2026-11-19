@@ -40,7 +40,7 @@ where
 }
 
 #[cfg(target_os = "linux")]
-fn position_window_at_cursor_linux(window: &tauri::WebviewWindow, w: i32, h: i32) {
+fn position_window_at_cursor_linux(window: &tauri::WebviewWindow, w: i32, h: i32) -> bool {
     let cursor_xy = with_x11_connection(|conn, screen_num| {
         let root_window = conn.setup().roots[screen_num].root;
         conn.query_pointer(root_window)
@@ -51,7 +51,7 @@ fn position_window_at_cursor_linux(window: &tauri::WebviewWindow, w: i32, h: i32
     });
 
     let Some((cursor_x_raw, cursor_y_raw)) = cursor_xy else {
-        return;
+        return false;
     };
     let cursor_x = cursor_x_raw as i32;
     let cursor_y = cursor_y_raw as i32;
@@ -108,10 +108,7 @@ fn position_window_at_cursor_linux(window: &tauri::WebviewWindow, w: i32, h: i32
         }
     }
 
-    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-        x: target_x,
-        y: target_y,
-    }));
+    window.set_position(tauri::PhysicalPosition::new(target_x, target_y)).is_ok()
 }
 
 #[cfg(windows)]
@@ -297,6 +294,11 @@ pub fn toggle_window(app: &AppHandle) {
             }
         }
 
+        #[cfg(target_os = "linux")]
+        let mut positioned_at_cursor = false;
+        #[cfg(not(target_os = "linux"))]
+        let positioned_at_cursor = false;
+
         if let Ok(size) = window.outer_size() {
             let settings = app.state::<SettingsState>();
             if settings.follow_mouse.load(Ordering::Relaxed) && !dzc_platform::runtime::is_native_wayland() {
@@ -371,7 +373,7 @@ pub fn toggle_window(app: &AppHandle) {
                 {
                     let w = size.width as i32;
                     let h = size.height as i32;
-                    position_window_at_cursor_linux(&window, w, h);
+                    positioned_at_cursor = position_window_at_cursor_linux(&window, w, h);
                 }
             } else if was_docked {
                 #[cfg(windows)]
@@ -516,21 +518,24 @@ pub fn toggle_window(app: &AppHandle) {
         }
 
         // Explicit activation starts inside the monitor, beyond the docking strip.
-        // Merely retaining a partly off-screen drag position causes an immediate re-hide.
-        if let (Ok(position), Ok(size), Ok(Some(monitor))) =
-            (window.outer_position(), window.outer_size(), window.current_monitor())
-        {
-            let origin = monitor.position();
-            let available = monitor.size();
-            let axis = |value: i32, origin: i32, available: u32, size: u32| {
-                let spare = available.saturating_sub(size).min(i32::MAX as u32) as i32;
-                let margin = 16.min(spare / 2);
-                value.clamp(origin + margin, origin + spare - margin)
-            };
-            let _ = window.set_position(tauri::PhysicalPosition::new(
-                axis(position.x, origin.x, available.width, size.width),
-                axis(position.y, origin.y, available.height, size.height),
-            ));
+        // On X11 position writes are queued. Reading the old bounds and writing
+        // them again would overwrite the move to the cursor.
+        if !positioned_at_cursor {
+            if let (Ok(position), Ok(size), Ok(Some(monitor))) =
+                (window.outer_position(), window.outer_size(), window.current_monitor())
+            {
+                let origin = monitor.position();
+                let available = monitor.size();
+                let axis = |value: i32, origin: i32, available: u32, size: u32| {
+                    let spare = available.saturating_sub(size).min(i32::MAX as u32) as i32;
+                    let margin = 16.min(spare / 2);
+                    value.clamp(origin + margin, origin + spare - margin)
+                };
+                let _ = window.set_position(tauri::PhysicalPosition::new(
+                    axis(position.x, origin.x, available.width, size.width),
+                    axis(position.y, origin.y, available.height, size.height),
+                ));
+            }
         }
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
 

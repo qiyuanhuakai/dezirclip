@@ -5,27 +5,12 @@
 
 use serde::Serialize;
 use xcap::image::{ExtendedColorType, ImageEncoder};
+#[cfg(target_os = "windows")]
 use xcap::Monitor;
 
 #[cfg(target_os = "linux")]
 #[path = "screenshot_x11.rs"]
 mod x11;
-
-fn capture_pixels(monitor: &Monitor, rect: MonitorRect) -> Result<xcap::image::RgbaImage, ScreenshotError> {
-    #[cfg(target_os = "linux")]
-    {
-        let _ = monitor;
-        if crate::runtime::is_native_wayland() {
-            return Err(ScreenshotError::XcapError("Native Wayland screenshot is unavailable".into()));
-        }
-        x11::capture(rect)
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let _ = rect;
-        monitor.capture_image().map_err(map_xcap)
-    }
-}
 
 #[cfg(test)]
 const RUN_SCREENSHOT_SMOKE: &str = "DEZIRCLIP_RUN_SCREENSHOT_SMOKE_TESTS";
@@ -108,22 +93,20 @@ impl Drop for FrozenScreenFrame {
 }
 
 pub fn freeze_at(cursor: Option<(i32, i32)>) -> Result<FrozenScreenFrame, ScreenshotError> {
-    let monitors = Monitor::all().map_err(map_monitor_enumeration_error)?;
-    let rects = read_monitor_rects(&monitors)?;
-    let index = pick_capture_monitor(&rects, cursor).ok_or(ScreenshotError::NoMonitor)?;
-    let rect = rects[index];
+    let displays = CaptureDisplays::read()?;
+    let index = pick_capture_monitor(&displays.rects, cursor).ok_or(ScreenshotError::NoMonitor)?;
+    let rect = displays.rects[index];
     // Bound the native read before allocating the full RGBA image.
     if u64::from(rect.width) * u64::from(rect.height) > 40_000_000 { return Err(ScreenshotError::RegionOutOfBounds); }
-    FrozenScreenFrame::from_pixels(rect, capture_pixels(&monitors[index], rect)?)
+    FrozenScreenFrame::from_pixels(rect, displays.capture(index)?)
 }
 
 pub fn freeze_monitor(rect: MonitorRect) -> Result<FrozenScreenFrame, ScreenshotError> {
-    let monitors = Monitor::all().map_err(map_monitor_enumeration_error)?;
-    let rects = read_monitor_rects(&monitors)?;
-    let index = rects.iter().position(|candidate| candidate.x == rect.x && candidate.y == rect.y
+    let displays = CaptureDisplays::read()?;
+    let index = displays.rects.iter().position(|candidate| candidate.x == rect.x && candidate.y == rect.y
         && candidate.width == rect.width && candidate.height == rect.height)
         .ok_or(ScreenshotError::RegionOutOfBounds)?;
-    let pixels = capture_pixels(&monitors[index], rect)?;
+    let pixels = displays.capture(index)?;
     FrozenScreenFrame::from_pixels(rect, pixels)
 }
 
@@ -220,25 +203,64 @@ fn encode_png(rgba: &xcap::image::RgbaImage) -> Result<Vec<u8>, ScreenshotError>
     Ok(buf)
 }
 
-/// Read every attached display's placement, preserving `Monitor::all()` order so
-/// the indices returned by `pick_capture_monitor` address the same entries.
-///
-/// `is_primary` is read leniently: a platform that cannot answer is treated as
-/// non-primary rather than failing the capture, which is how the previous
-/// primary-selection path behaved.
-fn read_monitor_rects(monitors: &[Monitor]) -> Result<Vec<MonitorRect>, ScreenshotError> {
-    monitors
-        .iter()
-        .map(|monitor| {
-            Ok(MonitorRect {
-                x: monitor.x().map_err(map_xcap)?,
-                y: monitor.y().map_err(map_xcap)?,
-                width: monitor.width().map_err(map_xcap)?,
-                height: monitor.height().map_err(map_xcap)?,
-                is_primary: monitor.is_primary().unwrap_or(false),
-            })
-        })
-        .collect()
+struct CaptureDisplays {
+    rects: Vec<MonitorRect>,
+    #[cfg(target_os = "windows")]
+    monitors: Vec<Monitor>,
+}
+
+impl CaptureDisplays {
+    fn read() -> Result<Self, ScreenshotError> {
+        #[cfg(target_os = "linux")]
+        {
+            Ok(Self { rects: x11::monitor_rects()? })
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let monitors = Monitor::all().map_err(map_monitor_enumeration_error)?;
+            let rects = monitors.iter().map(|monitor| {
+                Ok(MonitorRect {
+                    x: monitor.x().map_err(map_xcap)?,
+                    y: monitor.y().map_err(map_xcap)?,
+                    width: monitor.width().map_err(map_xcap)?,
+                    height: monitor.height().map_err(map_xcap)?,
+                    is_primary: monitor.is_primary().unwrap_or(false),
+                })
+            }).collect::<Result<Vec<_>, ScreenshotError>>()?;
+            Ok(Self { rects, monitors })
+        }
+    }
+
+    fn capture(&self, index: usize) -> Result<xcap::image::RgbaImage, ScreenshotError> {
+        #[cfg(target_os = "linux")]
+        { x11::capture(self.rects[index]) }
+        #[cfg(target_os = "windows")]
+        { self.monitors[index].capture_image().map_err(map_xcap) }
+    }
+
+    fn region(&self, rect: MonitorRect) -> Result<xcap::image::RgbaImage, ScreenshotError> {
+        let right = i64::from(rect.x) + i64::from(rect.width);
+        let bottom = i64::from(rect.y) + i64::from(rect.height);
+        let index = self.rects.iter().position(|monitor| {
+            rect_holds_cursor(*monitor, rect.x, rect.y)
+                && right <= i64::from(monitor.x) + i64::from(monitor.width)
+                && bottom <= i64::from(monitor.y) + i64::from(monitor.height)
+        }).ok_or(ScreenshotError::RegionOutOfBounds)?;
+        #[cfg(target_os = "linux")]
+        {
+            let _ = index;
+            x11::capture(rect)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let monitor = self.rects[index];
+            self.monitors[index].capture_region(
+                (i64::from(rect.x) - i64::from(monitor.x)) as u32,
+                (i64::from(rect.y) - i64::from(monitor.y)) as u32,
+                rect.width, rect.height,
+            ).map_err(map_xcap)
+        }
+    }
 }
 
 /// Capture one whole display as a PNG.
@@ -248,13 +270,9 @@ fn read_monitor_rects(monitors: &[Monitor]) -> Result<Vec<MonitorRect>, Screensh
 /// taking the cursor as an argument rather than querying it here keeps this
 /// function free of platform conditionals and keeps the selection testable.
 pub fn capture_full_screen(cursor: Option<(i32, i32)>) -> Result<ScreenshotResult, ScreenshotError> {
-    let monitors = Monitor::all().map_err(map_monitor_enumeration_error)?;
-    if monitors.is_empty() {
-        return Err(ScreenshotError::NoMonitor);
-    }
-    let rects = read_monitor_rects(&monitors)?;
-    let index = pick_capture_monitor(&rects, cursor).ok_or(ScreenshotError::NoMonitor)?;
-    let rgba = capture_pixels(&monitors[index], rects[index])?;
+    let displays = CaptureDisplays::read()?;
+    let index = pick_capture_monitor(&displays.rects, cursor).ok_or(ScreenshotError::NoMonitor)?;
+    let rgba = displays.capture(index)?;
     let (width, height) = rgba.dimensions();
     let png_bytes = encode_png(&rgba)?;
     Ok(ScreenshotResult {
@@ -273,40 +291,7 @@ pub fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<ScreenshotResult
         return Err(ScreenshotError::RegionOutOfBounds);
     }
 
-    let monitors = Monitor::all().map_err(map_monitor_enumeration_error)?;
-    let right = i64::from(x) + i64::from(w);
-    let bottom = i64::from(y) + i64::from(h);
-    let mut target: Option<(&Monitor, u32, u32)> = None;
-
-    for monitor in &monitors {
-        let mx = monitor.x().map_err(map_xcap)?;
-        let my = monitor.y().map_err(map_xcap)?;
-        let mw = monitor.width().map_err(map_xcap)?;
-        let mh = monitor.height().map_err(map_xcap)?;
-        let monitor_right = i64::from(mx) + i64::from(mw);
-        let monitor_bottom = i64::from(my) + i64::from(mh);
-
-        if i64::from(x) >= i64::from(mx)
-            && i64::from(y) >= i64::from(my)
-            && right <= monitor_right
-            && bottom <= monitor_bottom
-        {
-            target = Some((monitor, (x - mx) as u32, (y - my) as u32));
-            break;
-        }
-    }
-
-    let (monitor, rel_x, rel_y) = target.ok_or(ScreenshotError::RegionOutOfBounds)?;
-
-    #[cfg(target_os = "windows")]
-    let rgba = monitor
-        .capture_region(rel_x, rel_y, w, h)
-        .map_err(map_xcap)?;
-    #[cfg(target_os = "linux")]
-    let rgba = {
-        let _ = (rel_x, rel_y);
-        capture_pixels(monitor, MonitorRect { x, y, width: w, height: h, is_primary: false })?
-    };
+    let rgba = CaptureDisplays::read()?.region(MonitorRect { x, y, width: w, height: h, is_primary: false })?;
     let (width, height) = rgba.dimensions();
     let png_bytes = encode_png(&rgba)?;
     Ok(ScreenshotResult { width, height, png_bytes })
@@ -631,13 +616,9 @@ mod tests {
         }
 
         // Pick a known-good region on the primary monitor (or skip on no-display CI).
-        let monitors = match Monitor::all() {
-            Ok(m) if !m.is_empty() => m,
+        let rects = match CaptureDisplays::read() {
+            Ok(display) if !display.rects.is_empty() => display.rects,
             _ => return Ok(()),
-        };
-        let rects = match read_monitor_rects(&monitors) {
-            Ok(r) => r,
-            Err(_) => return Ok(()),
         };
 
         let primary = rects
@@ -674,17 +655,10 @@ mod tests {
             return Ok(());
         }
 
-        let monitors = match Monitor::all() {
-            Ok(m) if !m.is_empty() => m,
-            _ => return Ok(()), // headless CI: the list may legitimately be empty
+        let rects = match CaptureDisplays::read() {
+            Ok(displays) => displays.rects,
+            Err(_) => return Ok(()), // headless CI: monitor enumeration may fail
         };
-        let rects = read_monitor_rects(&monitors)?;
-        assert_eq!(
-            rects.len(),
-            monitors.len(),
-            "every enumerated display must yield a rect, or the index returned by \
-             pick_capture_monitor would address the wrong entry"
-        );
         for rect in &rects {
             assert!(rect.width > 0, "monitor width must be populated and non-zero");
             assert!(
