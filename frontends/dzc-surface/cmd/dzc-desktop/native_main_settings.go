@@ -163,7 +163,6 @@ func (n *nativeMain) generalSettings(c *ui.Context, kit uikit.Kit) {
 	n.booleanSettings(c,
 		nativeBooleanSetting{"app.silent_start", n.text("silent_start", "Start hidden"), true},
 		nativeBooleanSetting{"app.follow_mouse", n.text("follow_mouse", "Show window near the mouse"), true},
-		nativeBooleanSetting{"app.edge_docking", n.text("edge_docking", "Edge docking"), false},
 		nativeBooleanSetting{"app.show_search_box", n.text("show_search_box", "Show search box"), true},
 		nativeBooleanSetting{"app.show_scroll_top_button", n.text("scroll_top_button", "Show scroll-to-top button"), true},
 		nativeBooleanSetting{"app.tag_manager_enabled", n.text("tag_manager_enabled", "Enable tag manager"), true},
@@ -171,6 +170,11 @@ func (n *nativeMain) generalSettings(c *ui.Context, kit uikit.Kit) {
 		nativeBooleanSetting{"app.arrow_key_selection", n.text("arrow_key_selection", "Select history with arrow keys"), false},
 		nativeBooleanSetting{"app.preview_keyboard_enabled", n.text("preview_keyboard_enabled", "Preview keyboard selection"), false},
 	)
+	const edge = "app.edge_docking"
+	dock := n.settingEnabled(edge, false)
+	if ui.Checkbox(c, &dock, n.text("edge_docking", "Edge docking")).Disabled(n.mutating || !dock && !dockingAvailable()).Changed() {
+		n.saveSetting(edge, strconv.FormatBool(dock))
+	}
 	hideTray := n.settingEnabled("app.hide_tray_icon", false)
 	if ui.Checkbox(c, &hideTray, n.text("hide_tray_icon", "Hide tray icon")).Disabled(n.mutating).Changed() {
 		n.writeSetting(func(ctx context.Context, epoch uint64) error {

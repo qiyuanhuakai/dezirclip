@@ -42,7 +42,7 @@ func containsPoint(r mygo.Rectangle, p mygo.Point) bool {
 	return p.X >= r.X && p.Y >= r.Y && p.X < r.X+r.Width && p.Y < r.Y+r.Height
 }
 
-// The main WebView owns its docking monitor. The native resident never polls the cursor.
+// The main window owns its docking monitor. The resident never polls the cursor.
 type edgeDock struct {
 	dialogs        atomic.Int32
 	ignoreBlur     atomic.Bool
@@ -51,6 +51,7 @@ type edgeDock struct {
 	history        *History
 	stop           chan struct{}
 	hidden         bool
+	autoPinned     bool
 	strip, monitor mygo.Rectangle
 	shown          time.Time
 	show           func()
@@ -123,6 +124,7 @@ func (d *edgeDock) tick() {
 	}
 	if !w.IsAlwaysOnTop() {
 		w.SetAlwaysOnTop(true)
+		d.autoPinned = true
 		dockPinned.Emit(w, true)
 	}
 	d.strip, d.monitor, d.hidden = strip, sample.monitor, true

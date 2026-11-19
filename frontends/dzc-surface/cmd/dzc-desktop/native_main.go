@@ -211,7 +211,8 @@ func (n *nativeMain) configured(settings map[string]string) {
 	if settings["app.emoji_panel_enabled"] != "true" {
 		n.showEmoji = false
 	}
-	n.pinned = settings["app.window_pinned"] == "true"
+	n.shell.dock.configure(settings["app.edge_docking"] == "true")
+	n.pinned = settings["app.window_pinned"] == "true" || n.shell.dock.autoPinned
 	n.window.SetAlwaysOnTop(n.pinned)
 }
 
@@ -456,12 +457,16 @@ func (n *nativeMain) saveSetting(key, value string) {
 
 func (n *nativeMain) togglePin() {
 	pinned := !n.pinned
-	n.writeSetting(func(ctx context.Context, epoch uint64) error {
+	n.writeSettingWithEffect(func(ctx context.Context, epoch uint64) error {
 		return n.library.SetWindowPinned(ctx, pinned, epoch)
-	})
+	}, func() { n.shell.dock.autoPinned = false })
 }
 
 func (n *nativeMain) writeSetting(write func(context.Context, uint64) error) {
+	n.writeSettingWithEffect(write, nil)
+}
+
+func (n *nativeMain) writeSettingWithEffect(write func(context.Context, uint64) error, onSaved func()) {
 	if n.session == nil || n.mutating || n.history.state.ServiceInstanceId == "" {
 		return
 	}
@@ -476,6 +481,9 @@ func (n *nativeMain) writeSetting(write func(context.Context, uint64) error) {
 			if err != nil {
 				n.notice = n.text("native_setting_save_failed")
 				return
+			}
+			if onSaved != nil {
+				onSaved()
 			}
 			n.prepare(n.resume)
 		})
