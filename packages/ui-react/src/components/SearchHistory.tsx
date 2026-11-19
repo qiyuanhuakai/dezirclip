@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { Clock } from "lucide-react";
 
 export interface SearchHistoryProps {
   items: string[];
@@ -45,9 +46,7 @@ export const SearchHistory = ({
           onClick={() => handleClick(term)}
           data-test-history-item
         >
-          <span className="search-history__icon" aria-hidden="true">
-            🕐
-          </span>
+          <Clock className="search-history__icon" size={14} aria-hidden="true" />
           {term}
         </button>
       ))}

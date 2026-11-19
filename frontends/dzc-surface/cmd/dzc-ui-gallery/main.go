@@ -26,6 +26,7 @@ type gallery struct {
 	wheelCount                        int
 	resizeDirection                   uikit.PreviewResizeDirection
 	dialog, disclosure, help, visible bool
+	focusTagName                      bool
 	active                            map[string]bool
 }
 
@@ -125,7 +126,7 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 			message = "Search unavailable"
 		}
 		kit.SearchBar(c, uikit.SearchOptions{Query: &g.query, Mode: &g.searchMode,
-			Modes: []uikit.SearchMode{{ID: "fts", Label: "FTS5"}, {ID: "fuzzy", Label: "≈ 模糊"}, {ID: "regex", Label: ".* 正则"}},
+			Modes: []uikit.SearchMode{{ID: "fts", Label: "FTS5"}, {ID: "fuzzy", Label: "模糊"}, {ID: "regex", Label: "正则"}},
 			Label: "Search", Placeholder: "搜索剪贴板内容...", ClearLabel: "清除", Error: message, Results: results, Loading: g.state == "loading"})
 	case "filters":
 		kit.Filters(c, []uikit.FilterOption{
@@ -153,10 +154,11 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 		kit.ConfirmDialog(c, &g.dialog, "Clear history", "Clear all unpinned entries?", "Cancel", "Clear", func() {})
 	case "tag-dialog":
 		kit.Dialog(c, &g.dialog, "Create tag", "Close", g.state == "busy", func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "Name")
-				uikit.SearchField(c, &g.query, "Name", "")
-			})
+			field := kit.TagNameField(c, &g.query, "Name", g.state == "busy")
+			if g.focusTagName {
+				field.Focus()
+				g.focusTagName = false
+			}
 		})
 	default:
 		ui.Text(c, "Unknown component: "+name)
@@ -222,6 +224,7 @@ func run() error {
 	}
 	if g.fixture == "tag-dialog" {
 		g.query = "Work"
+		g.focusTagName = true
 	}
 	const width, height = 560, 420
 	if *output != "" {

@@ -1,6 +1,8 @@
 package uikit
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 )
@@ -20,7 +22,7 @@ func standardWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle 
 	style := theme.WidgetStyle{Text: rgba(ui.Hex(palette.Text)), Size: float32(palette.FontSize),
 		Weight: palette.RegularWeight, Opacity: 1}
 	if len(palette.FontFamilies) != 0 {
-		style.Font = palette.FontFamilies[0]
+		style.Font = strings.Join(palette.FontFamilies, ", ")
 	}
 	surface := func() {
 		style.Fill, style.Border = panel, border
@@ -55,6 +57,7 @@ func standardWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle 
 		style.Padding = [4]float32{4, 4, 4, 4}
 	case "selectOption", "selectSelected", "selectOptionDisabled", "historyItem", "historyEmpty":
 		style.Height, style.Padding = 32, [4]float32{0, 8, 0, 8}
+		style.ColumnGap = 8
 		if widget == "selectSelected" {
 			style.Fill = selected
 		}
@@ -63,10 +66,13 @@ func standardWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle 
 		}
 	case "header":
 		style.Padding = [4]float32{8, 10, 8, 10}
+		style.RowGap = 8
 	case "headerTop":
 		style.Height = 36
 	case "headerSearch":
-		style.Padding = [4]float32{8, 0, 0, 0}
+		style.MarginTop = 4
+	case "headerFilters":
+		style.ColumnGap, style.Padding = 6, [4]float32{8, 0, 4, 0}
 	case "headerTitle", "confirmTitle", "tagTitle":
 		style.Size, style.Weight = 18, palette.EmphasisWeight
 	case "headerInput", "searchInput":
@@ -77,6 +83,9 @@ func standardWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle 
 		style.Width, style.Height, style.Padding = 190, 38, [4]float32{2, 2, 2, 2}
 	case "searchIcon", "searchClear", "help", "helpActive", "progressClose", "tagClose", "historyAction", "headerButton", "headerButtonActive":
 		style.Width, style.Height = 28, 28
+		if widget == "searchIcon" {
+			style.Width, style.Height, style.Text = 14, 14, muted
+		}
 		if widget == "headerButtonActive" || widget == "helpActive" {
 			style.Fill, style.Radius = selected, float32(palette.Radius)
 		}
@@ -102,6 +111,17 @@ func standardWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle 
 		style.Text, style.Height, style.Size = accent, 24, 12
 	case "helpText", "searchCount", "historySource", "historyTime", "settingsFooterVersion", "progressLabel":
 		style.Text, style.Size = muted, 12
+		if widget == "historySource" {
+			style.ColumnGap = 4
+		}
+	case "historyActions":
+		style.ColumnGap = 4
+	case "historyIcon":
+		style.Width, style.Height, style.Text = 14, 14, muted
+	case "searchModeIcon":
+		style.Size, style.Weight = 13, palette.EmphasisWeight
+	case "searchModeLabel":
+		style.Size, style.Opacity = 10, 0.8
 	case "progressStatus", "searchError":
 		style.Text = accent
 	case "progressTrack":
@@ -124,6 +144,17 @@ func standardWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle 
 		}
 	case "historyMeta":
 		style.Height = 22
+	case "tagHeading":
+		style.ColumnGap = 6
+	case "tagField":
+		style.RowGap, style.MarginBottom = 7, 16
+	case "tagFieldLabel":
+		style.Size = 12
+	case "tagInput":
+		surface()
+		style.Height, style.Padding = 36, [4]float32{0, 8, 0, 8}
+	case "tagCloseIcon":
+		style.Width, style.Height = 14, 14
 	case "attachmentName":
 		style.Height = 19
 	case "attachmentIcon":

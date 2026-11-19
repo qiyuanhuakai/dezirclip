@@ -20,13 +20,14 @@ const samples = [
   ["history-card", "default", {
     historyCard: [".history-item"], historyMeta: [".item-meta"], historySource: [".item-meta-left .app-info"],
     historyTime: [".item-meta .app-info:last-child span"], historyContent: [".history-item .content-preview"],
-    historyAction: [".item-actions .btn-icon"],
+    historyActions: [".item-actions"], historyAction: [".item-actions .btn-icon"],
   }],
   ["history-card", "selected", { historyCardSelected: [".history-item.selected"] }],
   ["app-header", "default", {
     header: ["header"], headerTop: [".header-top"], headerTitle: [".header-title"],
     headerButton: [".header-top .btn-icon"], headerInput: [".search-input"],
-    headerSearch: [".search-container"], headerFilter: [".search-container .hide-scrollbar .btn-icon"],
+    headerSearch: [".search-container"], headerFilters: [".search-container .hide-scrollbar"],
+    headerFilter: [".search-container .hide-scrollbar .btn-icon"],
   }],
   ["app-header", "pinned", { headerButtonActive: [".header-top .btn-icon.active"] }],
   ["select", "default", {
@@ -53,12 +54,14 @@ const samples = [
     searchModes: [".search-bar__mode"],
     searchMode: [".search-bar__mode-btn:nth-child(2)"],
     searchModeSelected: [".search-bar__mode-btn--active"],
+    searchModeIcon: [".search-bar__mode-icon"],
+    searchModeLabel: [".search-bar__mode-label"],
   }],
   ["search-bar", "loading", { searchSpinner: [".search-bar__spinner"] }],
   ["search-bar", "error", { searchError: [".search-bar__error"] }],
   ["search-bar", "filled", { searchCount: [".search-bar__count"], searchClear: [".search-bar__clear"] }],
   ["highlight", "default", { mark: [".match-highlight mark"], match: [".match-highlight"] }],
-  ["search-history", "default", { history: [".search-history"], historyItem: [".search-history__item"] }],
+  ["search-history", "default", { history: [".search-history"], historyItem: [".search-history__item"], historyIcon: [".search-history__icon"] }],
   ["search-history", "empty", { historyEmpty: [".search-history__empty"] }],
   ["disclosure", "default", {
     disclosure: [".settings-disclosure-toggle", ".settings-disclosure-toggle .item-label"],
@@ -83,17 +86,20 @@ const samples = [
   ["tag-dialog", "default", {
     tag: [".tag-manager-dialog"], tagBackdrop: [".tag-manager-dialog", null, "::backdrop"],
     tagTitle: [".tag-manager-dialog .confirm-dialog-title"], tagClose: [".tag-manager-dialog .btn-icon"],
-    tagInput: [".tag-manager-dialog input"],
+    tagHeading: [".tag-manager-dialog-heading"], tagCloseIcon: [".tag-manager-dialog-heading svg"],
+    tagField: [".tag-manager-field"], tagFieldLabel: [".tag-manager-field span"], tagInput: [".tag-manager-field input"],
   }],
 ];
 
 function readStyles(selectors) {
   const drawing = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
-  const color = value => {
-    if (!CSS.supports("color", value)) return [0, 0, 0, 0];
+  const color = (...values) => {
     drawing.clearRect(0, 0, 1, 1);
-    drawing.fillStyle = value;
-    drawing.fillRect(0, 0, 1, 1);
+    for (const value of values) {
+      if (!CSS.supports("color", value)) continue;
+      drawing.fillStyle = value;
+      drawing.fillRect(0, 0, 1, 1);
+    }
     return [...drawing.getImageData(0, 0, 1, 1).data];
   };
   const number = value => Math.round((Number.parseFloat(value) || 0) * 100) / 100;
@@ -113,10 +119,20 @@ function readStyles(selectors) {
     const borderWidths = sides.map(side => number(style["border" + side + "Width"]));
     const borderSide = sides[borderWidths.findIndex(width => width > 0)] ?? "Top";
     const outlineWidth = style.outlineStyle === "solid" ? number(style.outlineWidth) : 0;
-    const gradient = style.backgroundImage.match(/^linear-gradient\(([\d.]+)deg, (rgba?\([^)]*\)) 0%, (rgba?\([^)]*\)) 100%\)$/);
+    const backgroundImage = style.backgroundImage.replace(/(?:, none)+$/, "");
+    const gradient = backgroundImage.match(/^linear-gradient\(([\d.]+)deg, (rgba?\([^)]*\)) 0%, (rgba?\([^)]*\)) 100%\)$/);
+    // Some glass surfaces layer a uniform tint over their background color.
+    const tint = backgroundImage.match(/^linear-gradient\((rgba?\([^)]*\)), \1\)$/)?.[1];
     const letterSpacing = number(text.letterSpacing);
+    const fontSize = number(text.fontSize);
+    const lineHeight = fontSize && number(text.lineHeight) / fontSize;
+    const columnGap = number(style.columnGap);
+    const rowGap = number(style.rowGap);
+    const top = number(style.top);
+    const marginBottom = number(style.marginBottom);
+    const bounds = element.getBoundingClientRect();
     return [id, {
-      fill: color(style.backgroundColor), text: color(text.color), border: color(style["border" + borderSide + "Color"]),
+      fill: color(style.backgroundColor, tint), text: color(text.color), border: color(style["border" + borderSide + "Color"]),
       borderWidth: borderWidths[0], radius: number(style.borderTopLeftRadius),
       ...(style["border" + borderSide + "Style"] === "dashed" ? { dashed: true } : {}),
       ...(borderWidths.some(width => width !== borderWidths[0]) ? { borderWidths } : {}),
@@ -124,12 +140,17 @@ function readStyles(selectors) {
         ? { outline: { width: outlineWidth, color: color(style.outlineColor) } } : {}),
       ...(gradient ? { gradient: { angle: Number(gradient[1]), from: color(gradient[2]), to: color(gradient[3]) } } : {}),
       ...(letterSpacing ? { letterSpacing } : {}),
+      ...(lineHeight ? { lineHeight: Math.round(lineHeight * 1000) / 1000 } : {}),
+      ...(columnGap ? { columnGap } : {}),
+      ...(rowGap ? { rowGap } : {}),
+      ...(top ? { top } : {}),
+      ...(marginBottom ? { marginBottom } : {}),
       ...(id.startsWith("historyCard")
         ? { margin: sides.map(side => number(style["margin" + side])) } : {}),
-      width: element.offsetWidth, height: element.offsetHeight, marginTop: number(style.marginTop),
+      width: element.offsetWidth ?? bounds.width, height: element.offsetHeight ?? bounds.height, marginTop: number(style.marginTop),
       padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft].map(number),
-      font: text.fontFamily.split(",")[0].trim().replace(/^['"]|['"]$/g, ""),
-      size: number(text.fontSize), weight: number(text.fontWeight), uppercase: text.textTransform === "uppercase",
+      font: text.fontFamily.split(",").map(family => family.trim().replace(/^['"]|['"]$/g, "")).join(", "),
+      size: fontSize, weight: number(text.fontWeight), uppercase: text.textTransform === "uppercase",
       opacity: number(style.opacity),
       ...(shadows.length ? { shadows } : {}),
     }];

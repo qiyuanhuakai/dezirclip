@@ -86,6 +86,7 @@ function HistoryListFixture() {
 
 function Showcase() {
   const [activeSettings, setActiveSettings] = useState(state === "selected" ? "updates" : "appearance");
+  const tagName = useRef<HTMLInputElement>(null);
   const [selection, setSelection] = useState("system");
   const [query, setQuery] = useState(state === "filled" ? "Clipboard" : "");
   const [searchMode, setSearchMode] = useState<SearchMode>("fts");
@@ -139,7 +140,9 @@ function Showcase() {
     confirm: <ConfirmDialog open={opened} title="Clear history" message="Clear all unpinned entries?"
       themeClass={"theme-" + theme} confirmLabel="Clear" cancelLabel="Cancel" onConfirm={() => setOpened(false)} onClose={() => setOpened(false)} />,
     "tag-dialog": opened && <TagDialog title="Create tag" closeLabel="Close" busy={state === "busy"}
-      onClose={() => setOpened(false)}><label>Name <input defaultValue="Work" /></label></TagDialog>,
+      initialFocus={tagName} onClose={() => setOpened(false)}><form><label className="tag-manager-field">
+        <span>Name</span><input ref={tagName} className="search-input" maxLength={80} readOnly={state === "busy"} defaultValue="Work" />
+      </label></form></TagDialog>,
   };
 
   if (fixture in examples) {

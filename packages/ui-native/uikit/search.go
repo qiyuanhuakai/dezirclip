@@ -2,6 +2,7 @@ package uikit
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -35,7 +36,8 @@ func (k Kit) SearchBar(c *ui.Context, options SearchOptions) {
 				}
 				styledText(paint(input, field), field)
 				icon := k.style("searchIcon")
-				text(c, "🔍", icon).Absolute().Left(10).Top((field.Height - icon.Height) / 2)
+				ui.Icon(c, headerIcons["search"]).Size(icon.Width, icon.Height).TextColor(styleColor(icon.Text)).
+					Absolute().Left(10).Top((field.Height - icon.Height) / 2).PassThrough()
 				if *options.Query != "" {
 					clear := k.style("searchClear")
 					button := k.button(c, "×", "searchClear").Label(options.ClearLabel).
@@ -52,7 +54,7 @@ func (k Kit) SearchBar(c *ui.Context, options SearchOptions) {
 						if *options.Mode == mode.ID {
 							widget = "searchModeSelected"
 						}
-						if k.button(c, mode.Label, widget).Clicked() {
+						if k.searchModeButton(c, mode, widget).Clicked() {
 							*options.Mode = mode.ID
 						}
 					}
@@ -74,4 +76,28 @@ func (k Kit) SearchBar(c *ui.Context, options SearchOptions) {
 			text(c, fmt.Sprintf("找到 %d 条结果", options.Results), style).Padding(style.Padding[:]...)
 		}
 	})
+}
+
+func (k Kit) searchModeButton(c *ui.Context, mode SearchMode, widget string) ui.Element {
+	style := k.style(widget)
+	button := paint(ui.ButtonBase(c).Label(mode.Label).Height(style.Height), style)
+	glyph := mode.Label
+	switch mode.ID {
+	case "fuzzy":
+		glyph = "≈"
+	case "regex":
+		glyph = ".*"
+	}
+	caption := strings.TrimSpace(strings.TrimPrefix(mode.Label, glyph))
+	button.Children(func() {
+		symbol, label := k.style("searchModeIcon"), k.style("searchModeLabel")
+		symbol.Text, label.Text = style.Text, style.Text
+		ui.Row(c).Gap(style.ColumnGap).AlignItems(ui.Center).Children(func() {
+			text(c, glyph, symbol)
+			if caption != "" {
+				text(c, caption, label).Opacity(label.Opacity)
+			}
+		})
+	})
+	return button
 }

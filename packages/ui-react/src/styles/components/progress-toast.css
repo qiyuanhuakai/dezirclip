@@ -18,13 +18,20 @@
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
   border-radius: var(--surface-dialog-radius, 12px);
-  box-shadow: 4px 4px 0 var(--border-dark);
+  box-shadow: none;
   pointer-events: auto;
   animation: progressToastSlideIn 0.2s ease-out;
 }
 
 .progress-toast--error {
   border-color: var(--color-error);
+}
+
+.theme-retro .progress-toast {
+  box-shadow: 4px 4px 0 var(--border-dark);
+}
+
+.theme-retro .progress-toast--error {
   box-shadow: 4px 4px 0 var(--color-error);
 }
 

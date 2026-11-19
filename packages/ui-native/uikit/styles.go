@@ -74,7 +74,11 @@ func paint(element ui.Element, style theme.WidgetStyle) ui.Element {
 }
 
 func styledText(element ui.Element, style theme.WidgetStyle) ui.Element {
-	return element.TextColor(styleColor(style.Text)).Font(style.Font).FontSize(style.Size).FontWeight(style.Weight).LetterSpacing(style.LetterSpacing)
+	element.TextColor(styleColor(style.Text)).Font(style.Font).FontSize(style.Size).FontWeight(style.Weight).LetterSpacing(style.LetterSpacing)
+	if style.LineHeight > 0 {
+		element.LineHeight(style.LineHeight)
+	}
+	return element
 }
 
 func text(c *ui.Context, value string, style theme.WidgetStyle) ui.Element {

@@ -1,8 +1,10 @@
 package theme
 
 import (
-	"github.com/egoist/mygo/ui"
 	"regexp"
+	"strings"
+
+	"github.com/egoist/mygo/ui"
 )
 
 type Appearance struct {
@@ -40,6 +42,6 @@ func Apply(t *ui.Theme, tokens Tokens) {
 	t.Accent, t.Selection, t.Border = ui.Hex(tokens.Accent), ui.Hex(tokens.Selected), ui.Hex(tokens.Border)
 	t.Radius, t.FontSize = float32(tokens.Radius), float32(tokens.FontSize)
 	if len(tokens.FontFamilies) > 0 {
-		t.Font = tokens.FontFamilies[0]
+		t.Font = strings.Join(tokens.FontFamilies, ", ")
 	}
 }

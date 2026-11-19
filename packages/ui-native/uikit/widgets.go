@@ -203,17 +203,18 @@ func (k Kit) MatchHighlight(c *ui.Context, text, query string) {
 
 func (k Kit) SearchHistory(c *ui.Context, entries []string, emptyLabel string, onSelect func(string)) {
 	panel := k.style("history")
-	paint(ui.Column(c).Width(panel.Width), panel).Children(func() {
+	paint(ui.Column(c).Width(panel.Width), panel).Margin(panel.Top, 0, 0, 0).Children(func() {
 		if len(entries) == 0 {
 			style := k.style("historyEmpty")
 			paint(ui.Row(c).Center().Height(style.Height), style).Children(func() { text(c, emptyLabel, style) })
 			return
 		}
 		style := k.style("historyItem")
+		symbol := k.style("historyIcon")
 		for _, entry := range entries {
-			row := paint(ui.ButtonBase(c).Label(entry).Justify(ui.Start).Height(style.Height).Gap(8), style)
+			row := paint(ui.ButtonBase(c).Label(entry).Justify(ui.Start).Height(style.Height).Gap(style.ColumnGap), style)
 			row.Children(func() {
-				text(c, "🕐", style)
+				ui.Icon(c, historyClock).Size(symbol.Width, symbol.Height).TextColor(styleColor(symbol.Text)).Opacity(symbol.Opacity)
 				text(c, entry, style)
 			})
 			if row.Clicked() {
@@ -316,6 +317,18 @@ func (k Kit) Dialog(c *ui.Context, open *bool, title, closeLabel string, busy bo
 	k.dialog(c, open, title, closeLabel, busy, "tag", body)
 }
 
+// TagNameField renders a labeled name editor in a tag dialog.
+func (k Kit) TagNameField(c *ui.Context, value *string, label string, readOnly bool) ui.Element {
+	field, labelStyle, style := k.style("tagField"), k.style("tagFieldLabel"), k.style("tagInput")
+	var input ui.Element
+	ui.Column(c).FillWidth().Gap(field.RowGap).Margin(0, 0, field.MarginBottom).Children(func() {
+		text(c, label, labelStyle)
+		input = ui.TextInputBase(c, value).Label(label).ReadOnly(readOnly).FillWidth().Height(style.Height)
+		styledText(paint(input, style), style)
+	})
+	return input
+}
+
 func (k Kit) dialog(c *ui.Context, open *bool, title, closeLabel string, busy bool, widget string, body func()) {
 	style := k.style(widget)
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
@@ -326,19 +339,30 @@ func (k Kit) dialog(c *ui.Context, open *bool, title, closeLabel string, busy bo
 			*open = true
 		}
 		ui.Column(c).Gap(12).Children(func() {
-			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
-				text(c, title, k.style(widget+"Title")).Grow(1)
-				if closeLabel != "" {
-					closeStyle := k.style("tagClose")
-					button := paint(ui.ButtonBase(c).Label(closeLabel).Size(closeStyle.Width, closeStyle.Height).Disabled(busy), closeStyle)
-					button.Children(func() { ui.Icon(c, closeIcon).Size(18, 18).TextColor(styleColor(closeStyle.Text)) })
-					if button.Clicked() {
-						*open = false
-					}
-				}
-			})
+			if closeLabel == "" {
+				ui.Row(c).AlignItems(ui.Center).Children(func() {
+					text(c, title, k.style(widget+"Title")).Grow(1)
+				})
+			} else {
+				k.tagHeading(c, open, title, closeLabel, busy)
+			}
 			body()
 		})
+	})
+}
+
+func (k Kit) tagHeading(c *ui.Context, open *bool, title, label string, busy bool) {
+	heading := k.style("tagHeading")
+	ui.Row(c).FillWidth().MinHeight(heading.Height).AlignItems(ui.Start).Gap(heading.ColumnGap).Children(func() {
+		text(c, title, k.style("tagTitle")).Grow(1)
+		style, symbol := k.style("tagClose"), k.style("tagCloseIcon")
+		button := paint(ui.ButtonBase(c).Label(label).Tooltip(label).Size(style.Width, style.Height).Center().Disabled(busy), style)
+		button.Children(func() {
+			ui.Icon(c, closeIcon).Size(symbol.Width, symbol.Height).TextColor(styleColor(symbol.Text)).PassThrough()
+		})
+		if button.Clicked() {
+			*open = false
+		}
 	})
 }
 

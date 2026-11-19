@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
 import { X } from 'lucide-react';
 
 export interface TagDialogProps {
@@ -8,16 +8,20 @@ export interface TagDialogProps {
     onClose: () => void;
     children: ReactNode;
     wide?: boolean;
+    initialFocus?: RefObject<HTMLElement | null>;
 }
 
-export function TagDialog({ title, closeLabel, busy, onClose, children, wide = false }: TagDialogProps) {
+export function TagDialog({ title, closeLabel, busy, onClose, children, wide = false, initialFocus }: TagDialogProps) {
     const dialog = useRef<HTMLDialogElement>(null);
     const titleId = useId();
     useEffect(() => {
         const element = dialog.current;
         element?.showModal();
+        if (element && initialFocus?.current && element.contains(initialFocus.current)) {
+            initialFocus.current.focus();
+        }
         return () => element?.close();
-    }, []);
+    }, [initialFocus]);
 
     return (
         <dialog ref={dialog} className={`confirm-dialog tag-manager-dialog${wide ? ' tag-manager-dialog--wide' : ''}`}

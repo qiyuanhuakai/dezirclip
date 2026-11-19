@@ -22,6 +22,10 @@ type WidgetStyle struct {
 	Outline       *Outline
 	Gradient      *Gradient
 	LetterSpacing float32
+	LineHeight    float32
+	ColumnGap     float32
+	RowGap        float32
+	Top           float32
 	Margin        [4]float32
 	Fill          [4]uint8
 	Text          [4]uint8
@@ -31,6 +35,7 @@ type WidgetStyle struct {
 	Width         float32
 	Height        float32
 	MarginTop     float32
+	MarginBottom  float32
 	Padding       [4]float32
 	Font          string
 	Size          float32

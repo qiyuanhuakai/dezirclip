@@ -21,5 +21,6 @@ var (
 	chevronDown  = icon("ChevronDown")
 	chevronRight = icon("ChevronRight")
 	circleHelp   = icon("CircleHelp")
+	historyClock = icon("Clock")
 	closeIcon    = icon("X")
 )

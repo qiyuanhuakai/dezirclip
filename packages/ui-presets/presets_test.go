@@ -24,3 +24,18 @@ func TestBuiltinThemeCatalogs(t *testing.T) {
 		}
 	}
 }
+
+func TestProgressToastsFollowThemeShadowPolicy(t *testing.T) {
+	for name := range palettes {
+		wantShadow := name == "retro" || name == "liquid-glass"
+		for _, mode := range []string{"light", "dark"} {
+			skin := Select(name, mode)
+			for _, state := range []string{"progress", "progressDone", "progressError"} {
+				hasShadow := len(skin.widgets[state].Shadows) > 0
+				if hasShadow != wantShadow {
+					t.Errorf("%s/%s %s: can draw shadow %v, want %v", name, mode, state, hasShadow, wantShadow)
+				}
+			}
+		}
+	}
+}

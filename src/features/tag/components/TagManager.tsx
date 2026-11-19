@@ -83,6 +83,8 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const pickerId = useId();
     const tagListId = useId();
     const searchInput = useRef<HTMLInputElement>(null);
+    const tagNameInput = useRef<HTMLInputElement>(null);
+    const tagTextInput = useRef<HTMLTextAreaElement>(null);
     const tagSearchInput = useRef<HTMLInputElement>(null);
     const tagList = useRef<VirtuosoHandle>(null);
     const list = useRef<VirtuosoHandle>(null);
@@ -482,11 +484,12 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
             {(batchFeedback || actionError) && <div className="tag-manager-notice" role={batchFeedback && !batchFeedback.error ? 'status' : 'alert'}>{batchFeedback?.message ?? t('tag_action_failed')}
                 <button type="button" className="btn-icon" aria-label={t('common_close')} onClick={() => { setActionError(false); setBatchFeedback(null); }}><X size={13} /></button></div>}
         </section>
-        {dialog && <TagDialog title={dialogTitle} closeLabel={t('common_close')} busy={busy} onClose={closeDialog} wide={isTextDialog}>
+        {dialog && <TagDialog title={dialogTitle} closeLabel={t('common_close')} busy={busy} onClose={closeDialog}
+            wide={isTextDialog} initialFocus={isNameDialog ? tagNameInput : isTextDialog ? tagTextInput : undefined}>
             <form onSubmit={event => { event.preventDefault(); void saveDialog(); }}>
-                {isNameDialog && <label className="tag-manager-field"><span>{t('tag_name')}</span><input className="search-input" autoFocus value={value} maxLength={80} readOnly={busy} onChange={event => setValue(event.target.value)} /></label>}
+                {isNameDialog && <label className="tag-manager-field"><span>{t('tag_name')}</span><input ref={tagNameInput} className="search-input" value={value} maxLength={80} readOnly={busy} onChange={event => setValue(event.target.value)} /></label>}
                 {isTextDialog && <label className="tag-manager-field" data-privacy-protected={protectedDialog ? 'true' : undefined}
-                    onDragStart={event => { if (protectedDialog) event.preventDefault(); }}><span>{t('input_content_placeholder')}</span><textarea className="modal-textarea" autoFocus value={value} readOnly={busy} onChange={event => setValue(event.target.value)} spellCheck={false} /></label>}
+                    onDragStart={event => { if (protectedDialog) event.preventDefault(); }}><span>{t('input_content_placeholder')}</span><textarea ref={tagTextInput} className="modal-textarea" value={value} readOnly={busy} onChange={event => setValue(event.target.value)} spellCheck={false} /></label>}
                 {isTextDialog && privacyActive && <>
                     <label className="privacy-manual-confirm"><input type="checkbox" checked={confirmPersistence} disabled={busy}
                         onChange={event => setConfirmPersistence(event.target.checked)} /><span>{t(dialog.kind === 'editItem' ? 'privacy_manual_edit_confirm' : 'privacy_manual_confirm')}</span></label>

@@ -98,3 +98,37 @@ func TestDisclosureAndModalKeyboardBehavior(t *testing.T) {
 		t.Fatal("expanded disclosure did not render its content")
 	}
 }
+
+func TestTagDialogCloseButtonAndNameField(t *testing.T) {
+	kit := Kit{}
+	open, busy, name := true, true, "Work"
+	tester := ui.NewTester(func(c *ui.Context) {
+		kit.Apply(c)
+		kit.Dialog(c, &open, "Create tag", "Close", busy, func() {
+			kit.TagNameField(c, &name, "Name", busy)
+		})
+	}, 420, 360)
+	pressClose := func() {
+		t.Helper()
+		bounds, ok := tester.Find("Close")
+		if !ok || bounds.W < 24 || bounds.H < 24 {
+			t.Fatalf("close button has no usable hit area: %+v", bounds)
+		}
+		x, y := bounds.X+bounds.W/2, bounds.Y+bounds.H/2
+		tester.Press(x, y)
+		tester.Release(x, y)
+	}
+	pressClose()
+	if !open {
+		t.Fatal("busy tag dialog closed")
+	}
+	busy = false
+	tester.Frame()
+	if !tester.HasText("Name") {
+		t.Fatal("tag name field did not render")
+	}
+	pressClose()
+	if open {
+		t.Fatal("close button did not dismiss the tag dialog")
+	}
+}

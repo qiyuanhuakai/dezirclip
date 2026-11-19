@@ -35,7 +35,7 @@ type HeaderOptions struct {
 
 func (k Kit) Header(c *ui.Context, options HeaderOptions) {
 	style := k.style("header")
-	paint(ui.Column(c), style).Children(func() {
+	paint(ui.Column(c).Gap(style.RowGap), style).Children(func() {
 		top := k.style("headerTop")
 		paint(ui.Row(c).Height(top.Height).Gap(8).AlignItems(ui.Center), top).Children(func() {
 			if options.Back != nil {
@@ -79,7 +79,7 @@ func (k Kit) headerAction(c *ui.Context, action HeaderAction) {
 
 func (k Kit) headerSearch(c *ui.Context, options HeaderOptions) {
 	style := k.style("headerSearch")
-	paint(ui.Column(c).Gap(8), style).Children(func() {
+	paint(ui.Column(c), style).Margin(style.MarginTop, 0, 0, 0).Children(func() {
 		field := k.style("headerInput")
 		ui.Box(c).Height(field.Height).Children(func() {
 			input := ui.TextInputBase(c, options.Query).Fill().Label(options.Placeholder).Placeholder(options.Placeholder)
@@ -94,7 +94,8 @@ func (k Kit) headerSearch(c *ui.Context, options HeaderOptions) {
 			ui.Icon(c, headerIcons["search"]).Absolute().Left(10).Top((field.Height-14)/2).Size(14, 14).
 				TextColor(c.Theme().TextMuted).PassThrough()
 		})
-		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+		filters := k.style("headerFilters")
+		paint(ui.Row(c).Gap(filters.ColumnGap).AlignItems(ui.Center), filters).Children(func() {
 			for _, filter := range options.Filters {
 				if k.button(c, filter.Label, "headerFilter").Clicked() && options.Filter != nil {
 					if *options.Filter == filter.ID {

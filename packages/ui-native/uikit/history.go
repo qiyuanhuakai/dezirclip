@@ -61,15 +61,21 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 func (k Kit) HistoryCardMeta(c *ui.Context, options HistoryCardMetaOptions) {
 	meta := k.style("historyMeta")
 	paint(ui.Row(c).Height(meta.Height).Gap(8).AlignItems(ui.Center), meta).Children(func() {
-		if options.Pinned {
-			ui.Icon(c, headerIcons["pin"]).Size(10, 10).TextColor(c.Theme().Accent)
-		}
-		text(c, options.Source, k.style("historySource")).Grow(1)
-		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-			for _, action := range options.Actions {
-				k.historyAction(c, action)
+		source := k.style("historySource")
+		ui.Row(c).Grow(1).Gap(source.ColumnGap).AlignItems(ui.Center).Children(func() {
+			if options.Pinned {
+				ui.Icon(c, headerIcons["pin"]).Size(10, 10).TextColor(styleColor(source.Text))
 			}
+			text(c, options.Source, source).SingleLine()
 		})
+		if len(options.Actions) > 0 {
+			actions := k.style("historyActions")
+			paint(ui.Row(c).Gap(actions.ColumnGap).AlignItems(ui.Center), actions).Children(func() {
+				for _, action := range options.Actions {
+					k.historyAction(c, action)
+				}
+			})
+		}
 		text(c, options.Time, k.style("historyTime")).Opacity(0.6)
 	})
 }

@@ -161,6 +161,20 @@ try {
               : state === "southeast" ? "SouthEast" : state === "scrolled" ? "1 scroll" : "";
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
             const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64") });
+            if (fixture === "tag-dialog") {
+              const dialog = page.getByRole("dialog", { name: "Create tag" });
+              const input = dialog.getByRole("textbox", { name: "Name" });
+              const close = dialog.getByRole("button", { name: "Close" });
+              if (!await input.evaluate(element => element.classList.contains("search-input"))) throw Error("Tag name did not use the themed field");
+              if (state === "busy") {
+                if (await close.isEnabled()) throw Error("Busy dialog close was enabled");
+                await page.keyboard.press("Escape");
+                if (!await dialog.isVisible()) throw Error("Busy dialog closed on Escape");
+              } else {
+                await close.click();
+                await dialog.waitFor({ state: "hidden" });
+              }
+            }
             const ratio = pixels.inkNative / pixels.inkWeb;
             const passed = !errors.length && sameText && expectedState && Number.isFinite(ratio) &&
               ratio >= 0.4 && ratio <= 2.5 && pixels.backgroundDistance <= 18 && pixels.foregroundDistance <= 36;

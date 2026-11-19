@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { Clock, Search } from "lucide-react";
 
 export type SearchMode = "fts" | "fuzzy" | "regex";
 
@@ -56,9 +57,7 @@ export const SearchBar = ({ query, mode, enabledModes, resultCount, loading, err
     <div className="search-bar" data-test-search-bar>
       <div className="search-bar__row">
         <div className="search-bar__input-wrapper" ref={wrapperRef}>
-          <span className="search-bar__icon" aria-hidden="true">
-            🔍
-          </span>
+          <Search className="search-bar__icon" size={14} aria-hidden="true" />
           <input
             ref={inputRef}
             className="search-bar__input"
@@ -88,9 +87,7 @@ export const SearchBar = ({ query, mode, enabledModes, resultCount, loading, err
                   onClick={() => handleHistorySelect(term)}
                   data-test-history-item
                 >
-                  <span className="search-bar__history-icon" aria-hidden="true">
-                    🕐
-                  </span>
+                  <Clock className="search-bar__history-icon" size={14} aria-hidden="true" />
                   {term}
                 </div>
               ))}
