@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"math"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -104,14 +103,6 @@ func (n *nativeMain) loadCardImage(key nativeCardImageKey) {
 		}
 		n.update(session, func() { n.cardImages.finish(key, preview) })
 	}()
-}
-
-func (n *nativeMain) cardFontSize(key string, minimum, maximum int) float32 {
-	size, err := strconv.Atoi(n.preferences[key])
-	if err != nil || size < minimum || size > maximum {
-		return 0
-	}
-	return float32(size)
 }
 
 func (n *nativeMain) cardTags(labels []string) []uikit.HistoryTag {

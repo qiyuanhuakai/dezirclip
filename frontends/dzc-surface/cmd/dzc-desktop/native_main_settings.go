@@ -193,6 +193,7 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit) {
 		nativeBooleanSetting{"app.compact_mode", "Compact history", false},
 		nativeBooleanSetting{"app.show_app_border", "Show window border", true},
 	)
+	n.typographySettings(c)
 }
 
 func (n *nativeMain) settingSelect(c *ui.Context, kit uikit.Kit, key, label, fallback string, options []uikit.SelectOption) {

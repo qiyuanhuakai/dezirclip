@@ -118,6 +118,7 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 	}
 	generation := n.history.generation
 	compact := n.preferences["app.compact_mode"] == "true"
+	itemSize, tagSize := nativeItemSize.value(n.preferences), nativeTagSize.value(n.preferences)
 	var hovered protocol.DesktopEntry
 	var hoverBounds ui.Rect
 	list := kit.HistoryList(c, &n.list, uikit.HistoryListOptions{
@@ -139,9 +140,9 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 				Pinned: row.IsPinned, Selected: cell.Selected(), Compact: compact,
 				Match:    n.history.filter.query,
 				TextFont: n.preferences["app.font_mono"],
-				TextSize: n.cardFontSize("app.clipboard_item_font_size", 11, 18),
+				TextSize: float32(itemSize),
 				TextRows: 4,
-				TagSize:  n.cardFontSize("app.clipboard_tag_font_size", 8, 14),
+				TagSize:  float32(tagSize),
 				Tags:     n.cardTags(row.Tags),
 				Body:     n.cardBody(cell.Context, row, compact),
 				Activate: func() {

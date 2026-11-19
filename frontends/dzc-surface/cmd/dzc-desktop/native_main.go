@@ -46,6 +46,8 @@ type nativeMain struct {
 	emoji            *nativeEmojiPanel
 	settingsSection  string
 	settingsOpen     map[string]*bool
+	fontChoices      *nativeFontChoices
+	readingFonts     bool
 	capturing        bool
 	reading          bool
 	private          bool

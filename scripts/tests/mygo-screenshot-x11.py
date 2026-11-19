@@ -57,12 +57,17 @@ def check(desktop, helpers, *, native_main=False):
         geometry = subprocess.run(['xwininfo', '-id', active], capture_output=True, text=True).stdout
         raise AssertionError(f'{message}; clipboard image={dimensions}; active window={geometry}; accessibility={tree}')
 
-    def find(label):
+    def find(label, role=None):
         return next((node for node, name, _, text in helpers['mygo_nodes'](Atspi, desktop)
-                     if label in (name, text)), None)
+                     if label in (name, text) and (role is None or node.get_role() == role)), None)
 
     def click(label):
-        node = wait(lambda: find(label), f'{label} unavailable')
+        def ready():
+            node = find(label)
+            if node and (not native_main or node.get_state_set().contains(Atspi.StateType.SENSITIVE)):
+                return node
+
+        node = wait(ready, f'{label} unavailable')
         if 'Action' in node.get_interfaces():
             assert Atspi.Action.do_action(node, 0)
         else:
@@ -70,19 +75,21 @@ def check(desktop, helpers, *, native_main=False):
             bounds = Atspi.Component.get_extents(node, Atspi.CoordType.SCREEN)
             assert Atspi.generate_mouse_event(bounds.x + bounds.width//2, bounds.y + bounds.height//2, 'b1c')
 
-    def chord(letter):
-        target.show_all()
-        target.present()
-        wait(target.is_active, 'Independent window did not acquire focus before the shortcut')
-        keys = [Gdk.KEY_Control_L, Gdk.KEY_Shift_L, letter]
+    def keys(*symbols):
         for pressed in (True, False):
-            for sym in keys if pressed else reversed(keys):
+            for sym in symbols if pressed else reversed(symbols):
                 keycode = x11.XKeysymToKeycode(display, sym)
                 assert keycode
                 xtest.XTestFakeKeyEvent(display, keycode, pressed, 0)
                 x11.XSync(display, False)
                 pump(.03)
         pump(.1)
+
+    def chord(letter):
+        target.show_all()
+        target.present()
+        wait(target.is_active, 'Independent window did not acquire focus before the shortcut')
+        keys(Gdk.KEY_Control_L, Gdk.KEY_Shift_L, letter)
 
     def captured(w, h):
         image = clipboard.wait_for_image()
@@ -149,12 +156,39 @@ def check(desktop, helpers, *, native_main=False):
         assert geometry() == (xid, bounds), 'Native window moved or resized during the repaint test'
         print('Verified software-rendered MyGo history repaints X11 after a clipboard change', flush=True)
 
+    def check_native_typography():
+        def setting(key):
+            with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+                row = db.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+            return row[0] if row else None
+
+        click('Appearance')
+        for label, key, maximum in [('Item font size', 'app.clipboard_item_font_size', '18'),
+                                    ('Tag font size', 'app.clipboard_tag_font_size', '14')]:
+            slider = wait(lambda: find(label, Atspi.Role.SLIDER), f'{label} slider missing')
+            assert Atspi.Component.grab_focus(slider)
+            keys(Gdk.KEY_End)
+            wait(lambda: setting(key) == maximum, f'{label} was not saved')
+            wait(lambda: find(f'{maximum} px'), f'{label} did not show the saved size')
+        for label, key, reset in [('Interface font', 'app.font_main', 'Reset interface font'),
+                                  ('Monospace font', 'app.font_mono', 'Reset monospace font')]:
+            field = wait(lambda: find(label, Atspi.Role.COMBO_BOX), f'{label} picker missing')
+            assert Atspi.Component.grab_focus(field)
+            keys(Gdk.KEY_Down)
+            keys(Gdk.KEY_Return)
+            wait(lambda: setting(key), f'{label} was not saved')
+            click(reset)
+            wait(lambda: setting(key) == '', f'{label} did not reset to its theme default')
+        print('Verified native typography settings save sizes and choose or reset both font families', flush=True)
+
     env = dict(os.environ, DZC_MYGO_NATIVE_MAIN='1', MYGO_GPU='0') if native_main else None
     process = subprocess.Popen([desktop], env=env)
     try:
         if native_main:
             check_native_repaint()
         click('Settings')
+        if native_main:
+            check_native_typography()
         click('Tools')
         wait(lambda: find('Full Screen Capture'), 'Capture controls missing')
         clipboard.set_text('waiting for button full screenshot', -1)
