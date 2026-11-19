@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"sync/atomic"
+
 	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
-	"sync/atomic"
 )
 
 var fileDragPending atomic.Bool
@@ -14,6 +15,10 @@ func (l *Library) DropFiles(ctx context.Context, params protocol.FileDropParams)
 	if mygo.CallerWindow(ctx) == nil {
 		return errors.New("WindowUnavailable")
 	}
+	return l.dropFiles(ctx, params)
+}
+
+func (l *Library) dropFiles(ctx context.Context, params protocol.FileDropParams) error {
 	if fileDragPending.Load() {
 		return nil
 	}

@@ -49,6 +49,32 @@ func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, act
 	}()
 }
 
+func (n *nativeMain) dropFiles(paths []string) {
+	state := n.history.state
+	if n.session == nil || n.failed || state.ServiceInstanceId == "" || len(paths) == 0 || len(paths) > 256 {
+		return
+	}
+	unique := make(map[string]struct{}, len(paths))
+	files := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if _, ok := unique[path]; !ok {
+			unique[path] = struct{}{}
+			files = append(files, path)
+		}
+	}
+	params := protocol.FileDropParams{
+		Paths: files, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch,
+	}
+	session := n.session
+	go func() {
+		ctx, cancel := context.WithTimeout(session, 4*time.Second)
+		defer cancel()
+		if err := n.library.dropFiles(ctx, params); err != nil {
+			n.update(session, func() { n.notice = "Could not copy dropped files" })
+		}
+	}()
+}
+
 func (n *nativeMain) runRowAction(ctx context.Context, row protocol.DesktopEntry, state protocol.RuntimeState, preferences map[string]string, action nativeRowAction) (bool, string, error) {
 	switch action {
 	case nativeOpen:

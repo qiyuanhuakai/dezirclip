@@ -375,10 +375,16 @@ func run() error {
 			if fileDragPending.Load() {
 				return
 			}
+			if native != nil {
+				native.dropFiles(e.Paths)
+				return
+			}
 			fmt.Fprintf(os.Stderr, "Native file drop: %d files\n", len(e.Paths))
 			filesDropped.Emit(win, e.Paths)
 		})
-		installNativeFileDrop(win)
+		if native == nil {
+			installNativeFileDrop(win)
+		}
 		win.OnClose(func(*mygo.CloseEvent) { diagnostics.record("window-close", 0, nil); fmt.Fprintln(os.Stdout, "closing") })
 		win.OnClosed(func() {
 			if native != nil {
