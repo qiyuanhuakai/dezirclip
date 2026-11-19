@@ -182,10 +182,14 @@ func (n *nativeMain) changePrivateSession(active bool) {
 }
 
 func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpacity *int) {
-	n.settingSelect(c, kit, "app.theme", "Theme", "mica", []uikit.SelectOption{
+	themes := []uikit.SelectOption{
 		{Value: "retro", Label: "Retro"}, {Value: "mica", Label: "Mica"}, {Value: "acrylic", Label: "Acrylic"},
 		{Value: "liquid-glass", Label: "Liquid Glass"}, {Value: "macos", Label: "macOS"}, {Value: "scifi", Label: "Sci-Fi"},
-	})
+	}
+	for _, imported := range n.importedThemes {
+		themes = append(themes, uikit.SelectOption{Value: "custom:" + imported.Id, Label: imported.Name})
+	}
+	n.settingSelect(c, kit, "app.theme", "Theme", "mica", themes)
 	n.settingSelect(c, kit, "app.color_mode", "Color mode", "system", []uikit.SelectOption{
 		{Value: "system", Label: "System"}, {Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"},
 	})

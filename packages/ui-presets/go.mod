@@ -2,7 +2,10 @@ module github.com/qiyuanhuakai/dezirclip/packages/ui-presets
 
 go 1.27.3
 
-require github.com/qiyuanhuakai/dezirclip/packages/ui-native v0.0.0
+require (
+	github.com/qiyuanhuakai/dezirclip/packages/ui-native v0.0.0
+	github.com/tdewolff/parse/v2 v2.25.0
+)
 
 require (
 	github.com/ebitengine/purego v0.11.1 // indirect

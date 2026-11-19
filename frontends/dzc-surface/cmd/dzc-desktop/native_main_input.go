@@ -8,7 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
 )
 
 func (n *nativeMain) selectedEntry() (protocol.DesktopEntry, bool) {
@@ -143,7 +142,7 @@ func (n *nativeMain) previewKeyboardRow(row protocol.DesktopEntry, generation ui
 func (n *nativeMain) previewAppearance() previewAppearance {
 	opacity := opacityPreference(n.preferences["app.preview_opacity"], n.preferences["app.surface_opacity"])
 	language := n.preferences["app.language"]
-	preset := presets.Select(n.theme, n.mode)
+	preset := n.preset()
 	appearance := theme.Appearance{Mode: n.mode, Locale: language, Opacity: float64(opacity) / 100, Tokens: preset.Tokens()}
 	if tint := preset.SurfaceTint(); tint != "" {
 		appearance.Tokens.Background = tint

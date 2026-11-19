@@ -114,7 +114,7 @@ func (n *nativeMain) cardTags(labels []string) []uikit.HistoryTag {
 	}
 	results := make([]uikit.HistoryTag, 0, len(labels))
 	for _, name := range labels {
-		color := nativeTagColor(name, n.theme == "retro")
+		color := nativeTagColor(name, n.themeBase() == "retro")
 		if custom, err := hex.DecodeString(strings.TrimPrefix(n.cardTagColors[name], "#")); err == nil && len(custom) == 3 {
 			color = ui.RGB(custom[0], custom[1], custom[2])
 		}

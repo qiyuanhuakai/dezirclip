@@ -40,6 +40,8 @@ type nativeMain struct {
 	preferences      map[string]string
 	query, kind      string
 	theme, mode      string
+	importedThemes   []protocol.DesktopThemePackage
+	importedTheme    *nativeTheme
 	systemDark       bool
 	focusSearch      bool
 	temporarySearch  bool
@@ -148,10 +150,12 @@ func (n *nativeMain) configured(settings map[string]string) {
 		themeName = "mica"
 	}
 	mode := n.colorMode(settings)
+	oldBase := n.themeBase()
+	n.configureThemes(themeName, settings["app.custom_themes"])
 	appearanceChanged := themeName != n.theme || mode != n.mode ||
 		(settings["app.show_app_border"] == "false") != (n.preferences["app.show_app_border"] == "false")
 	n.preferences, n.theme, n.mode = settings, themeName, mode
-	if appearanceChanged {
+	if appearanceChanged || oldBase != n.themeBase() {
 		n.applyAppearance()
 	}
 	if settings["app.emoji_panel_enabled"] != "true" {
@@ -181,7 +185,7 @@ func (n *nativeMain) systemAppearanceChanged() {
 }
 
 func (n *nativeMain) applyAppearance() {
-	if err := applyWindowAppearance(n.window, n.theme, n.mode, n.preferences["app.show_app_border"] != "false"); err != nil {
+	if err := applyWindowAppearance(n.window, n.themeBase(), n.mode, n.preferences["app.show_app_border"] != "false"); err != nil {
 		log.Printf("Native window appearance: %v", err)
 	}
 }

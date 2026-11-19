@@ -1,12 +1,47 @@
 package main
 
 import (
+	"encoding/json"
 	"strconv"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
+
+func TestNativeMainDrawsSavedCustomPalette(t *testing.T) {
+	catalog, err := json.Marshal([]protocol.DesktopThemePackage{{
+		Format: "dezirclip-theme", Version: 1, Id: "forest", Name: "Forest", Base: "mica",
+		Css: `.theme-custom { --dc-surface-window: #edf3ed; --dc-text-primary: #203b2a; }
+			.theme-custom.dark-mode { --dc-surface-window: #17251c; --dc-text-primary: #edf6eb; }`,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	window := nativeMain{mode: "light"}
+	window.configureThemes("custom:forest", string(catalog))
+	window.theme = "custom:forest"
+	window.preferences = map[string]string{"app.custom_themes": string(catalog), "app.surface_opacity": "100"}
+	tester := ui.NewTester(window.view, 360, 400)
+	for _, test := range []struct {
+		mode string
+		rgb  [3]uint8
+	}{
+		{"light", [3]uint8{237, 243, 237}},
+		{"dark", [3]uint8{23, 37, 28}},
+	} {
+		window.mode = test.mode
+		tester.Frame()
+		pixel := tester.Image().RGBAAt(340, 380)
+		if [3]uint8{pixel.R, pixel.G, pixel.B} != test.rgb || pixel.A != 255 {
+			t.Fatalf("%s shell pixel = %v, want opaque %v", test.mode, pixel, test.rgb)
+		}
+	}
+	window.configureThemes("custom:forest", "[]")
+	if window.importedTheme != nil || window.preset().Tokens().Background == "#17251c" {
+		t.Fatal("removed theme remained active")
+	}
+}
 
 func TestNativeMainColorMode(t *testing.T) {
 	for _, systemDark := range []bool{false, true} {

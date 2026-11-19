@@ -6,11 +6,10 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
 )
 
 func (n *nativeMain) view(c *ui.Context) {
-	preset := presets.Select(n.theme, n.mode)
+	preset := n.preset()
 	kit := preset.Kit().WithInterfaceFont(nativeInterfaceFont(n.preferences))
 	kit.Apply(c)
 	var surfaceOpacity *int
