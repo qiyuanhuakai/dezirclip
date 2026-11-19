@@ -25,6 +25,41 @@ func TestNativeMainUsesSavedInterfaceFont(t *testing.T) {
 	}
 }
 
+func TestNativeMainShellOpacity(t *testing.T) {
+	for _, name := range []string{"retro", "mica", "acrylic", "liquid-glass", "macos", "scifi"} {
+		customizable := name == "mica" || name == "acrylic" || name == "liquid-glass"
+		for _, mode := range []string{"light", "dark"} {
+			t.Run(name+"/"+mode, func(t *testing.T) {
+				window := nativeMain{theme: name, mode: mode, preferences: map[string]string{"app.surface_opacity": "20"}}
+				tester := ui.NewTester(window.view, 360, 400)
+				want := uint8(255)
+				if customizable {
+					want = 51
+				}
+				if got := tester.Image().RGBAAt(340, 380).A; got != want {
+					t.Fatalf("shell alpha = %d, want %d", got, want)
+				}
+				window.showSettings, window.settingsSection = true, "appearance"
+				tester.Frame()
+				if tester.HasText("Surface opacity") != customizable {
+					t.Fatal("surface slider did not follow theme support")
+				}
+			})
+		}
+	}
+}
+
+func TestNativePreviewOpacityKeepsIndependentSetting(t *testing.T) {
+	window := nativeMain{theme: "mica", mode: "dark", preferences: map[string]string{"app.surface_opacity": "20"}}
+	if got := window.previewAppearance().theme().Background.A; got != 51 {
+		t.Fatalf("inherited preview alpha = %d, want 51", got)
+	}
+	window.preferences["app.preview_opacity"] = "0"
+	if got := window.previewAppearance().theme().Background.A; got != 0 {
+		t.Fatalf("explicit preview alpha = %d, want 0", got)
+	}
+}
+
 func TestNativeMainPrivacySettingsAreClosedOnReentry(t *testing.T) {
 	for _, width := range []int{360, 700} {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {

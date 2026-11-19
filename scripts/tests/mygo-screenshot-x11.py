@@ -16,10 +16,13 @@ def check(desktop, helpers, *, native_main=False):
     cli = desktop.with_name('dzc')
     subprocess.run([cli, 'add', 'screenshot fixture'], check=True, stdout=subprocess.DEVNULL)
     with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
-        db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', [
+        settings = [
             ('app.window_pinned', 'true'), ('app.language', 'en'), ('app.silent_start', 'false'),
             ('app.screenshot_enabled', 'true'), ('app.screenshot_hotkey', 'Ctrl+Shift+A'),
-            ('app.screenshot_full_hotkey', 'Ctrl+Shift+F'), ('app.window_width', '750'), ('app.window_height', '650')])
+            ('app.screenshot_full_hotkey', 'Ctrl+Shift+F'), ('app.window_width', '750'), ('app.window_height', '650')]
+        if native_main:
+            settings.append(('app.theme', 'mica'))
+        db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', settings)
     subprocess.run([cli, 'service', 'start', '--json'], check=True, stdout=subprocess.DEVNULL)
     clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
     root = Gdk.get_default_root_window()
@@ -156,20 +159,29 @@ def check(desktop, helpers, *, native_main=False):
         assert geometry() == (xid, bounds), 'Native window moved or resized during the repaint test'
         print('Verified software-rendered MyGo history repaints X11 after a clipboard change', flush=True)
 
-    def check_native_typography():
+    def check_native_appearance():
         def setting(key):
             with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
                 row = db.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
             return row[0] if row else None
 
         click('Appearance')
-        for label, key, maximum in [('Item font size', 'app.clipboard_item_font_size', '18'),
-                                    ('Tag font size', 'app.clipboard_tag_font_size', '14')]:
-            slider = wait(lambda: find(label, Atspi.Role.SLIDER), f'{label} slider missing')
+        for label, key, shortcut, value, unit in [
+            ('Item font size', 'app.clipboard_item_font_size', Gdk.KEY_End, '18', ' px'),
+            ('Tag font size', 'app.clipboard_tag_font_size', Gdk.KEY_End, '14', ' px'),
+            ('Preview opacity', 'app.preview_opacity', Gdk.KEY_Home, '0', '%'),
+            ('Surface opacity', 'app.surface_opacity', Gdk.KEY_End, '100', '%'),
+        ]:
+            def ready_slider():
+                node = find(label, Atspi.Role.SLIDER)
+                if node and node.get_state_set().contains(Atspi.StateType.SENSITIVE):
+                    return node
+
+            slider = wait(ready_slider, f'{label} slider missing')
             assert Atspi.Component.grab_focus(slider)
-            keys(Gdk.KEY_End)
-            wait(lambda: setting(key) == maximum, f'{label} was not saved')
-            wait(lambda: find(f'{maximum} px'), f'{label} did not show the saved size')
+            keys(shortcut)
+            wait(lambda: setting(key) == value, f'{label} was not saved')
+            wait(lambda: find(value + unit), f'{label} did not show the saved value')
         for label, key, reset in [('Interface font', 'app.font_main', 'Reset interface font'),
                                   ('Monospace font', 'app.font_mono', 'Reset monospace font')]:
             field = wait(lambda: find(label, Atspi.Role.COMBO_BOX), f'{label} picker missing')
@@ -179,7 +191,7 @@ def check(desktop, helpers, *, native_main=False):
             wait(lambda: setting(key), f'{label} was not saved')
             click(reset)
             wait(lambda: setting(key) == '', f'{label} did not reset to its theme default')
-        print('Verified native typography settings save sizes and choose or reset both font families', flush=True)
+        print('Verified native appearance saves typography and independent surface and preview opacity', flush=True)
 
     env = dict(os.environ, DZC_MYGO_NATIVE_MAIN='1', MYGO_GPU='0') if native_main else None
     process = subprocess.Popen([desktop], env=env)
@@ -188,7 +200,7 @@ def check(desktop, helpers, *, native_main=False):
             check_native_repaint()
         click('Settings')
         if native_main:
-            check_native_typography()
+            check_native_appearance()
         click('Tools')
         wait(lambda: find('Full Screen Capture'), 'Capture controls missing')
         clipboard.set_text('waiting for button full screenshot', -1)

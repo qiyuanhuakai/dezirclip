@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"math"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -35,13 +34,7 @@ func (l *Library) previewOpacity(ctx context.Context) (int, error) {
 	if err = json.Unmarshal(raw, &prefs); err != nil {
 		return 0, err
 	}
-	for _, value := range []string{prefs.Preview, prefs.Surface} {
-		v, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-		if err == nil && !math.IsNaN(v) && !math.IsInf(v, 0) {
-			return int(math.Round(min(100, max(0, v)))), nil
-		}
-	}
-	return 65, nil
+	return opacityPreference(prefs.Preview, prefs.Surface), nil
 }
 
 func (o *previewOpacityControl) reload() {

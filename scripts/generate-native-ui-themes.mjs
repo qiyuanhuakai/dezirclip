@@ -30,6 +30,15 @@ try {
         throw Error("Invalid rendered appearance for " + theme + " " + mode);
       }
       output[theme][mode] = appearance.Tokens;
+      if (["mica", "acrylic", "liquid-glass"].includes(theme)) {
+        const rgb = await page.evaluate(() =>
+          getComputedStyle(document.documentElement).getPropertyValue("--surface-shell-rgb").trim());
+        const channels = rgb.split(/\s+/).map(Number);
+        if (channels.length !== 3 || channels.some(value => !Number.isInteger(value) || value < 0 || value > 255)) {
+          throw Error("Invalid window tint for " + theme + " " + mode);
+        }
+        output[theme][mode].SurfaceTint = "#" + channels.map(value => value.toString(16).padStart(2, "0")).join("");
+      }
       widgets[theme][mode] = await readNativeWidgetStyles(page, url, theme, mode);
     }
   }

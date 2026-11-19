@@ -29,12 +29,12 @@ func (n *nativeMain) openSettings() {
 	n.showSettings, n.showEmoji = true, false
 }
 
-func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit) {
+func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *int) {
 	panes := []nativeSettingsPane{
 		{uikit.SettingsSection{ID: "general", Label: "General"}, func() { n.generalSettings(c) }},
 		{uikit.SettingsSection{ID: "clipboard", Label: "Clipboard"}, func() { n.clipboardSettings(c) }},
 		{uikit.SettingsSection{ID: "privacy", Label: "Privacy"}, func() { n.privacySettings(c) }},
-		{uikit.SettingsSection{ID: "appearance", Label: "Appearance"}, func() { n.appearanceSettings(c, kit) }},
+		{uikit.SettingsSection{ID: "appearance", Label: "Appearance"}, func() { n.appearanceSettings(c, kit, surfaceOpacity) }},
 		{uikit.SettingsSection{ID: "tools", Label: "Tools"}, func() { n.toolsSettings(c) }},
 	}
 	if n.settingsSection == "" {
@@ -181,7 +181,7 @@ func (n *nativeMain) changePrivateSession(active bool) {
 	}()
 }
 
-func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit) {
+func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpacity *int) {
 	n.settingSelect(c, kit, "app.theme", "Theme", "mica", []uikit.SelectOption{
 		{Value: "retro", Label: "Retro"}, {Value: "mica", Label: "Mica"}, {Value: "acrylic", Label: "Acrylic"},
 		{Value: "liquid-glass", Label: "Liquid Glass"}, {Value: "macos", Label: "macOS"}, {Value: "scifi", Label: "Sci-Fi"},
@@ -194,6 +194,11 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit) {
 		nativeBooleanSetting{"app.show_app_border", "Show window border", true},
 	)
 	n.typographySettings(c)
+	previewOpacity := opacityPreference(n.preferences["app.preview_opacity"], n.preferences["app.surface_opacity"])
+	n.rangeSetting(c, nativePreviewOpacity, previewOpacity)
+	if surfaceOpacity != nil {
+		*surfaceOpacity = n.rangeSetting(c, nativeSurfaceOpacity, *surfaceOpacity)
+	}
 }
 
 func (n *nativeMain) settingSelect(c *ui.Context, kit uikit.Kit, key, label, fallback string, options []uikit.SelectOption) {

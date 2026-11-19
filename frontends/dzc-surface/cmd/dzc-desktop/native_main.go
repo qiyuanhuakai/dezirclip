@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -143,7 +144,17 @@ func (n *nativeMain) colorMode(ctx context.Context, settings map[string]string) 
 }
 
 func (n *nativeMain) configured(settings map[string]string, mode string) {
-	n.preferences, n.theme, n.mode = settings, settings["app.theme"], mode
+	themeName := settings["app.theme"]
+	if themeName == "" {
+		themeName = "mica"
+	}
+	border := settings["app.show_app_border"] != "false"
+	if themeName != n.theme || mode != n.mode || border != (n.preferences["app.show_app_border"] != "false") {
+		if err := applyWindowAppearance(n.window, themeName, mode, border); err != nil {
+			log.Printf("Native window appearance: %v", err)
+		}
+	}
+	n.preferences, n.theme, n.mode = settings, themeName, mode
 	if settings["app.emoji_panel_enabled"] != "true" {
 		n.showEmoji = false
 	}

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"math"
-	"strconv"
 	"strings"
 	"time"
 
@@ -143,17 +141,13 @@ func (n *nativeMain) previewKeyboardRow(row protocol.DesktopEntry, generation ui
 }
 
 func (n *nativeMain) previewAppearance() previewAppearance {
-	opacity := 65
-	for _, key := range []string{"app.preview_opacity", "app.surface_opacity"} {
-		value, err := strconv.ParseFloat(strings.TrimSpace(n.preferences[key]), 64)
-		if err == nil && !math.IsNaN(value) && !math.IsInf(value, 0) {
-			opacity = int(math.Round(max(0, min(100, value))))
-			break
-		}
-	}
+	opacity := opacityPreference(n.preferences["app.preview_opacity"], n.preferences["app.surface_opacity"])
 	language := n.preferences["app.language"]
-	appearance := theme.Appearance{Mode: n.mode, Locale: language, Opacity: float64(opacity) / 100,
-		Tokens: presets.Select(n.theme, n.mode).Tokens()}
+	preset := presets.Select(n.theme, n.mode)
+	appearance := theme.Appearance{Mode: n.mode, Locale: language, Opacity: float64(opacity) / 100, Tokens: preset.Tokens()}
+	if tint := preset.SurfaceTint(); tint != "" {
+		appearance.Tokens.Background = tint
+	}
 	if font := nativeInterfaceFont(n.preferences); font != "" {
 		appearance.Tokens.FontFamilies = []string{font}
 	}

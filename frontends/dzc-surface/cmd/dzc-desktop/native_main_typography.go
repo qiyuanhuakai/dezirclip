@@ -11,17 +11,19 @@ type nativeFontChoices struct {
 	main, mono []string
 }
 
-type nativeSizeSetting struct {
-	key, label                 string
+type nativeRangeSetting struct {
+	key, label, unit           string
 	minimum, maximum, fallback int
 }
 
 var (
-	nativeItemSize = nativeSizeSetting{"app.clipboard_item_font_size", "Item font size", 11, 18, 13}
-	nativeTagSize  = nativeSizeSetting{"app.clipboard_tag_font_size", "Tag font size", 8, 14, 10}
+	nativeItemSize       = nativeRangeSetting{"app.clipboard_item_font_size", "Item font size", " px", 11, 18, 13}
+	nativeTagSize        = nativeRangeSetting{"app.clipboard_tag_font_size", "Tag font size", " px", 8, 14, 10}
+	nativeSurfaceOpacity = nativeRangeSetting{key: "app.surface_opacity", label: "Surface opacity", unit: "%", maximum: 100}
+	nativePreviewOpacity = nativeRangeSetting{key: "app.preview_opacity", label: "Preview opacity", unit: "%", maximum: 100}
 )
 
-func (s nativeSizeSetting) value(preferences map[string]string) int {
+func (s nativeRangeSetting) value(preferences map[string]string) int {
 	value, err := strconv.Atoi(preferences[s.key])
 	if err != nil || value < s.minimum || value > s.maximum {
 		return s.fallback
@@ -30,8 +32,8 @@ func (s nativeSizeSetting) value(preferences map[string]string) int {
 }
 
 func (n *nativeMain) typographySettings(c *ui.Context) {
-	n.fontSizeSetting(c, nativeItemSize)
-	n.fontSizeSetting(c, nativeTagSize)
+	n.rangeSetting(c, nativeItemSize, nativeItemSize.value(n.preferences))
+	n.rangeSetting(c, nativeTagSize, nativeTagSize.value(n.preferences))
 
 	if n.fontChoices == nil {
 		n.findFonts()
@@ -80,13 +82,12 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label, resetLabel string, c
 	})
 }
 
-func (n *nativeMain) fontSizeSetting(c *ui.Context, setting nativeSizeSetting) {
+func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, saved int) int {
 	type draft struct {
 		value float64
 		dirty bool
 	}
 	row := ui.Row(c).Gap(8).AlignItems(ui.Center)
-	saved := setting.value(n.preferences)
 	edit := ui.Local(row, setting.key, func() draft { return draft{value: float64(saved)} })
 	if !edit.dirty && !n.mutating {
 		edit.value = float64(saved)
@@ -104,6 +105,7 @@ func (n *nativeMain) fontSizeSetting(c *ui.Context, setting nativeSizeSetting) {
 				n.saveSetting(setting.key, strconv.Itoa(value))
 			}
 		}
-		ui.Text(c, strconv.Itoa(value)+" px").MinWidth(36)
+		ui.Text(c, strconv.Itoa(value)+setting.unit).MinWidth(36)
 	})
+	return int(edit.value)
 }

@@ -17,7 +17,12 @@ var paletteJSON []byte
 //go:embed builtin-widget-styles.json
 var widgetJSON []byte
 
-var palettes = decode[theme.Tokens](paletteJSON)
+type palette struct {
+	theme.Tokens
+	SurfaceTint string
+}
+
+var palettes = decode[palette](paletteJSON)
 var widgets = decode[map[string]theme.WidgetStyle](widgetJSON)
 
 func decode[T any](data []byte) map[string]map[string]T {
@@ -30,7 +35,7 @@ func decode[T any](data []byte) map[string]map[string]T {
 
 type Preset struct {
 	mode    string
-	colors  theme.Tokens
+	colors  palette
 	widgets map[string]theme.WidgetStyle
 }
 
@@ -47,15 +52,18 @@ func Select(name, mode string) Preset {
 
 // Kit applies this catalog to the independent native components.
 func (p Preset) Kit() uikit.Kit {
-	return uikit.NewKit(p.mode, p.colors, p.widgets)
+	return uikit.NewKit(p.mode, p.colors.Tokens, p.widgets)
 }
 
 // Tokens returns the semantic palette for associated native windows.
 func (p Preset) Tokens() theme.Tokens {
-	tokens := p.colors
+	tokens := p.colors.Tokens
 	tokens.FontFamilies = slices.Clone(tokens.FontFamilies)
 	return tokens
 }
+
+// SurfaceTint returns the outer window color for presets with adjustable shell opacity.
+func (p Preset) SurfaceTint() string { return p.colors.SurfaceTint }
 
 // ShowcasePadding reproduces the Web fixture's viewport in the native gallery.
 func (p Preset) ShowcasePadding() [4]float32 { return p.widgets["gallery"].Padding }

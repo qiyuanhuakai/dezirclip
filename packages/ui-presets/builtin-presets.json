@@ -63,7 +63,8 @@
       "SearchHeight": 36,
       "TransitionMs": 120,
       "RegularWeight": 400,
-      "EmphasisWeight": 600
+      "EmphasisWeight": 600,
+      "SurfaceTint": "#fcfcfc"
     },
     "dark": {
       "Background": "#181a20",
@@ -84,7 +85,8 @@
       "SearchHeight": 36,
       "TransitionMs": 120,
       "RegularWeight": 400,
-      "EmphasisWeight": 600
+      "EmphasisWeight": 600,
+      "SurfaceTint": "#141414"
     }
   },
   "acrylic": {
@@ -107,7 +109,8 @@
       "SearchHeight": 36,
       "TransitionMs": 120,
       "RegularWeight": 400,
-      "EmphasisWeight": 600
+      "EmphasisWeight": 600,
+      "SurfaceTint": "#ffffff"
     },
     "dark": {
       "Background": "#14161c",
@@ -128,7 +131,8 @@
       "SearchHeight": 36,
       "TransitionMs": 120,
       "RegularWeight": 400,
-      "EmphasisWeight": 600
+      "EmphasisWeight": 600,
+      "SurfaceTint": "#191919"
     }
   },
   "liquid-glass": {
@@ -151,7 +155,8 @@
       "SearchHeight": 36,
       "TransitionMs": 120,
       "RegularWeight": 400,
-      "EmphasisWeight": 600
+      "EmphasisWeight": 600,
+      "SurfaceTint": "#ffffff"
     },
     "dark": {
       "Background": "#151c2d",
@@ -172,7 +177,8 @@
       "SearchHeight": 36,
       "TransitionMs": 120,
       "RegularWeight": 400,
-      "EmphasisWeight": 600
+      "EmphasisWeight": 600,
+      "SurfaceTint": "#191c26"
     }
   },
   "macos": {

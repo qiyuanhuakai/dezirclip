@@ -10,8 +10,19 @@ import (
 )
 
 func (n *nativeMain) view(c *ui.Context) {
-	kit := presets.Select(n.theme, n.mode).Kit().WithInterfaceFont(nativeInterfaceFont(n.preferences))
+	preset := presets.Select(n.theme, n.mode)
+	kit := preset.Kit().WithInterfaceFont(nativeInterfaceFont(n.preferences))
 	kit.Apply(c)
+	var surfaceOpacity *int
+	tint := preset.SurfaceTint()
+	if tint != "" {
+		opacity := opacityPreference(n.preferences["app.surface_opacity"])
+		surfaceOpacity = &opacity
+		palette := *c.Theme()
+		// Paint the shell only once, below the controls.
+		palette.Background = ui.Color{}
+		c.SetTheme(&palette)
+	}
 	n.list.List.Selected = &n.history.selected
 	n.list.List.Key = func(index int) any {
 		if index >= 0 && index < len(n.history.rows) {
@@ -79,7 +90,7 @@ func (n *nativeMain) view(c *ui.Context) {
 		}
 		kit.Header(c, header)
 		if n.showSettings {
-			n.settingsView(c, kit)
+			n.settingsView(c, kit, surfaceOpacity)
 		} else if n.showEmoji {
 			n.emojiView(c)
 		} else {
@@ -103,6 +114,9 @@ func (n *nativeMain) view(c *ui.Context) {
 			})
 		}
 	})
+	if surfaceOpacity != nil {
+		main.Background(ui.Hex(tint).Alpha(float32(*surfaceOpacity) / 100))
+	}
 	n.historyShortcuts(c, queryFocused)
 	if n.tags != nil {
 		n.tagEditorView(c, kit, n.tags)

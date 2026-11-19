@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -44,6 +45,16 @@ func nativeInterfaceFont(settings map[string]string) string {
 		return ""
 	}
 	return font
+}
+
+func opacityPreference(values ...string) int {
+	for _, value := range values {
+		number, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err == nil && !math.IsNaN(number) && !math.IsInf(number, 0) {
+			return int(math.Round(max(0, min(100, number))))
+		}
+	}
+	return 65
 }
 
 func restoreNativeAppearance(owner *client.Client, panel *quickpaste.Panel, settings map[string]string) {
