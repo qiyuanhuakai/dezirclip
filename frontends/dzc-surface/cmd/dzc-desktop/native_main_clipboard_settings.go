@@ -215,12 +215,14 @@ func (n *nativeMain) retentionSettings(c *ui.Context) {
 	if !n.settingEnabled("app.persistent_limit_enabled", true) {
 		return
 	}
-	const key = "app.persistent_limit"
+	n.numberSetting(c, "app.persistent_limit", n.text("persistent_limit"), 500, 50, 99999)
+}
+
+func (n *nativeMain) numberSetting(c *ui.Context, key, label string, fallback, minimum, maximum int) {
 	saved := n.preferences[key]
 	if saved == "" {
-		saved = "500"
+		saved = strconv.Itoa(fallback)
 	}
-	label := n.text("persistent_limit")
 	ui.Text(c, label)
 	type limitDraft struct {
 		value, saved string
@@ -232,7 +234,7 @@ func (n *nativeMain) retentionSettings(c *ui.Context) {
 	}
 	row.Children(func() {
 		input := ui.TextInput(c, &draft.value).Label(label).Width(112).ReadOnly(n.mutating)
-		limit, valid := nativeStorageLimit(draft.value)
+		limit, valid := nativeBoundedNumber(draft.value, minimum, maximum)
 		save := uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: n.mutating || !valid || draft.value == saved})
 		if save.Clicked() || input.Submitted() && valid && !n.mutating {
 			draft.value = limit
@@ -243,7 +245,7 @@ func (n *nativeMain) retentionSettings(c *ui.Context) {
 	})
 }
 
-func nativeStorageLimit(value string) (string, bool) {
+func nativeBoundedNumber(value string, minimum, maximum int) (string, bool) {
 	raw := strings.TrimSpace(value)
 	if raw == "" {
 		return "", false
@@ -253,10 +255,9 @@ func nativeStorageLimit(value string) (string, bool) {
 			return "", false
 		}
 	}
-	raw = strings.TrimLeft(raw, "0")
-	if len(raw) > 5 {
-		return "99999", true
+	number, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || number > uint64(maximum) {
+		return strconv.Itoa(maximum), true
 	}
-	n, _ := strconv.Atoi(raw)
-	return strconv.Itoa(max(50, n)), true
+	return strconv.Itoa(max(minimum, int(number))), true
 }

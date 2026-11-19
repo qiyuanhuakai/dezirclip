@@ -9,8 +9,14 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// Only an explicit hide starts an idle period. Docking and native dialogs can hide
-// the WebView temporarily and need the same window to remain available.
+const (
+	minIdleSeconds     = 5
+	maxIdleSeconds     = 3600
+	defaultIdleSeconds = 60
+)
+
+// Only an explicit hide starts an idle period. Docking and native dialogs can
+// hide the main window temporarily and need it to remain available.
 type hiddenWebView struct {
 	generation uint64
 	timer      *time.Timer
@@ -59,8 +65,8 @@ func (s *DesktopShell) hideMain(w *mygo.Window) {
 			return
 		}
 		seconds, err := strconv.Atoi(settings.IdleSeconds)
-		if err != nil || seconds < 5 || seconds > 3600 {
-			seconds = 60
+		if err != nil || seconds < minIdleSeconds || seconds > maxIdleSeconds {
+			seconds = defaultIdleSeconds
 		}
 		mygo.RunOnMain(func() {
 			if generation != s.idle.generation || w.IsDestroyed() || w.IsVisible() {

@@ -15,9 +15,20 @@ func TestNativeStorageLimitMatchesServiceBounds(t *testing.T) {
 		"5": "50", "0052": "52", "99999": "99999", "100000": "99999",
 		"9999999999999999999999999": "99999", "": "", "3.5": "", "-1": "",
 	} {
-		got, valid := nativeStorageLimit(input)
+		got, valid := nativeBoundedNumber(input, 50, 99999)
 		if got != expected || valid != (expected != "") {
 			t.Errorf("storage limit %q = %q, %t, want %q", input, got, valid, expected)
+		}
+	}
+}
+
+func TestNativeIdleDurationMatchesRendererBounds(t *testing.T) {
+	for input, expected := range map[string]string{
+		"000": "5", "5": "5", " 0060 ": "60", "3601": "3600", "92233720368547758080": "3600", "5.0": "",
+	} {
+		got, valid := nativeBoundedNumber(input, minIdleSeconds, maxIdleSeconds)
+		if got != expected || valid != (expected != "") {
+			t.Errorf("idle duration %q = %q, %t, want %q", input, got, valid, expected)
 		}
 	}
 }

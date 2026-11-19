@@ -177,6 +177,26 @@ func (n *nativeMain) generalSettings(c *ui.Context, kit uikit.Kit) {
 			return n.shell.SetTrayVisible(ctx, !hideTray, epoch)
 		})
 	}
+	n.idleSettings(c)
+	n.soundSettings(c)
+}
+
+func (n *nativeMain) idleSettings(c *ui.Context) {
+	const enabled = "app.idle_destroy_enabled"
+	n.booleanSettings(c, nativeBooleanSetting{enabled, n.text("idle_destroy_enabled"), false})
+	if n.settingEnabled(enabled, false) {
+		n.numberSetting(c, "app.idle_destroy_seconds", n.text("idle_destroy_seconds"), defaultIdleSeconds, minIdleSeconds, maxIdleSeconds)
+	}
+}
+
+func (n *nativeMain) soundSettings(c *ui.Context) {
+	const enabled = "app.sound_enabled"
+	n.booleanSettings(c, nativeBooleanSetting{enabled, n.text("sound_effects"), false})
+	if n.settingEnabled(enabled, false) {
+		volume := nativeRangeSetting{key: "app.sound_volume", unit: "%", maximum: 100, fallback: 70}
+		n.rangeSetting(c, volume, n.text("sound_volume"), volume.value(n.preferences))
+		n.booleanSettings(c, nativeBooleanSetting{"app.sound_paste_enabled", n.text("paste_sound"), true})
+	}
 }
 
 func (n *nativeMain) clipboardSettings(c *ui.Context, kit uikit.Kit) {
