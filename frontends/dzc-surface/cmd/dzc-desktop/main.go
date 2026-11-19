@@ -350,6 +350,10 @@ func run() error {
 					native.closeTransform()
 					concealed = true
 				}
+				if native.qr != nil && native.qr.request.Reveal {
+					native.closeQR()
+					concealed = true
+				}
 				if native.backup != nil {
 					concealed = native.backup.clearPreview() || concealed
 				}

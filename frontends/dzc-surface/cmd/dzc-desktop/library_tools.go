@@ -144,6 +144,21 @@ func (l *Library) QR(ctx context.Context, params protocol.ToolQrParams) (string,
 	return result.Text, err
 }
 
+func (l *Library) historyQR(ctx context.Context, params protocol.DesktopEntryParams) (protocol.DesktopQrPreview, error) {
+	var preview protocol.DesktopQrPreview
+	err := l.snapshot(ctx, protocol.MethodDesktopHistoryQr, params, "DesktopQrPreview", &preview, params.ExpectedEpoch)
+	return preview, err
+}
+
+func (l *Library) copyHistoryQR(ctx context.Context, params protocol.DesktopQrCopyParams) error {
+	var result protocol.OperationResult
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopClipboardQrCopy, params, "OperationResult", &result)
+	if err == nil && !result.Performed {
+		return client.ErrProtocol
+	}
+	return err
+}
+
 func (l *Library) OcrEngine(ctx context.Context) (protocol.OcrEngineInfo, error) {
 	var result protocol.OcrEngineInfo
 	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopOcrEngine, protocol.ToolCatalogParams{}, "OcrEngineInfo", &result)

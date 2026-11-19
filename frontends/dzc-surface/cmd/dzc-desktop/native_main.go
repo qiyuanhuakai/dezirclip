@@ -75,6 +75,7 @@ type nativeMain struct {
 	editor           *nativeEntryEditor
 	transform        *nativeTransformDialog
 	transformKinds   []protocol.ToolTransformKind
+	qr               *nativeQRDialog
 }
 
 func (n *nativeMain) stopSession() {
@@ -98,6 +99,7 @@ func (n *nativeMain) stopSession() {
 	n.tags = nil
 	n.closeEntryEditor()
 	n.closeTransform()
+	n.closeQR()
 	n.closeBackup()
 	n.tagLibrary = nil
 	n.emoji = nil

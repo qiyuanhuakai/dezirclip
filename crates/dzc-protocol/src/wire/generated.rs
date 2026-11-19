@@ -453,6 +453,24 @@ pub struct DesktopTransformCopyParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopQrPreview {
+    pub image: String,
+    pub summary: String,
+    pub content_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopQrCopyParams {
+    pub id: i64,
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub reveal: bool,
+    pub content_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesktopCopyParams {
     pub id: i64,
     pub service_instance_id: String,
@@ -723,6 +741,10 @@ pub enum Method {
     DesktopClipboardCopy,
     #[serde(rename = "desktop.clipboard.transform_copy")]
     DesktopClipboardTransformCopy,
+    #[serde(rename = "desktop.history.qr")]
+    DesktopHistoryQr,
+    #[serde(rename = "desktop.clipboard.qr_copy")]
+    DesktopClipboardQrCopy,
     #[serde(rename = "desktop.privacy.rules")]
     DesktopPrivacyRules,
     #[serde(rename = "desktop.privacy.decision")]

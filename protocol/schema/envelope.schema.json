@@ -146,6 +146,8 @@
         "desktop.emoji.favorites",
         "desktop.clipboard.copy",
         "desktop.clipboard.transform_copy",
+        "desktop.history.qr",
+        "desktop.clipboard.qr_copy",
         "desktop.privacy.rules",
         "desktop.privacy.decision",
         "desktop.privacy.feedback",
@@ -2045,6 +2047,28 @@
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopTransformCopyParams"
               }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "method": { "const": "desktop.history.qr" } },
+            "required": ["method"]
+          },
+          "then": {
+            "properties": {
+              "params": { "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopEntryParams" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "method": { "const": "desktop.clipboard.qr_copy" } },
+            "required": ["method"]
+          },
+          "then": {
+            "properties": {
+              "params": { "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopQrCopyParams" }
             }
           }
         },

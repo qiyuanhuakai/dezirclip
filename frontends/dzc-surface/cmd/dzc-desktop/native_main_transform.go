@@ -18,7 +18,7 @@ type nativeTransformDialog struct {
 	message         string
 }
 
-func nativeTransformable(kind string) bool {
+func nativeTextToolEntry(kind string) bool {
 	switch kind {
 	case "", "image", "video", "file", "files":
 		return false
@@ -28,7 +28,7 @@ func nativeTransformable(kind string) bool {
 }
 
 func (n *nativeMain) openTransform(row protocol.DesktopEntry, generation uint64) {
-	if !n.canOpenHistoryDialog() || n.history.generation != generation || !nativeTransformable(row.ContentType) {
+	if !n.canOpenHistoryDialog() || n.history.generation != generation || !nativeTextToolEntry(row.ContentType) {
 		return
 	}
 	protected := nativeConcealed(row)

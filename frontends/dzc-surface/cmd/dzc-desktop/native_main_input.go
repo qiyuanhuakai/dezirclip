@@ -232,7 +232,11 @@ func (n *nativeMain) entryMenu(card ui.Element, row protocol.DesktopEntry, gener
 		if row.ContentType == "image" && menu.Item(n.text("native_copy_base64")).Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeBase64)
 		}
-		if nativeTransformable(row.ContentType) && !nativeConcealed(row) &&
+		if nativeTextToolEntry(row.ContentType) && !nativeConcealed(row) &&
+			menu.Item(n.text("native_qr_code")).Disabled(disabled).Chosen() {
+			n.openQR(row, generation)
+		}
+		if nativeTextToolEntry(row.ContentType) && !nativeConcealed(row) &&
 			menu.Item(n.text("native_transformations")).Disabled(disabled).Chosen() {
 			n.openTransform(row, generation)
 		}

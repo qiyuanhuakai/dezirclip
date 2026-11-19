@@ -5,6 +5,13 @@ use dzc_core::{api::{PrivacyAccessIntent,SensitiveAccess},capture::{CaptureData,
 use dzc_protocol::wire::*;
 use serde_json::Value;
 use base64::Engine;
+use sha2::{Digest, Sha256};
+
+enum DerivedText<'a> {
+    Transform(&'a str),
+    QrSvg { content_sha256: &'a str },
+}
+
 fn denied(error:impl ToString)->WireErrorCode {crate::router::privacy_error(error)}
 fn encoded<T:serde::Serialize>(value:T)->Result<Value,WireErrorCode> {serde_json::to_value(value).map_err(|_|WireErrorCode::Internal)}
 impl Host {
@@ -56,7 +63,50 @@ impl Host {
             reveal: request.reveal, paste: false, with_format: None, derived_text: None, image_as_base64: None,
             delete_after_use: None, move_to_top: None, expected_paste_target: None,
         };
-        self.desktop_copy_impl(session, copy, None, Some(&request.kind))
+        self.desktop_copy_impl(session, copy, None, Some(DerivedText::Transform(&request.kind)))
+    }
+
+    pub(crate) fn desktop_qr_preview(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
+        let request: DesktopEntryParams = serde_json::from_value(parameters).map_err(|_| WireErrorCode::InvalidRequest)?;
+        self.desktop_permission(session, &request.service_instance_id)?;
+        if request.id == 0 || request.thumbnail_dimension.is_some() || request.include_video_frame.is_some() {
+            return Err(WireErrorCode::InvalidRequest);
+        }
+        let now = crate::router::now_ms()?;
+        let access = if request.reveal { SensitiveAccess::ExplicitUserAction } else { SensitiveAccess::Denied };
+        let permit = self.history.privacy().authorize_read(PrivacyAccessIntent::InteractiveRead, access, Some(request.expected_epoch), now).map_err(denied)?;
+        let row = self.entry_authorized(request.id, &permit, now)?;
+        if matches!(row.content_type.as_str(), "image" | "video" | "file" | "files") {
+            return Err(WireErrorCode::InvalidRequest);
+        }
+        let content = qr_content(&row.content)?;
+        let png = dzc_core::qr::generate_qr_png(content, 256).map_err(|_| WireErrorCode::InvalidRequest)?;
+        let mut chars = content.chars();
+        let mut summary: String = chars.by_ref().take(60).collect();
+        if chars.next().is_some() {
+            summary.push('…');
+        }
+        let preview = DesktopQrPreview {
+            image: format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png)),
+            summary,
+            content_sha256: qr_content_sha256(content),
+        };
+        self.history.privacy().check_read(&permit, crate::router::now_ms()?).map_err(denied)?;
+        if !self.grants.still_valid(session) {
+            return Err(WireErrorCode::PermissionDenied);
+        }
+        self.authorized_snapshot(session, &permit, &preview)
+    }
+
+    pub(crate) fn desktop_qr_copy(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
+        let request: DesktopQrCopyParams = serde_json::from_value(parameters).map_err(|_| WireErrorCode::InvalidRequest)?;
+        let copy = DesktopCopyParams {
+            id: request.id, service_instance_id: request.service_instance_id, expected_epoch: request.expected_epoch,
+            reveal: request.reveal, paste: false, with_format: None, derived_text: None, image_as_base64: None,
+            delete_after_use: None, move_to_top: None, expected_paste_target: None,
+        };
+        let operation = DerivedText::QrSvg { content_sha256: &request.content_sha256 };
+        self.desktop_copy_impl(session, copy, None, Some(operation))
     }
 
     pub(crate) fn remember_window_target(&self, session: &Session, params: Value) -> Result<Value, WireErrorCode> {
@@ -185,13 +235,13 @@ impl Host {
         session: &Session,
         request: DesktopCopyParams,
         bound: Option<(dzc_platform::runtime::QueueInputTarget, RuntimeState)>,
-        transformation: Option<&str>,
+        derived: Option<DerivedText<'_>>,
     ) -> Result<Value, WireErrorCode> {
         self.desktop_permission(session,&request.service_instance_id)?;
         if !self.actions.can_copy() || request.paste && !self.actions.can_paste() {return Err(WireErrorCode::UnsupportedCapability);}
         let paste_target=if bound.is_none() { self.prepare_desktop_paste(request.paste,request.expected_paste_target.as_ref())? } else { None };
         let now=crate::router::now_ms()?;
-        let generated=request.derived_text.is_some() || request.image_as_base64.unwrap_or(false) || transformation.is_some();
+        let generated=request.derived_text.is_some() || request.image_as_base64.unwrap_or(false) || derived.is_some();
         // A Service started without capture still handles explicit copy actions.
         // An unexpectedly unavailable capture owner still fails closed.
         let capture_generated = generated && !self.capture_disabled_by_request()?;
@@ -206,8 +256,8 @@ impl Host {
         } else if let Some(entry)=session_entry.as_ref() {self.history.session_clipboard_payload_for_host_authorized(entry,&request.service_instance_id,&permit,now)}
             else {self.history.clipboard_payload_authorized(request.id,&permit,now)}.map_err(denied)?;
         if request.image_as_base64.unwrap_or(false) {payload=image_text(payload)?;}
-        if let Some(kind) = transformation {
-            payload = transform_payload(payload, kind)?;
+        if let Some(operation) = derived {
+            payload = derive_text_payload(payload, &operation)?;
         }
         if request.with_format==Some(false) {payload=plain(payload);}
         if let Some(ticket)=ticket {
@@ -353,25 +403,69 @@ fn image_text(payload:ClipboardPayload)->Result<ClipboardPayload,WireErrorCode> 
 })}
 fn payload_text(payload:&ClipboardPayload)->Option<&str> {match payload {ClipboardPayload::Text(text)=>Some(text),ClipboardPayload::Private{payload,..}=>payload_text(payload),_=>None}}
 
-fn transform_payload(payload: ClipboardPayload, kind: &str) -> Result<ClipboardPayload, WireErrorCode> {
+fn derive_text_payload(payload: ClipboardPayload, operation: &DerivedText<'_>) -> Result<ClipboardPayload, WireErrorCode> {
     match payload {
         ClipboardPayload::Text(text) | ClipboardPayload::Html { text, .. } => {
-            if text.chars().take(250_001).count() > 250_000 {
-                return Err(WireErrorCode::FrameTooLarge);
-            }
-            let result = dzc_core::transforms::transform_text(&text, kind).map_err(|_| WireErrorCode::InvalidRequest)?;
-            if result.chars().take(524_289).count() > 524_288 {
-                return Err(WireErrorCode::FrameTooLarge);
-            }
+            let result = match operation {
+                DerivedText::Transform(kind) => transform_text(&text, kind)?,
+                DerivedText::QrSvg { content_sha256 } => {
+                    let content = qr_content(&text)?;
+                    if qr_content_sha256(content) != *content_sha256 {
+                        return Err(WireErrorCode::HistoryRevisionChanged);
+                    }
+                    dzc_core::qr::generate_qr_svg(content).map_err(|_| WireErrorCode::InvalidRequest)?
+                }
+            };
             Ok(ClipboardPayload::Text(result))
         }
         ClipboardPayload::Private { payload, authorization } => Ok(ClipboardPayload::Private {
-            payload: Box::new(transform_payload(*payload, kind)?),
+            payload: Box::new(derive_text_payload(*payload, operation)?),
             authorization,
         }),
         _ => Err(WireErrorCode::InvalidRequest),
     }
 }
+
+fn transform_text(text: &str, kind: &str) -> Result<String, WireErrorCode> {
+    if text.chars().take(250_001).count() > 250_000 {
+        return Err(WireErrorCode::FrameTooLarge);
+    }
+    let result = dzc_core::transforms::transform_text(text, kind).map_err(|_| WireErrorCode::InvalidRequest)?;
+    if result.chars().take(524_289).count() > 524_288 {
+        return Err(WireErrorCode::FrameTooLarge);
+    }
+    Ok(result)
+}
+
+fn qr_content(content: &str) -> Result<&str, WireErrorCode> {
+    // 7,089 ASCII digits is the maximum payload of any standard QR symbol.
+    if content.is_empty() || content.len() > 7_089 {
+        return Err(WireErrorCode::InvalidRequest);
+    }
+    Ok(content)
+}
+
+fn qr_content_sha256(content: &str) -> String {
+    format!("{:x}", Sha256::digest(content.as_bytes()))
+}
+
+#[cfg(test)]
+mod qr_copy_tests {
+    use super::*;
+
+    #[test]
+    fn qr_svg_copy_requires_the_text_shown_in_the_preview() {
+        let source = "https://example.test/你好";
+        let sha = qr_content_sha256(source);
+        let operation = DerivedText::QrSvg { content_sha256: &sha };
+        let html = ClipboardPayload::Html { text: source.into(), html: format!("<p>{source}</p>") };
+        let generated = derive_text_payload(html, &operation).unwrap();
+        assert_eq!(payload_text(&generated), Some(dzc_core::qr::generate_qr_svg(source).unwrap().as_str()));
+        let changed = ClipboardPayload::Text(format!("{source}?updated"));
+        assert!(matches!(derive_text_payload(changed, &operation), Err(WireErrorCode::HistoryRevisionChanged)));
+    }
+}
+
 #[cfg(test)]
 mod queue_completion_tests {
     use super::*;

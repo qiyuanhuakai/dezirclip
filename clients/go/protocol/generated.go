@@ -338,6 +338,20 @@ type DesktopTransformCopyParams struct {
     Kind string `json:"kind"`
 }
 
+type DesktopQrPreview struct {
+    Image string `json:"image"`
+    Summary string `json:"summary"`
+    ContentSha256 string `json:"content_sha256"`
+}
+
+type DesktopQrCopyParams struct {
+    Id int64 `json:"id"`
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Reveal bool `json:"reveal"`
+    ContentSha256 string `json:"content_sha256"`
+}
+
 type DesktopCopyParams struct {
     Id int64 `json:"id"`
     ServiceInstanceId string `json:"service_instance_id"`
@@ -485,6 +499,8 @@ const (
     MethodDesktopEmojiFavorites Method = "desktop.emoji.favorites"
     MethodDesktopClipboardCopy Method = "desktop.clipboard.copy"
     MethodDesktopClipboardTransformCopy Method = "desktop.clipboard.transform_copy"
+    MethodDesktopHistoryQr Method = "desktop.history.qr"
+    MethodDesktopClipboardQrCopy Method = "desktop.clipboard.qr_copy"
     MethodDesktopPrivacyRules Method = "desktop.privacy.rules"
     MethodDesktopPrivacyDecision Method = "desktop.privacy.decision"
     MethodDesktopPrivacyFeedback Method = "desktop.privacy.feedback"

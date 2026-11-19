@@ -134,6 +134,9 @@ func (n *nativeMain) view(c *ui.Context) {
 	if n.transform != nil {
 		n.transformView(c, kit, n.transform)
 	}
+	if n.qr != nil {
+		n.qrView(c, kit, n.qr)
+	}
 }
 
 func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
@@ -176,9 +179,12 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 				actions = append(actions, n.protectedRowAction(row, generation))
 				if protected != nil {
 					summary = protected.summary
-					if nativeTransformable(row.ContentType) {
-						actions = append(actions, uikit.HeaderAction{Icon: "transform", Label: n.text("native_transformations"),
-							Disabled: !n.canOpenHistoryDialog(), Run: func() { n.openTransform(row, generation) }})
+					if nativeTextToolEntry(row.ContentType) {
+						actions = append(actions,
+							uikit.HeaderAction{Icon: "qr", Label: n.text("native_qr_code"),
+								Disabled: !n.canOpenHistoryDialog(), Run: func() { n.openQR(row, generation) }},
+							uikit.HeaderAction{Icon: "transform", Label: n.text("native_transformations"),
+								Disabled: !n.canOpenHistoryDialog(), Run: func() { n.openTransform(row, generation) }})
 					}
 				}
 			}

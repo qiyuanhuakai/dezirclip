@@ -1449,6 +1449,70 @@
       ],
       "additionalProperties": false
     },
+    "DesktopQrPreview": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "pattern": "^data:image/png;base64,",
+          "maxLength": 131072
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 61
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "image",
+        "summary",
+        "content_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "DesktopQrCopyParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "reveal": {
+          "type": "boolean"
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "id",
+        "service_instance_id",
+        "expected_epoch",
+        "reveal",
+        "content_sha256"
+      ],
+      "additionalProperties": false
+    },
     "DesktopCopyParams": {
       "type": "object",
       "properties": {
@@ -1691,6 +1755,8 @@
         "desktop.emoji.favorites",
         "desktop.clipboard.copy",
         "desktop.clipboard.transform_copy",
+        "desktop.history.qr",
+        "desktop.clipboard.qr_copy",
         "desktop.privacy.rules",
         "desktop.privacy.decision",
         "desktop.privacy.feedback",
@@ -3897,6 +3963,44 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/DesktopTransformCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.qr"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.clipboard.qr_copy"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/DesktopQrCopyParams"
               }
             }
           }
