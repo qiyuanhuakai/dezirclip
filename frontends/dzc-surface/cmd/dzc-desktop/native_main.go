@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -24,6 +25,7 @@ type nativeMain struct {
 	session          context.Context
 	stop             context.CancelFunc
 	stopRead         context.CancelFunc
+	searchTimer      *time.Timer
 	resume           uint64
 	history          nativeHistory
 	list             uikit.HistoryListState
@@ -60,6 +62,7 @@ func (n *nativeMain) stopSession() {
 	}
 	n.session = nil
 	n.stopRead = nil
+	n.cancelSearchTimer()
 	n.history.reset(protocol.RuntimeState{}, nativeHistoryFilter{})
 	n.reading, n.failed, n.mutating, n.private = false, false, false, false
 	n.notice, n.keyboard, n.focusList = "", false, false
@@ -146,12 +149,16 @@ func (n *nativeMain) loadPage() {
 	if n.session == nil || n.history.state.ServiceInstanceId == "" {
 		return
 	}
+	n.cancelSearchTimer()
 	if n.stopRead != nil {
 		n.stopRead()
 		n.stopRead = nil
 	}
-	if n.tagLibrary != nil && n.history.filter.tag == "" {
+	if n.history.filter.sort != "" && n.history.filter.tag == "" {
 		n.reading, n.failed = false, false
+		if n.resume != 0 {
+			go n.reveal(n.session, n.resume, n.history.state)
+		}
 		return
 	}
 	request := n.history.request()
@@ -233,27 +240,73 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 	if next.HistoryRevision > current.HistoryRevision {
 		n.resetPreviewSelection()
 		n.history.reset(next, n.history.filter)
-		n.loadPage()
+		if n.searchTimer == nil {
+			n.loadPage()
+		}
 		n.loadTagCatalog()
 	}
 }
 
 func (n *nativeMain) editQuery(composing bool) {
 	filter := n.historyFilter()
-	if n.session != nil && n.history.state.ServiceInstanceId != "" && !composing &&
-		filter != n.history.filter {
-		n.resetPreviewSelection()
-		n.history.reset(n.history.state, filter)
-		n.list.Reset()
+	if n.session == nil || n.history.state.ServiceInstanceId == "" || composing || filter == n.history.filter {
+		return
+	}
+	previous := n.history.filter
+	n.resetPreviewSelection()
+	n.history.reset(n.history.state, filter)
+	n.list.Reset()
+	n.cancelSearchTimer()
+	if n.stopRead != nil {
+		n.stopRead()
+		n.stopRead = nil
+	}
+	// Type and sort changes take effect immediately. Text edits wait for the
+	// same quiet period as WebView, and prior results cannot be activated.
+	changingTagPane := n.tagLibrary != nil && (previous.sort != filter.sort || previous.tag != filter.tag)
+	if changingTagPane || previous.kind != filter.kind || strings.TrimSpace(n.historyQuery()) == "" {
 		n.loadPage()
+		return
+	}
+	n.reading, n.failed = true, false
+	session := n.session
+	var timer *time.Timer
+	timer = time.AfterFunc(300*time.Millisecond, func() {
+		n.update(session, func() {
+			if n.searchTimer == timer {
+				n.loadPage()
+			}
+		})
+	})
+	n.searchTimer = timer
+}
+
+func (n *nativeMain) cancelSearchTimer() {
+	if n.searchTimer != nil {
+		n.searchTimer.Stop()
+		n.searchTimer = nil
 	}
 }
 
 func (n *nativeMain) historyFilter() nativeHistoryFilter {
 	if tags := n.tagLibrary; tags != nil {
-		return nativeHistoryFilter{query: strings.TrimSpace(tags.query), tag: tags.selected, sort: tags.sort}
+		query := strings.TrimSpace(tags.query)
+		// The Host limits a tag-content search to 256 characters.
+		if utf8.RuneCountInString(query) > 256 {
+			query = string([]rune(query)[:256])
+		}
+		return nativeHistoryFilter{query: query, tag: tags.selected, sort: tags.sort}
 	}
-	return nativeHistoryFilter{query: strings.TrimSpace(n.query), kind: n.kind}
+	query := strings.TrimSpace(n.query)
+	if tag, ok := searchTagName(query); ok {
+		return nativeHistoryFilter{tag: tag, sort: "time"}
+	}
+	return nativeHistoryFilter{query: query, kind: n.kind}
+}
+
+func searchTagName(query string) (string, bool) {
+	prefix, tag, found := strings.Cut(strings.TrimSpace(query), ":")
+	return strings.TrimSpace(tag), found && strings.EqualFold(prefix, "tag")
 }
 
 func (n *nativeMain) resetPreviewSelection() {

@@ -111,6 +111,9 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 		ui.Grid(c).Columns(pickers).Width(300).MaxWidthPercent(1).Gap(5).Children(func() {
 			options := []uikit.SelectOption{{Label: "Select a tag"}}
 			search := strings.ToLower(strings.TrimSpace(tags.nameQuery))
+			if name, ok := searchTagName(search); ok {
+				search = name
+			}
 			for _, name := range tags.names {
 				if strings.Contains(strings.ToLower(name), search) || name == tags.selected {
 					options = append(options, uikit.SelectOption{

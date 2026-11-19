@@ -1,10 +1,30 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
+
+func TestNativeMainHistoryFilterMatchesTagSearch(t *testing.T) {
+	window := nativeMain{query: "  TaG:  Work notes  ", kind: "text"}
+	if got := window.historyFilter(); got != (nativeHistoryFilter{tag: "Work notes", sort: "time"}) {
+		t.Fatalf("tag-only search: %+v", got)
+	}
+	window.query = "tag: "
+	if got := window.historyFilter(); got != (nativeHistoryFilter{sort: "time"}) {
+		t.Fatalf("empty tag selection: %+v", got)
+	}
+	window.query = " note "
+	if got := window.historyFilter(); got != (nativeHistoryFilter{query: "note", kind: "text"}) {
+		t.Fatalf("text search: %+v", got)
+	}
+	window.tagLibrary = &nativeTagLibrary{selected: "Work notes", query: strings.Repeat("測", 280), sort: "count"}
+	if got := window.historyFilter(); got != (nativeHistoryFilter{tag: "Work notes", query: strings.Repeat("測", 256), sort: "count"}) {
+		t.Fatalf("tag-content search: %+v", got)
+	}
+}
 
 func TestNativeHistoryFencesRowsAcrossPresentationAndPrivacyChanges(t *testing.T) {
 	state := protocol.RuntimeState{ServiceInstanceId: "host-a", PrivacyEpoch: 7, HistoryRevision: 10}

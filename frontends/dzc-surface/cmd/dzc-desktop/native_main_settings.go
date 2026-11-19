@@ -143,6 +143,7 @@ func (n *nativeMain) changePrivateSession(active bool) {
 	}
 	n.resetPreviewSelection()
 	n.history.clear()
+	n.cancelSearchTimer()
 	if n.stopRead != nil {
 		n.stopRead()
 		n.stopRead = nil
