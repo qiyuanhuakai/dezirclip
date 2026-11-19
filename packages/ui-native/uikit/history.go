@@ -37,17 +37,26 @@ type HistoryCardMetaOptions struct {
 }
 
 func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
+	card := ui.ButtonBase(c).Label(options.Summary)
 	style := k.style("historyCard")
 	if options.Compact {
 		style = k.style("historyCardCompact")
+		if options.Selected {
+			if _, ok := k.widgets["historyCardCompactSelected"]; ok {
+				style = k.style("historyCardCompactSelected")
+			} else {
+				selected := k.style("historyCardSelected")
+				style.Fill, style.Border, style.Outline, style.Shadows = selected.Fill, selected.Border, selected.Outline, selected.Shadows
+			}
+		} else if _, ok := k.widgets["historyCardCompactHover"]; ok && card.Hovered() {
+			style = k.style("historyCardCompactHover")
+		}
 	} else if options.Selected {
 		style = k.style("historyCardSelected")
+	} else if _, ok := k.widgets["historyCardHover"]; ok && card.Hovered() {
+		style = k.style("historyCardHover")
 	}
-	if options.Compact && options.Selected {
-		selected := k.style("historyCardSelected")
-		style.Fill, style.Border, style.Outline, style.Shadows = selected.Fill, selected.Border, selected.Outline, selected.Shadows
-	}
-	card := paint(ui.ButtonBase(c).Label(options.Summary), style).Margin(style.Margin[:]...)
+	paint(card, style).Margin(style.Margin[:]...)
 	if len(options.Tags) > 0 {
 		names := make([]string, 0, len(options.Tags))
 		for _, tag := range options.Tags {

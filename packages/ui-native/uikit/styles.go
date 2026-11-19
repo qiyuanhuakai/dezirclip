@@ -51,7 +51,7 @@ func (k Kit) style(widget string) theme.WidgetStyle {
 		}
 		return style
 	}
-	return standardWidgetStyle(widget, k.palette())
+	return DefaultWidgetStyle(widget, k.palette())
 }
 
 func styleColor(rgba [4]uint8) ui.Color {
@@ -71,6 +71,9 @@ func paint(element ui.Element, style theme.WidgetStyle) ui.Element {
 		Padding(style.Padding[:]...).Opacity(style.Opacity)
 	if style.BorderWidths != nil {
 		element.BorderWidth(style.BorderWidths[:]...)
+	}
+	if style.CornerRadii != nil {
+		element.Radius(style.CornerRadii[:]...)
 	}
 	if style.Dashed {
 		element.BorderStyle(ui.BorderDashed)

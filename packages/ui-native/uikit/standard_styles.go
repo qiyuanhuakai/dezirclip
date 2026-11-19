@@ -11,9 +11,8 @@ func rgba(color ui.Color) [4]uint8 {
 	return [4]uint8{color.R, color.G, color.B, color.A}
 }
 
-// These defaults are native control dimensions and use the supplied semantic
-// palette. Complete Web lookalike catalogs can be passed separately to NewKit.
-func standardWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
+// DefaultWidgetStyle returns the native geometry and paint for a palette.
+func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 	panel := rgba(ui.Hex(palette.Panel))
 	border := rgba(ui.Hex(palette.Border))
 	accent := rgba(ui.Hex(palette.Accent))

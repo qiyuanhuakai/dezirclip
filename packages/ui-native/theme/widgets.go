@@ -19,6 +19,7 @@ type Gradient struct {
 
 type WidgetStyle struct {
 	BorderWidths  *[4]float32
+	CornerRadii   *[4]float32
 	Outline       *Outline
 	Gradient      *Gradient
 	LetterSpacing float32

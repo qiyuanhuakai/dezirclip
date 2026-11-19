@@ -10,12 +10,10 @@ import (
 	"github.com/tdewolff/parse/v2/css"
 )
 
-// Imported reads the semantic palette of a local CSS theme. It supports root
-// and body declarations, light and dark classes, and simple variable aliases.
-// Component rules can be kept alongside this palette for other renderers.
+// Imported reads the semantic palette and supported component rules of a local CSS theme.
 func Imported(base, mode, source string) Preset {
 	preset := Select(base, mode)
-	styles := rootThemeProperties(source, preset.mode)
+	styles, rules := importedThemeRules(source, preset.mode)
 	colors := &preset.colors
 	hasOverrides, windowChanged := false, false
 	for _, entry := range []struct {
@@ -58,6 +56,7 @@ func Imported(base, mode, source string) Preset {
 		// semantic native styles consume the imported palette for each role.
 		preset.widgets = nil
 	}
+	preset.widgets = importedWidgets(preset, styles, rules)
 	return preset
 }
 
@@ -69,58 +68,98 @@ type property struct {
 
 type themeProperties map[string]property
 
-func rootThemeProperties(source, mode string) themeProperties {
+type declaration struct {
+	name string
+	property
+}
+
+func importedThemeRules(source, mode string) (themeProperties, map[string][]declaration) {
+	nodes := [2]themeProperties{{}, {}}
+	widgets := make(map[string][]declaration)
+	visitThemeRules(source, func(selector string, declarations []declaration) {
+		for i, score := range rootSelectorScores(selector, mode) {
+			if score < 0 {
+				continue
+			}
+			for _, item := range declarations {
+				if !strings.HasPrefix(item.name, "--") {
+					continue
+				}
+				item.specificity = score
+				if compareProperty(nodes[i][item.name], item.property) <= 0 {
+					nodes[i][item.name] = item.property
+				}
+			}
+		}
+		addWidgetRules(widgets, selector, mode, declarations)
+	})
+	for key, value := range nodes[1] {
+		nodes[0][key] = value
+	}
+	return nodes[0], widgets
+}
+
+func compareProperty(a, b property) int {
+	if a.important != b.important {
+		if a.important {
+			return 1
+		}
+		return -1
+	}
+	return a.specificity - b.specificity
+}
+
+func visitThemeRules(source string, visit func(string, []declaration)) {
 	if len(source) > 256*1024 {
-		return nil
+		return
 	}
 	parser := css.NewParser(parse.NewInputString(source), false)
-	nodes := [2]themeProperties{{}, {}}
-	var scopes [2]int
+	var selector string
+	var declarations []declaration
 	depth := 0
 	for {
 		grammar, _, name := parser.Next()
 		switch grammar {
 		case css.ErrorGrammar:
-			// Body declarations take precedence over inherited root declarations.
-			for key, value := range nodes[1] {
-				nodes[0][key] = value
-			}
-			return nodes[0]
+			return
 		case css.BeginAtRuleGrammar:
-			if depth == 0 {
-				scopes = [2]int{-1, -1}
-			}
 			depth++
 		case css.BeginRulesetGrammar:
 			if depth == 0 {
-				var selector strings.Builder
-				for _, token := range parser.Values() {
-					selector.Write(token.Data)
-				}
-				scopes = rootSelectorScores(selector.String(), mode)
+				selector = themeTokens(parser.Values())
+				declarations = declarations[:0]
 			}
 			depth++
-		case css.EndAtRuleGrammar, css.EndRulesetGrammar:
+		case css.EndAtRuleGrammar:
 			depth--
-		case css.CustomPropertyGrammar:
-			if depth != 1 || len(parser.Values()) != 1 {
+		case css.EndRulesetGrammar:
+			depth--
+			if depth == 0 {
+				visit(selector, declarations)
+				selector = ""
+			}
+		case css.CustomPropertyGrammar, css.DeclarationGrammar:
+			if depth != 1 || selector == "" {
 				continue
 			}
 			key := string(name)
-			value := strings.TrimSpace(string(parser.Values()[0].Data))
+			value := themeTokens(parser.Values())
 			important := false
 			if before, suffix, found := strings.Cut(value, "!"); found && strings.EqualFold(strings.TrimSpace(suffix), "important") {
 				value = strings.TrimSpace(before)
 				important = true
 			}
-			for i, score := range scopes {
-				previous := nodes[i][key]
-				if score >= 0 && (important && !previous.important || important == previous.important && score >= previous.specificity) {
-					nodes[i][key] = property{value: value, specificity: score, important: important}
-				}
-			}
+			declarations = append(declarations, declaration{name: key, property: property{value: value, important: important}})
 		}
 	}
+}
+
+func themeTokens(tokens []css.Token) string {
+	var value strings.Builder
+	for _, token := range tokens {
+		value.Write(token.Data)
+	}
+	return strings.TrimSpace(value.String())
 }
 
 func rootSelectorScores(list, mode string) [2]int {
