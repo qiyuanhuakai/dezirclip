@@ -2151,7 +2151,8 @@ with open(sys.argv[1], 'r+') as document:
             if '--file-drag' in sys.argv[3:]:
                 runpy.run_path(str(Path(__file__).with_name('mygo-file-drag-x11.py')))['check'](desktop, globals())
             elif '--screenshots' in sys.argv[3:]:
-                runpy.run_path(str(Path(__file__).with_name('mygo-screenshot-x11.py')))['check'](desktop, globals())
+                runpy.run_path(str(Path(__file__).with_name('mygo-screenshot-x11.py')))['check'](
+                    desktop, globals(), native_main='--native-main' in sys.argv[3:])
             elif '--reset-settings' in sys.argv[3:]:
                 check_reset_settings(desktop)
             elif '--paste-hotkeys' in sys.argv[3:] or '--middle-paste-hotkeys' in sys.argv[3:]:

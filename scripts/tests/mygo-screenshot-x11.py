@@ -6,13 +6,13 @@ import subprocess
 import time
 
 
-def check(desktop, helpers):
+def check(desktop, helpers, *, native_main=False):
     assert os.environ.get('GITHUB_ACTIONS') == 'true'
     assert os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
     import gi
     gi.require_version('Gtk', '3.0')
     gi.require_version('Atspi', '2.0')
-    from gi.repository import Gtk, Gdk, Atspi
+    from gi.repository import Gtk, Gdk, GdkPixbuf, Atspi
     cli = desktop.with_name('dzc')
     subprocess.run([cli, 'add', 'screenshot fixture'], check=True, stdout=subprocess.DEVNULL)
     with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
@@ -116,8 +116,44 @@ def check(desktop, helpers):
         assert image.get_pixels()[offset:offset+3] == expected, 'Selector leaked into the captured pixels'
         wait(lambda: not selector(), 'Completed selector remained visible')
 
-    process = subprocess.Popen([desktop])
+    def check_native_repaint():
+        def geometry():
+            active = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+            name = subprocess.run(['xprop', '-id', active, '_NET_WM_NAME'], capture_output=True, text=True)
+            if '= "DezirClip"' not in name.stdout:
+                return None
+            info = subprocess.check_output(['xwininfo', '-id', active], text=True)
+            values = dict(line.strip().split(':', 1) for line in info.splitlines() if ':' in line)
+            bounds = tuple(int(values[key]) for key in ('Absolute upper-left X', 'Absolute upper-left Y', 'Width', 'Height'))
+            return active, bounds
+
+        wait(lambda: find('screenshot fixture'), 'Initial native history did not appear')
+        xid, bounds = wait(geometry, 'Native history window was not active')
+        # The new clipboard image must be visible on the X11 root without resizing
+        # the window, which can repaint stale content even with the old renderer.
+        color = b'\xe4\x19\x81'
+
+        def thumbnail_visible():
+            pixbuf = Gdk.pixbuf_get_from_window(root, *bounds)
+            pixels = pixbuf.get_pixels()
+            channels, stride = pixbuf.get_n_channels(), pixbuf.get_rowstride()
+            return sum(pixels[offset:offset+3] == color
+                       for row in range(bounds[3])
+                       for offset in range(row*stride, row*stride + bounds[2]*channels, channels)) > 50
+
+        assert not thumbnail_visible(), 'Thumbnail color already present before writing the test image'
+        thumbnail = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 40, 24)
+        thumbnail.fill(0xe41981ff)
+        clipboard.set_image(thumbnail)
+        wait(thumbnail_visible, 'Native history did not paint the new thumbnail to X11')
+        assert geometry() == (xid, bounds), 'Native window moved or resized during the repaint test'
+        print('Verified software-rendered MyGo history repaints X11 after a clipboard change', flush=True)
+
+    env = dict(os.environ, DZC_MYGO_NATIVE_MAIN='1', MYGO_GPU='0') if native_main else None
+    process = subprocess.Popen([desktop], env=env)
     try:
+        if native_main:
+            check_native_repaint()
         click('Settings')
         click('Tools')
         wait(lambda: find('Full Screen Capture'), 'Capture controls missing')

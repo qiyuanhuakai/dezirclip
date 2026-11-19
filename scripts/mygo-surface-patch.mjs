@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-export const MYGO_PATCH_ID = 'mygo-v0.6.4-native-alpha-v6';
+export const MYGO_PATCH_ID = 'mygo-v0.6.4-native-alpha-v7';
 export const MYGO_APP_SHA256 = 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9';
 const modulePath = 'github.com/egoist/mygo';
 const version = 'v0.6.4';
@@ -30,14 +30,9 @@ function treeFiles(directory, prefix = '') {
   });
 }
 
-function windowsPatches(directory) {
+function windowsPatches(source) {
   const entry = 'internal/windows/webview2.go';
   const options = 'internal/windows/webview2_options.go';
-  function source(path, digest) {
-    const bytes = readFileSync(join(directory, path));
-    if (sha256(bytes) !== digest) throw new Error(`Unreviewed MyGo source: ${path}`);
-    return bytes.toString('utf8');
-  }
   const start = source(entry, 'f53a2724f24fa48c7bca7c6a0e5f102ef307e592e26a559d67431edbdf8e2919')
     .replace('var options uintptr\n\tif language != "" {\n\t\toptions = newEnvOptions(language)',
       `arguments := ""
@@ -79,6 +74,29 @@ func (w *window) memoryTarget(level uintptr) {
   return [[entry, Buffer.from(start)], [options, Buffer.from(getters)], [windowFile, Buffer.from(window)], [surfaceFile, Buffer.from(surface)]];
 }
 
+function linuxPatches(source) {
+  const surfaceFile = 'internal/linux/surface.go';
+  const surface = source(surfaceFile, '9bcaf2a2c49cd61b0b0da873cbc841428bad4102f98423395d8ac0d072095911')
+    .replace('cairoPaint                  func(cr ptr)', `cairoPaint                  func(cr ptr)
+	cairoGetGroupTarget        func(cr ptr) ptr
+	cairoSurfaceGetType        func(s ptr) int32
+	cairoSurfaceFlush          func(s ptr)`)
+    .replace('mustBind(c, &cairoPaint, "cairo_paint")', `mustBind(c, &cairoPaint, "cairo_paint")
+		mustBind(c, &cairoGetGroupTarget, "cairo_get_group_target")
+		mustBind(c, &cairoSurfaceGetType, "cairo_surface_get_type")
+		mustBind(c, &cairoSurfaceFlush, "cairo_surface_flush")`)
+    .replace('cairoPaint(s.cr)\n\tcairoSurfaceDestroy(img)', `cairoPaint(s.cr)
+	// GTK copies this back buffer to X11 after the draw callback returns.
+	// Flush any deferred Cairo writes before GTK reads the drawable.
+	const cairoSurfaceTypeXlib = 3
+	target := cairoGetGroupTarget(s.cr)
+	if cairoSurfaceGetType(target) == cairoSurfaceTypeXlib {
+		cairoSurfaceFlush(target)
+	}
+	cairoSurfaceDestroy(img)`);
+  return [[surfaceFile, Buffer.from(surface)]];
+}
+
 export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
   const goRun = argv => run(go, argv, { cwd: moduleRoot, env });
   const downloaded = JSON.parse(goRun(['mod', 'download', '-json', `${modulePath}@${version}`]));
@@ -97,7 +115,12 @@ export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
     chmodSync(destination, 0o644);
   }
   if (JSON.stringify(treeFiles(patchedModule)) !== JSON.stringify(originalFiles)) throw new Error('MyGo source changed while creating the isolated copy');
-  const changes = new Map([['app.go', patchedApp], ...windowsPatches(patchedModule)]);
+  function verifiedSource(path, digest) {
+    const bytes = readFileSync(join(patchedModule, path));
+    if (sha256(bytes) !== digest) throw new Error(`Unreviewed MyGo source: ${path}`);
+    return bytes.toString('utf8');
+  }
+  const changes = new Map([['app.go', patchedApp], ...windowsPatches(verifiedSource), ...linuxPatches(verifiedSource)]);
   for (const [path, bytes] of changes) writeFileSync(join(patchedModule, path), bytes);
   const patchedFiles = treeFiles(patchedModule);
   const expectedFiles = originalFiles.map(file => changes.has(file.path) ? { ...file, sha256: sha256(changes.get(file.path)) } : file);
