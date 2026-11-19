@@ -260,5 +260,8 @@ func (n *nativeMain) entryMenu(card ui.Element, row protocol.DesktopEntry, gener
 		if menu.Item(n.text("native_edit_tags")).Disabled(disabled).Chosen() {
 			n.editTags(row, generation)
 		}
+		if row.Id != 0 && menu.Item(n.text("privacy_management")).Disabled(!n.canOpenHistoryDialog() || disabled).Chosen() {
+			n.openPrivacyFeedback(row, generation)
+		}
 	})
 }

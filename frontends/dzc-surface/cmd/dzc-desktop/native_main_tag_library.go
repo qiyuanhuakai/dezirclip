@@ -36,7 +36,8 @@ func (n *nativeMain) historyQuery() string {
 }
 
 func (n *nativeMain) hasHistoryDialog() bool {
-	return n.tags != nil || n.editor != nil || n.transform != nil || n.qr != nil || n.tagLibrary != nil && n.tagLibrary.dialog != nil
+	return n.tags != nil || n.editor != nil || n.transform != nil || n.qr != nil || n.privacyDialog != nil ||
+		n.tagLibrary != nil && n.tagLibrary.dialog != nil
 }
 
 func (n *nativeMain) openTagLibrary() {

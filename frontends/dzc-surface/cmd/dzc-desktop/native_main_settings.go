@@ -22,6 +22,9 @@ func (n *nativeMain) openSettings() {
 	n.resetPreviewSelection()
 	if n.settingsSection == "privacy" {
 		n.settingsSection = "general"
+		if general := n.settingsOpen["general"]; general != nil {
+			*general = true
+		}
 	}
 	if privacy := n.settingsOpen["privacy"]; privacy != nil {
 		*privacy = false
@@ -33,7 +36,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 	panes := []nativeSettingsPane{
 		{uikit.SettingsSection{ID: "general", Label: n.text("general_settings", "General")}, func() { n.generalSettings(c, kit) }},
 		{uikit.SettingsSection{ID: "clipboard", Label: n.text("clipboard_settings")}, func() { n.clipboardSettings(c) }},
-		{uikit.SettingsSection{ID: "privacy", Label: n.text("privacy_settings")}, func() { n.privacySettings(c) }},
+		{uikit.SettingsSection{ID: "privacy", Label: n.text("privacy_settings")}, func() { n.privacySettings(c, kit) }},
 		{uikit.SettingsSection{ID: "appearance", Label: n.text("appearance_settings")}, func() { n.appearanceSettings(c, kit, surfaceOpacity) }},
 		{uikit.SettingsSection{ID: "applications", Label: n.text("default_apps")}, func() { n.defaultAppsSettings(c) }},
 		{uikit.SettingsSection{ID: "tools", Label: n.text("tools_settings")}, func() { n.toolsSettings(c) }},
@@ -151,12 +154,14 @@ func (n *nativeMain) clipboardSettings(c *ui.Context) {
 	)
 }
 
-func (n *nativeMain) privacySettings(c *ui.Context) {
+func (n *nativeMain) privacySettings(c *ui.Context, kit uikit.Kit) {
 	private := n.private
 	if ui.Checkbox(c, &private, n.text("privacy_session_title", "Private session")).Disabled(n.mutating).Changed() {
 		n.changePrivateSession(private)
 	}
 	n.booleanSettings(c, nativeBooleanSetting{"app.privacy_protection", n.text("privacy_protection", "Protect sensitive clipboard content"), true})
+	n.drawPrivacyRules(c)
+	n.drawPrivacyDetection(c, kit)
 }
 
 func (n *nativeMain) changePrivateSession(active bool) {

@@ -137,6 +137,12 @@ func (n *nativeMain) view(c *ui.Context) {
 	if n.qr != nil {
 		n.qrView(c, kit, n.qr)
 	}
+	if n.privacyDialog != nil {
+		n.privacyDialogView(c, kit, n.privacyDialog)
+	}
+	if n.privacyEditor != nil {
+		n.privacyEditorView(c, kit, n.privacyEditor)
+	}
 }
 
 func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {

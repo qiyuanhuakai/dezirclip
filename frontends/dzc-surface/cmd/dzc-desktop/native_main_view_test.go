@@ -139,6 +139,16 @@ func TestNativeMainPrivacySettingsAreClosedOnReentry(t *testing.T) {
 			click("Back")
 			click("Settings")
 			assertClosed()
+			click("Back")
+
+			window.showPrivacyRuleManager()
+			tester.Frame()
+			if !tester.HasText("Privacy rules") {
+				t.Fatal("the direct privacy rules shortcut did not open Privacy")
+			}
+			click("Back")
+			click("Settings")
+			assertClosed()
 		})
 	}
 }

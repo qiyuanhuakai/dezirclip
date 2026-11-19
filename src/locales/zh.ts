@@ -119,7 +119,7 @@ export const zh = {
         privacy_rules_manage: "管理隐私规则…",
         privacy_management: "隐私管理",
         privacy_source_unknown: "未提供来源名称",
-        privacy_feedback_ignore_confirm: "以后不再自动记录名称为“{source}”的来源，现有历史保留。这会替换该同名来源已有的忽略或保护菜单规则；可在设置 → 剪贴板设置 → 隐私规则中删除。确认继续？",
+        privacy_feedback_ignore_confirm: "以后不再自动记录名称为“{source}”的来源，现有历史保留。这会替换该同名来源已有的忽略或保护菜单规则。可在“隐私规则”中删除此规则。确认继续？",
         privacy_feedback_protect_confirm: "保护当前记录，并为名称为“{source}”的后续记录要求保护，已有精确内容例外仍适用；其它历史不会被批量修改。这会替换该同名来源已有的忽略或保护菜单规则。删除规则不会自动解密已保护记录。确认继续？",
         privacy_rules_single_hint: "“仅取消此条保护”不是规则，不会列在这里。要恢复该条保护，请重新添加 sensitive 或“密码”标签。",
         privacy_rules_loading: "正在读取隐私规则…",

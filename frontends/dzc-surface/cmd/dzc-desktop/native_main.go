@@ -58,6 +58,10 @@ type nativeMain struct {
 	emoji            *nativeEmojiPanel
 	settingsSection  string
 	settingsOpen     map[string]*bool
+	privacyKindsOpen bool
+	privacyRules     nativePrivacyRules
+	privacyDialog    *nativePrivacyDialog
+	privacyEditor    *nativePrivacyEditor
 	applications     nativeApplicationCatalog
 	profile          nativeProfileSettings
 	backup           *nativeBackupDialog
@@ -106,6 +110,9 @@ func (n *nativeMain) stopSession() {
 	n.closeTransform()
 	n.closeQR()
 	n.closeBackup()
+	n.closePrivacyDialog()
+	n.privacyEditor = nil
+	n.privacyRules = nativePrivacyRules{}
 	n.tagLibrary = nil
 	n.emoji = nil
 	n.resetPreviewSelection()
@@ -314,6 +321,12 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 		return
 	}
 	for _, event := range events.Events {
+		if dialog := n.privacyDialog; dialog != nil && dialog.params.Id != nil &&
+			(event.Event == protocol.EventKindHistoryReset ||
+				(event.Event == protocol.EventKindEntryUpdated || event.Event == protocol.EventKindEntryDeleted) &&
+					event.Data.EntryId != nil && *event.Data.EntryId == *dialog.params.Id) {
+			n.closePrivacyDialog()
+		}
 		if event.Event == protocol.EventKindEntryUpdated && event.Data.EntryId != nil &&
 			*event.Data.EntryId == n.ocrJob.id && n.ocrJob.status != "processing" {
 			n.ocrJob = nativeOCRJob{}

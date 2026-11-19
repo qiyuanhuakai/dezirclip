@@ -115,7 +115,7 @@ export const en = {
         privacy_rules_manage: "Manage privacy rules…",
         privacy_management: "Privacy management",
         privacy_source_unknown: "No source name",
-        privacy_feedback_ignore_confirm: "Stop future automatic recording from sources named “{source}” and keep existing history. This replaces any ignore or protect menu rule for that name. Delete it in Settings → Clipboard settings → Privacy rules. Continue?",
+        privacy_feedback_ignore_confirm: "Stop future automatic recording from sources named “{source}” and keep existing history. This replaces any ignore or protect menu rule for that name. You can delete the rule in Privacy rules. Continue?",
         privacy_feedback_protect_confirm: "Protect this record and request protection for future records from sources named “{source}”; existing exact content exceptions still apply. Other history is not changed in bulk. This replaces any ignore or protect menu rule for that name. Deleting it does not decrypt protected records. Continue?",
         privacy_rules_single_hint: "“Unprotect only this record” creates no rule and is not listed here. Add the sensitive or 密码 tag to protect that record again.",
         privacy_rules_loading: "Reading privacy rules…",
