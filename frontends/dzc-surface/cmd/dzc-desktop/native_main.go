@@ -42,6 +42,7 @@ type nativeMain struct {
 	previewSelection int64
 	hover            nativeHoverPreview
 	tags             *nativeTagEditor
+	tagLibrary       *nativeTagLibrary
 }
 
 func (n *nativeMain) stopSession() {
@@ -51,10 +52,11 @@ func (n *nativeMain) stopSession() {
 	}
 	n.session = nil
 	n.stopRead = nil
-	n.history.reset(protocol.RuntimeState{}, "", "")
+	n.history.reset(protocol.RuntimeState{}, nativeHistoryFilter{})
 	n.reading, n.failed, n.mutating, n.private = false, false, false, false
 	n.notice, n.keyboard, n.focusList = "", false, false
 	n.tags = nil
+	n.tagLibrary = nil
 	n.resetPreviewSelection()
 }
 
@@ -79,7 +81,7 @@ func (n *nativeMain) open(session context.Context) {
 			n.update(session, func() {
 				n.configured(settings, mode)
 				n.private = status.Privacy.Active
-				n.history.reset(status.State, n.query, n.kind)
+				n.history.reset(status.State, n.historyFilter())
 				n.list.Reset()
 				n.loadPage()
 				go n.watch(session, status.State.EventSequence)
@@ -130,6 +132,11 @@ func (n *nativeMain) loadPage() {
 	}
 	if n.stopRead != nil {
 		n.stopRead()
+		n.stopRead = nil
+	}
+	if n.tagLibrary != nil && n.history.filter.tag == "" {
+		n.reading, n.failed = false, false
+		return
 	}
 	request := n.history.request()
 	session := n.session
@@ -209,20 +216,28 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 	}
 	if next.HistoryRevision > current.HistoryRevision {
 		n.resetPreviewSelection()
-		n.history.reset(next, strings.TrimSpace(n.query), n.kind)
+		n.history.reset(next, n.history.filter)
 		n.loadPage()
+		n.loadTagCatalog()
 	}
 }
 
 func (n *nativeMain) editQuery(composing bool) {
-	query := strings.TrimSpace(n.query)
+	filter := n.historyFilter()
 	if n.session != nil && n.history.state.ServiceInstanceId != "" && !composing &&
-		(query != n.history.query || n.kind != n.history.kind) {
+		filter != n.history.filter {
 		n.resetPreviewSelection()
-		n.history.reset(n.history.state, query, n.kind)
+		n.history.reset(n.history.state, filter)
 		n.list.Reset()
 		n.loadPage()
 	}
+}
+
+func (n *nativeMain) historyFilter() nativeHistoryFilter {
+	if tags := n.tagLibrary; tags != nil {
+		return nativeHistoryFilter{query: strings.TrimSpace(tags.query), tag: tags.selected, sort: tags.sort}
+	}
+	return nativeHistoryFilter{query: strings.TrimSpace(n.query), kind: n.kind}
 }
 
 func (n *nativeMain) resetPreviewSelection() {

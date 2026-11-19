@@ -38,7 +38,7 @@ func (n *nativeMain) navigateHistory(delta int) {
 }
 
 func (n *nativeMain) searchKey(key ui.TextKey) bool {
-	if key.Mods != 0 || n.showSettings || n.tags != nil {
+	if key.Mods != 0 || n.showSettings || n.hasHistoryDialog() {
 		return false
 	}
 	switch key.Key {
@@ -51,7 +51,7 @@ func (n *nativeMain) searchKey(key ui.TextKey) bool {
 		if n.preferences["app.arrow_key_selection"] != "true" {
 			return false
 		}
-		if key.Text() == n.query {
+		if key.Text() == n.historyQuery() {
 			if key.Key == ui.KeyUp {
 				n.navigateHistory(-1)
 			} else {
@@ -60,7 +60,7 @@ func (n *nativeMain) searchKey(key ui.TextKey) bool {
 		}
 		return true
 	case ui.KeyEnter:
-		if key.Text() == n.query && n.keyboard {
+		if key.Text() == n.historyQuery() && n.keyboard {
 			n.selectedAction(nativePaste)
 		}
 		return true
@@ -131,7 +131,7 @@ func (n *nativeMain) previewAppearance() previewAppearance {
 }
 
 func (n *nativeMain) historyShortcuts(c *ui.Context, queryFocused bool) {
-	if n.showSettings || n.tags != nil || queryFocused {
+	if n.showSettings || n.hasHistoryDialog() || queryFocused {
 		return
 	}
 	if n.preferences["app.arrow_key_selection"] == "true" {

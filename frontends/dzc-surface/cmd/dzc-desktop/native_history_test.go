@@ -9,7 +9,8 @@ import (
 func TestNativeHistoryFencesRowsAcrossPresentationAndPrivacyChanges(t *testing.T) {
 	state := protocol.RuntimeState{ServiceInstanceId: "host-a", PrivacyEpoch: 7, HistoryRevision: 10}
 	var history nativeHistory
-	history.reset(state, "clipboard", "text")
+	filter := nativeHistoryFilter{query: "clipboard", kind: "text"}
+	history.reset(state, filter)
 	first := history.request()
 	initialPage := nativeHistoryPage{state: state, rows: []protocol.DesktopEntry{{Id: 1, Preview: "Fixture"}}, more: true}
 	if !history.apply(first, initialPage) || len(history.rows) != 1 || !history.more {
@@ -27,7 +28,7 @@ func TestNativeHistoryFencesRowsAcrossPresentationAndPrivacyChanges(t *testing.T
 		{ServiceInstanceId: state.ServiceInstanceId, PrivacyEpoch: state.PrivacyEpoch + 1, HistoryRevision: state.HistoryRevision},
 		state,
 	} {
-		history.reset(changed, "clipboard", "text")
+		history.reset(changed, filter)
 		if history.apply(first, initialPage) || len(history.rows) != 0 || history.selected != -1 {
 			t.Fatalf("previous presentation committed after reset to %+v", changed)
 		}

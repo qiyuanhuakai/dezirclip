@@ -37,14 +37,25 @@ func (n *nativeMain) view(c *ui.Context) {
 		if n.showSettings {
 			header.Title = "Settings"
 			header.Back = &uikit.HeaderAction{Icon: "back", Label: "Back", Run: func() { n.showSettings = false }}
+		} else if n.tagLibrary != nil {
+			header.Title = "Tags"
+			header.Back = &uikit.HeaderAction{Icon: "back", Label: "Back", Run: n.closeTagLibrary, Disabled: n.mutating}
+			header.Query, header.Placeholder = &n.tagLibrary.query, "Search tagged entries…"
 		} else {
 			header.Actions = append(actions[:1:1], uikit.HeaderAction{
 				Icon: "settings", Label: "Settings", Run: func() { n.resetPreviewSelection(); n.showSettings = true },
 			}, actions[1])
+			if n.preferences["app.tag_manager_enabled"] != "false" {
+				header.Actions = append([]uikit.HeaderAction{{
+					Icon: "tag", Label: "Tags", Run: n.openTagLibrary, Disabled: n.mutating,
+				}}, header.Actions...)
+			}
 			header.Query, header.Placeholder, header.Filter = &n.query, "Search clipboard…", &n.kind
 			header.Filters = []uikit.HeaderFilter{
 				{ID: "text", Label: "Text"}, {ID: "image", Label: "Images"}, {ID: "files", Label: "Files"},
 			}
+		}
+		if header.Query != nil {
 			header.FocusQuery = &n.focusSearch
 			header.OnQueryEdit = func(composing bool) { queryComposing = composing }
 			header.OnQueryKey = n.searchKey
@@ -54,8 +65,13 @@ func (n *nativeMain) view(c *ui.Context) {
 		if n.showSettings {
 			n.settingsView(c, kit)
 		} else {
+			if n.tagLibrary != nil {
+				n.tagLibraryControls(c, kit, n.tagLibrary)
+			}
 			n.editQuery(queryComposing)
-			n.historyView(c, kit)
+			if n.tagLibrary == nil || n.tagLibrary.selected != "" {
+				n.historyView(c, kit)
+			}
 			n.historyShortcuts(c, queryFocused)
 		}
 		if n.notice != "" {
@@ -72,6 +88,9 @@ func (n *nativeMain) view(c *ui.Context) {
 	})
 	if n.tags != nil {
 		n.tagEditorView(c, kit, n.tags)
+	}
+	if n.tagLibrary != nil && n.tagLibrary.dialog != nil {
+		n.tagLibraryDialog(c, kit, n.tagLibrary)
 	}
 }
 

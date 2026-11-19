@@ -3,14 +3,18 @@ package main
 import (
 	"context"
 
+	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
+
+type nativeHistoryFilter struct {
+	query, kind, tag, sort string
+}
 
 type nativeHistoryRequest struct {
 	generation uint64
 	state      protocol.RuntimeState
-	query      string
-	kind       string
+	filter     nativeHistoryFilter
 	offset     uint32
 }
 
@@ -21,12 +25,15 @@ type nativeHistoryPage struct {
 }
 
 func (l *Library) nativeHistoryPage(ctx context.Context, request nativeHistoryRequest) (nativeHistoryPage, error) {
-	params := protocol.DesktopPageParams{Offset: request.offset, Limit: pageSize + 1}
-	if request.query != "" {
-		params.Query = &request.query
+	if request.filter.tag != "" {
+		return l.nativeTagPage(ctx, request)
 	}
-	if request.kind != "" {
-		params.Kind = &request.kind
+	params := protocol.DesktopPageParams{Offset: request.offset, Limit: pageSize + 1}
+	if request.filter.query != "" {
+		params.Query = &request.filter.query
+	}
+	if request.filter.kind != "" {
+		params.Kind = &request.filter.kind
 	}
 	var result nativeHistoryPage
 	err := readLibrarySnapshot(ctx, func(ctx context.Context) error {
@@ -42,14 +49,35 @@ func (l *Library) nativeHistoryPage(ctx context.Context, request nativeHistoryRe
 	return result, err
 }
 
+func (l *Library) nativeTagPage(ctx context.Context, request nativeHistoryRequest) (nativeHistoryPage, error) {
+	params := protocol.DesktopTagPageParams{
+		Tag: request.filter.tag, Query: request.filter.query, SortBy: request.filter.sort, Limit: pageSize,
+		Offset: request.offset, ServiceInstanceId: request.state.ServiceInstanceId, ExpectedEpoch: request.state.PrivacyEpoch,
+	}
+	var result nativeHistoryPage
+	err := readLibrarySnapshot(ctx, func(ctx context.Context) error {
+		var page protocol.DesktopTagItemsPage
+		state, err := l.readSnapshotState(ctx, protocol.MethodDesktopTagsPage, params, "DesktopTagItemsPage", &page, request.state.PrivacyEpoch)
+		if err != nil {
+			return err
+		}
+		if page.HasMore && (len(page.Items) == 0 || page.NextOffset == nil ||
+			*page.NextOffset != request.offset+uint32(len(page.Items))) {
+			return client.ErrProtocol
+		}
+		result = nativeHistoryPage{state: state, rows: page.Items, more: page.HasMore}
+		return nil
+	})
+	return result, err
+}
+
 // nativeHistory owns the rows for one live main-window presentation. A
 // generation change retires pending reads, including a search that comes
 // back to the same query after the user has already dismissed it.
 type nativeHistory struct {
 	state      protocol.RuntimeState
 	generation uint64
-	query      string
-	kind       string
+	filter     nativeHistoryFilter
 	rows       []protocol.DesktopEntry
 	selected   int
 	more       bool
@@ -63,14 +91,14 @@ func (h *nativeHistory) clear() {
 	h.more = false
 }
 
-func (h *nativeHistory) reset(state protocol.RuntimeState, query, kind string) {
+func (h *nativeHistory) reset(state protocol.RuntimeState, filter nativeHistoryFilter) {
 	h.clear()
-	h.state, h.query, h.kind = state, query, kind
+	h.state, h.filter = state, filter
 }
 
 func (h *nativeHistory) request() nativeHistoryRequest {
 	return nativeHistoryRequest{
-		generation: h.generation, state: h.state, query: h.query, kind: h.kind, offset: uint32(len(h.rows)),
+		generation: h.generation, state: h.state, filter: h.filter, offset: uint32(len(h.rows)),
 	}
 }
 
