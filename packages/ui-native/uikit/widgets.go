@@ -170,10 +170,17 @@ func (k Kit) Filters(c *ui.Context, options []FilterOption, active map[string]bo
 }
 
 func (k Kit) MatchHighlight(c *ui.Context, text, query string) {
+	if spans := k.matchSpans(text, query); spans != nil {
+		styledText(ui.RichText(c, spans...), k.style("match"))
+	} else {
+		ui.Text(c, text)
+	}
+}
+
+func (k Kit) matchSpans(text, query string) []ui.Span {
 	needle := []rune(strings.ToLower(query))
 	if len(needle) == 0 {
-		ui.Text(c, text)
-		return
+		return nil
 	}
 	source, lower := []rune(text), []rune(strings.ToLower(text))
 	mark := k.style("mark")
@@ -198,7 +205,7 @@ func (k Kit) MatchHighlight(c *ui.Context, text, query string) {
 	if last < len(source) {
 		spans = append(spans, ui.Span{Text: string(source[last:])})
 	}
-	styledText(ui.RichText(c, spans...), k.style("match"))
+	return spans
 }
 
 func (k Kit) SearchHistory(c *ui.Context, entries []string, emptyLabel string, onSelect func(string)) {

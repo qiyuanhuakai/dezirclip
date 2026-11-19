@@ -108,7 +108,7 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 	}
 	ui.Column(c).Padding(0, 8).Gap(5).Children(func() {
 		ui.TextInput(c, &tags.nameQuery).FillWidth().Label("Find a tag").Placeholder("Find a tag…")
-		ui.Grid(c).Columns(pickers).Width(300).MaxWidthPercent(1).Gap(5).Children(func() {
+		ui.Grid(c).Columns(pickers).Width(300).MaxWidthPercent(100).Gap(5).Children(func() {
 			options := []uikit.SelectOption{{Label: "Select a tag"}}
 			search := strings.ToLower(strings.TrimSpace(tags.nameQuery))
 			if name, ok := searchTagName(search); ok {

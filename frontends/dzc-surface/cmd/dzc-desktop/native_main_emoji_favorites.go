@@ -15,7 +15,7 @@ import (
 
 func (n *nativeMain) emojiPanel() *nativeEmojiPanel {
 	if n.emoji == nil {
-		n.emoji = &nativeEmojiPanel{thumbnails: map[string]ui.ImageSource{}, pending: map[string]bool{}}
+		n.emoji = &nativeEmojiPanel{}
 	}
 	return n.emoji
 }
@@ -62,7 +62,7 @@ func (n *nativeMain) emojiFavoritesView(c *ui.Context) {
 func (n *nativeMain) emojiFavoriteCard(c *ui.Context, panel *nativeEmojiPanel, path string) {
 	name := filepath.Base(path)
 	button := n.emojiButton(c, name, 75).Tooltip(name)
-	preview, loaded := panel.thumbnails[path]
+	preview, loaded := panel.thumbnails.lookup(path)
 	if !loaded {
 		n.loadEmojiThumbnail(panel, path)
 	}
@@ -131,10 +131,9 @@ func (n *nativeMain) loadEmojiFavorites(panel *nativeEmojiPanel) {
 }
 
 func (n *nativeMain) loadEmojiThumbnail(panel *nativeEmojiPanel, path string) {
-	if n.session == nil || panel.pending[path] || len(panel.pending) >= 3 {
+	if n.session == nil || !panel.thumbnails.begin(path) {
 		return
 	}
-	panel.pending[path] = true
 	session, epoch := n.session, n.history.state.PrivacyEpoch
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 5*time.Second)
@@ -148,16 +147,11 @@ func (n *nativeMain) loadEmojiThumbnail(panel *nativeEmojiPanel, path string) {
 			if n.emoji != panel {
 				return
 			}
-			delete(panel.pending, path)
 			if !slices.Contains(panel.paths, path) {
+				delete(panel.thumbnails.pending, path)
 				return
 			}
-			if len(panel.recent) == 96 {
-				delete(panel.thumbnails, panel.recent[0])
-				panel.recent = panel.recent[1:]
-			}
-			panel.thumbnails[path] = preview
-			panel.recent = append(panel.recent, path)
+			panel.thumbnails.finish(path, preview)
 		})
 	}()
 }

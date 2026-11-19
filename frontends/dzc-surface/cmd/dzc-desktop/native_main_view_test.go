@@ -12,10 +12,13 @@ func TestNativeMainNavigationAndDismissal(t *testing.T) {
 		for _, mode := range []string{"light", "dark"} {
 			t.Run(theme+"/"+mode, func(t *testing.T) {
 				window := nativeMain{theme: theme, mode: mode, private: true, preferences: map[string]string{"app.color_mode": mode}}
-				window.history.rows = []protocol.DesktopEntry{{Id: 1, Preview: "Fixture history entry", SourceApp: "Editor"}}
+				window.history.rows = []protocol.DesktopEntry{{Id: 1, Preview: "Fixture history entry", SourceApp: "Editor", Tags: []string{"Work"}}}
 				tester := ui.NewTester(window.view, 360, 400)
 				if !tester.HasText("Fixture history entry") || !tester.HasText("Private session") {
 					t.Fatal("main history and privacy banner did not render")
+				}
+				if bounds, ok := tester.Find("Work"); !ok || bounds.W < 18 || bounds.H == 0 {
+					t.Fatalf("tag was clipped: %+v", bounds)
 				}
 				if err := tester.Click("Settings"); err != nil {
 					t.Fatal(err)
@@ -55,4 +58,28 @@ func TestNativeMainSearchShortcutWithoutFocusedControl(t *testing.T) {
 	if _, ok := tester.Find("Search clipboard…"); !ok {
 		t.Fatal("window shortcut did not reveal the search box")
 	}
+}
+
+func TestNativeMainHistoryPaintsTagsAfterEntryUpdate(t *testing.T) {
+	window := nativeMain{theme: "mica", mode: "light", preferences: map[string]string{"app.language": "en"}}
+	row := protocol.DesktopEntry{Id: 1, SourceApp: "dzc", Preview: "Fixture entry", Tags: []string{}}
+	window.history.rows = []protocol.DesktopEntry{row}
+	tester := ui.NewTester(window.view, 750, 650)
+	window.history.reset(protocol.RuntimeState{}, nativeHistoryFilter{})
+	row.Tags = []string{"work"}
+	window.history.rows = []protocol.DesktopEntry{row}
+	window.list.Reset()
+	tester.Frame()
+	frame := tester.Image()
+	color := nativeTagColor("work", false)
+	for y := range frame.Bounds().Dy() {
+		for x := range frame.Bounds().Dx() {
+			at := frame.RGBAAt(x, y)
+			if at.R == color.R && at.G == color.G && at.B == color.B && at.A == color.A {
+				return
+			}
+		}
+	}
+	bounds, ok := tester.Find("work")
+	t.Fatalf("tag color did not paint despite label=%t and bounds=%+v", ok, bounds)
 }

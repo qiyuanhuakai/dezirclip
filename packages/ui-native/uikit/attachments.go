@@ -146,3 +146,17 @@ func drawAttachmentName(c *ui.Context, name string) {
 		ui.Text(c, name).Grow(1).SingleLine().FontSize(12)
 	})
 }
+
+// HistoryAttachments shows filenames inside a clipboard card.
+func HistoryAttachments(c *ui.Context, rows []PreviewAttachment, compact bool) {
+	shown := min(3, len(rows))
+	if compact {
+		shown = min(1, shown)
+	}
+	for _, row := range rows[:shown] {
+		drawAttachmentName(c, row.Name)
+	}
+	if shown < len(rows) {
+		ui.Text(c, fmt.Sprintf("+%d", len(rows)-shown)).FontSize(11).TextColor(c.Theme().TextMuted)
+	}
+}

@@ -114,7 +114,8 @@ func (n *nativeMain) closePreview() bool {
 }
 
 func (n *nativeMain) showPreview(row protocol.DesktopEntry, generation uint64, bounds ui.Rect) {
-	if n.preview == nil || n.window == nil || n.session == nil || n.history.generation != generation || n.failed || n.showSettings {
+	if n.preview == nil || n.window == nil || n.session == nil || n.history.generation != generation || n.failed || n.showSettings ||
+		nativeConcealed(row) {
 		return
 	}
 	if n.preview.entryID == row.Id {

@@ -21,7 +21,7 @@ func (n *nativeMain) view(c *ui.Context) {
 	}
 	n.list.List.Label = func(index int) string {
 		if index >= 0 && index < len(n.history.rows) {
-			return n.history.rows[index].Preview
+			return nativeCardSummary(n.history.rows[index])
 		}
 		return ""
 	}
@@ -135,8 +135,15 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 				pinLabel = "Unpin entry"
 			}
 			card := kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
-				Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: row.Preview,
+				Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: nativeCardSummary(row),
 				Pinned: row.IsPinned, Selected: cell.Selected(), Compact: compact,
+				Match:    n.history.filter.query,
+				TextFont: n.preferences["app.font_mono"],
+				TextSize: n.cardFontSize("app.clipboard_item_font_size", 11, 18),
+				TextRows: 4,
+				TagSize:  n.cardFontSize("app.clipboard_tag_font_size", 8, 14),
+				Tags:     n.cardTags(row.Tags),
+				Body:     n.cardBody(cell.Context, row, compact),
 				Activate: func() {
 					n.resetPreviewSelection()
 					n.rowAction(row, generation, nativePaste)

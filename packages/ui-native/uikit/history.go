@@ -1,6 +1,10 @@
 package uikit
 
-import "github.com/egoist/mygo/ui"
+import (
+	"strings"
+
+	"github.com/egoist/mygo/ui"
+)
 
 type HistoryCardOptions struct {
 	Source   string
@@ -10,8 +14,19 @@ type HistoryCardOptions struct {
 	Compact  bool
 	Pinned   bool
 	Actions  []HeaderAction
+	Tags     []HistoryTag
+	Match    string
+	TextFont string
+	TextSize float32
+	TextRows int
+	TagSize  float32
 	Body     func()
 	Activate func()
+}
+
+type HistoryTag struct {
+	Name  string
+	Color ui.Color
 }
 
 type HistoryCardMetaOptions struct {
@@ -33,6 +48,13 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 		style.Fill, style.Border, style.Outline, style.Shadows = selected.Fill, selected.Border, selected.Outline, selected.Shadows
 	}
 	card := paint(ui.ButtonBase(c).Label(options.Summary), style).Margin(style.Margin[:]...)
+	if len(options.Tags) > 0 {
+		names := make([]string, 0, len(options.Tags))
+		for _, tag := range options.Tags {
+			names = append(names, tag.Name)
+		}
+		card.Description(strings.Join(names, ", "))
+	}
 	if options.Body == nil {
 		card.MinHeight(style.Height)
 	}
@@ -47,7 +69,25 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 				options.Body()
 			} else {
 				content := k.style("historyContent")
-				text(c, options.Summary, content).Padding(content.Padding[:]...).Wrap()
+				if options.TextSize > 0 {
+					content.Size = options.TextSize
+				}
+				if options.TextFont != "" {
+					content.Font = options.TextFont
+				}
+				var summary ui.Element
+				if spans := k.matchSpans(options.Summary, options.Match); spans != nil {
+					summary = styledText(ui.RichText(c, spans...), content)
+				} else {
+					summary = text(c, options.Summary, content)
+				}
+				summary.Padding(content.Padding[:]...).Wrap()
+				if options.TextRows > 0 {
+					summary.MaxLines(options.TextRows)
+				}
+			}
+			if len(options.Tags) > 0 {
+				k.historyTags(c, options.Tags, options.TagSize)
 			}
 		})
 	})
@@ -55,6 +95,18 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 		options.Activate()
 	}
 	return card
+}
+
+func (k Kit) historyTags(c *ui.Context, tags []HistoryTag, size float32) {
+	if size <= 0 {
+		size = 10
+	}
+	ui.Row(c).FillWidth().Justify(ui.End).Wrap().Gap(4).Margin(2, 0, 0).Children(func() {
+		for _, tag := range tags {
+			ui.Text(c, tag.Name).FontSize(size).TextColor(ui.RGB(255, 255, 255)).SingleLine().
+				Height(size+6).Padding(2, 5).Background(tag.Color).Radius(min(5, c.Theme().Radius))
+		}
+	})
 }
 
 // HistoryCardMeta renders the source label, available actions and timestamp.

@@ -29,9 +29,7 @@ type emojiGroup struct {
 type nativeEmojiPanel struct {
 	paths          []string
 	favorites      ui.ListState
-	thumbnails     map[string]ui.ImageSource
-	recent         []string
-	pending        map[string]bool
+	thumbnails     nativeVisibleCache[string, ui.ImageSource]
 	read           uint64
 	ready, loading bool
 	loadError      bool

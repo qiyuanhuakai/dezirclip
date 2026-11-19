@@ -28,6 +28,10 @@ type nativeMain struct {
 	searchTimer      *time.Timer
 	resume           uint64
 	history          nativeHistory
+	cardImages       nativeVisibleCache[nativeCardImageKey, ui.ImageSource]
+	cardTagColors    map[string]string
+	readingTagColors bool
+	tagColorRevision uint64
 	list             uikit.HistoryListState
 	historyScroll    ui.ScrollState
 	searchWheel      float32
@@ -66,6 +70,8 @@ func (n *nativeMain) stopSession() {
 	n.stopRead = nil
 	n.cancelSearchTimer()
 	n.history.reset(protocol.RuntimeState{}, nativeHistoryFilter{})
+	n.cardImages = nativeVisibleCache[nativeCardImageKey, ui.ImageSource]{}
+	n.cardTagColors, n.readingTagColors = nil, false
 	n.reading, n.failed, n.mutating, n.private = false, false, false, false
 	n.notice, n.keyboard, n.focusList = "", false, false
 	n.temporarySearch = false
@@ -237,6 +243,10 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 		return
 	}
 	for _, event := range events.Events {
+		if event.Event == protocol.EventKindHistoryReset {
+			n.cardTagColors = nil
+			n.tagColorRevision++
+		}
 		if event.Event == protocol.EventKindServiceStateChanged && event.Data.Status != nil &&
 			(*event.Data.Status == "view_settings_changed" || *event.Data.Status == "application_settings_reset") {
 			n.prepare(n.resume)
@@ -246,6 +256,9 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 	if next.HistoryRevision > current.HistoryRevision {
 		n.resetPreviewSelection()
 		n.history.reset(next, n.history.filter)
+		if n.historyScroll.Y <= 0 {
+			n.list.Reset()
+		}
 		if n.searchTimer == nil {
 			n.loadPage()
 		}
