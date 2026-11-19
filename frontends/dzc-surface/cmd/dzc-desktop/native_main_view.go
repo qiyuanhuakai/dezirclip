@@ -10,7 +10,7 @@ import (
 )
 
 func (n *nativeMain) view(c *ui.Context) {
-	kit := presets.Select(n.theme, n.mode).Kit()
+	kit := presets.Select(n.theme, n.mode).Kit().WithInterfaceFont(nativeInterfaceFont(n.preferences))
 	kit.Apply(c)
 	n.list.List.Selected = &n.history.selected
 	n.list.List.Key = func(index int) any {

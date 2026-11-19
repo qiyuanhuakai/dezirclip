@@ -4,7 +4,27 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 )
+
+func TestInterfaceFontOverridesCatalogAndFallbackControls(t *testing.T) {
+	catalog := map[string]theme.WidgetStyle{
+		"headerTitle": {Font: "Theme UI, sans-serif"},
+		"progress":    {Font: "Theme Mono, monospace"},
+	}
+	original := NewKit("light", theme.Select("light"), catalog)
+	kit := original.WithInterfaceFont(" Custom UI ")
+	for widget, want := range map[string]string{
+		"headerTitle": "Custom UI", "progress": "Theme Mono, monospace", "select": "Custom UI",
+	} {
+		if got := kit.style(widget).Font; got != want {
+			t.Errorf("%s font = %q, want %q", widget, got, want)
+		}
+	}
+	if got := original.style("headerTitle").Font; got != "Theme UI, sans-serif" {
+		t.Errorf("original header font = %q", got)
+	}
+}
 
 func TestSelectReportsChoiceAndRejectsDisabledOption(t *testing.T) {
 	kit := Kit{}

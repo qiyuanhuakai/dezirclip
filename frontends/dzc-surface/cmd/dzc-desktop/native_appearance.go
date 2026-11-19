@@ -38,6 +38,14 @@ func nativeAppearancePath(owner *client.Client) string {
 	return filepath.Join(profile.DataDirectory, "mygo-native-appearance.json")
 }
 
+func nativeInterfaceFont(settings map[string]string) string {
+	font := strings.TrimSpace(settings["app.font_main"])
+	if len(font) > 256 {
+		return ""
+	}
+	return font
+}
+
 func restoreNativeAppearance(owner *client.Client, panel *quickpaste.Panel, settings map[string]string) {
 	mode := settings["app.color_mode"]
 	if mode != "light" && mode != "dark" {
@@ -50,7 +58,7 @@ func restoreNativeAppearance(owner *client.Client, panel *quickpaste.Panel, sett
 	if value, err := strconv.ParseFloat(settings["app.surface_opacity"], 64); err == nil {
 		a.Opacity = max(0, min(1, value/100))
 	}
-	if font := strings.TrimSpace(settings["app.font_main"]); font != "" && len(font) <= 256 {
+	if font := nativeInterfaceFont(settings); font != "" {
 		a.Tokens.FontFamilies = []string{font}
 	}
 	if size, err := strconv.Atoi(settings["app.clipboard_item_font_size"]); err == nil {

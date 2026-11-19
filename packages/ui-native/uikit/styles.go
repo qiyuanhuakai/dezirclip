@@ -8,9 +8,10 @@ import (
 )
 
 type Kit struct {
-	Mode    string
-	tokens  *theme.Tokens
-	widgets map[string]theme.WidgetStyle
+	Mode          string
+	tokens        *theme.Tokens
+	widgets       map[string]theme.WidgetStyle
+	interfaceFont string
 }
 
 // NewKit sets a palette and a catalog of widget styles supplied by the caller.
@@ -20,11 +21,23 @@ func NewKit(mode string, tokens theme.Tokens, widgets map[string]theme.WidgetSty
 	return Kit{Mode: mode, tokens: &tokens, widgets: widgets}
 }
 
+// WithInterfaceFont overrides the UI font without changing the catalog or its monospace styles.
+func (k Kit) WithInterfaceFont(font string) Kit {
+	k.interfaceFont = strings.TrimSpace(font)
+	return k
+}
+
 func (k Kit) palette() theme.Tokens {
+	var tokens theme.Tokens
 	if k.tokens != nil {
-		return *k.tokens
+		tokens = *k.tokens
+	} else {
+		tokens = theme.Select(k.Mode)
 	}
-	return theme.Select(k.Mode)
+	if k.interfaceFont != "" {
+		tokens.FontFamilies = []string{k.interfaceFont}
+	}
+	return tokens
 }
 
 func (k Kit) Apply(c *ui.Context) {
@@ -33,6 +46,9 @@ func (k Kit) Apply(c *ui.Context) {
 
 func (k Kit) style(widget string) theme.WidgetStyle {
 	if style, ok := k.widgets[widget]; ok {
+		if k.interfaceFont != "" && style.Font != "monospace" && !strings.HasSuffix(style.Font, ", monospace") {
+			style.Font = k.interfaceFont
+		}
 		return style
 	}
 	return standardWidgetStyle(widget, k.palette())

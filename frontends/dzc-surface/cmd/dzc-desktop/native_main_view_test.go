@@ -8,6 +8,23 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
 
+func TestNativeMainUsesSavedInterfaceFont(t *testing.T) {
+	window := nativeMain{theme: "macos", mode: "dark", preferences: map[string]string{"app.font_main": " Custom UI "}}
+	var font string
+	tester := ui.NewTester(func(c *ui.Context) {
+		window.view(c)
+		font = c.Theme().Font
+	}, 360, 400)
+	if font != "Custom UI" || window.previewAppearance().theme().Font != font {
+		t.Fatal("main and preview did not use the saved interface font")
+	}
+	delete(window.preferences, "app.font_main")
+	tester.Frame()
+	if font != "SF Pro Text" || window.previewAppearance().theme().Font != font {
+		t.Fatal("main and preview did not restore the selected theme font")
+	}
+}
+
 func TestNativeMainPrivacySettingsAreClosedOnReentry(t *testing.T) {
 	for _, width := range []int{360, 700} {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {

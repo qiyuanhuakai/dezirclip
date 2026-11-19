@@ -154,6 +154,9 @@ func (n *nativeMain) previewAppearance() previewAppearance {
 	language := n.preferences["app.language"]
 	appearance := theme.Appearance{Mode: n.mode, Locale: language, Opacity: float64(opacity) / 100,
 		Tokens: presets.Select(n.theme, n.mode).Tokens()}
+	if font := nativeInterfaceFont(n.preferences); font != "" {
+		appearance.Tokens.FontFamilies = []string{font}
+	}
 	return previewAppearance{
 		Language: language, Palette: &appearance, Opacity: opacity, Dark: n.mode == "dark",
 		Title: "Preview", Pin: "Pin this preview", Close: "Close preview", Retry: "Retry", Concealed: "Preview hidden",
