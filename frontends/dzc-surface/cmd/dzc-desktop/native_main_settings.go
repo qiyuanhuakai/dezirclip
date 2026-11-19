@@ -70,6 +70,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 			}
 		}
 	})
+	ui.Box(c).FillWidth().Padding(0, 8, 8).Children(func() { n.settingsFooter(c, kit, true) })
 }
 
 func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nativeSettingsPane) {
@@ -92,8 +93,44 @@ func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nat
 					n.settingsSection = pane.ID
 				}
 			}
+			n.settingsFooter(c, kit, false)
 		})
 	})
+}
+
+func (n *nativeMain) settingsFooter(c *ui.Context, kit uikit.Kit, compact bool) {
+	const project = "https://github.com/qiyuanhuakai/dezirclip"
+	open := func(address string) {
+		if err := n.shell.OpenURL(address); err != nil {
+			n.notice = n.text("common_error")
+		}
+	}
+	kit.SettingsFooter(c, uikit.SettingsFooterOptions{
+		ProductName: "DezirClip", Feedback: n.text("feedback"), Website: n.text("official_website"),
+		Reset: n.text("reset_defaults"), Compact: compact,
+		ResetDisabled: n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating || n.capturing,
+		OnFeedback:    func() { open(project + "/issues") },
+		OnReset:       func() { n.resetOpen = true },
+		OnWebsite:     func() { open(project) },
+	})
+}
+
+func (n *nativeMain) confirmSettingsReset() {
+	state := n.history.state
+	if n.session == nil || state.ServiceInstanceId == "" || n.mutating || n.capturing {
+		return
+	}
+	n.mutating, n.notice = true, ""
+	session := n.session
+	go func() {
+		err := n.shell.ResetSettings(session, state.PrivacyEpoch)
+		n.update(session, func() {
+			if err != nil {
+				n.mutating = false
+				n.notice = n.text("reset_failed") + err.Error()
+			}
+		})
+	}()
 }
 
 type nativeBooleanSetting struct {

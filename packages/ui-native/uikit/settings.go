@@ -28,22 +28,23 @@ func (k Kit) SettingsRail(c *ui.Context, label, active string, sections []Settin
 }
 
 type SettingsFooterOptions struct {
-	ProductName string
-	Feedback    string
-	Reset       string
-	Website     string
-	Compact     bool
-	OnFeedback  func()
-	OnReset     func()
-	OnWebsite   func()
+	ProductName   string
+	Feedback      string
+	Reset         string
+	Website       string
+	Compact       bool
+	ResetDisabled bool
+	OnFeedback    func()
+	OnReset       func()
+	OnWebsite     func()
 }
 
 // SettingsFooter displays application information and settings actions.
 func (k Kit) SettingsFooter(c *ui.Context, options SettingsFooterOptions) {
 	actions := func(gap float32) {
 		ui.Row(c).Gap(gap).Wrap().Justify(ui.Center).Children(func() {
-			k.settingsFooterCard(c, options.Feedback, icon("MessageSquare"), options.OnFeedback)
-			k.settingsFooterCard(c, options.Reset, icon("RotateCcw"), options.OnReset)
+			k.settingsFooterCard(c, options.Feedback, icon("MessageSquare"), false, options.OnFeedback)
+			k.settingsFooterCard(c, options.Reset, icon("RotateCcw"), options.ResetDisabled, options.OnReset)
 		})
 	}
 	links := func() {
@@ -72,9 +73,9 @@ func (k Kit) SettingsFooter(c *ui.Context, options SettingsFooterOptions) {
 	})
 }
 
-func (k Kit) settingsFooterCard(c *ui.Context, label string, symbol *ui.SVG, run func()) {
+func (k Kit) settingsFooterCard(c *ui.Context, label string, symbol *ui.SVG, disabled bool, run func()) {
 	style := k.style("settingsFooterCard")
-	button := paint(ui.ButtonBase(c).Height(style.Height).Label(label), style)
+	button := paint(ui.ButtonBase(c).Height(style.Height).Label(label).Disabled(disabled), style)
 	button.Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, symbol).Size(16, 16).TextColor(styleColor(style.Text))

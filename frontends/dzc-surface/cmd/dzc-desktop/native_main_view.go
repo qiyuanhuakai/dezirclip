@@ -154,6 +154,10 @@ func (n *nativeMain) view(c *ui.Context) {
 	if n.shortcut != nil && n.shortcut.open {
 		n.drawShortcutRecorder(c, kit, n.shortcut)
 	}
+	if n.showSettings && n.resetOpen {
+		kit.ConfirmDialog(c, &n.resetOpen, n.text("reset_defaults"), n.text("reset_confirm"),
+			n.text("common_cancel"), n.text("common_confirm"), n.confirmSettingsReset)
+	}
 }
 
 func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {

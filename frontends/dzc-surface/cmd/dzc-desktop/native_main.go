@@ -58,6 +58,7 @@ type nativeMain struct {
 	emoji            *nativeEmojiPanel
 	settingsSection  string
 	settingsOpen     map[string]*bool
+	resetOpen        bool
 	privacyKindsOpen bool
 	privacyRules     nativePrivacyRules
 	privacyDialog    *nativePrivacyDialog
@@ -108,6 +109,7 @@ func (n *nativeMain) stopSession() {
 	n.searchWheel, n.towardsTop = 0, time.Time{}
 	n.capturing = false
 	n.profile.reading = false
+	n.resetOpen = false
 	n.themeWorking, n.themeRefresh = false, false
 	n.tags = nil
 	n.closeEntryEditor()
