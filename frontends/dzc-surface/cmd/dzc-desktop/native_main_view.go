@@ -70,6 +70,9 @@ func (n *nativeMain) view(c *ui.Context) {
 			})
 		}
 	})
+	if n.tags != nil {
+		n.tagEditorView(c, kit, n.tags)
+	}
 }
 
 func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {

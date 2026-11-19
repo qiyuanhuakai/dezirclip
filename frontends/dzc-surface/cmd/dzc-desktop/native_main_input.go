@@ -38,7 +38,7 @@ func (n *nativeMain) navigateHistory(delta int) {
 }
 
 func (n *nativeMain) searchKey(key ui.TextKey) bool {
-	if key.Mods != 0 || n.showSettings {
+	if key.Mods != 0 || n.showSettings || n.tags != nil {
 		return false
 	}
 	switch key.Key {
@@ -131,7 +131,7 @@ func (n *nativeMain) previewAppearance() previewAppearance {
 }
 
 func (n *nativeMain) historyShortcuts(c *ui.Context, queryFocused bool) {
-	if n.showSettings || queryFocused {
+	if n.showSettings || n.tags != nil || queryFocused {
 		return
 	}
 	if n.preferences["app.arrow_key_selection"] == "true" {
@@ -178,6 +178,9 @@ func (n *nativeMain) entryMenu(card ui.Element, row protocol.DesktopEntry, gener
 		}
 		if row.IsExternal && menu.Item("Open").Disabled(disabled).Chosen() {
 			n.rowAction(row, generation, nativeOpen)
+		}
+		if menu.Item("Edit tags").Disabled(disabled).Chosen() {
+			n.editTags(row, generation)
 		}
 	})
 }

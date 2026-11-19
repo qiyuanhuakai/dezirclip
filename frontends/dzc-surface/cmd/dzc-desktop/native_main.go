@@ -41,6 +41,7 @@ type nativeMain struct {
 	focusList        bool
 	previewSelection int64
 	hover            nativeHoverPreview
+	tags             *nativeTagEditor
 }
 
 func (n *nativeMain) stopSession() {
@@ -53,6 +54,7 @@ func (n *nativeMain) stopSession() {
 	n.history.reset(protocol.RuntimeState{}, "", "")
 	n.reading, n.failed, n.mutating, n.private = false, false, false, false
 	n.notice, n.keyboard, n.focusList = "", false, false
+	n.tags = nil
 	n.resetPreviewSelection()
 }
 
