@@ -123,6 +123,9 @@ func (n *nativeMain) view(c *ui.Context) {
 	if n.tagLibrary != nil && n.tagLibrary.dialog != nil {
 		n.tagLibraryDialog(c, kit, n.tagLibrary)
 	}
+	if n.backup != nil {
+		n.backupView(c, kit, n.backup)
+	}
 }
 
 func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {

@@ -54,6 +54,7 @@ type nativeMain struct {
 	emoji            *nativeEmojiPanel
 	settingsSection  string
 	settingsOpen     map[string]*bool
+	backup           *nativeBackupDialog
 	fontChoices      *nativeFontChoices
 	readingFonts     bool
 	capturing        bool
@@ -89,6 +90,7 @@ func (n *nativeMain) stopSession() {
 	n.capturing = false
 	n.themeWorking, n.themeRefresh = false, false
 	n.tags = nil
+	n.closeBackup()
 	n.tagLibrary = nil
 	n.emoji = nil
 	n.resetPreviewSelection()

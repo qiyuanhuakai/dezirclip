@@ -1,5 +1,16 @@
 export const tw = {
         // Native desktop controls
+        native_import_backup: "匯入",
+        native_export_backup: "匯出",
+        native_backup_files: "DezirClip 備份",
+        native_backup_private: "隱私工作階段期間無法備份或還原歷史。",
+        native_backup_replace_confirm: "我確認取代現有的剪貼簿歷史。",
+        native_backup_picker_failed: "無法開啟備份檔案選擇器。",
+        native_backup_preview_failed: "無法預覽這份備份。",
+        native_backup_password_required: "請輸入備份密碼。",
+        native_backup_protected_export: "歷史中有受保護的項目，請選擇加密備份。",
+        native_backup_import_failed: "無法還原這份備份，請檢查檔案和密碼。",
+        native_backup_export_failed: "無法匯出剪貼簿歷史。",
         native_settings_sections: "設定分類",
         native_keep_on_top: "視窗置頂",
         native_back: "返回",

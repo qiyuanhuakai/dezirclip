@@ -1,5 +1,16 @@
 export const en = {
         // Native desktop controls
+        native_import_backup: "Import",
+        native_export_backup: "Export",
+        native_backup_files: "DezirClip backups",
+        native_backup_private: "Backups are unavailable during a private session.",
+        native_backup_replace_confirm: "I confirm replacing the existing clipboard history.",
+        native_backup_picker_failed: "Could not open the backup file chooser.",
+        native_backup_preview_failed: "Could not preview this backup.",
+        native_backup_password_required: "Enter the backup passphrase.",
+        native_backup_protected_export: "Choose an encrypted backup to export protected history.",
+        native_backup_import_failed: "Could not restore this backup. Check the file and passphrase.",
+        native_backup_export_failed: "Could not export clipboard history.",
         native_settings_sections: "Settings sections",
         native_keep_on_top: "Keep on top",
         native_back: "Back",

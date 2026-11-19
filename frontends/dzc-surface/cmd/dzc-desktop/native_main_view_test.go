@@ -143,6 +143,24 @@ func TestNativeMainPrivacySettingsAreClosedOnReentry(t *testing.T) {
 	}
 }
 
+func TestNativeBackupConfirmationFitsMinimumWindow(t *testing.T) {
+	window := nativeMain{showSettings: true, settingsSection: "data", preferences: map[string]string{"app.language": "en"}}
+	window.backup = &nativeBackupDialog{
+		open: true, restoring: true, mode: "replace", path: "fixture.json",
+		preview: make([]protocol.BackupPreviewRow, 10),
+	}
+	for i := range window.backup.preview {
+		window.backup.preview[i].Content = "This is an ordinary entry from the selected clipboard backup."
+	}
+	tester := ui.NewTester(window.view, 250, 300)
+	for _, label := range []string{"Cancel", "Import"} {
+		bounds, ok := tester.Find(label)
+		if !ok || bounds.H <= 0 || bounds.Y < 0 || bounds.Y+bounds.H > 300 {
+			t.Errorf("%s is outside the minimum-size backup dialog: %+v", label, bounds)
+		}
+	}
+}
+
 func TestNativeMainNavigationAndDismissal(t *testing.T) {
 	for _, theme := range []string{"retro", "mica", "acrylic", "liquid-glass", "macos", "scifi"} {
 		for _, mode := range []string{"light", "dark"} {

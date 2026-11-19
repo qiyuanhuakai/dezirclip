@@ -11,6 +11,17 @@ export const privacyStatusZh = {
 
 export const zh = {
         // Native desktop controls
+        native_import_backup: "导入",
+        native_export_backup: "导出",
+        native_backup_files: "DezirClip 备份",
+        native_backup_private: "隐私会话期间无法备份或恢复历史。",
+        native_backup_replace_confirm: "我确认替换现有的剪贴板历史。",
+        native_backup_picker_failed: "无法打开备份文件选择器。",
+        native_backup_preview_failed: "无法预览此备份。",
+        native_backup_password_required: "请输入备份密码。",
+        native_backup_protected_export: "历史中有受保护的条目，请选择加密备份。",
+        native_backup_import_failed: "无法恢复此备份，请检查文件和密码。",
+        native_backup_export_failed: "无法导出剪贴板历史。",
         native_settings_sections: "设置分类",
         native_keep_on_top: "窗口置顶",
         native_back: "返回",

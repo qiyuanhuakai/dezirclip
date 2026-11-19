@@ -36,6 +36,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 		{uikit.SettingsSection{ID: "privacy", Label: n.text("privacy_settings")}, func() { n.privacySettings(c) }},
 		{uikit.SettingsSection{ID: "appearance", Label: n.text("appearance_settings")}, func() { n.appearanceSettings(c, kit, surfaceOpacity) }},
 		{uikit.SettingsSection{ID: "tools", Label: n.text("tools_settings")}, func() { n.toolsSettings(c) }},
+		{uikit.SettingsSection{ID: "data", Label: n.text("data_management")}, func() { n.dataSettings(c) }},
 	}
 	if n.settingsSection == "" {
 		n.settingsSection = "general"
