@@ -26,19 +26,19 @@ func (n *nativeMain) emojiFavoritesView(c *ui.Context) {
 		n.loadEmojiFavorites(panel)
 	}
 	ui.Row(c).Padding(0, 8).Gap(6).Children(func() {
-		if uikit.Button(c, uikit.ButtonOptions{Label: "Add images", Disabled: n.mutating || n.private}).Clicked() {
+		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("emoji_add_files", "Add images"), Disabled: n.mutating || n.private}).Clicked() {
 			n.changeEmojiFavorites("import", nil, true)
 		}
-		if panel.loadError && uikit.Button(c, uikit.ButtonOptions{Label: "Retry loading favorites"}).Clicked() {
+		if panel.loadError && uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry", "Retry loading favorites")}).Clicked() {
 			n.loadEmojiFavorites(panel)
 		}
 	})
 	if len(panel.paths) == 0 {
-		message := "Choose images or drop them here to add favorites."
+		message := n.text("emoji_fav_hint", "Choose images or drop them here to add favorites.")
 		if n.private {
-			message = "Image favorites are read-only during a private session."
+			message = n.text("native_favorites_read_only")
 		} else if panel.loading {
-			message = "Loading favorites…"
+			message = n.text("common_loading", "Loading favorites…")
 		}
 		ui.Text(c, message).Padding(8).Wrap().TextColor(c.Theme().TextMuted)
 		return
@@ -46,7 +46,7 @@ func (n *nativeMain) emojiFavoritesView(c *ui.Context) {
 	width, _ := c.Size()
 	columns := max(1, int((width-16)/80))
 	rows := (len(panel.paths) + columns - 1) / columns
-	ui.List(c, &panel.favorites, rows).Grow(1).FillWidth().Gap(5).Label("Favorite images").Rows(func(row ui.ListRow) {
+	ui.List(c, &panel.favorites, rows).Grow(1).FillWidth().Gap(5).Label(n.text("emoji_favorites", "Favorite images")).Rows(func(row ui.ListRow) {
 		start := row.Index * columns
 		if start >= len(panel.paths) {
 			return
@@ -77,7 +77,7 @@ func (n *nativeMain) emojiFavoriteCard(c *ui.Context, panel *nativeEmojiPanel, p
 		n.sendEmoji("image", path)
 	}
 	button.ContextMenu(func(menu *ui.Menu) {
-		if menu.Item("Remove favorite").Disabled(n.mutating || n.private).Chosen() {
+		if menu.Item(n.text("native_remove_favorite")).Disabled(n.mutating || n.private).Chosen() {
 			n.changeEmojiFavorites("remove", []string{path}, false)
 		}
 	})
@@ -172,13 +172,14 @@ func (n *nativeMain) changeEmojiFavorites(action string, paths []string, choose 
 	window := n.window
 	panel := n.emojiPanel()
 	preferences := n.preferences["app.emoji_favorites"]
+	language := n.language()
 	go func() {
 		var err error
 		var order []string
 		if choose {
 			paths, err = mygo.Dialog.Open(mygo.OpenDialogOptions{
-				Parent: window, Title: "Add favorite images", Multiple: true,
-				Filters: []mygo.FileFilter{{Name: "Images", Extensions: []string{"png", "jpg", "jpeg", "webp", "gif"}}},
+				Parent: window, Title: language.text("emoji_add_files", "Add favorite images"), Multiple: true,
+				Filters: []mygo.FileFilter{{Name: language.text("native_images"), Extensions: []string{"png", "jpg", "jpeg", "webp", "gif"}}},
 			})
 		}
 		if err == nil && len(paths) > 0 {
@@ -189,7 +190,7 @@ func (n *nativeMain) changeEmojiFavorites(action string, paths []string, choose 
 		n.update(session, func() {
 			n.mutating = false
 			if err != nil {
-				n.notice = "Some image favorites could not be updated."
+				n.notice = n.text("native_favorites_failed")
 			}
 			if order != nil {
 				panel.read++

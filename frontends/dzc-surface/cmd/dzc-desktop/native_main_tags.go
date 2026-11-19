@@ -40,7 +40,7 @@ func (e *nativeTagEditor) addTag() {
 }
 
 func (n *nativeMain) tagEditorView(c *ui.Context, kit uikit.Kit, editor *nativeTagEditor) {
-	kit.Dialog(c, &editor.open, "Edit tags", "Close", n.mutating, func() {
+	kit.Dialog(c, &editor.open, n.text("native_edit_tags"), n.text("common_close"), n.mutating, func() {
 		if len(editor.draft) > 0 {
 			var removed string
 			ui.Scroll(c).MaxHeight(105).Children(func() {
@@ -48,8 +48,9 @@ func (n *nativeMain) tagEditorView(c *ui.Context, kit uikit.Kit, editor *nativeT
 					for _, name := range editor.draft {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 							ui.Text(c, name).Grow(1).SingleLine()
-							remove := uikit.Button(c, uikit.ButtonOptions{Label: "Remove", Disabled: n.mutating})
-							if remove.Label("Remove " + name).Clicked() {
+							remove := uikit.Button(c, uikit.ButtonOptions{Label: n.text("native_remove"), Disabled: n.mutating})
+							label := strings.ReplaceAll(n.text("native_remove_named_tag"), "{tag}", name)
+							if remove.Label(label).Clicked() {
 								removed = name
 							}
 						})
@@ -60,7 +61,7 @@ func (n *nativeMain) tagEditorView(c *ui.Context, kit uikit.Kit, editor *nativeT
 				editor.draft = slices.DeleteFunc(editor.draft, func(tag string) bool { return tag == removed })
 			}
 		}
-		input := kit.TagNameField(c, &editor.name, "Tag name", n.mutating)
+		input := kit.TagNameField(c, &editor.name, n.text("tag_name"), n.mutating)
 		input.OnTextKey(func(key ui.TextKey) bool {
 			if key.Key != ui.KeyEnter || key.Mods != 0 || n.mutating {
 				return false
@@ -77,11 +78,11 @@ func (n *nativeMain) tagEditorView(c *ui.Context, kit uikit.Kit, editor *nativeT
 			ui.Text(c, editor.message).TextColor(c.Theme().Danger).Wrap()
 		}
 		ui.Row(c).Gap(6).Justify(ui.End).Children(func() {
-			if uikit.Button(c, uikit.ButtonOptions{Label: "Add tag", Disabled: n.mutating || strings.TrimSpace(editor.name) == ""}).Clicked() {
+			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("native_add_tag"), Disabled: n.mutating || strings.TrimSpace(editor.name) == ""}).Clicked() {
 				editor.addTag()
 				editor.focus = true
 			}
-			if uikit.Button(c, uikit.ButtonOptions{Label: "Save", Disabled: n.mutating}).Clicked() {
+			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: n.mutating}).Clicked() {
 				n.saveTags(editor)
 			}
 		})
@@ -120,11 +121,11 @@ func (n *nativeMain) saveTags(editor *nativeTagEditor) {
 		n.update(session, func() {
 			n.mutating = false
 			if conflict {
-				editor.message = "Tags changed. Close and reopen this editor to load the latest tags."
+				editor.message = n.text("tag_selection_changed", "Tags changed. Close and reopen this editor to load the latest tags.")
 				return
 			}
 			if err != nil {
-				editor.message = "Could not save tags."
+				editor.message = n.text("tag_action_failed", "Could not save tags.")
 				return
 			}
 			n.tags = nil

@@ -31,11 +31,11 @@ func (n *nativeMain) openSettings() {
 
 func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *int) {
 	panes := []nativeSettingsPane{
-		{uikit.SettingsSection{ID: "general", Label: "General"}, func() { n.generalSettings(c) }},
-		{uikit.SettingsSection{ID: "clipboard", Label: "Clipboard"}, func() { n.clipboardSettings(c) }},
-		{uikit.SettingsSection{ID: "privacy", Label: "Privacy"}, func() { n.privacySettings(c) }},
-		{uikit.SettingsSection{ID: "appearance", Label: "Appearance"}, func() { n.appearanceSettings(c, kit, surfaceOpacity) }},
-		{uikit.SettingsSection{ID: "tools", Label: "Tools"}, func() { n.toolsSettings(c) }},
+		{uikit.SettingsSection{ID: "general", Label: n.text("general_settings", "General")}, func() { n.generalSettings(c, kit) }},
+		{uikit.SettingsSection{ID: "clipboard", Label: n.text("clipboard_settings")}, func() { n.clipboardSettings(c) }},
+		{uikit.SettingsSection{ID: "privacy", Label: n.text("privacy_settings")}, func() { n.privacySettings(c) }},
+		{uikit.SettingsSection{ID: "appearance", Label: n.text("appearance_settings")}, func() { n.appearanceSettings(c, kit, surfaceOpacity) }},
+		{uikit.SettingsSection{ID: "tools", Label: n.text("tools_settings")}, func() { n.toolsSettings(c) }},
 	}
 	if n.settingsSection == "" {
 		n.settingsSection = "general"
@@ -50,7 +50,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 		for _, pane := range panes {
 			sections = append(sections, pane.SettingsSection)
 		}
-		kit.SettingsRail(c, "Settings sections", n.settingsSection, sections, func(id string) {
+		kit.SettingsRail(c, n.text("native_settings_sections"), n.settingsSection, sections, func(id string) {
 			n.settingsSection = id
 		})
 		for _, pane := range panes {
@@ -112,20 +112,25 @@ func (n *nativeMain) settingEnabled(key string, initial bool) bool {
 	return initial
 }
 
-func (n *nativeMain) generalSettings(c *ui.Context) {
+func (n *nativeMain) generalSettings(c *ui.Context, kit uikit.Kit) {
+	n.settingSelect(c, kit, "app.language", n.text("language"), string(n.language()), []uikit.SelectOption{
+		{Value: "zh", Label: "简体中文"},
+		{Value: "tw", Label: "繁體中文"},
+		{Value: "en", Label: "English"},
+	})
 	n.booleanSettings(c,
-		nativeBooleanSetting{"app.silent_start", "Start hidden", true},
-		nativeBooleanSetting{"app.follow_mouse", "Show window near the mouse", true},
-		nativeBooleanSetting{"app.edge_docking", "Edge docking", false},
-		nativeBooleanSetting{"app.show_search_box", "Show search box", true},
-		nativeBooleanSetting{"app.show_scroll_top_button", "Show scroll-to-top button", true},
-		nativeBooleanSetting{"app.tag_manager_enabled", "Enable tag manager", true},
-		nativeBooleanSetting{"app.emoji_panel_enabled", "Enable emoji panel", false},
-		nativeBooleanSetting{"app.arrow_key_selection", "Select history with arrow keys", false},
-		nativeBooleanSetting{"app.preview_keyboard_enabled", "Preview keyboard selection", false},
+		nativeBooleanSetting{"app.silent_start", n.text("silent_start", "Start hidden"), true},
+		nativeBooleanSetting{"app.follow_mouse", n.text("follow_mouse", "Show window near the mouse"), true},
+		nativeBooleanSetting{"app.edge_docking", n.text("edge_docking", "Edge docking"), false},
+		nativeBooleanSetting{"app.show_search_box", n.text("show_search_box", "Show search box"), true},
+		nativeBooleanSetting{"app.show_scroll_top_button", n.text("scroll_top_button", "Show scroll-to-top button"), true},
+		nativeBooleanSetting{"app.tag_manager_enabled", n.text("tag_manager_enabled", "Enable tag manager"), true},
+		nativeBooleanSetting{"app.emoji_panel_enabled", n.text("emoji_panel_enabled", "Enable emoji panel"), false},
+		nativeBooleanSetting{"app.arrow_key_selection", n.text("arrow_key_selection", "Select history with arrow keys"), false},
+		nativeBooleanSetting{"app.preview_keyboard_enabled", n.text("preview_keyboard_enabled", "Preview keyboard selection"), false},
 	)
 	hideTray := n.settingEnabled("app.hide_tray_icon", false)
-	if ui.Checkbox(c, &hideTray, "Hide tray icon").Disabled(n.mutating).Changed() {
+	if ui.Checkbox(c, &hideTray, n.text("hide_tray_icon", "Hide tray icon")).Disabled(n.mutating).Changed() {
 		n.writeSetting(func(ctx context.Context, epoch uint64) error {
 			return n.shell.SetTrayVisible(ctx, !hideTray, epoch)
 		})
@@ -134,22 +139,22 @@ func (n *nativeMain) generalSettings(c *ui.Context) {
 
 func (n *nativeMain) clipboardSettings(c *ui.Context) {
 	n.booleanSettings(c,
-		nativeBooleanSetting{"app.persistent", "Keep clipboard history", false},
-		nativeBooleanSetting{"app.persistent_limit_enabled", "Limit stored clipboard entries", true},
-		nativeBooleanSetting{"app.deduplicate", "Merge duplicate entries", true},
-		nativeBooleanSetting{"app.capture_files", "Capture copied files", false},
-		nativeBooleanSetting{"app.capture_rich_text", "Capture formatted text", false},
-		nativeBooleanSetting{"app.delete_after_paste", "Delete entries after pasting", false},
-		nativeBooleanSetting{"app.move_to_top_after_paste", "Move pasted entries to top", true},
+		nativeBooleanSetting{"app.persistent", n.text("persistent_storage", "Keep clipboard history"), false},
+		nativeBooleanSetting{"app.persistent_limit_enabled", n.text("persistent_limit_enabled", "Limit stored clipboard entries"), true},
+		nativeBooleanSetting{"app.deduplicate", n.text("merge_duplicates", "Merge duplicate entries"), true},
+		nativeBooleanSetting{"app.capture_files", n.text("capture_files", "Capture copied files"), false},
+		nativeBooleanSetting{"app.capture_rich_text", n.text("capture_rich_text"), false},
+		nativeBooleanSetting{"app.delete_after_paste", n.text("delete_after_paste", "Delete entries after pasting"), false},
+		nativeBooleanSetting{"app.move_to_top_after_paste", n.text("move_to_top_after_paste", "Move pasted entries to top"), true},
 	)
 }
 
 func (n *nativeMain) privacySettings(c *ui.Context) {
 	private := n.private
-	if ui.Checkbox(c, &private, "Private session").Disabled(n.mutating).Changed() {
+	if ui.Checkbox(c, &private, n.text("privacy_session_title", "Private session")).Disabled(n.mutating).Changed() {
 		n.changePrivateSession(private)
 	}
-	n.booleanSettings(c, nativeBooleanSetting{"app.privacy_protection", "Protect sensitive clipboard content", true})
+	n.booleanSettings(c, nativeBooleanSetting{"app.privacy_protection", n.text("privacy_protection", "Protect sensitive clipboard content"), true})
 }
 
 func (n *nativeMain) changePrivateSession(active bool) {
@@ -172,7 +177,7 @@ func (n *nativeMain) changePrivateSession(active bool) {
 		n.update(session, func() {
 			if err != nil {
 				n.mutating = false
-				n.notice = "Could not change the private session."
+				n.notice = n.text("privacy_action_failed", "Could not change the private session.")
 				n.loadPage()
 				return
 			}
@@ -183,26 +188,26 @@ func (n *nativeMain) changePrivateSession(active bool) {
 
 func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpacity *int) {
 	themes := []uikit.SelectOption{
-		{Value: "retro", Label: "Retro"}, {Value: "mica", Label: "Mica"}, {Value: "acrylic", Label: "Acrylic"},
-		{Value: "liquid-glass", Label: "Liquid Glass"}, {Value: "macos", Label: "macOS"}, {Value: "scifi", Label: "Sci-Fi"},
+		{Value: "retro", Label: n.text("theme_retro")}, {Value: "mica", Label: n.text("theme_mica")}, {Value: "acrylic", Label: n.text("theme_acrylic")},
+		{Value: "liquid-glass", Label: n.text("theme_liquid_glass")}, {Value: "macos", Label: n.text("theme_macos")}, {Value: "scifi", Label: n.text("theme_scifi")},
 	}
 	for _, imported := range n.importedThemes {
 		themes = append(themes, uikit.SelectOption{Value: "custom:" + imported.Id, Label: imported.Name})
 	}
-	n.settingSelect(c, kit, "app.theme", "Theme", "mica", themes)
+	n.settingSelect(c, kit, "app.theme", n.text("visual_theme", "Theme"), "mica", themes)
 	n.themeActions(c)
-	n.settingSelect(c, kit, "app.color_mode", "Color mode", "system", []uikit.SelectOption{
-		{Value: "system", Label: "System"}, {Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"},
+	n.settingSelect(c, kit, "app.color_mode", n.text("color_mode", "Color mode"), "system", []uikit.SelectOption{
+		{Value: "system", Label: n.text("mode_system")}, {Value: "light", Label: n.text("mode_light")}, {Value: "dark", Label: n.text("mode_dark")},
 	})
 	n.booleanSettings(c,
-		nativeBooleanSetting{"app.compact_mode", "Compact history", false},
-		nativeBooleanSetting{"app.show_app_border", "Show window border", true},
+		nativeBooleanSetting{"app.compact_mode", n.text("compact_mode", "Compact history"), false},
+		nativeBooleanSetting{"app.show_app_border", n.text("show_app_border", "Show window border"), true},
 	)
 	n.typographySettings(c)
 	previewOpacity := opacityPreference(n.preferences["app.preview_opacity"], n.preferences["app.surface_opacity"])
-	n.rangeSetting(c, nativePreviewOpacity, previewOpacity)
+	n.rangeSetting(c, nativePreviewOpacity, n.text("preview_opacity"), previewOpacity)
 	if surfaceOpacity != nil {
-		*surfaceOpacity = n.rangeSetting(c, nativeSurfaceOpacity, *surfaceOpacity)
+		*surfaceOpacity = n.rangeSetting(c, nativeSurfaceOpacity, n.text("surface_opacity", "Surface opacity"), *surfaceOpacity)
 	}
 }
 
@@ -219,21 +224,21 @@ func (n *nativeMain) settingSelect(c *ui.Context, kit uikit.Kit, key, label, fal
 
 func (n *nativeMain) toolsSettings(c *ui.Context) {
 	enabled := n.settingEnabled("app.screenshot_enabled", true)
-	n.panelCheckbox(c, "screenshot", "Enable screenshots", enabled)
+	n.panelCheckbox(c, "screenshot", n.text("screenshot_enabled", "Enable screenshots"), enabled)
 	if enabled {
 		ui.Row(c).Gap(6).Wrap().Children(func() {
 			for _, option := range []struct {
 				label string
 				full  bool
-			}{{"Region Capture", false}, {"Full Screen Capture", true}} {
+			}{{n.text("capture_region_now"), false}, {n.text("capture_full_now"), true}} {
 				if uikit.Button(c, uikit.ButtonOptions{Label: option.label, Disabled: n.capturing || n.mutating}).Clicked() {
 					n.captureScreenshot(option.full)
 				}
 			}
 		})
 	}
-	n.panelCheckbox(c, "quick-paste", "Enable quick paste", n.settingEnabled("app.quick_paste_enabled", true))
-	n.booleanSettings(c, nativeBooleanSetting{"app.ocr_enabled", "Recognize text in images", true})
+	n.panelCheckbox(c, "quick-paste", n.text("quick_paste_enabled", "Enable quick paste"), n.settingEnabled("app.quick_paste_enabled", true))
+	n.booleanSettings(c, nativeBooleanSetting{"app.ocr_enabled", n.text("ocr_enabled", "Recognize text in images"), true})
 }
 
 func (n *nativeMain) panelCheckbox(c *ui.Context, id, label string, enabled bool) {
@@ -257,7 +262,7 @@ func (n *nativeMain) captureScreenshot(full bool) {
 		n.update(session, func() {
 			n.capturing = false
 			if err != nil {
-				n.notice = "Could not capture a screenshot."
+				n.notice = n.text("screenshot_failed", "Could not capture a screenshot.")
 			}
 		})
 	}()

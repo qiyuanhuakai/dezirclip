@@ -49,10 +49,10 @@ func (n *nativeMain) closeEmoji() {
 func (n *nativeMain) emojiView(c *ui.Context) {
 	favorites := n.preferences["app.emoji_panel_tab"] == "favorites"
 	ui.Row(c).Padding(0, 8).Gap(5).Children(func() {
-		if uikit.Button(c, uikit.ButtonOptions{Label: "Emoji", Selected: !favorites, Disabled: n.mutating}).Clicked() && favorites {
+		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("emoji_tab"), Selected: !favorites, Disabled: n.mutating}).Clicked() && favorites {
 			n.saveSetting("app.emoji_panel_tab", "emoji")
 		}
-		if uikit.Button(c, uikit.ButtonOptions{Label: "Favorites", Selected: favorites, Disabled: n.mutating}).Clicked() && !favorites {
+		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("emoji_favorites"), Selected: favorites, Disabled: n.mutating}).Clicked() && !favorites {
 			n.saveSetting("app.emoji_panel_tab", "favorites")
 		}
 	})
@@ -65,7 +65,7 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).FillWidth().Padding(8).Gap(8).Children(func() {
 			for _, group := range emojiCatalog {
-				ui.Text(c, group.Name).FontWeight(600)
+				ui.Text(c, n.emojiGroupName(group.Name)).FontWeight(600)
 				ui.Grid(c).Columns(columns).Gap(4).Children(func() {
 					for _, emoji := range group.Emojis {
 						button := n.emojiButton(c, emoji, 35)
@@ -78,6 +78,33 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 			}
 		})
 	})
+}
+
+func (n *nativeMain) emojiGroupName(name string) string {
+	switch name {
+	case "常用":
+		return n.text("native_emoji_frequent")
+	case "表情":
+		return n.text("native_emoji_expressions")
+	case "人物":
+		return n.text("native_emoji_people")
+	case "手势":
+		return n.text("native_emoji_gestures")
+	case "动物":
+		return n.text("native_emoji_animals")
+	case "美食":
+		return n.text("native_emoji_food")
+	case "活动":
+		return n.text("native_emoji_activities")
+	case "旅行":
+		return n.text("native_emoji_travel")
+	case "物品":
+		return n.text("native_emoji_objects")
+	case "符号":
+		return n.text("native_emoji_symbols")
+	default:
+		return name
+	}
 }
 
 func (n *nativeMain) emojiButton(c *ui.Context, label string, height float32) ui.Element {
@@ -111,9 +138,9 @@ func (n *nativeMain) sendEmoji(kind, value string) {
 			n.mutating = false
 			switch {
 			case err != nil || outcome != "completed":
-				n.notice = "Could not send emoji."
+				n.notice = n.text("native_emoji_send_failed")
 			case !paste:
-				n.notice = "Copied to clipboard"
+				n.notice = n.text("screenshot_captured")
 			}
 		})
 	}()

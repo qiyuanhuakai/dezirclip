@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { usedNativeMainMessageKeys } from "./generate-mygo-main-messages.mjs";
 
 const rootDir = process.cwd();
 const srcDir = path.join(rootDir, "src");
@@ -133,7 +134,7 @@ const run = async () => {
   }
 
   const files = await collectFiles(srcDir);
-  const usedKeys = new Set();
+  const usedKeys = new Set(usedNativeMainMessageKeys());
   const templatePatterns = [];
 
   for (const file of files) {

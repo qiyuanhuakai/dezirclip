@@ -22,6 +22,7 @@ def check(desktop, helpers, *, native_main=False):
             ('app.screenshot_full_hotkey', 'Ctrl+Shift+F'), ('app.window_width', '750'), ('app.window_height', '650')]
         if native_main:
             settings.extend([('app.theme', 'mica'), ('app.arrow_key_selection', 'true'),
+                             ('app.hotkey', 'Ctrl+Shift+F8'),
                              ('app.preview_keyboard_enabled', 'false'),
                              ('app.privacy_protection', 'true'),
                              ('app.privacy_protection_custom_rules', '^fixture-private-only-20261120$')])
@@ -258,6 +259,46 @@ def check(desktop, helpers, *, native_main=False):
              'The settings transition resurrected protected content')
         print('Verified native protected capture, reveal and hide, focus-loss concealment, and authorized copy', flush=True)
 
+    def check_native_languages():
+        def saved_language():
+            with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+                return db.execute("SELECT value FROM settings WHERE key='app.language'").fetchone()[0]
+
+        def switch(label, option, code, changed_label):
+            def selector():
+                node = find(label, Atspi.Role.COMBO_BOX)
+                if node and node.get_state_set().contains(Atspi.StateType.SENSITIVE):
+                    return node
+
+            control = wait(selector, f'{label} was not an available language picker')
+            assert Atspi.Component.grab_focus(control)
+            keys(Gdk.KEY_space)
+            click(option)
+            wait(lambda: saved_language() == code, f'{code} was not stored')
+            wait(lambda: find(changed_label, Atspi.Role.COMBO_BOX), 'The saved language did not repaint the window')
+
+        click('General')
+        switch('Language', '繁體中文', 'tw', '語言')
+        wait(lambda: find('顯示搜尋欄'), 'Traditional Chinese settings did not render')
+        main = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+        click('隱藏')
+        wait(lambda: not find('語言', Atspi.Role.COMBO_BOX), 'The main window was not hidden')
+        chord(Gdk.KEY_F8)
+        wait(lambda: subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1] == main
+             and find('語言', Atspi.Role.COMBO_BOX),
+             'Traditional Chinese did not survive hiding and summoning the main window')
+
+        click('隱私設定')
+        wait(lambda: find('隱私保護'), 'The privacy settings did not use Traditional Chinese')
+        click('常規設定')
+        switch('語言', '简体中文', 'zh', '语言')
+        wait(lambda: find('显示搜索栏'), 'Simplified Chinese settings did not render')
+        click('返回')
+        wait(lambda: find('搜索剪切板...'), 'Simplified Chinese search label did not render')
+        click('设置')
+        switch('语言', 'English', 'en', 'Language')
+        print('Verified live language changes and persistence when summoning the native main window again', flush=True)
+
     env = dict(os.environ, DZC_MYGO_NATIVE_MAIN='1', MYGO_GPU='0') if native_main else None
     process = subprocess.Popen([desktop], env=env)
     try:
@@ -267,6 +308,7 @@ def check(desktop, helpers, *, native_main=False):
         click('Settings')
         if native_main:
             check_native_appearance()
+            check_native_languages()
         click('Tools')
         wait(lambda: find('Full Screen Capture'), 'Capture controls missing')
         clipboard.set_text('waiting for button full screenshot', -1)

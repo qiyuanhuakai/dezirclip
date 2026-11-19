@@ -107,9 +107,9 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 		actionsPerRow = 2
 	}
 	ui.Column(c).Padding(0, 8).Gap(5).Children(func() {
-		ui.TextInput(c, &tags.nameQuery).FillWidth().Label("Find a tag").Placeholder("Find a tag…")
+		ui.TextInput(c, &tags.nameQuery).FillWidth().Label(n.text("tag_search_label", "Find a tag")).Placeholder(n.text("tag_search_label", "Find a tag…"))
 		ui.Grid(c).Columns(pickers).Width(300).MaxWidthPercent(100).Gap(5).Children(func() {
-			options := []uikit.SelectOption{{Label: "Select a tag"}}
+			options := []uikit.SelectOption{{Label: n.text("native_select_tag")}}
 			search := strings.ToLower(strings.TrimSpace(tags.nameQuery))
 			if name, ok := searchTagName(search); ok {
 				search = name
@@ -121,9 +121,9 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 					})
 				}
 			}
-			kit.Select(c, &tags.selected, "Tag", options, len(options) == 1)
-			kit.Select(c, &tags.sort, "Sort tagged entries", []uikit.SelectOption{
-				{Value: "time", Label: "Recent"}, {Value: "count", Label: "Most used"},
+			kit.Select(c, &tags.selected, n.text("tag_name", "Tag"), options, len(options) == 1)
+			kit.Select(c, &tags.sort, n.text("native_sort_tag_entries"), []uikit.SelectOption{
+				{Value: "time", Label: n.text("sort_time")}, {Value: "count", Label: n.text("sort_usage", "Most used")},
 			}, tags.selected == "")
 		})
 		ui.Grid(c).Columns(actionsPerRow).MaxWidth(460).Gap(5).Children(func() {
@@ -132,10 +132,10 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 				id, label string
 				enabled   bool
 			}{
-				{"create", "New tag", true},
-				{"rename", "Rename", canEdit},
-				{"remove", "Remove", canEdit},
-				{"add", "Add entry", tags.selected != ""},
+				{"create", n.text("tag_create", "New tag"), true},
+				{"rename", n.text("tag_rename", "Rename"), canEdit},
+				{"remove", n.text("tag_remove", "Remove"), canEdit},
+				{"add", n.text("add_item", "Add entry"), tags.selected != ""},
 			}
 			for _, action := range actions {
 				if uikit.Button(c, uikit.ButtonOptions{Label: action.label, Disabled: n.mutating || !action.enabled}).Clicked() {
@@ -148,13 +148,13 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 			}
 		})
 		if tags.failed {
-			if uikit.Button(c, uikit.ButtonOptions{Label: "Retry loading tags"}).Clicked() {
+			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry", "Retry loading tags")}).Clicked() {
 				n.loadTagCatalog()
 			}
 		} else if tags.loading && len(tags.names) == 0 {
-			ui.Text(c, "Loading tags…").TextColor(c.Theme().TextMuted)
+			ui.Text(c, n.text("common_loading", "Loading tags…")).TextColor(c.Theme().TextMuted)
 		} else if len(tags.names) == 0 {
-			ui.Text(c, "No tags").TextColor(c.Theme().TextMuted)
+			ui.Text(c, n.text("tag_library_empty", "No tags")).TextColor(c.Theme().TextMuted)
 		}
 	})
 }
@@ -169,29 +169,30 @@ func nativeProtectedTag(name string) bool {
 
 func (n *nativeMain) tagLibraryDialog(c *ui.Context, kit uikit.Kit, tags *nativeTagLibrary) {
 	dialog := tags.dialog
-	title, confirm := "Create tag", "Create"
+	title, confirm := n.text("tag_create"), n.text("native_create")
 	switch dialog.action {
 	case "rename":
-		title, confirm = "Rename tag", "Save"
+		title, confirm = n.text("tag_rename"), n.text("common_save")
 	case "remove":
-		title, confirm = "Remove tag", "Remove"
+		title, confirm = n.text("tag_remove"), n.text("tag_remove", "Remove")
 	case "add":
-		title, confirm = "Add tagged entry", "Save"
+		title, confirm = n.text("add_item", "Add tagged entry"), n.text("common_save")
 	}
-	kit.Dialog(c, &dialog.open, title, "Close", n.mutating, func() {
+	kit.Dialog(c, &dialog.open, title, n.text("common_close"), n.mutating, func() {
 		switch dialog.action {
 		case "add":
-			input := ui.TextArea(c, &dialog.value).FillWidth().Height(80).Label("Entry text").ReadOnly(n.mutating)
+			input := ui.TextArea(c, &dialog.value).FillWidth().Height(80).Label(n.text("native_entry_text")).ReadOnly(n.mutating)
 			if dialog.focus {
 				input.Focus()
 			}
 			if n.private {
-				ui.Checkbox(c, &dialog.persistence, "Save to permanent history").Disabled(n.mutating)
+				ui.Checkbox(c, &dialog.persistence, n.text("native_save_to_history")).Disabled(n.mutating)
 			}
 		case "remove":
-			ui.Text(c, fmt.Sprintf("Remove the tag %q from all entries? The entries will remain in history.", dialog.tag)).Wrap()
+			message := n.text("native_remove_tag_message")
+			ui.Text(c, strings.ReplaceAll(message, "{tag}", dialog.tag)).Wrap()
 		default:
-			input := kit.TagNameField(c, &dialog.value, "Tag name", n.mutating)
+			input := kit.TagNameField(c, &dialog.value, n.text("tag_name"), n.mutating)
 			if dialog.focus {
 				input.Focus()
 			}
@@ -223,11 +224,11 @@ func (n *nativeMain) commitTagDialog(tags *nativeTagLibrary, dialog *nativeTagDi
 	}
 	if dialog.action == "create" || dialog.action == "rename" {
 		if utf8.RuneCountInString(name) > 80 {
-			dialog.message = "Enter a tag name of at most 80 characters."
+			dialog.message = n.text("native_tag_length")
 			return
 		}
 		if dialog.action == "rename" && nativeProtectedTag(name) {
-			dialog.message = "Choose a name outside the reserved sensitive tags."
+			dialog.message = n.text("tag_protected", "Choose a name outside the reserved sensitive tags.")
 			return
 		}
 		if dialog.action == "create" {
@@ -264,7 +265,7 @@ func (n *nativeMain) commitTagDialog(tags *nativeTagLibrary, dialog *nativeTagDi
 				return
 			}
 			if err != nil {
-				dialog.message = "Could not apply the tag change."
+				dialog.message = n.text("tag_action_failed", "Could not apply the tag change.")
 				return
 			}
 			switch action {

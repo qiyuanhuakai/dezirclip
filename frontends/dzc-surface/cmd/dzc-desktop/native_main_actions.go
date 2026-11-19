@@ -28,7 +28,7 @@ func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, act
 	reveal := false
 	if nativeConcealed(row) && action != nativePin && action != nativeDelete {
 		if !n.canUseProtectedRow(row) {
-			n.notice = "Reveal the sensitive entry first"
+			n.notice = n.text("privacy_reveal_first", "Reveal the sensitive entry first")
 			return
 		}
 		reveal = true
@@ -43,7 +43,7 @@ func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, act
 		n.update(session, func() {
 			n.mutating = false
 			if err != nil {
-				n.notice = "Clipboard action failed"
+				n.notice = n.text("privacy_action_failed", "Clipboard action failed")
 				return
 			}
 			n.notice = notice
@@ -78,7 +78,7 @@ func (n *nativeMain) dropFiles(paths []string) {
 		ctx, cancel := context.WithTimeout(session, 4*time.Second)
 		defer cancel()
 		if err := n.library.dropFiles(ctx, params); err != nil {
-			n.update(session, func() { n.notice = "Could not copy dropped files" })
+			n.update(session, func() { n.notice = n.text("native_drop_failed") })
 		}
 	}()
 }
@@ -145,7 +145,7 @@ func (n *nativeMain) transferRow(ctx context.Context, id int64, state protocol.R
 	if params.Paste {
 		return true, "", nil
 	}
-	return false, "Copied to clipboard", nil
+	return false, mainLanguage(preferences["app.language"]).text("screenshot_captured"), nil
 }
 
 func (n *nativeMain) canAutoPaste(ctx context.Context) (bool, error) {

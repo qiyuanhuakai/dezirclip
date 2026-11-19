@@ -31,7 +31,7 @@ func (n *nativeMain) view(c *ui.Context) {
 	}
 	n.list.List.Label = func(index int) string {
 		if index >= 0 && index < len(n.history.rows) {
-			return nativeCardSummary(n.history.rows[index])
+			return nativeCardSummary(n.history.rows[index], n.language())
 		}
 		return ""
 	}
@@ -43,41 +43,41 @@ func (n *nativeMain) view(c *ui.Context) {
 	main.Children(func() {
 		queryComposing := false
 		actions := []uikit.HeaderAction{
-			{Icon: "pin", Label: "Keep on top", Active: n.pinned, Run: n.togglePin, Disabled: n.mutating},
-			{Icon: "hide", Label: "Hide", Run: func() { n.shell.hideMain(n.window) }},
+			{Icon: "pin", Label: n.text("native_keep_on_top"), Active: n.pinned, Run: n.togglePin, Disabled: n.mutating},
+			{Icon: "hide", Label: n.text("hide"), Run: func() { n.shell.hideMain(n.window) }},
 		}
 		header := uikit.HeaderOptions{Title: "DezirClip", Actions: actions}
 		if n.showSettings {
-			header.Title = "Settings"
-			header.Back = &uikit.HeaderAction{Icon: "back", Label: "Back", Run: func() { n.showSettings = false }}
+			header.Title = n.text("settings")
+			header.Back = &uikit.HeaderAction{Icon: "back", Label: n.text("native_back"), Run: func() { n.showSettings = false }}
 		} else if n.showEmoji {
-			header.Title = "Emoji"
-			header.Back = &uikit.HeaderAction{Icon: "back", Label: "Back", Run: n.closeEmoji, Disabled: n.mutating}
+			header.Title = n.text("emoji_tab")
+			header.Back = &uikit.HeaderAction{Icon: "back", Label: n.text("native_back"), Run: n.closeEmoji, Disabled: n.mutating}
 		} else if n.tagLibrary != nil {
-			header.Title = "Tags"
-			header.Back = &uikit.HeaderAction{Icon: "back", Label: "Back", Run: n.closeTagLibrary, Disabled: n.mutating}
-			header.Query, header.Placeholder = &n.tagLibrary.query, "Search tagged entries…"
+			header.Title = n.text("tags")
+			header.Back = &uikit.HeaderAction{Icon: "back", Label: n.text("native_back"), Run: n.closeTagLibrary, Disabled: n.mutating}
+			header.Query, header.Placeholder = &n.tagLibrary.query, n.text("tag_content_search", "Search tagged entries…")
 		} else {
 			header.Actions = append(actions[:1:1], uikit.HeaderAction{
-				Icon: "settings", Label: "Settings", Run: n.openSettings,
+				Icon: "settings", Label: n.text("settings"), Run: n.openSettings,
 			}, actions[1])
 			if n.preferences["app.tag_manager_enabled"] != "false" {
 				header.Actions = append([]uikit.HeaderAction{{
-					Icon: "tag", Label: "Tags", Run: n.openTagLibrary, Disabled: n.mutating,
+					Icon: "tag", Label: n.text("tags"), Run: n.openTagLibrary, Disabled: n.mutating,
 				}}, header.Actions...)
 			}
 			if n.preferences["app.emoji_panel_enabled"] == "true" {
 				header.Actions = append([]uikit.HeaderAction{{
-					Icon: "emoji", Label: "Emoji", Run: n.openEmoji, Disabled: n.mutating,
+					Icon: "emoji", Label: n.text("emoji_tab"), Run: n.openEmoji, Disabled: n.mutating,
 				}}, header.Actions...)
 			}
 			if n.focusSearch {
 				n.temporarySearch = true
 			}
 			if n.preferences["app.show_search_box"] != "false" || n.temporarySearch || n.query != "" {
-				header.Query, header.Placeholder, header.Filter = &n.query, "Search clipboard…", &n.kind
+				header.Query, header.Placeholder, header.Filter = &n.query, n.text("search_placeholder", "Search clipboard…"), &n.kind
 				header.Filters = []uikit.HeaderFilter{
-					{ID: "text", Label: "Text"}, {ID: "image", Label: "Images"}, {ID: "files", Label: "Files"},
+					{ID: "text", Label: n.text("type_text")}, {ID: "image", Label: n.text("native_images")}, {ID: "files", Label: n.text("native_files")},
 				}
 			}
 		}
@@ -106,8 +106,8 @@ func (n *nativeMain) view(c *ui.Context) {
 		}
 		if n.failed {
 			ui.Row(c).Padding(8).AlignItems(ui.Center).Gap(8).Children(func() {
-				ui.Text(c, "Clipboard service unavailable").Grow(1).TextColor(c.Theme().Danger)
-				if uikit.Button(c, uikit.ButtonOptions{Label: "Retry"}).Clicked() {
+				ui.Text(c, n.text("native_service_unavailable")).Grow(1).TextColor(c.Theme().Danger)
+				if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry")}).Clicked() {
 					n.prepare(n.resume)
 				}
 			})
@@ -127,7 +127,7 @@ func (n *nativeMain) view(c *ui.Context) {
 
 func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 	if n.private {
-		ui.Text(c, "Private session").TextColor(c.Theme().TextMuted).Padding(4, 8)
+		ui.Text(c, n.text("privacy_session_title", "Private session")).TextColor(c.Theme().TextMuted).Padding(4, 8)
 	}
 	generation := n.history.generation
 	compact := n.preferences["app.compact_mode"] == "true"
@@ -137,8 +137,8 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 	var hovered protocol.DesktopEntry
 	var hoverBounds ui.Rect
 	list := kit.HistoryList(c, &n.list, uikit.HistoryListOptions{
-		Count: len(n.history.rows), Label: "Clipboard history", EmptyLabel: "No clipboard entries",
-		LoadingLabel: "Loading…", MoreLabel: "Load more…", Loading: n.reading, HasMore: n.history.more && !n.failed,
+		Count: len(n.history.rows), Label: n.text("native_clipboard_history"), EmptyLabel: n.text("no_records", "No clipboard entries"),
+		LoadingLabel: n.text("common_loading", "Loading…"), MoreLabel: n.text("tag_load_more", "Load more…"), Loading: n.reading, HasMore: n.history.more && !n.failed,
 		Compact:    compact,
 		OnLoadMore: n.loadPage,
 		Row: func(cell ui.ListRow) {
@@ -146,15 +146,15 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 				return
 			}
 			row := n.history.rows[cell.Index]
-			pinLabel := "Pin entry"
+			pinLabel := n.text("pin", "Pin entry")
 			if row.IsPinned {
-				pinLabel = "Unpin entry"
+				pinLabel = n.text("unpin", "Unpin entry")
 			}
 			actions := []uikit.HeaderAction{
 				{Icon: "pin", Label: pinLabel, Disabled: n.mutating, Run: func() { n.rowAction(row, generation, nativePin) }},
-				{Icon: "hide", Label: "Delete entry", Disabled: n.mutating, Run: func() { n.rowAction(row, generation, nativeDelete) }},
+				{Icon: "hide", Label: n.text("delete", "Delete entry"), Disabled: n.mutating, Run: func() { n.rowAction(row, generation, nativeDelete) }},
 			}
-			summary := nativeCardSummary(row)
+			summary := nativeCardSummary(row, n.language())
 			protected := n.protectedBody(row)
 			if nativeConcealed(row) {
 				actions = append(actions, n.protectedRowAction(row, generation))
@@ -198,7 +198,7 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 	}
 	if first > 0 && n.preferences["app.show_scroll_top_button"] != "false" {
 		ui.Row(c).Padding(0, 8, 5).Justify(ui.End).Children(func() {
-			if uikit.Button(c, uikit.ButtonOptions{Label: "Scroll to top"}).Clicked() {
+			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("scroll_to_top", "Scroll to top")}).Clicked() {
 				n.list.List.ScrollTo(0, ui.Start)
 			}
 		})

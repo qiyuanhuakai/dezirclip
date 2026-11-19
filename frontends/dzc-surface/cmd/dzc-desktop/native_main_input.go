@@ -144,7 +144,7 @@ func (n *nativeMain) previewKeyboardRow(row protocol.DesktopEntry, generation ui
 
 func (n *nativeMain) previewAppearance() previewAppearance {
 	opacity := opacityPreference(n.preferences["app.preview_opacity"], n.preferences["app.surface_opacity"])
-	language := n.preferences["app.language"]
+	language := string(n.language())
 	preset := n.preset()
 	appearance := theme.Appearance{Mode: n.mode, Locale: language, Opacity: float64(opacity) / 100, Tokens: preset.Tokens()}
 	if tint := preset.SurfaceTint(); tint != "" {
@@ -155,9 +155,19 @@ func (n *nativeMain) previewAppearance() previewAppearance {
 	}
 	return previewAppearance{
 		Language: language, Palette: &appearance, Opacity: opacity, Dark: n.mode == "dark",
-		Title: "Preview", Pin: "Pin this preview", Close: "Close preview", Retry: "Retry", Concealed: "Preview hidden",
-		Failed: "Preview action failed", OpacityLabel: "Background opacity", ZoomIn: "Zoom in", ZoomOut: "Zoom out",
-		Fit: "Fit to window", FitLabel: "Fit", Actual: "Actual size", ImageZoom: "Image zoom",
+		Title:        n.text("preview_toolbar_title"),
+		Pin:          n.text("preview_toolbar_pin"),
+		Close:        n.text("preview_toolbar_close"),
+		Retry:        n.text("common_retry"),
+		Concealed:    n.text("native_preview_hidden"),
+		Failed:       n.text("native_preview_failed"),
+		OpacityLabel: n.text("preview_toolbar_opacity"),
+		ZoomIn:       n.text("preview_toolbar_zoom_in"),
+		ZoomOut:      n.text("preview_toolbar_zoom_out"),
+		Fit:          n.text("preview_toolbar_fit"),
+		FitLabel:     n.text("preview_toolbar_fit_label"),
+		Actual:       n.text("preview_toolbar_actual", "Actual size"),
+		ImageZoom:    n.text("preview_toolbar_zoom"),
 	}
 }
 
@@ -200,26 +210,26 @@ func (n *nativeMain) entryMenu(card ui.Element, row protocol.DesktopEntry, gener
 	card.ContextMenu(func(menu *ui.Menu) {
 		disabled := n.mutating || n.failed || n.history.generation != generation
 		contentDisabled := disabled || nativeConcealed(row) && n.protectedBody(row) == nil
-		if menu.Item("Preview").Disabled(contentDisabled).Chosen() {
+		if menu.Item(n.text("preview_toolbar_title")).Disabled(contentDisabled).Chosen() {
 			n.hover.reset()
 			n.showPreview(row, generation, card.Bounds())
 		}
-		if menu.Item("Copy").Disabled(contentDisabled).Chosen() {
+		if menu.Item(n.text("common_copy")).Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeCopy)
 		}
-		if menu.Item("Paste").Disabled(contentDisabled).Chosen() {
+		if menu.Item(n.text("common_paste")).Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativePaste)
 		}
-		if menu.Item("Paste with formatting").Disabled(contentDisabled).Chosen() {
+		if menu.Item(n.text("native_paste_formatted")).Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeRichPaste)
 		}
-		if row.ContentType == "image" && menu.Item("Copy image as Base64").Disabled(contentDisabled).Chosen() {
+		if row.ContentType == "image" && menu.Item(n.text("native_copy_base64")).Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeBase64)
 		}
-		if row.IsExternal && menu.Item("Open").Disabled(contentDisabled).Chosen() {
+		if row.IsExternal && menu.Item(n.text("open")).Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeOpen)
 		}
-		if menu.Item("Edit tags").Disabled(disabled).Chosen() {
+		if menu.Item(n.text("native_edit_tags")).Disabled(disabled).Chosen() {
 			n.editTags(row, generation)
 		}
 	})

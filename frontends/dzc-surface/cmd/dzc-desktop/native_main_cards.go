@@ -30,16 +30,16 @@ func nativeConcealed(row protocol.DesktopEntry) bool {
 	return false
 }
 
-func nativeCardSummary(row protocol.DesktopEntry) string {
+func nativeCardSummary(row protocol.DesktopEntry, language nativeLanguage) string {
 	if nativeConcealed(row) {
-		return "Sensitive content hidden"
+		return language.text("privacy_sensitive_hidden", "Sensitive content hidden")
 	}
-	return visibleCardSummary(row)
+	return visibleCardSummary(row, language)
 }
 
-func visibleCardSummary(row protocol.DesktopEntry) string {
+func visibleCardSummary(row protocol.DesktopEntry, language nativeLanguage) string {
 	if row.ContentType == "image" {
-		return "Clipboard image"
+		return language.text("image_preview", "Clipboard image")
 	}
 	if row.Preview != "" {
 		return row.Preview
@@ -51,7 +51,7 @@ func (n *nativeMain) cardBody(c *ui.Context, row protocol.DesktopEntry, protecte
 	if nativeConcealed(row) {
 		if protected != nil {
 			if row.ContentType == "image" {
-				return func() { drawHistoryImage(c, protected.image, true, compact) }
+				return func() { n.drawHistoryImage(c, protected.image, true, compact) }
 			}
 			if len(protected.attachments) != 0 {
 				return func() { uikit.HistoryAttachments(c, protected.attachments, compact) }
@@ -63,7 +63,7 @@ func (n *nativeMain) cardBody(c *ui.Context, row protocol.DesktopEntry, protecte
 	case "image":
 		return func() { n.historyImage(c, row, compact) }
 	case "file", "files", "video":
-		attachments := uikit.ParsePreviewAttachments("", nativeCardSummary(row))
+		attachments := uikit.ParsePreviewAttachments("", visibleCardSummary(row, n.language()))
 		if len(attachments) != 0 {
 			return func() { uikit.HistoryAttachments(c, attachments, compact) }
 		}
@@ -77,10 +77,10 @@ func (n *nativeMain) historyImage(c *ui.Context, row protocol.DesktopEntry, comp
 	if !loaded {
 		n.loadCardImage(key)
 	}
-	drawHistoryImage(c, preview, loaded, compact)
+	n.drawHistoryImage(c, preview, loaded, compact)
 }
 
-func drawHistoryImage(c *ui.Context, preview ui.ImageSource, loaded, compact bool) {
+func (n *nativeMain) drawHistoryImage(c *ui.Context, preview ui.ImageSource, loaded, compact bool) {
 	width, height := float32(178), float32(100)
 	if compact {
 		width, height = 78, 44
@@ -94,9 +94,9 @@ func drawHistoryImage(c *ui.Context, preview ui.ImageSource, loaded, compact boo
 	box.Children(func() {
 		switch {
 		case preview != nil:
-			ui.Image(c, preview).Fill().Fit(ui.Contain).Label("Clipboard image thumbnail")
+			ui.Image(c, preview).Fill().Fit(ui.Contain).Label(n.text("native_image_thumbnail"))
 		case loaded:
-			ui.Text(c, "Image preview unavailable").FontSize(11).TextColor(c.Theme().TextMuted).Wrap()
+			ui.Text(c, n.text("clipboard_image_preview_unavailable")).FontSize(11).TextColor(c.Theme().TextMuted).Wrap()
 		}
 	})
 }

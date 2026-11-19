@@ -12,15 +12,15 @@ type nativeFontChoices struct {
 }
 
 type nativeRangeSetting struct {
-	key, label, unit           string
+	key, unit                  string
 	minimum, maximum, fallback int
 }
 
 var (
-	nativeItemSize       = nativeRangeSetting{"app.clipboard_item_font_size", "Item font size", " px", 11, 18, 13}
-	nativeTagSize        = nativeRangeSetting{"app.clipboard_tag_font_size", "Tag font size", " px", 8, 14, 10}
-	nativeSurfaceOpacity = nativeRangeSetting{key: "app.surface_opacity", label: "Surface opacity", unit: "%", maximum: 100}
-	nativePreviewOpacity = nativeRangeSetting{key: "app.preview_opacity", label: "Preview opacity", unit: "%", maximum: 100}
+	nativeItemSize       = nativeRangeSetting{"app.clipboard_item_font_size", " px", 11, 18, 13}
+	nativeTagSize        = nativeRangeSetting{"app.clipboard_tag_font_size", " px", 8, 14, 10}
+	nativeSurfaceOpacity = nativeRangeSetting{key: "app.surface_opacity", unit: "%", maximum: 100}
+	nativePreviewOpacity = nativeRangeSetting{key: "app.preview_opacity", unit: "%", maximum: 100}
 )
 
 func (s nativeRangeSetting) value(preferences map[string]string) int {
@@ -32,16 +32,16 @@ func (s nativeRangeSetting) value(preferences map[string]string) int {
 }
 
 func (n *nativeMain) typographySettings(c *ui.Context) {
-	n.rangeSetting(c, nativeItemSize, nativeItemSize.value(n.preferences))
-	n.rangeSetting(c, nativeTagSize, nativeTagSize.value(n.preferences))
+	n.rangeSetting(c, nativeItemSize, n.text("clipboard_item_font_size", "Item font size"), nativeItemSize.value(n.preferences))
+	n.rangeSetting(c, nativeTagSize, n.text("clipboard_tag_font_size", "Tag font size"), nativeTagSize.value(n.preferences))
 
 	if n.fontChoices == nil {
 		n.findFonts()
-		ui.Text(c, "Loading fonts…").TextColor(c.Theme().TextMuted)
+		ui.Text(c, n.text("native_loading_fonts")).TextColor(c.Theme().TextMuted)
 		return
 	}
-	n.fontSetting(c, "app.font_main", "Interface font", "Reset interface font", n.fontChoices.main)
-	n.fontSetting(c, "app.font_mono", "Monospace font", "Reset monospace font", n.fontChoices.mono)
+	n.fontSetting(c, "app.font_main", n.text("font_main", "Interface font"), n.text("native_reset_ui_font"), n.fontChoices.main)
+	n.fontSetting(c, "app.font_mono", n.text("font_mono", "Monospace font"), n.text("native_reset_mono_font"), n.fontChoices.mono)
 }
 
 func (n *nativeMain) findFonts() {
@@ -71,7 +71,7 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label, resetLabel string, c
 	selected := saved
 	ui.Text(c, label).FontWeight(600)
 	ui.Row(c).Gap(6).Wrap().AlignItems(ui.Center).Children(func() {
-		field := ui.Combobox(c, &selected, choices).Label(label).Placeholder("Default (Theme)").
+		field := ui.Combobox(c, &selected, choices).Label(label).Placeholder(n.text("font_default_option")).
 			Grow(1).MinWidth(150).Disabled(n.mutating || len(choices) == 0)
 		if field.Changed() && selected != saved {
 			n.saveSetting(key, selected)
@@ -82,7 +82,7 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label, resetLabel string, c
 	})
 }
 
-func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, saved int) int {
+func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, label string, saved int) int {
 	type draft struct {
 		value float64
 		dirty bool
@@ -93,9 +93,9 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, sav
 		edit.value = float64(saved)
 	}
 	row.Children(func() {
-		ui.Text(c, setting.label).MinWidth(100)
+		ui.Text(c, label).MinWidth(100)
 		slider := ui.Slider(c, &edit.value, float64(setting.minimum), float64(setting.maximum)).
-			Step(1).Label(setting.label).Grow(1).Disabled(n.mutating)
+			Step(1).Label(label).Grow(1).Disabled(n.mutating)
 		edit.dirty = edit.dirty || slider.Changed()
 		value := int(edit.value)
 		// Keep dragging local and save once the pointer is released.

@@ -11,6 +11,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/model"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
@@ -158,7 +159,12 @@ func (n *nativeMain) configured(settings map[string]string) {
 	n.configureThemes(themeName, settings["app.custom_themes"])
 	appearanceChanged := themeName != n.theme || mode != n.mode ||
 		(settings["app.show_app_border"] == "false") != (n.preferences["app.show_app_border"] == "false")
+	language := mainLanguage(settings["app.language"])
+	languageChanged := n.preferences == nil || n.language() != language
 	n.preferences, n.theme, n.mode = settings, themeName, mode
+	if languageChanged {
+		mygo.App.SetLocale(model.NativeLocale(string(language)))
+	}
 	if appearanceChanged || oldBase != n.themeBase() {
 		n.applyAppearance()
 	}
@@ -416,7 +422,7 @@ func (n *nativeMain) writeSetting(write func(context.Context, uint64) error) {
 		n.update(session, func() {
 			n.mutating = false
 			if err != nil {
-				n.notice = "Could not save settings."
+				n.notice = n.text("native_setting_save_failed")
 				return
 			}
 			n.prepare(n.resume)

@@ -80,7 +80,7 @@ func TestNativeMainShellOpacity(t *testing.T) {
 		customizable := name == "mica" || name == "acrylic" || name == "liquid-glass"
 		for _, mode := range []string{"light", "dark"} {
 			t.Run(name+"/"+mode, func(t *testing.T) {
-				window := nativeMain{theme: name, mode: mode, preferences: map[string]string{"app.surface_opacity": "20"}}
+				window := nativeMain{theme: name, mode: mode, preferences: map[string]string{"app.surface_opacity": "20", "app.language": "en"}}
 				tester := ui.NewTester(window.view, 360, 400)
 				want := uint8(255)
 				if customizable {
@@ -113,7 +113,7 @@ func TestNativePreviewOpacityKeepsIndependentSetting(t *testing.T) {
 func TestNativeMainPrivacySettingsAreClosedOnReentry(t *testing.T) {
 	for _, width := range []int{360, 700} {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
-			window := nativeMain{}
+			window := nativeMain{preferences: map[string]string{"app.language": "en"}}
 			tester := ui.NewTester(window.view, width, 650)
 			click := func(label string) {
 				t.Helper()
@@ -147,7 +147,7 @@ func TestNativeMainNavigationAndDismissal(t *testing.T) {
 	for _, theme := range []string{"retro", "mica", "acrylic", "liquid-glass", "macos", "scifi"} {
 		for _, mode := range []string{"light", "dark"} {
 			t.Run(theme+"/"+mode, func(t *testing.T) {
-				window := nativeMain{theme: theme, mode: mode, private: true, preferences: map[string]string{"app.color_mode": mode}}
+				window := nativeMain{theme: theme, mode: mode, private: true, preferences: map[string]string{"app.color_mode": mode, "app.language": "en"}}
 				window.history.rows = []protocol.DesktopEntry{{Id: 1, Preview: "Fixture history entry", SourceApp: "Editor", Tags: []string{"Work"}}}
 				tester := ui.NewTester(window.view, 360, 400)
 				if !tester.HasText("Fixture history entry") || !tester.HasText("Private session") {
@@ -185,7 +185,7 @@ func TestNativeMainNavigationAndDismissal(t *testing.T) {
 }
 
 func TestNativeMainSearchShortcutWithoutFocusedControl(t *testing.T) {
-	window := nativeMain{preferences: map[string]string{"app.show_search_box": "false"}}
+	window := nativeMain{preferences: map[string]string{"app.show_search_box": "false", "app.language": "en"}}
 	tester := ui.NewTester(window.view, 360, 400)
 	if _, ok := tester.Find("Search clipboard…"); ok {
 		t.Fatal("search box was initially visible")

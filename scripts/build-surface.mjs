@@ -46,6 +46,9 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
   if (!/^go version go1\.27\.3 (windows|linux)\/(amd64|arm64)$/.test(goVersion)) throw new Error('Surface requires the pinned Go 1.27.3 toolchain');
   run(process.execPath, ['scripts/set-release-version.mjs', '--check'], { stdio: 'inherit' });
   run(process.execPath, ['scripts/generate-surface-tokens.mjs', '--check']);
+  if (component === 'mygo-desktop') {
+    run(process.execPath, ['scripts/generate-mygo-main-messages.mjs', '--check'], { stdio: 'inherit' });
+  }
   const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
   const revision = run('git', ['rev-parse', 'HEAD']).trim();
   if (!/^[a-f0-9]{40}$/.test(revision) || (env.DZC_BUILD_REVISION && env.DZC_BUILD_REVISION.toLowerCase() !== revision)) throw new Error('Surface build revision must match the checkout');
@@ -61,7 +64,7 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
     const paths = run('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--',
       'frontends/dzc-surface', 'clients/go', 'packages/ui-native', 'packages/ui-presets', 'design', 'package.json', 'Cargo.toml', 'Cargo.lock', 'src-tauri/tauri.conf.json',
       ...(component === 'mygo-desktop' ? ['src', 'public', 'packages/ui-react', 'index.html', 'vite.config.ts', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.json',
-        'src-tauri/icons/icon.ico', 'scripts/build-windows-icon.py'] : []),
+        'src-tauri/icons/icon.ico', 'scripts/build-windows-icon.py', 'scripts/generate-mygo-main-messages.mjs'] : []),
       'scripts/set-release-version.mjs', 'scripts/updater-release.mjs', 'scripts/build-surface.mjs', 'scripts/mygo-surface-patch.mjs', 'scripts/generate-surface-tokens.mjs'])
       .split('\0').filter(Boolean).sort();
     return paths.map(path => ({ path, sha256: sha256(readFileSync(join(root, path))) }));

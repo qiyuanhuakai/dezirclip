@@ -70,9 +70,9 @@ func (n *nativeMain) pruneProtectedRows(first, last int) {
 
 func (n *nativeMain) protectedRowAction(row protocol.DesktopEntry, generation uint64) uikit.HeaderAction {
 	key := nativeCardKey{row.Id, row.Timestamp}
-	icon, label := "reveal", "Reveal sensitive entry"
+	icon, label := "reveal", n.text("native_reveal_sensitive")
 	if n.protectedRows[key] != nil {
-		icon, label = "conceal", "Hide sensitive entry"
+		icon, label = "conceal", n.text("native_hide_sensitive")
 	}
 	return uikit.HeaderAction{
 		Icon: icon, Label: label, Disabled: n.mutating || n.failed,
@@ -92,7 +92,7 @@ func (n *nativeMain) toggleProtectedRow(row protocol.DesktopEntry, generation ui
 	if n.window == nil || !mainWindowFocused(n.window) || state.ServiceInstanceId == "" {
 		return
 	}
-	session := n.session
+	session, language := n.session, n.language()
 	ctx, cancel := context.WithTimeout(session, 4*time.Second)
 	request := &nativeProtectedRow{cancel: cancel}
 	if n.protectedRows == nil {
@@ -112,7 +112,7 @@ func (n *nativeMain) toggleProtectedRow(row protocol.DesktopEntry, generation ui
 		result, err := n.library.Entry(ctx, params)
 		var body *nativeProtectedBody
 		if err == nil && ctx.Err() == nil && result.Timestamp == key.timestamp {
-			body = newProtectedBody(result.DesktopEntry)
+			body = newProtectedBody(result.DesktopEntry, language)
 		}
 		n.update(session, func() {
 			if n.protectedRows[key] != request {
@@ -124,7 +124,7 @@ func (n *nativeMain) toggleProtectedRow(row protocol.DesktopEntry, generation ui
 			}
 			if body == nil {
 				n.forgetProtectedRow(key)
-				n.notice = "Could not reveal the sensitive entry"
+				n.notice = n.text("privacy_action_failed", "Could not reveal the sensitive entry")
 				return
 			}
 			request.body = body
@@ -132,8 +132,8 @@ func (n *nativeMain) toggleProtectedRow(row protocol.DesktopEntry, generation ui
 	}()
 }
 
-func newProtectedBody(row protocol.DesktopEntry) *nativeProtectedBody {
-	summary := visibleCardSummary(row)
+func newProtectedBody(row protocol.DesktopEntry, language nativeLanguage) *nativeProtectedBody {
+	summary := visibleCardSummary(row, language)
 	for index := range summary {
 		if index >= 4096 {
 			summary = strings.Clone(summary[:index]) + "…"
