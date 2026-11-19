@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -26,9 +25,13 @@ func (n *nativeMain) view(c *ui.Context) {
 		}
 		return ""
 	}
-	ui.Column(c).Fill().Gap(6).Background(c.Theme().Background).Children(func() {
+	main := ui.Column(c).Fill().Gap(6).Background(c.Theme().Background)
+	if n.preferences["app.show_app_border"] != "false" {
+		main.Border(1, c.Theme().Border)
+	}
+	queryFocused := false
+	main.Children(func() {
 		queryComposing := false
-		queryFocused := false
 		actions := []uikit.HeaderAction{
 			{Icon: "pin", Label: "Keep on top", Active: n.pinned, Run: n.togglePin, Disabled: n.mutating},
 			{Icon: "hide", Label: "Hide", Run: func() { n.shell.hideMain(n.window) }},
@@ -50,9 +53,14 @@ func (n *nativeMain) view(c *ui.Context) {
 					Icon: "tag", Label: "Tags", Run: n.openTagLibrary, Disabled: n.mutating,
 				}}, header.Actions...)
 			}
-			header.Query, header.Placeholder, header.Filter = &n.query, "Search clipboard…", &n.kind
-			header.Filters = []uikit.HeaderFilter{
-				{ID: "text", Label: "Text"}, {ID: "image", Label: "Images"}, {ID: "files", Label: "Files"},
+			if n.focusSearch {
+				n.temporarySearch = true
+			}
+			if n.preferences["app.show_search_box"] != "false" || n.temporarySearch || n.query != "" {
+				header.Query, header.Placeholder, header.Filter = &n.query, "Search clipboard…", &n.kind
+				header.Filters = []uikit.HeaderFilter{
+					{ID: "text", Label: "Text"}, {ID: "image", Label: "Images"}, {ID: "files", Label: "Files"},
+				}
 			}
 		}
 		if header.Query != nil {
@@ -72,7 +80,6 @@ func (n *nativeMain) view(c *ui.Context) {
 			if n.tagLibrary == nil || n.tagLibrary.selected != "" {
 				n.historyView(c, kit)
 			}
-			n.historyShortcuts(c, queryFocused)
 		}
 		if n.notice != "" {
 			ui.Text(c, n.notice).Padding(4, 8).TextColor(c.Theme().TextMuted)
@@ -86,6 +93,7 @@ func (n *nativeMain) view(c *ui.Context) {
 			})
 		}
 	})
+	n.historyShortcuts(c, queryFocused)
 	if n.tags != nil {
 		n.tagEditorView(c, kit, n.tags)
 	}
@@ -137,6 +145,7 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 			}
 		},
 	})
+	list.TrackScroll(&n.historyScroll).HandleInput(n.historyWheel)
 	n.hoverPreview(hovered, generation, hoverBounds)
 	if n.focusList {
 		list.Focus()
@@ -145,40 +154,11 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 	if list.Submitted() && n.history.selected >= 0 && n.history.selected < len(n.history.rows) {
 		n.selectedAction(nativePaste)
 	}
-}
-
-func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit) {
-	ui.Column(c).Padding(12).Gap(8).Children(func() {
-		ui.Text(c, "Theme").FontWeight(600)
-		selected := n.theme
-		if selected == "" {
-			selected = "mica"
-		}
-		if kit.Select(c, &selected, "Theme", []uikit.SelectOption{
-			{Value: "retro", Label: "Retro"}, {Value: "mica", Label: "Mica"}, {Value: "acrylic", Label: "Acrylic"},
-			{Value: "liquid-glass", Label: "Liquid Glass"}, {Value: "macos", Label: "macOS"}, {Value: "scifi", Label: "Sci-Fi"},
-		}, n.mutating).Changed() {
-			n.saveSetting("app.theme", selected)
-		}
-		ui.Text(c, "Color mode").FontWeight(600)
-		mode := n.preferences["app.color_mode"]
-		if mode == "" {
-			mode = "system"
-		}
-		if kit.Select(c, &mode, "Color mode", []uikit.SelectOption{
-			{Value: "system", Label: "System"}, {Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"},
-		}, n.mutating).Changed() {
-			n.saveSetting("app.color_mode", mode)
-		}
-		for _, setting := range []struct{ key, label string }{
-			{"app.compact_mode", "Compact history"},
-			{"app.arrow_key_selection", "Select history with arrow keys"},
-			{"app.preview_keyboard_enabled", "Preview keyboard selection"},
-		} {
-			enabled := n.preferences[setting.key] == "true"
-			if ui.Checkbox(c, &enabled, setting.label).Disabled(n.mutating).Changed() {
-				n.saveSetting(setting.key, strconv.FormatBool(enabled))
+	if first, _ := n.list.List.Visible(); first > 0 && n.preferences["app.show_scroll_top_button"] != "false" {
+		ui.Row(c).Padding(0, 8, 5).Justify(ui.End).Children(func() {
+			if uikit.Button(c, uikit.ButtonOptions{Label: "Scroll to top"}).Clicked() {
+				n.list.List.ScrollTo(0, ui.Start)
 			}
-		}
-	})
+		})
+	}
 }

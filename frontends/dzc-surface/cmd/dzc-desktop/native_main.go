@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
@@ -26,11 +27,18 @@ type nativeMain struct {
 	resume           uint64
 	history          nativeHistory
 	list             uikit.HistoryListState
+	historyScroll    ui.ScrollState
+	searchWheel      float32
+	towardsTop       time.Time
 	preferences      map[string]string
 	query, kind      string
 	theme, mode      string
 	focusSearch      bool
+	temporarySearch  bool
 	showSettings     bool
+	settingsSection  string
+	settingsOpen     map[string]*bool
+	capturing        bool
 	reading          bool
 	private          bool
 	pinned           bool
@@ -55,6 +63,9 @@ func (n *nativeMain) stopSession() {
 	n.history.reset(protocol.RuntimeState{}, nativeHistoryFilter{})
 	n.reading, n.failed, n.mutating, n.private = false, false, false, false
 	n.notice, n.keyboard, n.focusList = "", false, false
+	n.temporarySearch = false
+	n.searchWheel, n.towardsTop = 0, time.Time{}
+	n.capturing = false
 	n.tags = nil
 	n.tagLibrary = nil
 	n.resetPreviewSelection()
@@ -72,10 +83,15 @@ func (n *nativeMain) open(session context.Context) {
 	for session.Err() == nil {
 		read, cancel := context.WithTimeout(session, 4*time.Second)
 		status, err := n.library.Status(read)
+		var settings map[string]string
 		if err == nil {
-			raw, _ := n.library.Preferences(read)
-			settings := make(map[string]string)
-			_ = json.Unmarshal(raw, &settings)
+			var raw json.RawMessage
+			raw, err = n.library.preferences(read, status.State)
+			if err == nil {
+				err = json.Unmarshal(raw, &settings)
+			}
+		}
+		if err == nil {
 			mode := n.colorMode(read, settings)
 			cancel()
 			n.update(session, func() {
@@ -264,7 +280,7 @@ func (n *nativeMain) writeSetting(write func(context.Context, uint64) error) {
 	if n.session == nil || n.mutating || n.history.state.ServiceInstanceId == "" {
 		return
 	}
-	n.mutating = true
+	n.mutating, n.notice = true, ""
 	session, state := n.session, n.history.state
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 4*time.Second)
@@ -273,7 +289,7 @@ func (n *nativeMain) writeSetting(write func(context.Context, uint64) error) {
 		n.update(session, func() {
 			n.mutating = false
 			if err != nil {
-				n.failed = true
+				n.notice = "Could not save settings."
 				return
 			}
 			n.prepare(n.resume)

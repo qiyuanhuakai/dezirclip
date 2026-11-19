@@ -4,6 +4,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -45,6 +46,9 @@ func (n *nativeMain) searchKey(key ui.TextKey) bool {
 	case ui.KeyEscape:
 		if !n.closePreview() {
 			n.focusList = true
+			if n.tagLibrary == nil && n.query == "" && n.preferences["app.show_search_box"] == "false" {
+				n.temporarySearch = false
+			}
 		}
 		return true
 	case ui.KeyUp, ui.KeyDown:
@@ -72,6 +76,33 @@ func (n *nativeMain) selectedAction(action nativeRowAction) {
 	if row, ok := n.selectedEntry(); ok {
 		n.rowAction(row, n.history.generation, action)
 	}
+}
+
+func (n *nativeMain) historyWheel(event ui.InputEvent) bool {
+	if event.Kind != ui.InputScroll || event.Mods != 0 || event.Momentum ||
+		n.tagLibrary != nil || n.hasHistoryDialog() || n.preferences["app.show_search_box"] != "false" {
+		return false
+	}
+	if event.DY < -5 && n.historyScroll.Y > 0 {
+		n.towardsTop = event.Time
+		n.searchWheel = 0
+		return false
+	}
+	if event.DY < -5 && !n.temporarySearch && event.Time.Sub(n.towardsTop) > 250*time.Millisecond {
+		n.searchWheel -= event.DY
+		if n.searchWheel > 45 {
+			n.temporarySearch = true
+			return true
+		}
+	} else {
+		n.searchWheel = 0
+	}
+	if event.DY > 10 && n.temporarySearch && strings.TrimSpace(n.query) == "" {
+		n.temporarySearch = false
+		n.focusList = true
+		return true
+	}
+	return false
 }
 
 func (n *nativeMain) closePreview() bool {
@@ -131,7 +162,11 @@ func (n *nativeMain) previewAppearance() previewAppearance {
 }
 
 func (n *nativeMain) historyShortcuts(c *ui.Context, queryFocused bool) {
-	if n.showSettings || n.hasHistoryDialog() || queryFocused {
+	if n.showSettings || n.hasHistoryDialog() {
+		return
+	}
+	c.OnShortcut(ui.Ctrl, ui.KeyF, func() { n.focusSearch = true })
+	if queryFocused {
 		return
 	}
 	if n.preferences["app.arrow_key_selection"] == "true" {

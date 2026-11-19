@@ -318,9 +318,13 @@ func (l *Library) Preferences(ctx context.Context) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	params := protocol.LibraryStateParams{ServiceInstanceId: status.State.ServiceInstanceId, ExpectedEpoch: status.State.PrivacyEpoch}
+	return l.preferences(ctx, status.State)
+}
+
+func (l *Library) preferences(ctx context.Context, state protocol.RuntimeState) (json.RawMessage, error) {
+	params := protocol.LibraryStateParams{ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch}
 	var preferences protocol.DesktopPreferences
-	err = l.snapshot(ctx, protocol.MethodDesktopSettingsPreferences, params, "DesktopPreferences", &preferences, params.ExpectedEpoch)
+	err := l.snapshot(ctx, protocol.MethodDesktopSettingsPreferences, params, "DesktopPreferences", &preferences, params.ExpectedEpoch)
 	return preferences.Values, err
 }
 

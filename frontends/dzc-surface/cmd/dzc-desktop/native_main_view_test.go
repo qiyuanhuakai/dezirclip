@@ -20,6 +20,12 @@ func TestNativeMainNavigationAndDismissal(t *testing.T) {
 				if err := tester.Click("Settings"); err != nil {
 					t.Fatal(err)
 				}
+				if err := tester.Click("General"); err != nil {
+					t.Fatal(err)
+				}
+				if err := tester.Click("Appearance"); err != nil {
+					t.Fatal(err)
+				}
 				if !tester.HasText("Color mode") || tester.HasText("Fixture history entry") {
 					t.Fatal("settings navigation did not replace history")
 				}
@@ -36,5 +42,17 @@ func TestNativeMainNavigationAndDismissal(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestNativeMainSearchShortcutWithoutFocusedControl(t *testing.T) {
+	window := nativeMain{preferences: map[string]string{"app.show_search_box": "false"}}
+	tester := ui.NewTester(window.view, 360, 400)
+	if _, ok := tester.Find("Search clipboard…"); ok {
+		t.Fatal("search box was initially visible")
+	}
+	tester.Key(ui.Ctrl, ui.KeyF)
+	if _, ok := tester.Find("Search clipboard…"); !ok {
+		t.Fatal("window shortcut did not reveal the search box")
 	}
 }
