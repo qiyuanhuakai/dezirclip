@@ -8,6 +8,21 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
 
+func TestNativeMainColorMode(t *testing.T) {
+	for _, systemDark := range []bool{false, true} {
+		window := nativeMain{systemDark: systemDark}
+		system := "light"
+		if systemDark {
+			system = "dark"
+		}
+		for preference, want := range map[string]string{"light": "light", "dark": "dark", "system": system, "": system} {
+			if got := window.colorMode(map[string]string{"app.color_mode": preference}); got != want {
+				t.Errorf("systemDark=%t, setting=%q: mode = %q, want %q", systemDark, preference, got, want)
+			}
+		}
+	}
+}
+
 func TestNativeMainUsesSavedInterfaceFont(t *testing.T) {
 	window := nativeMain{theme: "macos", mode: "dark", preferences: map[string]string{"app.font_main": " Custom UI "}}
 	var font string

@@ -321,13 +321,14 @@ func run() error {
 			Hidden: true, SkipTaskbar: true, DisableMaximize: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true}
 		var native *nativeMain
 		if useNativeMain {
-			native = &nativeMain{shell: shell, library: library, actions: history, preview: preview}
+			native = &nativeMain{shell: shell, library: library, actions: history, preview: preview, systemDark: mygo.Theme.IsDark()}
 			options.Content = ui.View(native.view)
 		}
 		win := mygo.NewWindow(options)
 		if native != nil {
 			native.window = win
 			shell.nativePrepare = native.prepare
+			win.OnClosed(mygo.Theme.OnUpdated(native.systemAppearanceChanged))
 		}
 		if err := win.SetIcon(trayIcon); err != nil {
 			fmt.Fprintf(os.Stderr, "Window icon unavailable: %v\n", err)

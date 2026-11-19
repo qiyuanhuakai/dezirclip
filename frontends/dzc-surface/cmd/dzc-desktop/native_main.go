@@ -40,6 +40,7 @@ type nativeMain struct {
 	preferences      map[string]string
 	query, kind      string
 	theme, mode      string
+	systemDark       bool
 	focusSearch      bool
 	temporarySearch  bool
 	showSettings     bool
@@ -107,10 +108,9 @@ func (n *nativeMain) open(session context.Context) {
 			}
 		}
 		if err == nil {
-			mode := n.colorMode(read, settings)
 			cancel()
 			n.update(session, func() {
-				n.configured(settings, mode)
+				n.configured(settings)
 				n.private = status.Privacy.Active
 				n.history.reset(status.State, n.historyFilter())
 				n.list.Reset()
@@ -132,34 +132,58 @@ func (n *nativeMain) open(session context.Context) {
 	}
 }
 
-func (n *nativeMain) colorMode(ctx context.Context, settings map[string]string) string {
-	mode := settings["app.color_mode"]
-	if mode != "light" && mode != "dark" {
-		mode = n.shell.SystemThemeMode(ctx)
+func (n *nativeMain) colorMode(settings map[string]string) string {
+	if mode := settings["app.color_mode"]; mode == "light" || mode == "dark" {
+		return mode
 	}
-	if mode != "dark" {
-		mode = "light"
+	if n.systemDark {
+		return "dark"
 	}
-	return mode
+	return "light"
 }
 
-func (n *nativeMain) configured(settings map[string]string, mode string) {
+func (n *nativeMain) configured(settings map[string]string) {
 	themeName := settings["app.theme"]
 	if themeName == "" {
 		themeName = "mica"
 	}
-	border := settings["app.show_app_border"] != "false"
-	if themeName != n.theme || mode != n.mode || border != (n.preferences["app.show_app_border"] != "false") {
-		if err := applyWindowAppearance(n.window, themeName, mode, border); err != nil {
-			log.Printf("Native window appearance: %v", err)
-		}
-	}
+	mode := n.colorMode(settings)
+	appearanceChanged := themeName != n.theme || mode != n.mode ||
+		(settings["app.show_app_border"] == "false") != (n.preferences["app.show_app_border"] == "false")
 	n.preferences, n.theme, n.mode = settings, themeName, mode
+	if appearanceChanged {
+		n.applyAppearance()
+	}
 	if settings["app.emoji_panel_enabled"] != "true" {
 		n.showEmoji = false
 	}
 	n.pinned = settings["app.window_pinned"] == "true"
 	n.window.SetAlwaysOnTop(n.pinned)
+}
+
+func (n *nativeMain) systemAppearanceChanged() {
+	dark := mygo.Theme.IsDark()
+	if dark == n.systemDark {
+		return
+	}
+	n.systemDark = dark
+	if n.theme == "" {
+		return
+	}
+	mode := n.colorMode(n.preferences)
+	if mode != n.mode {
+		n.mode = mode
+		n.resetPreviewSelection()
+	}
+	// The OS can update the compositor material even with an explicit palette.
+	n.applyAppearance()
+	n.window.Invalidate()
+}
+
+func (n *nativeMain) applyAppearance() {
+	if err := applyWindowAppearance(n.window, n.theme, n.mode, n.preferences["app.show_app_border"] != "false"); err != nil {
+		log.Printf("Native window appearance: %v", err)
+	}
 }
 
 func (n *nativeMain) update(session context.Context, fn func()) {
