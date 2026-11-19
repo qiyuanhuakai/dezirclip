@@ -25,13 +25,21 @@ func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, act
 	if n.session == nil || n.history.generation != generation || n.mutating || n.failed {
 		return
 	}
+	reveal := false
+	if nativeConcealed(row) && action != nativePin && action != nativeDelete {
+		if !n.canUseProtectedRow(row) {
+			n.notice = "Reveal the sensitive entry first"
+			return
+		}
+		reveal = true
+	}
 	n.mutating, n.notice = true, ""
 	n.closePreview()
 	session, state, preferences := n.session, n.history.state, n.preferences
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 4*time.Second)
 		defer cancel()
-		pasted, notice, err := n.runRowAction(ctx, row, state, preferences, action)
+		pasted, notice, err := n.runRowAction(ctx, row, state, preferences, action, reveal)
 		n.update(session, func() {
 			n.mutating = false
 			if err != nil {
@@ -75,11 +83,11 @@ func (n *nativeMain) dropFiles(paths []string) {
 	}()
 }
 
-func (n *nativeMain) runRowAction(ctx context.Context, row protocol.DesktopEntry, state protocol.RuntimeState, preferences map[string]string, action nativeRowAction) (bool, string, error) {
+func (n *nativeMain) runRowAction(ctx context.Context, row protocol.DesktopEntry, state protocol.RuntimeState, preferences map[string]string, action nativeRowAction, reveal bool) (bool, string, error) {
 	switch action {
 	case nativeOpen:
 		err := n.library.OpenEntry(ctx, protocol.ExternalOpenParams{
-			Id: row.Id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch,
+			Id: row.Id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Reveal: reveal,
 		})
 		return false, "", err
 	case nativePin, nativeDelete:
@@ -93,12 +101,12 @@ func (n *nativeMain) runRowAction(ctx context.Context, row protocol.DesktopEntry
 		_, err := n.library.MutateEntry(ctx, params)
 		return false, "", err
 	default:
-		return n.transferRow(ctx, row.Id, state, preferences, action)
+		return n.transferRow(ctx, row.Id, state, preferences, action, reveal)
 	}
 }
 
-func (n *nativeMain) transferRow(ctx context.Context, id int64, state protocol.RuntimeState, preferences map[string]string, action nativeRowAction) (bool, string, error) {
-	params := protocol.DesktopCopyParams{Id: id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch}
+func (n *nativeMain) transferRow(ctx context.Context, id int64, state protocol.RuntimeState, preferences map[string]string, action nativeRowAction, reveal bool) (bool, string, error) {
+	params := protocol.DesktopCopyParams{Id: id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Reveal: reveal}
 	if action == nativePaste || action == nativeRichPaste {
 		paste, err := n.canAutoPaste(ctx)
 		if err != nil {

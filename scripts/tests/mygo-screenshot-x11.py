@@ -21,7 +21,10 @@ def check(desktop, helpers, *, native_main=False):
             ('app.screenshot_enabled', 'true'), ('app.screenshot_hotkey', 'Ctrl+Shift+A'),
             ('app.screenshot_full_hotkey', 'Ctrl+Shift+F'), ('app.window_width', '750'), ('app.window_height', '650')]
         if native_main:
-            settings.append(('app.theme', 'mica'))
+            settings.extend([('app.theme', 'mica'), ('app.arrow_key_selection', 'true'),
+                             ('app.preview_keyboard_enabled', 'false'),
+                             ('app.privacy_protection', 'true'),
+                             ('app.privacy_protection_custom_rules', '^fixture-private-only-20261120$')])
         db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', settings)
     subprocess.run([cli, 'service', 'start', '--json'], check=True, stdout=subprocess.DEVNULL)
     clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
@@ -193,11 +196,74 @@ def check(desktop, helpers, *, native_main=False):
             wait(lambda: setting(key) == '', f'{label} did not reset to its theme default')
         print('Verified native appearance saves typography and independent surface and preview opacity', flush=True)
 
+    def check_native_protected_entry():
+        secret = 'fixture-private-only-20261120'
+        marker = 'fixture-safe-clipboard-marker'
+
+        def active_window():
+            return subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+
+        main = active_window()
+        clipboard.set_text(secret, -1)
+        wait(lambda: find('Reveal sensitive entry') and find('Sensitive content hidden'),
+             'Protected capture did not start concealed')
+        assert not find(secret)
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            assert db.execute('SELECT COUNT(*) FROM clipboard_history WHERE content=? OR preview=?',
+                              (secret, secret)).fetchone()[0] == 0
+
+        click('Reveal sensitive entry')
+        wait(lambda: find(secret), 'Explicit reveal did not display the protected fixture')
+        click('Hide sensitive entry')
+        wait(lambda: find('Reveal sensitive entry') and not find(secret), 'Hide did not conceal the fixture')
+
+        click('Reveal sensitive entry')
+        wait(lambda: find(secret), 'A second explicit reveal failed')
+        target.show_all()
+        target.present()
+        wait(target.is_active, 'Independent window did not acquire focus')
+        wait(lambda: find('Reveal sensitive entry') and not find(secret), 'Protected content survived focus loss')
+        target.hide()
+        info = subprocess.check_output(['xwininfo', '-id', main], text=True)
+        sizes = dict(line.strip().split(':', 1) for line in info.splitlines() if ':' in line)
+        x = int(sizes['Absolute upper-left X']) + int(sizes['Width'])//2
+        y = int(sizes['Absolute upper-left Y']) + 15
+        xtest.XTestFakeMotionEvent(display, -1, x, y, 0)
+        xtest.XTestFakeButtonEvent(display, 1, True, 0)
+        xtest.XTestFakeButtonEvent(display, 1, False, 0)
+        x11.XSync(display, False)
+        wait(lambda: active_window() == main, 'The native window did not regain focus')
+        assert not find(secret), 'Refocusing resurrected protected content'
+
+        clipboard.set_text(marker, -1)
+        wait(lambda: find(marker), 'Public marker was not captured')
+        keys(Gdk.KEY_Down)
+        keys(Gdk.KEY_Down)
+        keys(Gdk.KEY_Control_L, Gdk.KEY_c)
+        wait(lambda: find('Reveal the sensitive entry first'), 'The concealed row did not reject Copy')
+        assert clipboard.wait_for_text() == marker, 'A concealed row was allowed to copy'
+
+        click('Reveal sensitive entry')
+        wait(lambda: find(secret), 'The fixture could not be revealed after refocusing')
+        keys(Gdk.KEY_Control_L, Gdk.KEY_c)
+        wait(lambda: clipboard.wait_for_text() == secret, 'Copy did not use the explicitly revealed row')
+
+        if find('Reveal sensitive entry'):
+            click('Reveal sensitive entry')
+            wait(lambda: find(secret), 'The copied fixture could not be revealed again')
+        click('Settings')
+        assert not find(secret)
+        click('Back')
+        wait(lambda: find('Reveal sensitive entry') and not find(secret),
+             'The settings transition resurrected protected content')
+        print('Verified native protected capture, reveal and hide, focus-loss concealment, and authorized copy', flush=True)
+
     env = dict(os.environ, DZC_MYGO_NATIVE_MAIN='1', MYGO_GPU='0') if native_main else None
     process = subprocess.Popen([desktop], env=env)
     try:
         if native_main:
             check_native_repaint()
+            check_native_protected_entry()
         click('Settings')
         if native_main:
             check_native_appearance()

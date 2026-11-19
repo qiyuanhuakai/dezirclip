@@ -29,7 +29,8 @@ type nativeMain struct {
 	searchTimer      *time.Timer
 	resume           uint64
 	history          nativeHistory
-	cardImages       nativeVisibleCache[nativeCardImageKey, ui.ImageSource]
+	cardImages       nativeVisibleCache[nativeCardKey, ui.ImageSource]
+	protectedRows    map[nativeCardKey]*nativeProtectedRow
 	cardTagColors    map[string]string
 	readingTagColors bool
 	tagColorRevision uint64
@@ -78,7 +79,7 @@ func (n *nativeMain) stopSession() {
 	n.stopRead = nil
 	n.cancelSearchTimer()
 	n.history.reset(protocol.RuntimeState{}, nativeHistoryFilter{})
-	n.cardImages = nativeVisibleCache[nativeCardImageKey, ui.ImageSource]{}
+	n.cardImages = nativeVisibleCache[nativeCardKey, ui.ImageSource]{}
 	n.cardTagColors, n.readingTagColors = nil, false
 	n.reading, n.failed, n.mutating, n.private = false, false, false, false
 	n.notice, n.keyboard, n.focusList = "", false, false
@@ -382,6 +383,7 @@ func searchTagName(query string) (string, bool) {
 }
 
 func (n *nativeMain) resetPreviewSelection() {
+	n.clearProtectedRows()
 	n.keyboard = false
 	n.previewSelection = 0
 	n.hover.reset()

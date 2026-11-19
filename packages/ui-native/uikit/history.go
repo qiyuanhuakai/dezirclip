@@ -37,7 +37,8 @@ type HistoryCardMetaOptions struct {
 }
 
 func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
-	card := ui.ButtonBase(c).Label(options.Summary)
+	// Keep row actions and attachments available to assistive technology.
+	card := ui.ButtonBase(c).Role(ui.RoleGroup).Label(options.Summary)
 	style := k.style("historyCard")
 	if options.Compact {
 		style = k.style("historyCardCompact")

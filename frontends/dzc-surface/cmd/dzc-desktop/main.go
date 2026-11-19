@@ -340,6 +340,9 @@ func run() error {
 		dock.configure(settings.EdgeDocking == "true")
 		win.OnBlur(func() {
 			preview.clear()
+			if native != nil && native.clearProtectedRows() {
+				win.Invalidate()
+			}
 			focusChanged.Emit(win, false)
 			// X11 passive shortcut grabs briefly blur GTK without switching apps.
 			// Only an actual active-window loss cancels the native recording.

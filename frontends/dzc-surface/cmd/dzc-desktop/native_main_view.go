@@ -132,6 +132,8 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 	generation := n.history.generation
 	compact := n.preferences["app.compact_mode"] == "true"
 	itemSize, tagSize := nativeItemSize.value(n.preferences), nativeTagSize.value(n.preferences)
+	first, last := n.list.List.Visible()
+	n.pruneProtectedRows(first, last)
 	var hovered protocol.DesktopEntry
 	var hoverBounds ui.Rect
 	list := kit.HistoryList(c, &n.list, uikit.HistoryListOptions{
@@ -148,8 +150,20 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 			if row.IsPinned {
 				pinLabel = "Unpin entry"
 			}
+			actions := []uikit.HeaderAction{
+				{Icon: "pin", Label: pinLabel, Disabled: n.mutating, Run: func() { n.rowAction(row, generation, nativePin) }},
+				{Icon: "hide", Label: "Delete entry", Disabled: n.mutating, Run: func() { n.rowAction(row, generation, nativeDelete) }},
+			}
+			summary := nativeCardSummary(row)
+			protected := n.protectedBody(row)
+			if nativeConcealed(row) {
+				actions = append(actions, n.protectedRowAction(row, generation))
+				if protected != nil {
+					summary = protected.summary
+				}
+			}
 			card := kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
-				Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: nativeCardSummary(row),
+				Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
 				Pinned: row.IsPinned, Selected: cell.Selected(), Compact: compact,
 				Match:    n.history.filter.query,
 				TextFont: n.preferences["app.font_mono"],
@@ -157,15 +171,12 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 				TextRows: 4,
 				TagSize:  float32(tagSize),
 				Tags:     n.cardTags(row.Tags),
-				Body:     n.cardBody(cell.Context, row, compact),
+				Body:     n.cardBody(cell.Context, row, protected, compact),
 				Activate: func() {
-					n.resetPreviewSelection()
 					n.rowAction(row, generation, nativePaste)
+					n.resetPreviewSelection()
 				},
-				Actions: []uikit.HeaderAction{
-					{Icon: "pin", Label: pinLabel, Disabled: n.mutating, Run: func() { n.rowAction(row, generation, nativePin) }},
-					{Icon: "hide", Label: "Delete entry", Disabled: n.mutating, Run: func() { n.rowAction(row, generation, nativeDelete) }},
-				},
+				Actions: actions,
 			})
 			n.entryMenu(card, row, generation)
 			if card.Hovered() {
@@ -185,7 +196,7 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 	if list.Submitted() && n.history.selected >= 0 && n.history.selected < len(n.history.rows) {
 		n.selectedAction(nativePaste)
 	}
-	if first, _ := n.list.List.Visible(); first > 0 && n.preferences["app.show_scroll_top_button"] != "false" {
+	if first > 0 && n.preferences["app.show_scroll_top_button"] != "false" {
 		ui.Row(c).Padding(0, 8, 5).Justify(ui.End).Children(func() {
 			if uikit.Button(c, uikit.ButtonOptions{Label: "Scroll to top"}).Clicked() {
 				n.list.List.ScrollTo(0, ui.Start)

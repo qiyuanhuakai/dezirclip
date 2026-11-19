@@ -14,7 +14,7 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
-type nativeCardImageKey struct {
+type nativeCardKey struct {
 	id, timestamp int64
 }
 
@@ -34,6 +34,10 @@ func nativeCardSummary(row protocol.DesktopEntry) string {
 	if nativeConcealed(row) {
 		return "Sensitive content hidden"
 	}
+	return visibleCardSummary(row)
+}
+
+func visibleCardSummary(row protocol.DesktopEntry) string {
 	if row.ContentType == "image" {
 		return "Clipboard image"
 	}
@@ -43,8 +47,16 @@ func nativeCardSummary(row protocol.DesktopEntry) string {
 	return row.Content
 }
 
-func (n *nativeMain) cardBody(c *ui.Context, row protocol.DesktopEntry, compact bool) func() {
+func (n *nativeMain) cardBody(c *ui.Context, row protocol.DesktopEntry, protected *nativeProtectedBody, compact bool) func() {
 	if nativeConcealed(row) {
+		if protected != nil {
+			if row.ContentType == "image" {
+				return func() { drawHistoryImage(c, protected.image, true, compact) }
+			}
+			if len(protected.attachments) != 0 {
+				return func() { uikit.HistoryAttachments(c, protected.attachments, compact) }
+			}
+		}
 		return nil
 	}
 	switch row.ContentType {
@@ -60,11 +72,15 @@ func (n *nativeMain) cardBody(c *ui.Context, row protocol.DesktopEntry, compact 
 }
 
 func (n *nativeMain) historyImage(c *ui.Context, row protocol.DesktopEntry, compact bool) {
-	key := nativeCardImageKey{row.Id, row.Timestamp}
+	key := nativeCardKey{row.Id, row.Timestamp}
 	preview, loaded := n.cardImages.lookup(key)
 	if !loaded {
 		n.loadCardImage(key)
 	}
+	drawHistoryImage(c, preview, loaded, compact)
+}
+
+func drawHistoryImage(c *ui.Context, preview ui.ImageSource, loaded, compact bool) {
 	width, height := float32(178), float32(100)
 	if compact {
 		width, height = 78, 44
@@ -85,7 +101,7 @@ func (n *nativeMain) historyImage(c *ui.Context, row protocol.DesktopEntry, comp
 	})
 }
 
-func (n *nativeMain) loadCardImage(key nativeCardImageKey) {
+func (n *nativeMain) loadCardImage(key nativeCardKey) {
 	if n.session == nil || !n.cardImages.begin(key) {
 		return
 	}

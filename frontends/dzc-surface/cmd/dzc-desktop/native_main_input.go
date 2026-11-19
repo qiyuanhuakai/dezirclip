@@ -111,11 +111,14 @@ func (n *nativeMain) closePreview() bool {
 }
 
 func (n *nativeMain) showPreview(row protocol.DesktopEntry, generation uint64, bounds ui.Rect) {
-	if n.preview == nil || n.window == nil || n.session == nil || n.history.generation != generation || n.failed || n.showSettings ||
-		nativeConcealed(row) {
+	if n.preview == nil || n.window == nil || n.session == nil || n.history.generation != generation || n.failed || n.showSettings {
 		return
 	}
 	if n.preview.entryID == row.Id {
+		return
+	}
+	reveal := nativeConcealed(row)
+	if reveal && !n.canUseProtectedRow(row) {
 		return
 	}
 	var placement *previewPlacement
@@ -126,7 +129,7 @@ func (n *nativeMain) showPreview(row protocol.DesktopEntry, generation uint64, b
 		}
 	}
 	a := n.previewAppearance()
-	n.preview.present(n.window, n.preview.generation+1, row.Id, n.history.state, false, placement, a)
+	n.preview.present(n.window, n.preview.generation+1, row.Id, n.history.state, reveal, placement, a)
 }
 
 func (n *nativeMain) previewKeyboardRow(row protocol.DesktopEntry, generation uint64, bounds ui.Rect) {
@@ -196,23 +199,24 @@ func (n *nativeMain) historyShortcuts(c *ui.Context, queryFocused bool) {
 func (n *nativeMain) entryMenu(card ui.Element, row protocol.DesktopEntry, generation uint64) {
 	card.ContextMenu(func(menu *ui.Menu) {
 		disabled := n.mutating || n.failed || n.history.generation != generation
-		if menu.Item("Preview").Disabled(disabled).Chosen() {
+		contentDisabled := disabled || nativeConcealed(row) && n.protectedBody(row) == nil
+		if menu.Item("Preview").Disabled(contentDisabled).Chosen() {
 			n.hover.reset()
 			n.showPreview(row, generation, card.Bounds())
 		}
-		if menu.Item("Copy").Disabled(disabled).Chosen() {
+		if menu.Item("Copy").Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeCopy)
 		}
-		if menu.Item("Paste").Disabled(disabled).Chosen() {
+		if menu.Item("Paste").Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativePaste)
 		}
-		if menu.Item("Paste with formatting").Disabled(disabled).Chosen() {
+		if menu.Item("Paste with formatting").Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeRichPaste)
 		}
-		if row.ContentType == "image" && menu.Item("Copy image as Base64").Disabled(disabled).Chosen() {
+		if row.ContentType == "image" && menu.Item("Copy image as Base64").Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeBase64)
 		}
-		if row.IsExternal && menu.Item("Open").Disabled(disabled).Chosen() {
+		if row.IsExternal && menu.Item("Open").Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeOpen)
 		}
 		if menu.Item("Edit tags").Disabled(disabled).Chosen() {
