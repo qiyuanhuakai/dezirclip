@@ -365,6 +365,10 @@ func run() error {
 			// X11 passive shortcut grabs briefly blur GTK without switching apps.
 			// Only an actual active-window loss cancels the native recording.
 			if !mainWindowFocused(win) {
+				if native != nil && native.shortcut != nil {
+					native.cancelShortcut()
+					win.Invalidate()
+				}
 				history.targetInvalid.Store(true)
 				fmt.Fprintln(os.Stdout, "recording-cancel")
 			}
@@ -489,7 +493,7 @@ func run() error {
 			for commands.Scan() {
 				command := commands.Text()
 				if len(command) > 0 && command[0] == '{' {
-					if acceptRecordingEvent(win, command) {
+					if acceptRecordingEvent(win, command, native) {
 						continue
 					}
 					shell.resident.accept(command)

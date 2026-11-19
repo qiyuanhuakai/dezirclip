@@ -2,8 +2,39 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"testing"
+
+	"github.com/egoist/mygo/ui"
 )
+
+func TestNativeShortcutRecorderUsesResidentChordNames(t *testing.T) {
+	for _, test := range []struct {
+		key  ui.Key
+		mods ui.Modifiers
+		want string
+	}{
+		{ui.KeyJ, ui.Shift | ui.Ctrl | ui.Alt, "Ctrl+Alt+Shift+J"},
+		{ui.KeyF12, ui.Super, "Super+F12"},
+		{ui.Key0, ui.Alt, "Alt+0"},
+		{ui.KeyLeft, ui.Ctrl, "Ctrl+Left"},
+		{ui.KeyEscape, 0, ""},
+		{ui.KeyUnknown, ui.Ctrl, ""},
+	} {
+		if actual := nativeShortcutChord(test.key, test.mods); actual != test.want {
+			t.Fatalf("key %v with modifiers %v gave %q, want %q", test.key, test.mods, actual, test.want)
+		}
+	}
+	if chords := nativeMainChords("control+j\r\nMButton\n  Shift+F3\n"); !slices.Equal(chords, []string{"Ctrl+J", "MouseMiddle", "Shift+F3"}) {
+		t.Fatalf("unexpected bindings after reading existing settings: %v", chords)
+	}
+	if actual := typedShortcutChord("  control+alt+f24 "); actual != "Ctrl+Alt+F24" {
+		t.Fatalf("typed advanced chord = %q", actual)
+	}
+	if actual := typedShortcutChord("Alt+C\nAlt+F"); actual != "" {
+		t.Fatalf("single shortcut field accepted multiple chords: %q", actual)
+	}
+}
 
 func TestCanonicalMainShortcutContinuousEditsAndRollback(t *testing.T) {
 	registered, live := map[string]bool{}, map[string]bool{}

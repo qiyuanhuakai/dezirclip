@@ -143,6 +143,9 @@ func (n *nativeMain) view(c *ui.Context) {
 	if n.privacyEditor != nil {
 		n.privacyEditorView(c, kit, n.privacyEditor)
 	}
+	if n.shortcut != nil && n.shortcut.open {
+		n.drawShortcutRecorder(c, kit, n.shortcut)
+	}
 }
 
 func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {

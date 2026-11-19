@@ -62,6 +62,7 @@ type nativeMain struct {
 	privacyRules     nativePrivacyRules
 	privacyDialog    *nativePrivacyDialog
 	privacyEditor    *nativePrivacyEditor
+	shortcut         *nativeShortcutForm
 	applications     nativeApplicationCatalog
 	profile          nativeProfileSettings
 	backup           *nativeBackupDialog
@@ -111,6 +112,7 @@ func (n *nativeMain) stopSession() {
 	n.closeQR()
 	n.closeBackup()
 	n.closePrivacyDialog()
+	n.cancelShortcut()
 	n.privacyEditor = nil
 	n.privacyRules = nativePrivacyRules{}
 	n.tagLibrary = nil

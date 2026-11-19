@@ -156,16 +156,24 @@ func (s *DesktopShell) SetRecordingMode(ctx context.Context, enabled bool, epoch
 	if enabled && (w == nil || !w.IsFocused()) {
 		return errors.New("RecordingRequiresFocusedWindow")
 	}
+	return s.changeRecordingMode(ctx, enabled, epoch)
+}
+
+func (s *DesktopShell) changeRecordingMode(ctx context.Context, enabled bool, epoch uint64) error {
 	return s.resident.send(ctx, residentRequest{Operation: "recording", Disabled: !enabled, Epoch: epoch}, 6*time.Second)
 }
 
-func acceptRecordingEvent(w *mygo.Window, message string) bool {
+func acceptRecordingEvent(w *mygo.Window, message string, native *nativeMain) bool {
 	var event recordingEvent
 	if json.Unmarshal([]byte(message), &event) != nil || !event.Recording {
 		return false
 	}
 	mygo.RunOnMain(func() {
 		if w.IsDestroyed() {
+			return
+		}
+		if native != nil {
+			native.receiveShortcut(event)
 			return
 		}
 		if event.Cancelled {

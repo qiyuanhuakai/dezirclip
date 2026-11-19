@@ -143,6 +143,7 @@ func (n *nativeMain) generalSettings(c *ui.Context, kit uikit.Kit) {
 }
 
 func (n *nativeMain) clipboardSettings(c *ui.Context) {
+	n.clipboardShortcuts(c)
 	n.booleanSettings(c,
 		nativeBooleanSetting{"app.persistent", n.text("persistent_storage", "Keep clipboard history"), false},
 		nativeBooleanSetting{"app.persistent_limit_enabled", n.text("persistent_limit_enabled", "Limit stored clipboard entries"), true},
@@ -159,6 +160,7 @@ func (n *nativeMain) privacySettings(c *ui.Context, kit uikit.Kit) {
 	if ui.Checkbox(c, &private, n.text("privacy_session_title", "Private session")).Disabled(n.mutating).Changed() {
 		n.changePrivateSession(private)
 	}
+	n.shortcutSetting(c, "app.privacy_session_hotkey", n.text("privacy_session_hotkey"), "")
 	n.booleanSettings(c, nativeBooleanSetting{"app.privacy_protection", n.text("privacy_protection", "Protect sensitive clipboard content"), true})
 	n.drawPrivacyRules(c)
 	n.drawPrivacyDetection(c, kit)
@@ -244,7 +246,15 @@ func (n *nativeMain) toolsSettings(c *ui.Context) {
 			}
 		})
 	}
-	n.panelCheckbox(c, "quick-paste", n.text("quick_paste_enabled", "Enable quick paste"), n.settingEnabled("app.quick_paste_enabled", true))
+	if enabled {
+		n.shortcutSetting(c, "app.screenshot_hotkey", n.text("screenshot_hotkey"), "Ctrl+Shift+A")
+		n.shortcutSetting(c, "app.screenshot_full_hotkey", n.text("screenshot_full_hotkey"), "Ctrl+Shift+F")
+	}
+	quick := n.settingEnabled("app.quick_paste_enabled", true)
+	n.panelCheckbox(c, "quick-paste", n.text("quick_paste_enabled", "Enable quick paste"), quick)
+	if quick {
+		n.shortcutSetting(c, "app.quick_paste_hotkey", n.text("quick_paste_hotkey_label"), "Ctrl+Shift+V")
+	}
 	n.booleanSettings(c, nativeBooleanSetting{"app.ocr_enabled", n.text("ocr_enabled", "Recognize text in images"), true})
 	n.drawOCREngine(c)
 }
