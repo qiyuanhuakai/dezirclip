@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
@@ -288,7 +289,10 @@ func run() error {
 		return client.ErrProtocol
 	}
 	desktopTiming("child authentication", bootStarted)
-	mygo.SetFrontend(assets)
+	useNativeMain := os.Getenv("DZC_MYGO_NATIVE_MAIN") == "1"
+	if !useNativeMain {
+		mygo.SetFrontend(assets)
+	}
 	diagnostics := newDesktopDiagnostics(actions, "main")
 	diagnostics.record("start", 0, nil)
 	defer diagnostics.record("run-returned", 0, nil)
@@ -313,8 +317,18 @@ func run() error {
 	mygo.App.WhenReady(func() {
 		windowStarted := time.Now()
 		installMemoryPolicy(func() bool { return false })
-		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 352, Height: 380, MinWidth: 250, MinHeight: 300,
-			Hidden: true, SkipTaskbar: true, DisableMaximize: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true})
+		options := mygo.WindowOptions{Title: "DezirClip", Width: 352, Height: 380, MinWidth: 250, MinHeight: 300,
+			Hidden: true, SkipTaskbar: true, DisableMaximize: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true}
+		var native *nativeMain
+		if useNativeMain {
+			native = &nativeMain{shell: shell, library: library, actions: history}
+			options.Content = ui.View(native.view)
+		}
+		win := mygo.NewWindow(options)
+		if native != nil {
+			native.window = win
+			shell.nativePrepare = native.prepare
+		}
 		if err := win.SetIcon(trayIcon); err != nil {
 			fmt.Fprintf(os.Stderr, "Window icon unavailable: %v\n", err)
 		}
@@ -349,6 +363,9 @@ func run() error {
 		})
 		win.OnHide(func() {
 			fmt.Fprintln(os.Stdout, "hidden")
+			if native != nil {
+				native.stopSession()
+			}
 			preview.clear()
 			visibilityChanged.Emit(win, false)
 			fmt.Fprintln(os.Stdout, "recording-cancel")
@@ -364,24 +381,29 @@ func run() error {
 		installNativeFileDrop(win)
 		win.OnClose(func(*mygo.CloseEvent) { diagnostics.record("window-close", 0, nil); fmt.Fprintln(os.Stdout, "closing") })
 		win.OnClosed(func() {
+			if native != nil {
+				native.stopSession()
+			}
 			shell.idle.cancel()
 			dock.hidden = false
 			dock.configure(false)
 			preview.clear()
 			mygo.App.Quit()
 		})
-		win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
-		win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
-		win.Page().OnDidFinishLoad(func() { diagnostics.record("page-loaded", 0, nil) })
-		win.Page().OnRenderProcessGone(func(reason string) {
-			switch reason {
-			case "browser-exited", "crashed", "unresponsive", "exceeded memory limit", "terminated by API":
-				diagnostics.record("renderer-"+reason, 0, nil)
-			default:
-				diagnostics.record("renderer-gone", 0, nil)
-			}
-		})
-		win.Page().LoadURL("mygo://localhost/")
+		if native == nil {
+			win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
+			win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
+			win.Page().OnDidFinishLoad(func() { diagnostics.record("page-loaded", 0, nil) })
+			win.Page().OnRenderProcessGone(func(reason string) {
+				switch reason {
+				case "browser-exited", "crashed", "unresponsive", "exceeded memory limit", "terminated by API":
+					diagnostics.record("renderer-"+reason, 0, nil)
+				default:
+					diagnostics.record("renderer-gone", 0, nil)
+				}
+			})
+			win.Page().LoadURL("mygo://localhost/")
+		}
 		if follow {
 			placeWindowAtCursor(win)
 		}
@@ -399,8 +421,13 @@ func run() error {
 		// Creating a cold WebView can outlast the Host's idle session timeout.
 		// Sample the external foreground after initialization, immediately before we take focus.
 		history.rememberTarget(ctx)
-		desktopTiming("child WebView creation", windowStarted)
-		desktopTiming("child ready for React", bootStarted)
+		if native == nil {
+			desktopTiming("child WebView creation", windowStarted)
+			desktopTiming("child ready for React", bootStarted)
+		} else {
+			diagnostics.record("native-content-ready", 0, nil)
+			desktopTiming("child native window creation", windowStarted)
+		}
 		shell.requestShow(win)
 		physicalSize := func() mygo.Size {
 			width, height := win.ContentSize()
@@ -496,7 +523,18 @@ func run() error {
 							if position {
 								placeWindowAtCursor(win)
 							}
+							if native != nil {
+								switch command {
+								case "settings":
+									native.showSettings = true
+								case "search":
+									native.showSettings, native.focusSearch = false, true
+								}
+							}
 							shell.requestShow(win)
+							if native != nil {
+								return
+							}
 							if command == "settings" {
 								shell.settingsPending.Store(true)
 								settingsRequested.Emit(win, true)

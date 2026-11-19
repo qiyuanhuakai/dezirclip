@@ -82,27 +82,37 @@ func (l *Library) snapshot(ctx context.Context, method protocol.Method, params a
 }
 
 func (l *Library) readSnapshot(ctx context.Context, method protocol.Method, params any, schema string, result any, epoch uint64) error {
+	_, err := l.readSnapshotState(ctx, method, params, schema, result, epoch)
+	return err
+}
+
+func (l *Library) readSnapshotState(ctx context.Context, method protocol.Method, params any, schema string, result any, epoch uint64) (protocol.RuntimeState, error) {
 	started := time.Now()
 	host, err := l.owner.DesktopConnection(ctx)
 	if err != nil {
-		return err
+		return protocol.RuntimeState{}, err
 	}
 	defer host.Close()
 	connected := time.Now()
 	var body protocol.BodySnapshot
 	if err := host.Call(ctx, method, params, "BodySnapshot", &body); err != nil {
-		return err
+		return protocol.RuntimeState{}, err
 	}
 	if body.State.PrivacyEpoch != epoch {
-		return errors.New("PrivacyEpochChanged")
+		return protocol.RuntimeState{}, errors.New("PrivacyEpochChanged")
 	}
 	if !desktopTimingEnabled() {
-		return host.ReadSnapshot(ctx, body, schema, result)
+		err = host.ReadSnapshot(ctx, body, schema, result)
+	} else {
+		described := time.Now()
+		var metrics client.SnapshotReadMetrics
+		metrics, err = host.ReadSnapshotMeasured(ctx, body, schema, result)
+		desktopSnapshotTiming(method, body.TotalBytes, started, connected, described, metrics, err == nil)
 	}
-	described := time.Now()
-	metrics, err := host.ReadSnapshotMeasured(ctx, body, schema, result)
-	desktopSnapshotTiming(method, body.TotalBytes, started, connected, described, metrics, err == nil)
-	return err
+	if err != nil {
+		return protocol.RuntimeState{}, err
+	}
+	return body.State, nil
 }
 
 func (l *Library) Page(ctx context.Context, params protocol.DesktopPageParams, epoch uint64) ([]hostedEntry, error) {

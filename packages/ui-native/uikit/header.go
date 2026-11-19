@@ -29,6 +29,8 @@ type HeaderOptions struct {
 	Placeholder string
 	Filters     []HeaderFilter
 	Filter      *string
+	FocusQuery  *bool
+	OnQueryEdit func(composing bool)
 }
 
 func (k Kit) Header(c *ui.Context, options HeaderOptions) {
@@ -82,6 +84,13 @@ func (k Kit) headerSearch(c *ui.Context, options HeaderOptions) {
 		ui.Box(c).Height(field.Height).Children(func() {
 			input := ui.TextInputBase(c, options.Query).Fill().Label(options.Placeholder).Placeholder(options.Placeholder)
 			styledText(paint(input, field), field)
+			if options.FocusQuery != nil && *options.FocusQuery {
+				input.Focus()
+				*options.FocusQuery = false
+			}
+			if options.OnQueryEdit != nil {
+				options.OnQueryEdit(input.Composing())
+			}
 			ui.Icon(c, headerIcons["search"]).Absolute().Left(10).Top((field.Height-14)/2).Size(14, 14).
 				TextColor(c.Theme().TextMuted).PassThrough()
 		})

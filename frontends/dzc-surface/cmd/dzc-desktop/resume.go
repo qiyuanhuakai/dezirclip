@@ -18,6 +18,10 @@ func (s *DesktopShell) requestShow(w *mygo.Window) {
 	s.resumePending.Store(true)
 	s.resumeStarted = time.Now()
 	request := s.resumeSequence.Add(1)
+	if s.nativePrepare != nil {
+		s.nativePrepare(request)
+		return
+	}
 	prepareShow.Emit(w, request)
 }
 
@@ -30,7 +34,10 @@ func (s *DesktopShell) ResumeRequest() *uint64 {
 }
 
 func (s *DesktopShell) CompleteResume(ctx context.Context, request uint64, instance string, epoch uint64) (bool, error) {
-	w := mygo.CallerWindow(ctx)
+	return s.completeResume(ctx, mygo.CallerWindow(ctx), request, instance, epoch)
+}
+
+func (s *DesktopShell) completeResume(ctx context.Context, w *mygo.Window, request uint64, instance string, epoch uint64) (bool, error) {
 	if w == nil || !s.resumePending.Load() || request != s.resumeSequence.Load() {
 		return false, nil
 	}
@@ -56,7 +63,11 @@ func (s *DesktopShell) CompleteResume(ctx context.Context, request uint64, insta
 		s.dock.shown = time.Now()
 		w.Show()
 		w.Focus()
-		desktopTiming("React preparation and show", s.resumeStarted)
+		stage := "React preparation and show"
+		if s.nativePrepare != nil {
+			stage = "Native preparation and show"
+		}
+		desktopTiming(stage, s.resumeStarted)
 		done <- true
 	})
 	select {
