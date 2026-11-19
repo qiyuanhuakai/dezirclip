@@ -1,5 +1,10 @@
 export const tw = {
         // Native desktop controls
+        native_entry_type: "內容類型",
+        native_editor_load_failed: "無法載入要編輯的項目。",
+        native_editor_too_large: "這段文字超出編輯器支援的大小。",
+        native_editor_conflict: "此項目在編輯期間已變更，請重新開啟以查看最新內容。",
+        native_editor_save_failed: "無法儲存此項目。",
         native_application_lookup_failed: "無法讀取全部可用應用程式。",
         native_profile_read_failed: "無法讀取目前的資料目錄。",
         native_profile_open_failed: "無法開啟資料目錄。",
@@ -42,7 +47,6 @@ export const tw = {
         native_sort_tag_entries: "標籤項目排序",
         native_create: "建立",
         native_entry_text: "項目文字",
-        native_save_to_history: "儲存到永久歷史",
         native_tag_length: "標籤名稱最多 80 個字元。",
         native_remove: "移除",
         native_add_tag: "新增標籤",

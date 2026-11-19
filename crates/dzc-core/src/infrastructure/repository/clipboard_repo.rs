@@ -422,6 +422,7 @@ impl SqliteClipboardRepository {
         intent: crate::api::ManualPersistenceIntent,
         permit: &crate::api::PrivacyReadPermit,
         now_ms: i64,
+        expected_entry_sha256: Option<&str>,
     ) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|_| "PrivacyStateUnavailable")?;
         super::protection::atomic_with_cleanup(&conn, |conn| {
@@ -430,7 +431,7 @@ impl SqliteClipboardRepository {
             crate::api::privacy_session::check_manual_with_conn(conn, intent, now_ms)
                 .map_err(|error| error.to_string())?;
             super::privacy_policy::require_mutation_access(conn, id, permit)?;
-            self.update_content_with_conn(conn, id, content, preview)
+            self.update_content_with_conn(conn, id, content, preview, expected_entry_sha256)
         })
     }
 
@@ -1491,7 +1492,7 @@ impl SqliteClipboardRepository {
         super::protection::atomic_with_cleanup(&conn, |conn| {
             crate::api::privacy_session::check_capture_with_conn(conn, ticket, now_ms)
                 .map_err(|error| error.to_string())?;
-            self.update_content_with_conn(conn, id, content, preview)
+            self.update_content_with_conn(conn, id, content, preview, None)
         })
     }
 
@@ -1509,7 +1510,7 @@ impl SqliteClipboardRepository {
                 chrono::Utc::now().timestamp_millis(),
             )
             .map_err(|error| error.to_string())?;
-            self.update_content_with_conn(conn, id, content, preview)
+            self.update_content_with_conn(conn, id, content, preview, None)
         })
     }
 
@@ -1519,8 +1520,10 @@ impl SqliteClipboardRepository {
         id: i64,
         content: &str,
         preview: &str,
+        expected_entry_sha256: Option<&str>,
     ) -> Result<((), Option<super::sensitive_tags::AttachmentCleanup>), String> {
         let mut entry = super::privacy_policy::strict_entry(self, conn, id)?;
+        super::privacy_policy::check_entry_digest(&entry, expected_entry_sha256)?;
         // Validate the complete previous resource before replacing any protected field.
         let stored_protected:bool=conn.query_row("SELECT NOT dc_search_visible(tags,content,preview,html_content,ocr_text) FROM clipboard_history WHERE id=?1",[id],|row|row.get(0)).map_err(|_|"ClipboardRecordUnavailable")?;
         if stored_protected {

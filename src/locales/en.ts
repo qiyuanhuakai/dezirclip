@@ -1,5 +1,10 @@
 export const en = {
         // Native desktop controls
+        native_entry_type: "Content type",
+        native_editor_load_failed: "Could not load this entry for editing.",
+        native_editor_too_large: "This text is too large for the editor.",
+        native_editor_conflict: "This entry changed while you were editing. Reopen it to see the latest content.",
+        native_editor_save_failed: "Could not save this entry.",
         native_application_lookup_failed: "Could not read all available applications.",
         native_profile_read_failed: "Could not read the current data directory.",
         native_profile_open_failed: "Could not open the data directory.",
@@ -42,7 +47,6 @@ export const en = {
         native_sort_tag_entries: "Sort tagged entries",
         native_create: "Create",
         native_entry_text: "Entry text",
-        native_save_to_history: "Save to permanent history",
         native_tag_length: "Enter a tag name of at most 80 characters.",
         native_remove: "Remove",
         native_add_tag: "Add tag",

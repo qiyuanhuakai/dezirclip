@@ -180,6 +180,9 @@ func (n *nativeMain) historyShortcuts(c *ui.Context, queryFocused bool) {
 		return
 	}
 	c.OnShortcut(ui.Ctrl, ui.KeyF, func() { n.focusSearch = true })
+	if n.tagLibrary == nil {
+		c.OnShortcut(ui.Ctrl, ui.KeyN, func() { n.addHistoryEntry("") })
+	}
 	if queryFocused {
 		return
 	}
@@ -210,6 +213,9 @@ func (n *nativeMain) entryMenu(card ui.Element, row protocol.DesktopEntry, gener
 	card.ContextMenu(func(menu *ui.Menu) {
 		disabled := n.mutating || n.failed || n.history.generation != generation
 		contentDisabled := disabled || nativeConcealed(row) && n.protectedBody(row) == nil
+		if editableHistoryKind(row.ContentType) && menu.Item(n.text("edit_item")).Disabled(contentDisabled).Chosen() {
+			n.editHistoryEntry(row, generation)
+		}
 		if menu.Item(n.text("preview_toolbar_title")).Disabled(contentDisabled).Chosen() {
 			n.hover.reset()
 			n.showPreview(row, generation, card.Bounds())

@@ -72,6 +72,7 @@ type nativeMain struct {
 	hover            nativeHoverPreview
 	tags             *nativeTagEditor
 	tagLibrary       *nativeTagLibrary
+	editor           *nativeEntryEditor
 }
 
 func (n *nativeMain) stopSession() {
@@ -93,6 +94,7 @@ func (n *nativeMain) stopSession() {
 	n.profile.reading = false
 	n.themeWorking, n.themeRefresh = false, false
 	n.tags = nil
+	n.closeEntryEditor()
 	n.closeBackup()
 	n.tagLibrary = nil
 	n.emoji = nil

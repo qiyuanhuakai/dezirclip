@@ -309,6 +309,7 @@ type DesktopMutationParams struct {
     Pinned *bool `json:"pinned,omitempty"`
     Tags *[]string `json:"tags,omitempty"`
     Content *string `json:"content,omitempty"`
+    ExpectedEntrySha256 *string `json:"expected_entry_sha256,omitempty"`
     ConfirmPersistence *bool `json:"confirm_persistence,omitempty"`
 }
 

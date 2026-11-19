@@ -1312,6 +1312,13 @@
           "type": "string",
           "maxLength": 524288
         },
+        "expected_entry_sha256": {
+          "description": "Optional edit precondition. SHA-256 of UTF-8 content_type, a zero byte, and UTF-8 content.",
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
         "confirm_persistence": {
           "type": "boolean"
         }

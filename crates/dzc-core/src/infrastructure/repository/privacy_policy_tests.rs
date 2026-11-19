@@ -811,6 +811,15 @@ fn opaque_manual_permission_does_not_turn_confirmation_into_sensitive_access() {
         )
         .unwrap();
     assert!(saved > id);
+    let stale_digest = "0".repeat(64);
+    assert_eq!(
+        repo.update_manual_authorized(
+            id, "stale draft", "preview", ManualPersistenceIntent::ConfirmedDuringPrivacySession,
+            &permit, 1, Some(&stale_digest),
+        )
+        .unwrap_err(),
+        "HistoryRevisionChanged"
+    );
     repo.update_manual_authorized(
         id,
         "confirmed edit",
@@ -818,11 +827,21 @@ fn opaque_manual_permission_does_not_turn_confirmation_into_sensitive_access() {
         ManualPersistenceIntent::ConfirmedDuringPrivacySession,
         &permit,
         1,
+        None,
     )
     .unwrap();
     assert_eq!(raw(&repo, id).0, "confirmed edit");
     let mut item = entry("session");
     item.id = -1;
+    assert_eq!(
+        repo.update_session_manual_authorized(
+            &mut item, "stale draft", "preview", ManualPersistenceIntent::ConfirmedDuringPrivacySession,
+            &permit, 1, Some(&stale_digest),
+        )
+        .unwrap_err(),
+        "HistoryRevisionChanged"
+    );
+    assert_eq!(item.content, "session");
     repo.update_session_manual_authorized(
         &mut item,
         "confirmed session edit",
@@ -830,6 +849,7 @@ fn opaque_manual_permission_does_not_turn_confirmation_into_sensitive_access() {
         ManualPersistenceIntent::ConfirmedDuringPrivacySession,
         &permit,
         1,
+        None,
     )
     .unwrap();
     assert_eq!(item.content, "confirmed session edit");
@@ -840,7 +860,8 @@ fn opaque_manual_permission_does_not_turn_confirmation_into_sensitive_access() {
             "preview",
             ManualPersistenceIntent::ConfirmedDuringPrivacySession,
             &permit,
-            1
+            1,
+            None,
         )
         .unwrap_err(),
         "PrivacyEpochChanged"
@@ -868,7 +889,8 @@ fn opaque_manual_permission_does_not_turn_confirmation_into_sensitive_access() {
             "preview",
             ManualPersistenceIntent::Ordinary,
             &ordinary,
-            2
+            2,
+            None,
         )
         .unwrap_err(),
         "SensitiveAccessDenied"

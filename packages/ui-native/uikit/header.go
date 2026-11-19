@@ -7,6 +7,7 @@ var headerIcons = map[string]*ui.SVG{
 	"search": icon("Search"), "settings": icon("Settings"), "emoji": icon("Smile"),
 	"tag": icon("Tag"), "clear": icon("Trash2"), "hide": closeIcon,
 	"reveal": icon("Eye"), "conceal": icon("EyeOff"),
+	"add": icon("Plus"), "edit": icon("Pencil"),
 }
 
 type HeaderAction struct {

@@ -481,6 +481,7 @@ impl Host {
                 pinned: None,
                 tags: None,
                 confirm_persistence: None,
+                expected_entry_sha256: None,
             })
             .map(|_| ())
         };

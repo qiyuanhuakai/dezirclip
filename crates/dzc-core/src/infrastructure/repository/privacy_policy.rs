@@ -444,6 +444,20 @@ fn assess_entry_with_plan(
         total_bytes,
     })
 }
+pub(super) fn check_entry_digest(entry: &ClipboardEntry, expected: Option<&str>) -> Result<(), String> {
+    if let Some(expected) = expected {
+        use sha2::{Digest, Sha256};
+        let mut digest = Sha256::new();
+        digest.update(entry.content_type.as_bytes());
+        digest.update([0]);
+        digest.update(entry.content.as_bytes());
+        if format!("{:x}", digest.finalize()) != expected {
+            return Err("HistoryRevisionChanged".into());
+        }
+    }
+    Ok(())
+}
+
 impl SqliteClipboardRepository {
     pub(crate) fn policy_entry_authorized(
         &self,
@@ -976,6 +990,7 @@ impl SqliteClipboardRepository {
         intent: crate::api::ManualPersistenceIntent,
         permit: &crate::api::PrivacyReadPermit,
         now_ms: i64,
+        expected_entry_sha256: Option<&str>,
     ) -> Result<(), String> {
         permit
             .require_interactive()
@@ -994,6 +1009,7 @@ impl SqliteClipboardRepository {
         if protected(entry) && !permit.includes_sensitive() {
             return Err("SensitiveAccessDenied".into());
         }
+        check_entry_digest(entry, expected_entry_sha256)?;
         let mut next = entry.clone();
         next.content = content.into();
         next.preview = preview.into();

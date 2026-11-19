@@ -576,7 +576,7 @@ impl DesktopHost {
     }
     pub fn mutation_request(&self,id:i64,action:&str,epoch:Option<u64>)->Result<DesktopMutationParams,String> {
         Ok(DesktopMutationParams{id,action:action.into(),service_instance_id:self.instance()?,expected_epoch:epoch.unwrap_or(self.0.history.runtime_snapshot(now()).map_err(remote_error)?.privacy_epoch),
-            reveal:false,pinned:None,tags:None,content:None,confirm_persistence:None})
+            reveal:false,pinned:None,tags:None,content:None,confirm_persistence:None,expected_entry_sha256:None})
     }
     pub async fn feedback(&self,id:i64,action:dzc_core::api::PrivacyFeedbackAction,epoch:u64,expected:Option<&str>)->Result<dzc_core::api::RuntimeSnapshot,String> {
         self.check_instance(id,expected)?;

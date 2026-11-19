@@ -249,6 +249,7 @@ impl Host {
     pub(super) fn mutate_inner(&self,request:DesktopMutationParams)->Result<DesktopMutationResult,WireErrorCode> {
         if self.is_stopping() {return Err(WireErrorCode::Busy);}
         if request.service_instance_id!=self.snapshot()?.service_instance_id {return Err(WireErrorCode::PrivacyBlocked);}
+        if request.expected_entry_sha256.is_some() && request.action != "edit" {return Err(WireErrorCode::InvalidRequest);}
         let now=crate::router::now_ms()?;
         let completed_copy=request.action=="used";
         if completed_copy && (request.id<=0 || request.reveal || request.content.is_some() || request.tags.is_some() || request.pinned.is_some() || request.confirm_persistence.is_some()) {return Err(WireErrorCode::InvalidRequest);}
@@ -293,7 +294,7 @@ impl Host {
                 "edit"=>{
                     let content=request.content.ok_or(WireErrorCode::InvalidRequest)?;
                     let preview:String=content.chars().take(500).collect();
-                    self.history.update_session_manual_authorized(&mut rows[index],&content,&preview,intent,&permit,now).map_err(denied)?;
+                    self.history.update_session_manual_authorized(&mut rows[index],&content,&preview,intent,&permit,now,request.expected_entry_sha256.as_deref()).map_err(denied)?;
                 }
                 "pin"|"tags"=>{
                     let (pinned,tags)=if request.action=="pin" {(Some(request.pinned.ok_or(WireErrorCode::InvalidRequest)?),None)}
@@ -312,7 +313,7 @@ impl Host {
             "pin"=>self.history.update_entry_metadata_authorized(request.id,Some(request.pinned.ok_or(WireErrorCode::InvalidRequest)?),None,&permit,now).map_err(denied)?,
             "tags"=>self.history.update_entry_metadata_authorized(request.id,None,Some(request.tags.ok_or(WireErrorCode::InvalidRequest)?),&permit,now).map_err(denied)?,
             "edit"=>{let content=request.content.ok_or(WireErrorCode::InvalidRequest)?;let preview:String=content.chars().take(500).collect();
-                self.history.update_manual_authorized(request.id,&content,&preview,intent,&permit,now).map_err(denied)?;}
+                self.history.update_manual_checked(request.id,&content,&preview,intent,&permit,now,request.expected_entry_sha256.as_deref()).map_err(denied)?;}
             _=>return Err(WireErrorCode::InvalidRequest),
         }
         self.publish(EventKind::EntryUpdated,EventData{entry_id:Some(request.id),status:None})?;

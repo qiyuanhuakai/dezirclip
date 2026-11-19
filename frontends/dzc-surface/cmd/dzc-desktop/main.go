@@ -342,6 +342,10 @@ func run() error {
 			preview.clear()
 			if native != nil {
 				concealed := native.clearProtectedRows()
+				if native.editor != nil && native.editor.protected {
+					native.closeEntryEditor()
+					concealed = true
+				}
 				if native.backup != nil {
 					concealed = native.backup.clearPreview() || concealed
 				}

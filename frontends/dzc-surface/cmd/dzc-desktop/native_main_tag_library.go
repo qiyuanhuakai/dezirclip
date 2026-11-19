@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
@@ -26,7 +25,7 @@ type nativeTagLibrary struct {
 
 type nativeTagDialog struct {
 	action, tag, value, message string
-	open, persistence, focus    bool
+	open, focus                 bool
 }
 
 func (n *nativeMain) historyQuery() string {
@@ -37,7 +36,7 @@ func (n *nativeMain) historyQuery() string {
 }
 
 func (n *nativeMain) hasHistoryDialog() bool {
-	return n.tags != nil || n.tagLibrary != nil && n.tagLibrary.dialog != nil
+	return n.tags != nil || n.editor != nil || n.tagLibrary != nil && n.tagLibrary.dialog != nil
 }
 
 func (n *nativeMain) openTagLibrary() {
@@ -139,6 +138,10 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 			}
 			for _, action := range actions {
 				if uikit.Button(c, uikit.ButtonOptions{Label: action.label, Disabled: n.mutating || !action.enabled}).Clicked() {
+					if action.id == "add" {
+						n.addHistoryEntry(tags.selected)
+						continue
+					}
 					n.resetPreviewSelection()
 					tags.dialog = &nativeTagDialog{action: action.id, tag: tags.selected, open: true, focus: true}
 					if action.id == "rename" {
@@ -175,19 +178,9 @@ func (n *nativeMain) tagLibraryDialog(c *ui.Context, kit uikit.Kit, tags *native
 		title, confirm = n.text("tag_rename"), n.text("common_save")
 	case "remove":
 		title, confirm = n.text("tag_remove"), n.text("tag_remove", "Remove")
-	case "add":
-		title, confirm = n.text("add_item", "Add tagged entry"), n.text("common_save")
 	}
 	kit.Dialog(c, &dialog.open, title, n.text("common_close"), n.mutating, func() {
 		switch dialog.action {
-		case "add":
-			input := ui.TextArea(c, &dialog.value).FillWidth().Height(80).Label(n.text("native_entry_text")).ReadOnly(n.mutating)
-			if dialog.focus {
-				input.Focus()
-			}
-			if n.private {
-				ui.Checkbox(c, &dialog.persistence, n.text("native_save_to_history")).Disabled(n.mutating)
-			}
 		case "remove":
 			message := n.text("native_remove_tag_message")
 			ui.Text(c, strings.ReplaceAll(message, "{tag}", dialog.tag)).Wrap()
@@ -202,8 +195,7 @@ func (n *nativeMain) tagLibraryDialog(c *ui.Context, kit uikit.Kit, tags *native
 			ui.Text(c, dialog.message).TextColor(c.Theme().Danger).Wrap()
 		}
 		ui.Row(c).Justify(ui.End).Children(func() {
-			disabled := n.mutating || dialog.action != "remove" && strings.TrimSpace(dialog.value) == "" ||
-				dialog.action == "add" && n.private && !dialog.persistence
+			disabled := n.mutating || dialog.action != "remove" && strings.TrimSpace(dialog.value) == ""
 			if uikit.Button(c, uikit.ButtonOptions{Label: confirm, Disabled: disabled}).Clicked() {
 				n.commitTagDialog(tags, dialog)
 			}
@@ -219,7 +211,7 @@ func (n *nativeMain) commitTagDialog(tags *nativeTagLibrary, dialog *nativeTagDi
 		return
 	}
 	name := strings.TrimSpace(dialog.value)
-	if name == "" && dialog.action != "remove" || dialog.action == "add" && n.private && !dialog.persistence {
+	if name == "" && dialog.action != "remove" {
 		return
 	}
 	if dialog.action == "create" || dialog.action == "rename" {
@@ -242,7 +234,7 @@ func (n *nativeMain) commitTagDialog(tags *nativeTagLibrary, dialog *nativeTagDi
 		}
 	}
 	session, state := n.session, n.history.state
-	action, oldName, content, persist := dialog.action, dialog.tag, dialog.value, n.private && dialog.persistence
+	action, oldName := dialog.action, dialog.tag
 	n.mutating, dialog.message = true, ""
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 5*time.Second)
@@ -251,11 +243,6 @@ func (n *nativeMain) commitTagDialog(tags *nativeTagLibrary, dialog *nativeTagDi
 		switch action {
 		case "create":
 			err = n.library.EditTag(ctx, action, name, "", state.PrivacyEpoch)
-		case "add":
-			_, err = n.library.AddManual(ctx, content, protocol.ManualEntryParams{
-				ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch,
-				ContentType: "text", Tags: []string{oldName}, ConfirmPersistence: persist,
-			})
 		default:
 			err = n.library.EditTag(ctx, action, oldName, name, state.PrivacyEpoch)
 		}

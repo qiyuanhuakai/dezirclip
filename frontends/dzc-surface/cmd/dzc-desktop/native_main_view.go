@@ -59,9 +59,10 @@ func (n *nativeMain) view(c *ui.Context) {
 			header.Back = &uikit.HeaderAction{Icon: "back", Label: n.text("native_back"), Run: n.closeTagLibrary, Disabled: n.mutating}
 			header.Query, header.Placeholder = &n.tagLibrary.query, n.text("tag_content_search", "Search tagged entries…")
 		} else {
-			header.Actions = append(actions[:1:1], uikit.HeaderAction{
-				Icon: "settings", Label: n.text("settings"), Run: n.openSettings,
-			}, actions[1])
+			header.Actions = append(actions[:1:1],
+				uikit.HeaderAction{Icon: "add", Label: n.text("add_item"), Disabled: !n.entryEditorReady(), Run: func() { n.addHistoryEntry("") }},
+				uikit.HeaderAction{Icon: "settings", Label: n.text("settings"), Run: n.openSettings},
+				actions[1])
 			if n.preferences["app.tag_manager_enabled"] != "false" {
 				header.Actions = append([]uikit.HeaderAction{{
 					Icon: "tag", Label: n.text("tags"), Run: n.openTagLibrary, Disabled: n.mutating,
@@ -127,6 +128,9 @@ func (n *nativeMain) view(c *ui.Context) {
 	if n.backup != nil {
 		n.backupView(c, kit, n.backup)
 	}
+	if n.editor != nil {
+		n.entryEditorView(c, kit, n.editor)
+	}
 }
 
 func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
@@ -160,6 +164,11 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 			}
 			summary := nativeCardSummary(row, n.language())
 			protected := n.protectedBody(row)
+			if editableHistoryKind(row.ContentType) {
+				actions = append(actions, uikit.HeaderAction{Icon: "edit", Label: n.text("edit_item"),
+					Disabled: !n.entryEditorReady() || nativeConcealed(row) && protected == nil,
+					Run:      func() { n.editHistoryEntry(row, generation) }})
+			}
 			if nativeConcealed(row) {
 				actions = append(actions, n.protectedRowAction(row, generation))
 				if protected != nil {

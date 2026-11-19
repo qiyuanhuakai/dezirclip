@@ -108,9 +108,10 @@ impl HistoryService {
         intent: super::ManualPersistenceIntent,
         permit: &PrivacyReadPermit,
         now_ms: i64,
+        expected_entry_sha256: Option<&str>,
     ) -> CoreResult<()> {
         self.repository
-            .update_session_manual_authorized(entry, content, preview, intent, permit, now_ms)
+            .update_session_manual_authorized(entry, content, preview, intent, permit, now_ms, expected_entry_sha256)
             .map_err(CoreError::from)
     }
     pub fn update_manual_authorized(
@@ -122,6 +123,20 @@ impl HistoryService {
         permit: &PrivacyReadPermit,
         now_ms: i64,
     ) -> CoreResult<()> {
+        self.update_manual_checked(id, content, preview, intent, permit, now_ms, None)
+    }
+
+    /// Apply the editor's original-content precondition within the write transaction.
+    pub fn update_manual_checked(
+        &self,
+        id: i64,
+        content: &str,
+        preview: &str,
+        intent: super::ManualPersistenceIntent,
+        permit: &PrivacyReadPermit,
+        now_ms: i64,
+        expected_entry_sha256: Option<&str>,
+    ) -> CoreResult<()> {
         permit
             .require_interactive()
             .map_err(|error| CoreError::from(error.to_string()))?;
@@ -129,7 +144,7 @@ impl HistoryService {
             .check_read(permit, now_ms)
             .map_err(|error| CoreError::from(error.to_string()))?;
         self.repository
-            .update_manual_authorized(id, content, preview, intent, permit, now_ms)
+            .update_manual_authorized(id, content, preview, intent, permit, now_ms, expected_entry_sha256)
             .map_err(CoreError::from)
     }
 }

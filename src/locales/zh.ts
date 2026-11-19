@@ -11,6 +11,11 @@ export const privacyStatusZh = {
 
 export const zh = {
         // Native desktop controls
+        native_entry_type: "内容类型",
+        native_editor_load_failed: "无法读取用于编辑的条目。",
+        native_editor_too_large: "这段文本超出编辑器支持的大小。",
+        native_editor_conflict: "此条目在编辑期间已变更，请重新打开查看最新内容。",
+        native_editor_save_failed: "无法保存此条目。",
         native_application_lookup_failed: "无法读取全部可用应用。",
         native_profile_read_failed: "无法读取当前数据目录。",
         native_profile_open_failed: "无法打开数据目录。",
@@ -53,7 +58,6 @@ export const zh = {
         native_sort_tag_entries: "标签条目排序",
         native_create: "创建",
         native_entry_text: "条目文本",
-        native_save_to_history: "保存到永久历史",
         native_tag_length: "标签名称最多 80 个字符。",
         native_remove: "移除",
         native_add_tag: "添加标签",
