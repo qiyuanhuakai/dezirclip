@@ -384,7 +384,7 @@ impl Host {
                 methods.push("desktop.quick.preferences");
                 methods.push("desktop.screen.preferences");
                 methods.extend(["desktop.themes.list", "desktop.themes.get", "desktop.themes.import", "desktop.themes.export", "desktop.themes.remove"]);
-                methods.extend(["desktop.queue.get", "desktop.queue.set", "desktop.queue.configure"]);
+                methods.extend(["desktop.queue.get", "desktop.queue.status", "desktop.queue.set", "desktop.queue.configure"]);
                 if self.actions.can_copy() && self.actions.can_paste() {
                     methods.extend(["desktop.paste.target", "desktop.queue.next"]);
                     if session.peer.is_some() { methods.extend(["desktop.quick.begin","desktop.quick.dismiss","desktop.quick.paste"]); }
@@ -753,7 +753,7 @@ impl Host {
                 result("QuickPreferences", QuickPreferences { enabled, hotkey })
             }
             Method::DesktopQuickBegin | Method::DesktopQuickDismiss | Method::DesktopQuickPaste => self.quick_request(session, request.method, request.params),
-            Method::DesktopPasteTarget | Method::DesktopQueueGet | Method::DesktopQueueSet |
+            Method::DesktopPasteTarget | Method::DesktopQueueGet | Method::DesktopQueueStatus | Method::DesktopQueueSet |
             Method::DesktopQueueConfigure | Method::DesktopQueueNext => self.queue_request(session, request.method, request.params),
             Method::DesktopOcrEngine => {
                 self.desktop_permission(session, self.instance_id())?;
@@ -981,6 +981,7 @@ pub(crate) mod tests {
             let result = dispatch(&host, &session, Method::Capabilities, serde_json::json!({})).result.unwrap();
             let report: CapabilityReport = serde_json::from_value(result).unwrap();
             assert_eq!(report.methods.iter().any(|name|name == "desktop.queue.get"), extended);
+            assert_eq!(report.methods.iter().any(|name|name == "desktop.queue.status"), extended);
             assert!(report.methods.iter().any(|name|name == "desktop.history.page"));
             assert!(report.methods.len() <= if extended {256} else {64});
         }

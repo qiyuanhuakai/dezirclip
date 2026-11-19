@@ -335,6 +335,11 @@ func (l *Library) PasteQueue(ctx context.Context, epoch uint64) ([]int64, error)
 	return result.Ids, err
 }
 
+func (l *Library) queueStatus(ctx context.Context, state protocol.RuntimeState) (protocol.QueueStatus, error) {
+	params := protocol.LibraryStateParams{ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch}
+	return readQueueStatus(ctx, l.owner.DesktopCall, params)
+}
+
 func (l *Library) SetPasteQueue(ctx context.Context, epoch uint64, ids []int64) error {
 	for _, id := range ids {
 		if id <= 0 {

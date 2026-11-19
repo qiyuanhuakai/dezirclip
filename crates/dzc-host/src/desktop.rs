@@ -112,8 +112,8 @@ impl Host {
         let now = crate::router::now_ms()?;
         let permit = self.history.privacy().authorize_read(api::PrivacyAccessIntent::InteractiveRead,
             api::SensitiveAccess::Denied, Some(request.expected_epoch), now).map_err(blocked)?;
-        let page = self.history.tag_page(&request.tag, &request.query, &request.sort_by,
-            usize::from(request.limit), request.offset as usize).map_err(|_| WireErrorCode::Unavailable)?;
+        let page = self.history.tag_page_with_kind(&request.tag, &request.query, &request.sort_by,
+            usize::from(request.limit), request.offset as usize, request.kind.as_deref()).map_err(|_| WireErrorCode::Unavailable)?;
         let items = self.history.entries_metadata_for_gui(&page.items, true, now).map_err(blocked)?;
         let result = DesktopTagItemsPage { items: items.into_iter().map(|row| entry(row, true)).collect(),
             total: page.total as u64, has_more: page.has_more, next_offset: page.next_offset.map(|offset| offset as u32) };
@@ -282,7 +282,7 @@ mod tests {
         let protected = insert(&host, "private tag secret", true);
         host.history.update_entry_tags(protected, vec!["work".into(), "sensitive".into()]).unwrap();
         let state = host.snapshot().unwrap();
-        let request = DesktopTagPageParams { tag: "work".into(), query: String::new(), sort_by: "time".into(),
+        let request = DesktopTagPageParams { tag: "work".into(), query: String::new(), sort_by: "time".into(), kind: None,
             limit: 1, offset: 0, service_instance_id: state.service_instance_id.clone(), expected_epoch: state.privacy_epoch };
         for role in [ClientRole::Desktop, ClientRole::Surface, ClientRole::Mcp, ClientRole::Cli] {
             let ungranted = session(&host, role, false);
@@ -307,6 +307,11 @@ mod tests {
         assert!(ordinary_page.items[0].preview.contains("ordinary searchable"));
         query.query = "private tag secret".into();
         assert_eq!(host.tag_page_owned(query).unwrap().total, 0);
+        let mut typed = request.clone();
+        typed.kind = Some("image".into());
+        let typed = host.tag_page_owned(typed).unwrap();
+        assert_eq!(typed.total, 0);
+        assert!(typed.items.is_empty() && !typed.has_more);
         let mut stale = request.clone(); stale.service_instance_id = "replaced-owner".into();
         assert_eq!(host.tag_page_owned(stale).unwrap_err(), WireErrorCode::PrivacyBlocked);
         let mut stale = request; stale.expected_epoch += 1;

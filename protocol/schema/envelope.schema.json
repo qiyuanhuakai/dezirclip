@@ -120,6 +120,7 @@
         "desktop.history.count",
         "desktop.paste.target",
         "desktop.queue.get",
+        "desktop.queue.status",
         "desktop.queue.set",
         "desktop.queue.next",
         "desktop.queue.configure",
@@ -1584,7 +1585,7 @@
           "if": {
             "properties": {
               "method": {
-                "const": "desktop.queue.get"
+                "enum": ["desktop.queue.get", "desktop.queue.status"]
               }
             },
             "required": [

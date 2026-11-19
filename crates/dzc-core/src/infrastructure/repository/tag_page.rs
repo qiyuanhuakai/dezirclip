@@ -39,6 +39,18 @@ impl SqliteTagRepository {
         limit: usize,
         offset: usize,
     ) -> Result<TagItemsPage, String> {
+        self.get_page_with_kind(tag, query, sort, limit, offset, None)
+    }
+
+    pub(crate) fn get_page_with_kind(
+        &self,
+        tag: &str,
+        query: &str,
+        sort: &str,
+        limit: usize,
+        offset: usize,
+        kind: Option<&str>,
+    ) -> Result<TagItemsPage, String> {
         if tag.trim().is_empty()
             || query.chars().count() > 256
             || limit == 0
@@ -55,11 +67,11 @@ impl SqliteTagRepository {
         let mut conn = self.conn.lock().map_err(|error| error.to_string())?;
         register_tag_matcher(&conn)?;
         let transaction = conn.transaction().map_err(|error| error.to_string())?;
-        let filter = TAG_MATCH_FILTER;
+        let filter = format!("{TAG_MATCH_FILTER} AND (?3 IS NULL OR ch.content_type=?3)");
         let total: i64 = transaction
             .query_row(
                 &format!("SELECT COUNT(*) {filter}"),
-                params![tag, query],
+                params![tag, query, kind],
                 |row| row.get(0),
             )
             .map_err(|error| error.to_string())?;
@@ -69,13 +81,13 @@ impl SqliteTagRepository {
             ch.source_app,ch.timestamp,
             CASE WHEN NOT dc_search_visible(ch.tags,ch.content,ch.preview,ch.html_content,ch.ocr_text) THEN '' WHEN ch.preview LIKE 'dpapi:%' OR ch.preview LIKE 'linux:%' THEN CASE WHEN length(ch.preview)<=131072 THEN ch.preview ELSE '' END ELSE substr(ch.preview,1,800) END,
             ch.is_pinned,ch.tags,ch.use_count,ch.is_external,ch.pinned_order,ch.source_app_path,ch.content_kinds,ch.ocr_status
-            {filter} ORDER BY {order} LIMIT ?3 OFFSET ?4");
+            {filter} ORDER BY {order} LIMIT ?4 OFFSET ?5");
         let items = {
             let mut statement = transaction
                 .prepare(&sql)
                 .map_err(|error| error.to_string())?;
             let rows = statement
-                .query_map(params![tag, query, limit as i64, offset as i64], |row| {
+                .query_map(params![tag, query, kind, limit as i64, offset as i64], |row| {
                     let raw: String = row.get(2)?;
                     let image = self.maybe_decrypt_text(&raw);
                     let image = if image.len() <= 4096 && !image.starts_with("data:") {

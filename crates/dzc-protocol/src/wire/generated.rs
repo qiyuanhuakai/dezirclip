@@ -243,6 +243,8 @@ pub struct DesktopPageParams {
 pub struct DesktopTagPageParams {
     pub tag: String,
     pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     pub sort_by: String,
     pub limit: u16,
     pub offset: u32,
@@ -691,6 +693,8 @@ pub enum Method {
     DesktopPasteTarget,
     #[serde(rename = "desktop.queue.get")]
     DesktopQueueGet,
+    #[serde(rename = "desktop.queue.status")]
+    DesktopQueueStatus,
     #[serde(rename = "desktop.queue.set")]
     DesktopQueueSet,
     #[serde(rename = "desktop.queue.next")]
@@ -1212,6 +1216,14 @@ pub struct QueuePreferences {
 #[serde(deny_unknown_fields)]
 pub struct QueueState {
     pub ids: Vec<i64>,
+    pub revision: String,
+    pub preferences: QueuePreferences,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueStatus {
+    pub count: u32,
     pub revision: String,
     pub preferences: QueuePreferences,
 }

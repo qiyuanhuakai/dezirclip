@@ -143,16 +143,16 @@ func (n *nativeMain) generalSettings(c *ui.Context, kit uikit.Kit) {
 }
 
 func (n *nativeMain) clipboardSettings(c *ui.Context) {
+	n.retentionSettings(c)
 	n.clipboardShortcuts(c)
 	n.booleanSettings(c,
-		nativeBooleanSetting{"app.persistent", n.text("persistent_storage", "Keep clipboard history"), false},
-		nativeBooleanSetting{"app.persistent_limit_enabled", n.text("persistent_limit_enabled", "Limit stored clipboard entries"), true},
 		nativeBooleanSetting{"app.deduplicate", n.text("merge_duplicates", "Merge duplicate entries"), true},
 		nativeBooleanSetting{"app.capture_files", n.text("capture_files", "Capture copied files"), false},
 		nativeBooleanSetting{"app.capture_rich_text", n.text("capture_rich_text"), false},
 		nativeBooleanSetting{"app.delete_after_paste", n.text("delete_after_paste", "Delete entries after pasting"), false},
 		nativeBooleanSetting{"app.move_to_top_after_paste", n.text("move_to_top_after_paste", "Move pasted entries to top"), true},
 	)
+	n.sequentialSettings(c)
 }
 
 func (n *nativeMain) privacySettings(c *ui.Context, kit uikit.Kit) {

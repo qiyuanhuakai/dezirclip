@@ -485,7 +485,7 @@ impl DesktopHost {
     pub async fn tag_page(&self,tag:String,query:String,sort_by:String,limit:usize,offset:usize,epoch:u64)->Result<(dzc_core::api::TagItemsPage,String),String> {
         let instance=self.instance()?;
         self.check_queue_state(&instance,epoch)?;
-        let request=DesktopTagPageParams{tag,query,sort_by,limit:u16::try_from(limit).map_err(|_|failed())?,
+        let request=DesktopTagPageParams{tag,query,sort_by,kind:None,limit:u16::try_from(limit).map_err(|_|failed())?,
             offset:u32::try_from(offset).map_err(|_|failed())?,service_instance_id:instance.clone(),expected_epoch:epoch};
         let page=if let Some(host)=self.embedded()? {
             tauri::async_runtime::spawn_blocking(move||host.tag_page_owned(request).map_err(public_code)).await.map_err(|_|failed())??

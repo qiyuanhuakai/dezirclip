@@ -63,6 +63,7 @@ type nativeMain struct {
 	privacyDialog    *nativePrivacyDialog
 	privacyEditor    *nativePrivacyEditor
 	shortcut         *nativeShortcutForm
+	queueCount       nativeQueueCount
 	applications     nativeApplicationCatalog
 	profile          nativeProfileSettings
 	backup           *nativeBackupDialog
@@ -113,6 +114,7 @@ func (n *nativeMain) stopSession() {
 	n.closeBackup()
 	n.closePrivacyDialog()
 	n.cancelShortcut()
+	n.queueCount = nativeQueueCount{}
 	n.privacyEditor = nil
 	n.privacyRules = nativePrivacyRules{}
 	n.tagLibrary = nil
@@ -338,6 +340,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 			n.tagColorRevision++
 		}
 		if event.Event == protocol.EventKindServiceStateChanged && event.Data.Status != nil {
+			n.queueCount.observe(*event.Data.Status)
 			switch *event.Data.Status {
 			case "view_settings_changed", "custom_themes_changed":
 				if n.themeWorking {
@@ -417,7 +420,7 @@ func (n *nativeMain) historyFilter() nativeHistoryFilter {
 	}
 	query := strings.TrimSpace(n.query)
 	if tag, ok := searchTagName(query); ok {
-		return nativeHistoryFilter{tag: tag, sort: "time"}
+		return nativeHistoryFilter{tag: tag, kind: n.kind, sort: "time"}
 	}
 	return nativeHistoryFilter{query: query, kind: n.kind}
 }

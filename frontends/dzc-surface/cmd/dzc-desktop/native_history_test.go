@@ -39,11 +39,11 @@ func TestNativeProtectedRowsExpireOutsideTheirVisibleVersion(t *testing.T) {
 
 func TestNativeMainHistoryFilterMatchesTagSearch(t *testing.T) {
 	window := nativeMain{query: "  TaG:  Work notes  ", kind: "text"}
-	if got := window.historyFilter(); got != (nativeHistoryFilter{tag: "Work notes", sort: "time"}) {
+	if got := window.historyFilter(); got != (nativeHistoryFilter{tag: "Work notes", kind: "text", sort: "time"}) {
 		t.Fatalf("tag-only search: %+v", got)
 	}
 	window.query = "tag: "
-	if got := window.historyFilter(); got != (nativeHistoryFilter{sort: "time"}) {
+	if got := window.historyFilter(); got != (nativeHistoryFilter{kind: "text", sort: "time"}) {
 		t.Fatalf("empty tag selection: %+v", got)
 	}
 	window.query = " note "

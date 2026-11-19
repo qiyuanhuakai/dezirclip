@@ -177,6 +177,7 @@ type DesktopPageParams struct {
 type DesktopTagPageParams struct {
     Tag string `json:"tag"`
     Query string `json:"query"`
+    Kind *string `json:"kind,omitempty"`
     SortBy string `json:"sort_by"`
     Limit uint16 `json:"limit"`
     Offset uint32 `json:"offset"`
@@ -474,6 +475,7 @@ const (
     MethodDesktopHistoryCount Method = "desktop.history.count"
     MethodDesktopPasteTarget Method = "desktop.paste.target"
     MethodDesktopQueueGet Method = "desktop.queue.get"
+    MethodDesktopQueueStatus Method = "desktop.queue.status"
     MethodDesktopQueueSet Method = "desktop.queue.set"
     MethodDesktopQueueNext Method = "desktop.queue.next"
     MethodDesktopQueueConfigure Method = "desktop.queue.configure"
@@ -837,6 +839,12 @@ type QueuePreferences struct {
 
 type QueueState struct {
     Ids []int64 `json:"ids"`
+    Revision string `json:"revision"`
+    Preferences QueuePreferences `json:"preferences"`
+}
+
+type QueueStatus struct {
+    Count uint32 `json:"count"`
     Revision string `json:"revision"`
     Preferences QueuePreferences `json:"preferences"`
 }

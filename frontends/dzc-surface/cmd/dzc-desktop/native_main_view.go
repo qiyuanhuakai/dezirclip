@@ -79,7 +79,10 @@ func (n *nativeMain) view(c *ui.Context) {
 			if n.preferences["app.show_search_box"] != "false" || n.temporarySearch || n.query != "" {
 				header.Query, header.Placeholder, header.Filter = &n.query, n.text("search_placeholder", "Search clipboard…"), &n.kind
 				header.Filters = []uikit.HeaderFilter{
-					{ID: "text", Label: n.text("type_text")}, {ID: "image", Label: n.text("native_images")}, {ID: "files", Label: n.text("native_files")},
+					{ID: "text", Label: n.text("type_text")}, {ID: "image", Label: n.text("native_images")},
+					{ID: "file", Label: n.text("native_files")}, {ID: "url", Label: n.text("type_url")},
+					{ID: "code", Label: n.text("type_code")}, {ID: "video", Label: n.text("type_video")},
+					{ID: "rich_text", Label: n.text("type_rich_text")},
 				}
 			}
 		}

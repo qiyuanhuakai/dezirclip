@@ -206,6 +206,19 @@ impl HistoryService {
             .get_page(tag, query, sort, limit, offset)
             .map_err(Into::into)
     }
+    pub fn tag_page_with_kind(
+        &self,
+        tag: &str,
+        query: &str,
+        sort: &str,
+        limit: usize,
+        offset: usize,
+        kind: Option<&str>,
+    ) -> CoreResult<super::TagItemsPage> {
+        self.tags
+            .get_page_with_kind(tag, query, sort, limit, offset, kind)
+            .map_err(Into::into)
+    }
     pub fn create_tag(&self, name: &str) -> CoreResult<()> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 80 || name.chars().any(char::is_control) {

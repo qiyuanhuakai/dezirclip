@@ -2,11 +2,27 @@ package main
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
+
+func readQueueStatus(ctx context.Context, call func(context.Context, protocol.Method, any, string, any) error, params protocol.LibraryStateParams) (protocol.QueueStatus, error) {
+	var status protocol.QueueStatus
+	err := call(ctx, protocol.MethodDesktopQueueStatus, params, "QueueStatus", &status)
+	var remote *client.RemoteError
+	if errors.As(err, &remote) && remote.Code == protocol.WireErrorCodeInvalidRequest {
+		// Earlier Hosts serve the same revision and preferences in the full queue.
+		var legacy protocol.QueueState
+		err = call(ctx, protocol.MethodDesktopQueueGet, params, "QueueState", &legacy)
+		if err == nil {
+			status = protocol.QueueStatus{Count: uint32(len(legacy.Ids)), Revision: legacy.Revision, Preferences: legacy.Preferences}
+		}
+	}
+	return status, err
+}
 
 // Capture the foreground editor on the shortcut callback before scheduling work.
 // Each action owns one connection; its target cannot be replaced by the WebView.
@@ -37,12 +53,12 @@ func prepareShortcutPaste(owner *client.Client, rich bool) (func() error, error)
 	return func() error {
 		defer cancel()
 		defer host.Close()
-		var queue protocol.QueueState
-		if err := host.Call(ctx, protocol.MethodDesktopQueueGet, params, "QueueState", &queue); err != nil {
+		queue, err := readQueueStatus(ctx, host.Call, params)
+		if err != nil {
 			return err
 		}
 		if !rich {
-			if !queue.Preferences.Sequential || len(queue.Ids) == 0 {
+			if !queue.Preferences.Sequential || queue.Count == 0 {
 				return nil
 			}
 			var result protocol.QueueStepResult

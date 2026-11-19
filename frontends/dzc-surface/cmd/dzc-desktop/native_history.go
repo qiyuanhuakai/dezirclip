@@ -54,6 +54,9 @@ func (l *Library) nativeTagPage(ctx context.Context, request nativeHistoryReques
 		Tag: request.filter.tag, Query: request.filter.query, SortBy: request.filter.sort, Limit: pageSize,
 		Offset: request.offset, ServiceInstanceId: request.state.ServiceInstanceId, ExpectedEpoch: request.state.PrivacyEpoch,
 	}
+	if request.filter.kind != "" {
+		params.Kind = &request.filter.kind
+	}
 	var result nativeHistoryPage
 	err := readLibrarySnapshot(ctx, func(ctx context.Context) error {
 		var page protocol.DesktopTagItemsPage

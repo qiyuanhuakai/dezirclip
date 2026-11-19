@@ -83,6 +83,18 @@
       ],
       "additionalProperties": false
     },
+    "QueueStatus": {
+      "type": "object",
+      "properties": {
+        "count": { "type": "integer", "minimum": 0, "maximum": 32768, "x-rust-type": "u32" },
+        "revision": { "type": "string", "minLength": 36, "maxLength": 36 },
+        "preferences": {
+          "$ref": "https://dezirclip.local/protocol/v1/queue.schema.json#/$defs/QueuePreferences"
+        }
+      },
+      "required": ["count", "revision", "preferences"],
+      "additionalProperties": false
+    },
     "QueueReplaceParams": {
       "type": "object",
       "properties": {

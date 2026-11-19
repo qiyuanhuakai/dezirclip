@@ -710,6 +710,11 @@
           "type": "string",
           "maxLength": 256
         },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
         "sort_by": {
           "type": "string",
           "enum": [
@@ -1732,6 +1737,7 @@
         "desktop.history.count",
         "desktop.paste.target",
         "desktop.queue.get",
+        "desktop.queue.status",
         "desktop.queue.set",
         "desktop.queue.next",
         "desktop.queue.configure",
@@ -3481,7 +3487,10 @@
           "if": {
             "properties": {
               "method": {
-                "const": "desktop.queue.get"
+                "enum": [
+                  "desktop.queue.get",
+                  "desktop.queue.status"
+                ]
               }
             },
             "required": [
@@ -5383,6 +5392,31 @@
       },
       "required": [
         "ids",
+        "revision",
+        "preferences"
+      ],
+      "additionalProperties": false
+    },
+    "QueueStatus": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32768,
+          "x-rust-type": "u32"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "preferences": {
+          "$ref": "#/$defs/QueuePreferences"
+        }
+      },
+      "required": [
+        "count",
         "revision",
         "preferences"
       ],

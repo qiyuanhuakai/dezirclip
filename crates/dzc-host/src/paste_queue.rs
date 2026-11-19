@@ -212,10 +212,7 @@ impl Host {
     }
 
     fn queue_snapshot(&self) -> Result<QueueState, WireErrorCode> {
-        let (sequential, delete_after_paste, paste_method) = self
-            .history
-            .queue_preferences()
-            .map_err(|_| WireErrorCode::Unavailable)?;
+        let preferences = self.queue_preferences()?;
         let q = self
             .queue
             .state
@@ -224,11 +221,23 @@ impl Host {
         Ok(QueueState {
             ids: q.items.iter().copied().collect(),
             revision: q.revision.to_string(),
-            preferences: QueuePreferences {
-                sequential,
-                delete_after_paste,
-                paste_method,
-            },
+            preferences,
+        })
+    }
+
+    fn queue_preferences(&self) -> Result<QueuePreferences, WireErrorCode> {
+        let (sequential, delete_after_paste, paste_method) =
+            self.history.queue_preferences().map_err(|_| WireErrorCode::Unavailable)?;
+        Ok(QueuePreferences { sequential, delete_after_paste, paste_method })
+    }
+
+    fn queue_status(&self) -> Result<QueueStatus, WireErrorCode> {
+        let preferences = self.queue_preferences()?;
+        let queue = self.queue.state.lock().map_err(|_| WireErrorCode::Unavailable)?;
+        Ok(QueueStatus {
+            count: queue.items.len() as u32,
+            revision: queue.revision.to_string(),
+            preferences,
         })
     }
 
@@ -263,6 +272,7 @@ impl Host {
                     .map_err(|_| WireErrorCode::Unavailable)?,
             ),
             Method::DesktopQueueGet => encode(self.queue_snapshot()?),
+            Method::DesktopQueueStatus => encode(self.queue_status()?),
             Method::DesktopQueueSet => {
                 let p: QueueReplaceParams = decode(params)?;
                 let mut q = self

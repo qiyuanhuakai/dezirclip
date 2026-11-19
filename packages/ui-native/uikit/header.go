@@ -106,11 +106,19 @@ func (k Kit) headerSearch(c *ui.Context, options HeaderOptions) {
 			ui.Icon(c, headerIcons["search"]).Absolute().Left(10).Top((field.Height-14)/2).Size(14, 14).
 				TextColor(c.Theme().TextMuted).PassThrough()
 		})
+		if len(options.Filters) == 0 || options.Filter == nil {
+			return
+		}
 		filters := k.style("headerFilters")
-		paint(ui.Row(c).Gap(filters.ColumnGap).AlignItems(ui.Center), filters).Children(func() {
+		paint(ui.ScrollHorizontal(c).FillWidth().Gap(filters.ColumnGap).AlignItems(ui.Center), filters).Children(func() {
 			for _, filter := range options.Filters {
-				if k.button(c, filter.Label, "headerFilter").Clicked() && options.Filter != nil {
-					if *options.Filter == filter.ID {
+				button := k.button(c, filter.Label, "headerFilter")
+				selected := *options.Filter == filter.ID
+				if selected {
+					button.Background(c.Theme().Selection)
+				}
+				if button.Clicked() {
+					if selected {
 						*options.Filter = ""
 					} else {
 						*options.Filter = filter.ID
