@@ -410,34 +410,23 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 			source.Y += bounds.Y
 		}
 		width, height := body.preferredSize(area)
+		// Fit the content before mapping the flyout, so its controls do not move under the pointer.
+		theme := appearance.theme()
+		if fitted := body.filenameWidth(theme.Font); fitted > 0 {
+			width, height = min(560, fitted), attachmentFilenameHeight(len(body.attachments))
+		} else if fitted := body.textWidth(theme); fitted > 0 {
+			width = fitted
+		}
 		frame := previewSizedBounds(area, source, preferred, width, height)
 		if frame.Width == 0 {
 			return
 		}
 		anchor := mygo.Rectangle{X: frame.X - bounds.X, Y: frame.Y - bounds.Y}
 		opacity := &previewOpacityControl{value: appearance.Opacity, slider: float64(appearance.Opacity), committed: appearance.Opacity, epoch: params.ExpectedEpoch, library: Library{p.owner}}
-		pinning, failed, measured := false, false, false
+		pinning, failed := false, false
 		p.window = mygo.NewFlyout(mygo.FlyoutOptions{Parent: main, Anchor: anchor, Width: frame.Width, Height: frame.Height, Hidden: true, Content: ui.View(func(c *ui.Context) {
 			appearance.Opacity = opacity.value
 			appearance.panel(c).Children(func() {
-				if !measured {
-					measured = true
-					width, height := body.filenameWidth(c), frame.Height
-					if width > 0 {
-						height = attachmentFilenameHeight(len(body.attachments))
-					} else {
-						width = body.textWidth(c)
-					}
-					if width > 0 {
-						fitted := previewSizedBounds(area, source, preferred, min(560, width), height)
-						main.Update(func() {
-							if p.generation == sequence && p.window != nil {
-								p.window.SetSize(fitted.Width, fitted.Height)
-								p.window.SetAnchor(mygo.Rectangle{X: fitted.X - bounds.X, Y: fitted.Y - bounds.Y})
-							}
-						})
-					}
-				}
 				ui.Row(c).FillWidth().Height(30).Gap(6).Children(func() {
 					title := appearance.Title
 					if title == "" {

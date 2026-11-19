@@ -43,8 +43,8 @@ func TestMediaPreviewFollowsPortraitLandscapeAndSmallImages(t *testing.T) {
 func TestGalleryWidthMeasuresFilenames(t *testing.T) {
 	var short, long int
 	ui.NewTester(func(c *ui.Context) {
-		short = (&previewBody{attachments: []previewAttachment{{name: "a.txt"}}}).filenameWidth(c)
-		long = (&previewBody{attachments: []previewAttachment{{name: "A very long document filename that requires more space than a short file.txt"}}}).filenameWidth(c)
+		short = (&previewBody{attachments: []previewAttachment{{name: "a.txt"}}}).filenameWidth(c.Theme().Font)
+		long = (&previewBody{attachments: []previewAttachment{{name: "A very long document filename that requires more space than a short file.txt"}}}).filenameWidth(c.Theme().Font)
 	}, 560, 320)
 	if short != 320 || long <= short {
 		t.Fatalf("widths do not follow filenames: %d %d", short, long)
@@ -55,10 +55,10 @@ func TestTextPreviewFitsPlainAndStyledParagraphs(t *testing.T) {
 	var short, medium, long, multiline, normal, heading, large, indented int
 	ui.NewTester(func(c *ui.Context) {
 		plain := func(text string) int {
-			return (&previewBody{formatted: previewDocument(richtext.NewText(text))}).textWidth(c)
+			return (&previewBody{formatted: previewDocument(richtext.NewText(text))}).textWidth(c.Theme())
 		}
 		html := func(text string) int {
-			return (&previewBody{formatted: previewDocument(richtext.ParseHTML(text))}).textWidth(c)
+			return (&previewBody{formatted: previewDocument(richtext.ParseHTML(text))}).textWidth(c.Theme())
 		}
 		short = plain("短文字")
 		medium = plain(strings.Repeat("M", 32))
@@ -66,7 +66,7 @@ func TestTextPreviewFitsPlainAndStyledParagraphs(t *testing.T) {
 		multiline = plain("第一行\n第二行\n第三行")
 		normal = html("<p>" + strings.Repeat("M", 24) + "</p>")
 		heading = html("<h1>" + strings.Repeat("M", 24) + "</h1>")
-		large = (&previewBody{formatted: previewDocument(richtext.TextOf(richtext.Paragraph{Runs: []richtext.Run{{Text: strings.Repeat("M", 24), Attributes: richtext.Attributes{Size: 30}}}}))}).textWidth(c)
+		large = (&previewBody{formatted: previewDocument(richtext.TextOf(richtext.Paragraph{Runs: []richtext.Run{{Text: strings.Repeat("M", 24), Attributes: richtext.Attributes{Size: 30}}}}))}).textWidth(c.Theme())
 		indented = html("<blockquote>" + strings.Repeat("M", 32) + "</blockquote>")
 	}, 560, 320)
 	if short != 320 || multiline != short || medium <= short || medium >= 560 || long != 560 {

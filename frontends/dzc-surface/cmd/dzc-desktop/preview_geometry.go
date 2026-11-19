@@ -39,13 +39,14 @@ func (body *previewBody) preferredSize(area mygo.Rectangle) (int, int) {
 	return min(480, width), min(320, height)
 }
 
-func (body *previewBody) filenameWidth(c *ui.Context) int {
+func (body *previewBody) filenameWidth(family string) int {
 	width := float32(0)
+	font := ui.Font{Family: family, Size: 12}
 	for _, item := range body.attachments {
 		if item.image != nil {
 			return 0
 		}
-		w, _ := c.MeasureText(0, ui.Span{Text: item.name, Size: 12})
+		w, _ := ui.ShapeText(item.name, font, 0).Size()
 		width = max(width, w)
 	}
 	if width == 0 {
@@ -56,12 +57,13 @@ func (body *previewBody) filenameWidth(c *ui.Context) int {
 
 // Match the editor's paragraph and run fonts, without laying out the whole
 // document again on every frame. Long documents use the bounded wide frame.
-func (body *previewBody) textWidth(c *ui.Context) int {
+func (body *previewBody) textWidth(theme *ui.Theme) int {
 	if body.formatted == nil || body.bitmap != nil || len(body.attachments) > 0 {
 		return 0
 	}
-	look := richtext.DefaultTheme(c.Theme())
-	base := c.Theme().FontSize
+	look := richtext.DefaultTheme(theme)
+	base := theme.FontSize
+	defaultFont := ui.Font{Family: theme.Font, Size: base}
 	width, budget := float32(0), 8192
 	for index, paragraph := range body.formatted.Text().Paragraphs() {
 		if index >= 256 {
@@ -110,7 +112,7 @@ func (body *previewBody) textWidth(c *ui.Context) int {
 			}
 			spans = append(spans, span)
 		}
-		measured, _ := c.MeasureText(0, spans...)
+		measured, _ := ui.ShapeRichText(spans, defaultFont, 0).Size()
 		width = max(width, measured+inset)
 		if width >= 520 {
 			return 560
