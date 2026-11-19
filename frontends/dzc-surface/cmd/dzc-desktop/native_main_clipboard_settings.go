@@ -2,13 +2,125 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"log"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
+
+const nativePasteMethodKey = "app.paste_method"
+
+func (n *nativeMain) pasteMethodSetting(c *ui.Context, kit uikit.Kit) {
+	options := []uikit.SelectOption{
+		{Value: "shift_insert", Label: n.text("paste_method_shift_insert")},
+		{Value: "ctrl_v", Label: n.text("paste_method_ctrl_v")},
+	}
+	saved := n.preferences[nativePasteMethodKey]
+	if runtime.GOOS == "windows" {
+		options = append(options, uikit.SelectOption{Value: "game_mode", Label: n.text("paste_method_game_mode")})
+	} else if saved == "game_mode" {
+		// X11 uses the Shift+Insert path for this Windows setting.
+		saved = "shift_insert"
+	}
+	if saved == "" {
+		saved = "shift_insert"
+	}
+	selected, label := saved, n.text("paste_method")
+	ui.Text(c, label).FontWeight(600)
+	if kit.Select(c, &selected, label, options, n.mutating).Changed() && selected != saved {
+		if selected == "game_mode" {
+			n.enableGameMode(saved)
+		} else {
+			n.saveSetting(nativePasteMethodKey, selected)
+		}
+	}
+}
+
+func (n *nativeMain) enableGameMode(previous string) {
+	state := n.history.state
+	if n.session == nil || n.mutating || state.ServiceInstanceId == "" {
+		return
+	}
+	n.mutating, n.notice = true, ""
+	session, language := n.session, n.language()
+	go func() {
+		changed, err := n.saveGameMode(session, state, language, previous)
+		n.update(session, func() {
+			n.mutating = false
+			if changed {
+				n.prepare(n.resume)
+			}
+			if err != nil {
+				n.notice = n.text("native_setting_save_failed")
+			}
+		})
+	}()
+}
+
+func (n *nativeMain) saveGameMode(session context.Context, state protocol.RuntimeState, language nativeLanguage, previous string) (bool, error) {
+	ctx, cancel := context.WithTimeout(session, 4*time.Second)
+	admin, err := (&SystemSettings{owner: n.library.owner}).IsAdmin(ctx)
+	cancel()
+	if err != nil {
+		return false, err
+	}
+	if !admin {
+		n.shell.dock.dialogs.Add(1)
+		result, err := mygo.Dialog.Message(mygo.MessageOptions{
+			Parent: n.window, Title: language.text("admin_required"),
+			Message: language.text("game_mode_admin_required"), Type: mygo.MessageWarning,
+			Buttons:       []string{language.text("common_confirm"), language.text("common_cancel")},
+			DefaultButton: 1, CancelButton: 1,
+		})
+		n.shell.dock.dialogs.Add(-1)
+		if err != nil || result.Button != 0 {
+			return false, err
+		}
+	}
+	write, cancel := context.WithTimeout(session, 4*time.Second)
+	err = n.library.SetSetting(write, nativePasteMethodKey, "game_mode", state.PrivacyEpoch)
+	cancel()
+	if err != nil {
+		return false, err
+	}
+	if admin {
+		return true, nil
+	}
+	// Once consent is given, a window hide must not interrupt the UAC exchange
+	// or the corresponding rollback if the restart is declined.
+	err = n.shell.RestartAsAdmin(context.Background())
+	if err != nil {
+		n.restorePasteMethod(state.ServiceInstanceId, previous)
+	}
+	return true, err
+}
+
+func (n *nativeMain) restorePasteMethod(instance, previous string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	status, err := n.library.Status(ctx)
+	if err == nil && status.State.ServiceInstanceId == instance {
+		var current map[string]string
+		raw, readErr := n.library.preferences(ctx, status.State)
+		err = readErr
+		if err == nil {
+			err = json.Unmarshal(raw, &current)
+		}
+		if err == nil && current[nativePasteMethodKey] == "game_mode" {
+			err = n.library.SetSetting(ctx, nativePasteMethodKey, previous, status.State.PrivacyEpoch)
+		}
+	}
+	if err != nil {
+		log.Printf("Could not restore the previous paste method: %v", err)
+	}
+}
 
 type nativeQueueCount struct {
 	events                 uint64

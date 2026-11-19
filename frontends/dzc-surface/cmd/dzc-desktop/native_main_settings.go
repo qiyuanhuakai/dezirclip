@@ -35,7 +35,7 @@ func (n *nativeMain) openSettings() {
 func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *int) {
 	panes := []nativeSettingsPane{
 		{uikit.SettingsSection{ID: "general", Label: n.text("general_settings", "General")}, func() { n.generalSettings(c, kit) }},
-		{uikit.SettingsSection{ID: "clipboard", Label: n.text("clipboard_settings")}, func() { n.clipboardSettings(c) }},
+		{uikit.SettingsSection{ID: "clipboard", Label: n.text("clipboard_settings")}, func() { n.clipboardSettings(c, kit) }},
 		{uikit.SettingsSection{ID: "privacy", Label: n.text("privacy_settings")}, func() { n.privacySettings(c, kit) }},
 		{uikit.SettingsSection{ID: "appearance", Label: n.text("appearance_settings")}, func() { n.appearanceSettings(c, kit, surfaceOpacity) }},
 		{uikit.SettingsSection{ID: "applications", Label: n.text("default_apps")}, func() { n.defaultAppsSettings(c) }},
@@ -142,7 +142,7 @@ func (n *nativeMain) generalSettings(c *ui.Context, kit uikit.Kit) {
 	}
 }
 
-func (n *nativeMain) clipboardSettings(c *ui.Context) {
+func (n *nativeMain) clipboardSettings(c *ui.Context, kit uikit.Kit) {
 	n.retentionSettings(c)
 	n.clipboardShortcuts(c)
 	n.booleanSettings(c,
@@ -152,6 +152,7 @@ func (n *nativeMain) clipboardSettings(c *ui.Context) {
 		nativeBooleanSetting{"app.delete_after_paste", n.text("delete_after_paste", "Delete entries after pasting"), false},
 		nativeBooleanSetting{"app.move_to_top_after_paste", n.text("move_to_top_after_paste", "Move pasted entries to top"), true},
 	)
+	n.pasteMethodSetting(c, kit)
 	n.sequentialSettings(c)
 }
 
