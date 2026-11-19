@@ -9,6 +9,8 @@ use base64::Engine;
 
 const MAX_BYTES: usize = 32 * 1024 * 1024;
 const CHUNK_BYTES: usize = 192 * 1024;
+const MAX_INLINE_BYTES: usize = 32 * 1024;
+const INLINE_SNAPSHOT_ID: &str = "00000000000000000000000000000000";
 struct Snapshot { id: String, owner: String, epoch: u64, expires: Instant, bytes: Vec<u8> }
 #[derive(Default)]
 pub(crate) struct Snapshots(Arc<Mutex<Vec<Snapshot>>>,Arc<AtomicBool>);
@@ -20,6 +22,16 @@ impl Snapshots {
     fn store(&self, owner: &Session, state: RuntimeState, value: &impl Serialize) -> Result<BodySnapshot, WireErrorCode> {
         let bytes = serde_json::to_vec(value).map_err(|_| WireErrorCode::Internal)?;
         if bytes.len() > MAX_BYTES { return Err(WireErrorCode::FrameTooLarge); }
+        if owner.inline_snapshots && bytes.len() <= MAX_INLINE_BYTES {
+            // Keep the encoding identical to the chunked path so the client checks the
+            // same body bytes against the same result schema.
+            return Ok(BodySnapshot {
+                snapshot_id: INLINE_SNAPSHOT_ID.into(),
+                total_bytes: bytes.len() as u32,
+                inline_json: Some(String::from_utf8(bytes).map_err(|_| WireErrorCode::Internal)?),
+                state,
+            });
+        }
         let mut snapshots = self.0.lock().map_err(|_| WireErrorCode::Unavailable)?;
         snapshots.retain(|snapshot| snapshot.expires > Instant::now() && snapshot.epoch == state.privacy_epoch);
         if snapshots.len() >= 4 || snapshots.iter().map(|snapshot| snapshot.bytes.len()).sum::<usize>().saturating_add(bytes.len()) > MAX_BYTES {
@@ -48,7 +60,7 @@ impl Snapshots {
                 return Err(WireErrorCode::Unavailable);
             }
         }
-        Ok(BodySnapshot { snapshot_id: id, total_bytes, state })
+        Ok(BodySnapshot { snapshot_id: id, total_bytes, state, inline_json: None })
     }
     fn read(&self, owner: &Session, state: RuntimeState, request: SnapshotReadParams) -> Result<SnapshotChunk, WireErrorCode> {
         if request.service_instance_id != state.service_instance_id || request.expected_epoch != state.privacy_epoch { return Err(WireErrorCode::PrivacyBlocked); }
@@ -230,6 +242,34 @@ mod tests {
     fn get(host:&Host,session:&Session,id:i64,reveal:bool)->Response {
         let state=host.snapshot().unwrap();
         call(host,session,Method::DesktopHistoryGet,serde_json::json!({"id":id,"reveal":reveal,"expected_epoch":state.privacy_epoch,"service_instance_id":state.service_instance_id}))
+    }
+    #[test]
+    fn inline_snapshot_requires_permission_and_preserves_large_snapshot_fallback() {
+        let host = crate::router::tests::synthetic_host();
+        let id = insert(&host, "synthetic UTF-8 fixture 示例", false);
+        let mut hello = HelloParams {
+            protocol_version: dzc_protocol::wire::VERSION, client_version: "synthetic".into(),
+            client_role: ClientRole::Desktop, capabilities: vec!["desktop.inline_snapshot".into()],
+            required_capabilities: vec![], grant: None,
+        };
+        let ungranted = host.hello(hello.clone()).unwrap().0;
+        assert_eq!(get(&host, &ungranted, id, false).error.unwrap().code, WireErrorCode::PermissionDenied);
+        hello.grant = Some(host.grants().issue_control(ClientRole::Desktop).unwrap().token().into());
+        let owner = host.hello(hello).unwrap().0;
+        let descriptor: BodySnapshot = serde_json::from_value(get(&host, &owner, id, false).result.unwrap()).unwrap();
+        let body = descriptor.inline_json.unwrap();
+        assert_eq!(descriptor.snapshot_id, INLINE_SNAPSHOT_ID);
+        assert_eq!(descriptor.total_bytes as usize, body.len());
+        assert_eq!(descriptor.state, host.snapshot().unwrap());
+        let item = dzc_protocol::wire::decode::<DesktopEntry>("DesktopEntry", body.as_bytes()).unwrap();
+        assert_eq!(item.id, id);
+
+        let legacy = session(&host, ClientRole::Desktop, true);
+        let old: BodySnapshot = serde_json::from_value(get(&host, &legacy, id, false).result.unwrap()).unwrap();
+        assert!(old.inline_json.is_none());
+        let large = host.snapshots.store(&owner, descriptor.state, &"x".repeat(MAX_INLINE_BYTES)).unwrap();
+        assert!(large.inline_json.is_none());
+        assert_ne!(large.snapshot_id, INLINE_SNAPSHOT_ID);
     }
     #[test]
     fn tag_pages_are_owner_scoped_metadata_and_keep_content_search_private() {

@@ -14,8 +14,53 @@ import (
 // ReadSnapshot uses the connection that received the descriptor. No partial
 // result is decoded if the Host replaces the snapshot or revokes its epoch.
 func (client *Client) ReadSnapshot(ctx context.Context, snapshot protocol.BodySnapshot, schema string, result any) error {
+	return client.readSnapshot(ctx, snapshot, schema, result, nil)
+}
+
+// SnapshotReadMetrics summarizes the chunk exchanges and final schema decode.
+type SnapshotReadMetrics struct {
+	Chunks   int
+	Transfer time.Duration
+	Decode   time.Duration
+}
+
+func (client *Client) ReadSnapshotMeasured(ctx context.Context, snapshot protocol.BodySnapshot, schema string, result any) (SnapshotReadMetrics, error) {
+	var metrics SnapshotReadMetrics
+	err := client.readSnapshot(ctx, snapshot, schema, result, &metrics)
+	return metrics, err
+}
+
+func (client *Client) readSnapshot(ctx context.Context, snapshot protocol.BodySnapshot, schema string, result any, metrics *SnapshotReadMetrics) error {
 	if snapshot.State.ServiceInstanceId != client.hello.State.ServiceInstanceId || snapshot.TotalBytes == 0 || snapshot.TotalBytes > protocol.MaxSnapshotBytes {
 		return ErrProtocol
+	}
+	if snapshot.InlineJson != nil {
+		const maxInlineBytes = 32 * 1024
+		const inlineSnapshotID = "00000000000000000000000000000000"
+		body := *snapshot.InlineJson
+		if snapshot.SnapshotId != inlineSnapshotID || len(body) > maxInlineBytes || len(body) != int(snapshot.TotalBytes) {
+			return ErrProtocol
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		started := time.Now()
+		data := []byte(body)
+		defer clear(data)
+		err := protocol.DecodeSnapshot(schema, data, result)
+		if metrics != nil {
+			metrics.Decode = time.Since(started)
+		}
+		return err
+	}
+	var transferStarted time.Time
+	if metrics != nil {
+		transferStarted = time.Now()
+		defer func() {
+			if metrics.Transfer == 0 {
+				metrics.Transfer = time.Since(transferStarted)
+			}
+		}()
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -24,6 +69,9 @@ func (client *Client) ReadSnapshot(ctx context.Context, snapshot protocol.BodySn
 	for offset := uint32(0); offset < snapshot.TotalBytes; {
 		request := protocol.SnapshotReadParams{SnapshotId: snapshot.SnapshotId, Offset: offset,
 			ExpectedEpoch: snapshot.State.PrivacyEpoch, ServiceInstanceId: snapshot.State.ServiceInstanceId}
+		if metrics != nil {
+			metrics.Chunks++
+		}
 		var chunk protocol.SnapshotChunk
 		if err := client.Call(ctx, protocol.MethodDesktopSnapshotRead, request, "SnapshotChunk", &chunk); err != nil {
 			return err
@@ -36,7 +84,14 @@ func (client *Client) ReadSnapshot(ctx context.Context, snapshot protocol.BodySn
 		}
 		offset = chunk.NextOffset
 	}
-	return protocol.DecodeSnapshot(schema, raw, result)
+	if metrics == nil {
+		return protocol.DecodeSnapshot(schema, raw, result)
+	}
+	decodeStarted := time.Now()
+	metrics.Transfer = decodeStarted.Sub(transferStarted)
+	err := protocol.DecodeSnapshot(schema, raw, result)
+	metrics.Decode = time.Since(decodeStarted)
+	return err
 }
 
 // ReadScreenPNG returns a complete, dimension-checked PNG from begin or crop.
@@ -72,12 +127,18 @@ func decodeChunk(buffer []byte, offset, next uint32, finished bool, encoded stri
 	if next <= offset || uint64(next) > uint64(len(buffer)) || finished != (int(next) == len(buffer)) {
 		return ErrProtocol
 	}
-	decoded, err := base64.StdEncoding.Strict().DecodeString(encoded)
-	defer clear(decoded)
-	if err != nil || len(decoded) != int(next-offset) {
+	// Limit decoding to the current chunk so a bad reply cannot write into a neighbour.
+	target := buffer[offset:next:next]
+	decoded, err := base64.StdEncoding.Strict().AppendDecode(target[:0], []byte(encoded))
+	if err != nil || len(decoded) != len(target) {
+		clear(decoded)
 		return ErrProtocol
 	}
-	copy(buffer[offset:next], decoded)
+	if &decoded[0] != &target[0] {
+		// Unusual line breaks can make AppendDecode allocate despite a correct decoded length.
+		copy(target, decoded)
+		clear(decoded)
+	}
 	return nil
 }
 

@@ -305,6 +305,8 @@ pub struct BodySnapshot {
     pub snapshot_id: String,
     pub total_bytes: u32,
     pub state: RuntimeState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inline_json: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

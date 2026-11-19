@@ -212,7 +212,7 @@ func (endpoint desktopEndpoint) connect(ctx context.Context, version string) (*C
 	}
 	client, err := handshake(ctx, conn, protocol.HelloParams{ProtocolVersion: protocol.Version,
 		ClientVersion: version, ClientRole: protocol.ClientRoleDesktop, Grant: &grant,
-		Capabilities: []string{"desktop.extended_methods"}, RequiredCapabilities: []string{"desktop.history.page"}})
+		Capabilities: []string{"desktop.extended_methods", "desktop.inline_snapshot"}, RequiredCapabilities: []string{"desktop.history.page"}})
 	if err != nil {
 		return nil, err
 	}

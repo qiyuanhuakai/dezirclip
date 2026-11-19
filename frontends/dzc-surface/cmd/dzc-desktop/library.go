@@ -88,6 +88,7 @@ func (l *Library) readSnapshot(ctx context.Context, method protocol.Method, para
 		return err
 	}
 	defer host.Close()
+	connected := time.Now()
 	var body protocol.BodySnapshot
 	if err := host.Call(ctx, method, params, "BodySnapshot", &body); err != nil {
 		return err
@@ -95,8 +96,12 @@ func (l *Library) readSnapshot(ctx context.Context, method protocol.Method, para
 	if body.State.PrivacyEpoch != epoch {
 		return errors.New("PrivacyEpochChanged")
 	}
-	err = host.ReadSnapshot(ctx, body, schema, result)
-	desktopSnapshotTiming(string(method), body.TotalBytes, started)
+	if !desktopTimingEnabled() {
+		return host.ReadSnapshot(ctx, body, schema, result)
+	}
+	described := time.Now()
+	metrics, err := host.ReadSnapshotMeasured(ctx, body, schema, result)
+	desktopSnapshotTiming(method, body.TotalBytes, started, connected, described, metrics, err == nil)
 	return err
 }
 

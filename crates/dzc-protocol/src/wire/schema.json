@@ -957,6 +957,11 @@
         },
         "state": {
           "$ref": "#/$defs/RuntimeState"
+        },
+        "inline_json": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
         }
       },
       "required": [

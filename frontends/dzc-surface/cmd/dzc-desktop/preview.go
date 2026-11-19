@@ -3,13 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"image"
 	"math"
 	"strings"
 	"time"
 
+	"github.com/MoeForge/moego/base64"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/richtext"

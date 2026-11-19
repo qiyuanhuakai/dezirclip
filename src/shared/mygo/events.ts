@@ -57,15 +57,24 @@ async function watchHost() {
       if (resync || privacyChanged) generation++;
       if (resync) dispatch("clipboard-host-changed", update.state.service_instance_id);
       if (privacyChanged) dispatch("privacy-state-changed");
+      const events = update.events.filter(({ state }) => state.privacy_epoch === update.state.privacy_epoch
+        && state.service_instance_id === update.state.service_instance_id);
+      const refreshHistory = resync || privacyChanged || previous?.history_revision !== update.state.history_revision;
+      const removedIds = events.flatMap(({ event, data }) => event === "EntryDeleted" && data.entry_id !== undefined ? [data.entry_id] : []);
+      const onlyRemovals = !resync && !privacyChanged && previous !== undefined && removedIds.length > 0
+        && update.state.history_revision - previous.history_revision === removedIds.length
+        && !events.some(({ event }) => event === "EntryAdded" || event === "EntryUpdated" || event === "HistoryReset");
       let settingsChanged = resync || privacyChanged;
-      for (const { event, data, state } of update.events) {
-        if (state.privacy_epoch !== update.state.privacy_epoch || state.service_instance_id !== update.state.service_instance_id) continue;
+      for (const { event, data, state } of events) {
         if ((event === "EntryAdded" || event === "EntryUpdated") && data.entry_id !== undefined) {
-          dispatch("clipboard-captured", { id: data.entry_id, host_instance_id: state.service_instance_id });
+          // A pending page refresh invalidates any summary requested by this event.
+          if (!refreshHistory) {
+            dispatch("clipboard-captured", { id: data.entry_id, host_instance_id: state.service_instance_id });
+          }
           if (event === "EntryUpdated" && data.status && ["processing", "done", "failed", "unsupported"].includes(data.status)) {
             dispatch("ocr:complete", { item_id: data.entry_id, text: "", confidence: null, status: data.status });
           }
-        } else if (event === "EntryDeleted") {
+        } else if (event === "EntryDeleted" && !onlyRemovals) {
           dispatch("clipboard-removed", data.entry_id);
         } else if (event === "HistoryReset") {
           dispatch("tag-colors-updated");
@@ -82,13 +91,8 @@ async function watchHost() {
         dispatch("preview-preferences-changed");
         void window.mygo.call("Preview.ReloadOpacity").catch(console.error);
       }
-      if (recovered || update.resync_required || previous?.history_revision !== update.state.history_revision) {
-        const removals = update.events.filter(({ event, data, state }) => event === "EntryDeleted" && data.entry_id !== undefined
-          && state.privacy_epoch === update.state.privacy_epoch && state.service_instance_id === update.state.service_instance_id);
-        const onlyRemovals = !resync && !privacyChanged && previous !== undefined && removals.length > 0
-          && update.state.history_revision - previous.history_revision === removals.length
-          && !update.events.some(({ event }) => ["EntryAdded", "EntryUpdated", "HistoryReset"].includes(event));
-        dispatch("clipboard-changed", onlyRemovals ? { removedIds: removals.map(({ data }) => data.entry_id) } : undefined);
+      if (refreshHistory) {
+        dispatch("clipboard-changed", onlyRemovals ? { removedIds } : undefined);
       }
       previous = update.state;
     } catch {

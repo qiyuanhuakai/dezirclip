@@ -3,6 +3,7 @@ module github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface
 go 1.27.3
 
 require (
+	github.com/MoeForge/moego v0.1.0-alpha.4
 	github.com/ebitengine/purego v0.11.1
 	github.com/egoist/mygo v0.6.4
 	github.com/qiyuanhuakai/dezirclip/clients/go v0.0.0

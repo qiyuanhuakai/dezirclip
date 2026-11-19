@@ -50,6 +50,13 @@ Reconnection requires a new hello and an authoritative state refresh; event
 delivery is not durable. A new Host instance resets its sequence under a new
 instance ID, while Core owns durable history revision and privacy epoch.
 
+The authenticated Desktop can advertise the optional `desktop.inline_snapshot`
+capability in `hello`. The Host may include the snapshot JSON in `inline_json`
+for bodies up to 32 KiB, with an all-zero `snapshot_id` and the original UTF-8
+byte count. The client checks the instance, privacy epoch, byte count and result
+schema before using the body. Older peers and larger snapshots use the original
+session-bound descriptor and `desktop.snapshot.read` frames.
+
 Native transport fixture (synthetic data, no clipboard/GUI/database):
 
 ```text

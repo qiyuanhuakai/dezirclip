@@ -227,6 +227,7 @@ type BodySnapshot struct {
     SnapshotId string `json:"snapshot_id"`
     TotalBytes uint32 `json:"total_bytes"`
     State RuntimeState `json:"state"`
+    InlineJson *string `json:"inline_json,omitempty"`
 }
 
 type SnapshotReadParams struct {
