@@ -26,6 +26,7 @@ type Preview struct {
 	resident     *residentBridge
 	main, window *mygo.Window
 	generation   uint64
+	entryID      int64
 	cancel       context.CancelFunc
 	opacity      *previewOpacityControl
 }
@@ -105,6 +106,7 @@ func (*Preview) Layout(ctx context.Context) (previewLayout, error) {
 }
 
 func (p *Preview) clear() {
+	p.entryID = 0
 	p.opacity = nil
 	if p.cancel != nil {
 		p.cancel()
@@ -202,18 +204,23 @@ func (p *Preview) selectEntry(ctx context.Context, sequence uint64, id int64, st
 		return
 	}
 	main.Update(func() {
-		if main != p.main || sequence <= p.generation {
-			return
-		}
-		p.generation = sequence
-		p.clear()
-		if id == 0 || !p.main.IsVisible() || p.main.IsMinimized() || reveal && !p.main.IsFocused() {
-			return
-		}
-		ctx, cancel := context.WithCancel(context.Background())
-		p.cancel = cancel
-		go p.load(ctx, main, sequence, id, state, reveal, placement, appearance)
+		p.present(main, sequence, id, state, reveal, placement, appearance)
 	})
+}
+
+// present is also used by the native main window. The caller is on the UI thread.
+func (p *Preview) present(main *mygo.Window, sequence uint64, id int64, state protocol.RuntimeState, reveal bool, placement *previewPlacement, appearance previewAppearance) {
+	if main != p.main || sequence <= p.generation {
+		return
+	}
+	p.generation = sequence
+	p.clear()
+	if id == 0 || !main.IsVisible() || main.IsMinimized() || reveal && !main.IsFocused() {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	p.cancel, p.entryID = cancel, id
+	go p.load(ctx, main, sequence, id, state, reveal, placement, appearance)
 }
 
 type previewBody struct {

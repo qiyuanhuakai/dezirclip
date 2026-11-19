@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -12,10 +13,21 @@ func (n *nativeMain) view(c *ui.Context) {
 	kit := presets.Select(n.theme, n.mode).Kit()
 	kit.Apply(c)
 	n.list.List.Selected = &n.history.selected
-	n.list.List.Key = func(index int) any { return n.history.rows[index].Id }
-	n.list.List.Label = func(index int) string { return n.history.rows[index].Preview }
+	n.list.List.Key = func(index int) any {
+		if index >= 0 && index < len(n.history.rows) {
+			return n.history.rows[index].Id
+		}
+		return nil
+	}
+	n.list.List.Label = func(index int) string {
+		if index >= 0 && index < len(n.history.rows) {
+			return n.history.rows[index].Preview
+		}
+		return ""
+	}
 	ui.Column(c).Fill().Gap(6).Background(c.Theme().Background).Children(func() {
 		queryComposing := false
+		queryFocused := false
 		actions := []uikit.HeaderAction{
 			{Icon: "pin", Label: "Keep on top", Active: n.pinned, Run: n.togglePin, Disabled: n.mutating},
 			{Icon: "hide", Label: "Hide", Run: func() { n.shell.hideMain(n.window) }},
@@ -26,7 +38,7 @@ func (n *nativeMain) view(c *ui.Context) {
 			header.Back = &uikit.HeaderAction{Icon: "back", Label: "Back", Run: func() { n.showSettings = false }}
 		} else {
 			header.Actions = append(actions[:1:1], uikit.HeaderAction{
-				Icon: "settings", Label: "Settings", Run: func() { n.showSettings = true },
+				Icon: "settings", Label: "Settings", Run: func() { n.resetPreviewSelection(); n.showSettings = true },
 			}, actions[1])
 			header.Query, header.Placeholder, header.Filter = &n.query, "Search clipboard…", &n.kind
 			header.Filters = []uikit.HeaderFilter{
@@ -34,6 +46,8 @@ func (n *nativeMain) view(c *ui.Context) {
 			}
 			header.FocusQuery = &n.focusSearch
 			header.OnQueryEdit = func(composing bool) { queryComposing = composing }
+			header.OnQueryKey = n.searchKey
+			header.QueryFocus = func(focused bool) { queryFocused = focused }
 		}
 		kit.Header(c, header)
 		if n.showSettings {
@@ -41,6 +55,10 @@ func (n *nativeMain) view(c *ui.Context) {
 		} else {
 			n.editQuery(queryComposing)
 			n.historyView(c, kit)
+			n.historyShortcuts(c, queryFocused)
+		}
+		if n.notice != "" {
+			ui.Text(c, n.notice).Padding(4, 8).TextColor(c.Theme().TextMuted)
 		}
 		if n.failed {
 			ui.Row(c).Padding(8).AlignItems(ui.Center).Gap(8).Children(func() {
@@ -71,19 +89,30 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 			if row.IsPinned {
 				pinLabel = "Unpin entry"
 			}
-			kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
+			card := kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
 				Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: row.Preview,
 				Pinned: row.IsPinned, Selected: cell.Selected(),
-				Activate: func() { n.rowAction(row, generation, "copy") },
+				Activate: func() {
+					n.resetPreviewSelection()
+					n.rowAction(row, generation, nativePaste)
+				},
 				Actions: []uikit.HeaderAction{
-					{Icon: "pin", Label: pinLabel, Disabled: n.mutating, Run: func() { n.rowAction(row, generation, "pin") }},
-					{Icon: "hide", Label: "Delete entry", Disabled: n.mutating, Run: func() { n.rowAction(row, generation, "delete") }},
+					{Icon: "pin", Label: pinLabel, Disabled: n.mutating, Run: func() { n.rowAction(row, generation, nativePin) }},
+					{Icon: "hide", Label: "Delete entry", Disabled: n.mutating, Run: func() { n.rowAction(row, generation, nativeDelete) }},
 				},
 			})
+			n.entryMenu(card, row, generation)
+			if cell.Selected() && n.keyboard {
+				n.previewKeyboardRow(row, generation, card.Bounds())
+			}
 		},
 	})
+	if n.focusList {
+		list.Focus()
+		n.focusList = false
+	}
 	if list.Submitted() && n.history.selected >= 0 && n.history.selected < len(n.history.rows) {
-		n.rowAction(n.history.rows[n.history.selected], generation, "copy")
+		n.selectedAction(nativePaste)
 	}
 }
 
@@ -109,6 +138,15 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit) {
 			{Value: "system", Label: "System"}, {Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"},
 		}, n.mutating).Changed() {
 			n.saveSetting("app.color_mode", mode)
+		}
+		for _, setting := range []struct{ key, label string }{
+			{"app.arrow_key_selection", "Select history with arrow keys"},
+			{"app.preview_keyboard_enabled", "Preview keyboard selection"},
+		} {
+			enabled := n.preferences[setting.key] == "true"
+			if ui.Checkbox(c, &enabled, setting.label).Disabled(n.mutating).Changed() {
+				n.saveSetting(setting.key, strconv.FormatBool(enabled))
+			}
 		}
 	})
 }

@@ -18,23 +18,28 @@ type nativeMain struct {
 	shell   *DesktopShell
 	library *Library
 	actions *History
+	preview *Preview
 
-	session      context.Context
-	stop         context.CancelFunc
-	stopRead     context.CancelFunc
-	resume       uint64
-	history      nativeHistory
-	list         uikit.HistoryListState
-	preferences  map[string]string
-	query, kind  string
-	theme, mode  string
-	focusSearch  bool
-	showSettings bool
-	reading      bool
-	private      bool
-	pinned       bool
-	failed       bool
-	mutating     bool
+	session          context.Context
+	stop             context.CancelFunc
+	stopRead         context.CancelFunc
+	resume           uint64
+	history          nativeHistory
+	list             uikit.HistoryListState
+	preferences      map[string]string
+	query, kind      string
+	theme, mode      string
+	focusSearch      bool
+	showSettings     bool
+	reading          bool
+	private          bool
+	pinned           bool
+	failed           bool
+	mutating         bool
+	notice           string
+	keyboard         bool
+	focusList        bool
+	previewSelection int64
 }
 
 func (n *nativeMain) stopSession() {
@@ -46,6 +51,8 @@ func (n *nativeMain) stopSession() {
 	n.stopRead = nil
 	n.history.reset(protocol.RuntimeState{}, "", "")
 	n.reading, n.failed, n.mutating, n.private = false, false, false, false
+	n.notice, n.keyboard, n.focusList = "", false, false
+	n.resetPreviewSelection()
 }
 
 func (n *nativeMain) prepare(request uint64) {
@@ -198,7 +205,8 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 		}
 	}
 	if next.HistoryRevision > current.HistoryRevision {
-		n.history.reset(next, n.query, n.kind)
+		n.resetPreviewSelection()
+		n.history.reset(next, strings.TrimSpace(n.query), n.kind)
 		n.loadPage()
 	}
 }
@@ -207,43 +215,17 @@ func (n *nativeMain) editQuery(composing bool) {
 	query := strings.TrimSpace(n.query)
 	if n.session != nil && n.history.state.ServiceInstanceId != "" && !composing &&
 		(query != n.history.query || n.kind != n.history.kind) {
+		n.resetPreviewSelection()
 		n.history.reset(n.history.state, query, n.kind)
 		n.list.Reset()
 		n.loadPage()
 	}
 }
 
-func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, action string) {
-	if n.session == nil || n.history.generation != generation || n.mutating || n.failed {
-		return
-	}
-	n.mutating = true
-	session, state := n.session, n.history.state
-	go func() {
-		ctx, cancel := context.WithTimeout(session, 4*time.Second)
-		defer cancel()
-		var err error
-		if action == "copy" {
-			_, err = n.actions.CopyEntry(ctx, protocol.DesktopCopyParams{
-				Id: row.Id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch,
-			})
-		} else {
-			params := protocol.DesktopMutationParams{
-				Id: row.Id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Action: action,
-			}
-			if action == "pin" {
-				pinned := !row.IsPinned
-				params.Pinned = &pinned
-			}
-			_, err = n.library.MutateEntry(ctx, params)
-		}
-		n.update(session, func() {
-			n.mutating = false
-			if err != nil {
-				n.failed = true
-			}
-		})
-	}()
+func (n *nativeMain) resetPreviewSelection() {
+	n.keyboard = false
+	n.previewSelection = 0
+	n.closePreview()
 }
 
 func (n *nativeMain) saveSetting(key, value string) {

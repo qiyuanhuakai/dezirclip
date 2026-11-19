@@ -321,7 +321,7 @@ func run() error {
 			Hidden: true, SkipTaskbar: true, DisableMaximize: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true}
 		var native *nativeMain
 		if useNativeMain {
-			native = &nativeMain{shell: shell, library: library, actions: history}
+			native = &nativeMain{shell: shell, library: library, actions: history, preview: preview}
 			options.Content = ui.View(native.view)
 		}
 		win := mygo.NewWindow(options)

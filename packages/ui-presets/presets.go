@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
@@ -47,6 +48,13 @@ func Select(name, mode string) Preset {
 // Kit applies this catalog to the independent native components.
 func (p Preset) Kit() uikit.Kit {
 	return uikit.NewKit(p.mode, p.colors, p.widgets)
+}
+
+// Tokens returns the semantic palette for associated native windows.
+func (p Preset) Tokens() theme.Tokens {
+	tokens := p.colors
+	tokens.FontFamilies = slices.Clone(tokens.FontFamilies)
+	return tokens
 }
 
 // ShowcasePadding reproduces the Web fixture's viewport in the native gallery.

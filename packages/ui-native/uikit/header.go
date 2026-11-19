@@ -31,6 +31,8 @@ type HeaderOptions struct {
 	Filter      *string
 	FocusQuery  *bool
 	OnQueryEdit func(composing bool)
+	OnQueryKey  func(ui.TextKey) bool
+	QueryFocus  func(bool)
 }
 
 func (k Kit) Header(c *ui.Context, options HeaderOptions) {
@@ -84,6 +86,12 @@ func (k Kit) headerSearch(c *ui.Context, options HeaderOptions) {
 		ui.Box(c).Height(field.Height).Children(func() {
 			input := ui.TextInputBase(c, options.Query).Fill().Label(options.Placeholder).Placeholder(options.Placeholder)
 			styledText(paint(input, field), field)
+			if options.OnQueryKey != nil {
+				input.OnTextKey(options.OnQueryKey)
+			}
+			if options.QueryFocus != nil {
+				options.QueryFocus(input.Focused())
+			}
 			if options.FocusQuery != nil && *options.FocusQuery {
 				input.Focus()
 				*options.FocusQuery = false
