@@ -51,6 +51,7 @@ func (b *nativeBackupDialog) encrypted() bool {
 }
 
 func (n *nativeMain) dataSettings(c *ui.Context) {
+	n.profileSettings(c)
 	ready := n.session != nil && n.history.state.ServiceInstanceId != "" && !n.mutating
 	ui.Row(c).Gap(6).Wrap().Children(func() {
 		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("data.export.title"), Disabled: !ready || n.private}).Clicked() {

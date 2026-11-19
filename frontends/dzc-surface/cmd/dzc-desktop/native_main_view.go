@@ -49,7 +49,8 @@ func (n *nativeMain) view(c *ui.Context) {
 		header := uikit.HeaderOptions{Title: "DezirClip", Actions: actions}
 		if n.showSettings {
 			header.Title = n.text("settings")
-			header.Back = &uikit.HeaderAction{Icon: "back", Label: n.text("native_back"), Run: func() { n.showSettings = false }}
+			header.Back = &uikit.HeaderAction{Icon: "back", Label: n.text("native_back"),
+				Disabled: n.profile.moving || n.profile.restartPending, Run: func() { n.showSettings = false }}
 		} else if n.showEmoji {
 			header.Title = n.text("emoji_tab")
 			header.Back = &uikit.HeaderAction{Icon: "back", Label: n.text("native_back"), Run: n.closeEmoji, Disabled: n.mutating}

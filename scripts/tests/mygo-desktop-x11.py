@@ -1930,7 +1930,7 @@ def check_idle(executable):
             process.wait(timeout=20)
 
 
-def check_profile_move(executable, home):
+def check_profile_move(executable, home, *, native_main=False):
     import gi
     gi.require_version('Atspi', '2.0')
     from gi.repository import Atspi
@@ -1962,7 +1962,8 @@ def check_profile_move(executable, home):
     obstruction = target/'clipboard.db-journal'
     obstruction.write_bytes(b'fixture')
     original = json.loads(run('service', 'start', '--no-capture', '--json'))['state']['service_instance_id']
-    process = subprocess.Popen([executable, '--show'])
+    env = dict(os.environ, DZC_MYGO_NATIVE_MAIN='1', MYGO_GPU='0') if native_main else None
+    process = subprocess.Popen([executable, '--show'], env=env)
     def nodes(): return mygo_nodes(Atspi, executable)
     def wait(probe, message):
         deadline = time.monotonic() + 9
@@ -1972,7 +1973,8 @@ def check_profile_move(executable, home):
             time.sleep(.06)
         raise AssertionError((message, [(n,t[:60]) for _,n,_,t in nodes() if n or t]))
     def button(name):
-        return next((i for i,n,f,_ in nodes() if n.casefold() == name.casefold() and 'Action' in f), None)
+        return next((i for i,n,f,_ in nodes() if n.casefold() == name.casefold() and 'Action' in f
+                     and i.get_state_set().contains(Atspi.StateType.SENSITIVE)), None)
     def click(name):
         assert Atspi.Action.do_action(wait(lambda: button(name), name), 0)
     def labeled(name):
@@ -2008,7 +2010,10 @@ def check_profile_move(executable, home):
         wait(lambda: labeled(marker), 'Original history')
         wait(lambda: tray_item(process.pid, '设置'), 'Settings tray item')
         heading = wait(lambda: labeled('Data Management'), 'Data settings')
-        if not button('Change'):
+        if native_main:
+            click('Data Management')
+            wait(lambda: labeled(str(config)), 'Native Data Management did not show the current directory')
+        elif not button('Change'):
             Atspi.Component.scroll_to(heading, Atspi.ScrollType.ANYWHERE)
             box = Atspi.Component.get_extents(heading, Atspi.CoordType.SCREEN)
             assert Atspi.generate_mouse_event(box.x+box.width//2, box.y+box.height//2, 'b1c')
@@ -2028,7 +2033,7 @@ def check_profile_move(executable, home):
         click('Ok')
         wait(lambda: any('retry the connection' in (n+t) for _,n,_,t in nodes()), 'Reconnection failure dialog')
         click('Ok')
-        # Close only this fixture's WebView. The surviving tray must recover without the old child.
+        # Close only this fixture's main window. The tray must recover without the old child.
         windows = {int(pid) for thread in Path(f'/proc/{process.pid}/task').glob('*/children')
                    for pid in thread.read_text().split()
                    if Path(f'/proc/{pid}/exe').resolve() == executable
@@ -2042,12 +2047,12 @@ def check_profile_move(executable, home):
         process.wait(timeout=12)
         replacement = wait(lambda: next((p for p in residents() if visible_main_window(p, executable)), None), 'Replacement main window')
         assert replacement != process.pid
-        wait(lambda: labeled(marker), 'Migrated history in new WebView')
+        wait(lambda: labeled(marker), 'Migrated history in the new main window')
         wait(lambda: labeled(sentinel), 'Destination-only history survived reconnection')
         status = json.loads(run('service','status','--json'))
         assert status['state']['service_instance_id'] != original and not status['capture_owner']
         assert Path((config/'datapath.txt').read_text()) == target and (config/'clipboard.db').is_file()
-        print('Verified MyGo Settings folder selection, pre-commit rollback, post-commit restart failure, tray recovery after WebView exit, destination-only history and preserved capture mode')
+        print('Verified MyGo Settings folder selection, pre-commit rollback, post-commit restart failure, tray recovery after the main window exited, destination-only history and preserved capture mode')
     finally:
         with observed_service_cleanup(cli):
             exits = []
@@ -2160,7 +2165,7 @@ with open(sys.argv[1], 'r+') as document:
             elif '--idle' in sys.argv[3:]:
                 check_idle(desktop)
             elif '--move-profile' in sys.argv[3:]:
-                check_profile_move(desktop, home)
+                check_profile_move(desktop, home, native_main='--native-main' in sys.argv[3:])
             else:
                 with (contextlib.nullcontext() if pinned or '--pin-preview' in sys.argv else private_audio(home)) as audio:
                     check(desktop, pinned, audio, '--pin-preview' in sys.argv)

@@ -226,7 +226,7 @@ func (n *nativeMain) entryMenu(card ui.Element, row protocol.DesktopEntry, gener
 		if row.ContentType == "image" && menu.Item(n.text("native_copy_base64")).Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeBase64)
 		}
-		if row.IsExternal && menu.Item(n.text("open")).Disabled(contentDisabled).Chosen() {
+		if row.Id > 0 && menu.Item(n.text("open")).Disabled(contentDisabled).Chosen() {
 			n.rowAction(row, generation, nativeOpen)
 		}
 		if menu.Item(n.text("native_edit_tags")).Disabled(disabled).Chosen() {

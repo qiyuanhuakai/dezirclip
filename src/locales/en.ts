@@ -1,5 +1,9 @@
 export const en = {
         // Native desktop controls
+        native_application_lookup_failed: "Could not read all available applications.",
+        native_profile_read_failed: "Could not read the current data directory.",
+        native_profile_open_failed: "Could not open the data directory.",
+        native_profile_picker_failed: "Could not open the data directory chooser.",
         native_import_backup: "Import",
         native_export_backup: "Export",
         native_backup_files: "DezirClip backups",

@@ -11,6 +11,10 @@ export const privacyStatusZh = {
 
 export const zh = {
         // Native desktop controls
+        native_application_lookup_failed: "无法读取全部可用应用。",
+        native_profile_read_failed: "无法读取当前数据目录。",
+        native_profile_open_failed: "无法打开数据目录。",
+        native_profile_picker_failed: "无法打开数据目录选择器。",
         native_import_backup: "导入",
         native_export_backup: "导出",
         native_backup_files: "DezirClip 备份",

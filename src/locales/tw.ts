@@ -1,5 +1,9 @@
 export const tw = {
         // Native desktop controls
+        native_application_lookup_failed: "無法讀取全部可用應用程式。",
+        native_profile_read_failed: "無法讀取目前的資料目錄。",
+        native_profile_open_failed: "無法開啟資料目錄。",
+        native_profile_picker_failed: "無法開啟資料目錄選擇器。",
         native_import_backup: "匯入",
         native_export_backup: "匯出",
         native_backup_files: "DezirClip 備份",

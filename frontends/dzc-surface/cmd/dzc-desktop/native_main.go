@@ -54,6 +54,8 @@ type nativeMain struct {
 	emoji            *nativeEmojiPanel
 	settingsSection  string
 	settingsOpen     map[string]*bool
+	applications     nativeApplicationCatalog
+	profile          nativeProfileSettings
 	backup           *nativeBackupDialog
 	fontChoices      *nativeFontChoices
 	readingFonts     bool
@@ -83,11 +85,12 @@ func (n *nativeMain) stopSession() {
 	n.history.reset(protocol.RuntimeState{}, nativeHistoryFilter{})
 	n.cardImages = nativeVisibleCache[nativeCardKey, ui.ImageSource]{}
 	n.cardTagColors, n.readingTagColors = nil, false
-	n.reading, n.failed, n.mutating, n.private = false, false, false, false
+	n.reading, n.failed, n.mutating, n.private = false, false, n.profile.moving || n.profile.restartPending, false
 	n.notice, n.keyboard, n.focusList = "", false, false
 	n.temporarySearch = false
 	n.searchWheel, n.towardsTop = 0, time.Time{}
 	n.capturing = false
+	n.profile.reading = false
 	n.themeWorking, n.themeRefresh = false, false
 	n.tags = nil
 	n.closeBackup()
@@ -97,6 +100,9 @@ func (n *nativeMain) stopSession() {
 }
 
 func (n *nativeMain) prepare(request uint64) {
+	if n.profile.moving || n.profile.restartPending {
+		return
+	}
 	n.stopSession()
 	session, cancel := context.WithCancel(context.Background())
 	n.session, n.stop, n.resume = session, cancel, request
