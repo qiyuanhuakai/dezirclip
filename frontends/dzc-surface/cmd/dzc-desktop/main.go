@@ -419,6 +419,7 @@ func run() error {
 		win.OnClosed(func() {
 			if native != nil {
 				native.stopSession()
+				native.stopUpdater()
 			}
 			shell.idle.cancel()
 			dock.hidden = false

@@ -12,6 +12,7 @@ import (
 
 type nativeProfileSettings struct {
 	directory              string
+	schema                 uint32
 	failed, reading        bool
 	moving, restartPending bool
 }
@@ -78,6 +79,7 @@ func (n *nativeMain) loadProfileSettings() {
 		known, err := n.library.ProfileInfo(ctx)
 		n.update(session, func() {
 			n.profile.reading = false
+			n.profile.schema = known.DatabaseSchemaVersion
 			n.profile.directory, n.profile.failed = known.DataDirectory, err != nil || known.DataDirectory == ""
 		})
 	}()

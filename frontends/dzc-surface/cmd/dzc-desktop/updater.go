@@ -12,7 +12,9 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 )
 
-const updateIndexBase = "https://github.com/qiyuanhuakai/dezirclip/releases/download/updater-channels/"
+const desktopProjectURL = "https://github.com/qiyuanhuakai/dezirclip"
+const desktopReleasesURL = desktopProjectURL + "/releases"
+const updateIndexBase = desktopReleasesURL + "/download/updater-channels/"
 
 func updateRedirect(req *http.Request, previous []*http.Request) error {
 	u := req.URL

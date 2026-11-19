@@ -7,10 +7,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 type indexResponse struct {
@@ -84,6 +86,10 @@ func TestBundledUpdateChannels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	nativeResult, err := parseNativeUpdate(raw, "preview")
+	if err != nil || nativeResult.Status != "available" || nativeResult.Available == nil || nativeResult.Available.Version != version {
+		t.Fatalf("native update result: %+v, %v", nativeResult, err)
+	}
 	var result struct {
 		Status, CurrentVersion, ChannelVersion string
 		Support                                struct {
@@ -101,5 +107,41 @@ func TestBundledUpdateChannels(t *testing.T) {
 		result.Support.CanInstall || result.Support.Installation != "portable" || result.Available.ReleaseURL != release+"/tag/v"+version ||
 		!slices.Equal(result.UnpublishedChannels, []string{"stable"}) {
 		t.Fatalf("unexpected channel result: %s, requested %v", raw, requests)
+	}
+}
+
+func TestNativeUpdateAttemptUsesPerChannelInterval(t *testing.T) {
+	database := filepath.Join(t.TempDir(), "clipboard.db")
+	now := time.Unix(1_796_000_000, 0)
+	check := func(channel string, automatic bool, when time.Time, want bool) {
+		t.Helper()
+		got, err := recordNativeUpdateAttempt(database, channel, automatic, when)
+		if err != nil || got != want {
+			t.Fatalf("%s automatic=%v at %v: got %v, %v", channel, automatic, when, got, err)
+		}
+	}
+	check("stable", true, now, true)
+	check("stable", true, now.Add(23*time.Hour), false)
+	check("preview", true, now.Add(23*time.Hour), true)
+	check("stable", false, now.Add(23*time.Hour), true)
+	check("stable", true, now.Add(24*time.Hour), false)
+	check("stable", true, now.Add(47*time.Hour), true)
+	if ran, err := recordNativeUpdateAttempt(database, "../invalid", true, now); ran || err == nil {
+		t.Fatal("unknown update channel was accepted")
+	}
+}
+
+func TestNativeUpdateChannelFollowsBuildUntilExplicitlySelected(t *testing.T) {
+	for _, tc := range []struct{ version, saved, want string }{
+		{"0.2.0-beta.3", "", "preview"},
+		{"0.2.0", "", "stable"},
+		{"0.2.0+build-7", "", "stable"},
+		{"unknown", "", "stable"},
+		{"0.2.0-beta.3", "stable", "stable"},
+		{"0.2.0", "preview", "preview"},
+	} {
+		if got := nativeUpdateChannel(tc.version, tc.saved); got != tc.want {
+			t.Fatalf("%s with preference %q: got %q, want %q", tc.version, tc.saved, got, tc.want)
+		}
 	}
 }

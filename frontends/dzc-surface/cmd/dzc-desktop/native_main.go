@@ -67,6 +67,8 @@ type nativeMain struct {
 	queueCount       nativeQueueCount
 	applications     nativeApplicationCatalog
 	profile          nativeProfileSettings
+	buildDetailsOpen bool
+	updater          nativeUpdater
 	backup           *nativeBackupDialog
 	fontChoices      *nativeFontChoices
 	readingFonts     bool
@@ -199,6 +201,7 @@ func (n *nativeMain) configured(settings map[string]string) {
 	language := mainLanguage(settings["app.language"])
 	languageChanged := n.preferences == nil || n.language() != language
 	n.preferences, n.theme, n.mode = settings, themeName, mode
+	n.configureUpdater(settings["app.update_channel"], settings["app.update_auto_check"] == "true")
 	if languageChanged {
 		mygo.App.SetLocale(model.NativeLocale(string(language)))
 	}

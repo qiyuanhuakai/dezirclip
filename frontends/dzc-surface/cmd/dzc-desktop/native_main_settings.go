@@ -41,6 +41,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 		{uikit.SettingsSection{ID: "applications", Label: n.text("default_apps")}, func() { n.defaultAppsSettings(c) }},
 		{uikit.SettingsSection{ID: "tools", Label: n.text("tools_settings")}, func() { n.toolsSettings(c) }},
 		{uikit.SettingsSection{ID: "data", Label: n.text("data_management")}, func() { n.dataSettings(c) }},
+		{uikit.SettingsSection{ID: "about", Label: n.text("about_settings")}, func() { n.aboutSettings(c, kit) }},
 	}
 	if n.settingsSection == "" {
 		n.settingsSection = "general"
@@ -99,7 +100,6 @@ func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nat
 }
 
 func (n *nativeMain) settingsFooter(c *ui.Context, kit uikit.Kit, compact bool) {
-	const project = "https://github.com/qiyuanhuakai/dezirclip"
 	open := func(address string) {
 		if err := n.shell.OpenURL(address); err != nil {
 			n.notice = n.text("common_error")
@@ -109,9 +109,9 @@ func (n *nativeMain) settingsFooter(c *ui.Context, kit uikit.Kit, compact bool) 
 		ProductName: "DezirClip", Feedback: n.text("feedback"), Website: n.text("official_website"),
 		Reset: n.text("reset_defaults"), Compact: compact,
 		ResetDisabled: n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating || n.capturing,
-		OnFeedback:    func() { open(project + "/issues") },
+		OnFeedback:    func() { open(desktopProjectURL + "/issues") },
 		OnReset:       func() { n.resetOpen = true },
-		OnWebsite:     func() { open(project) },
+		OnWebsite:     func() { open(desktopProjectURL) },
 	})
 }
 
