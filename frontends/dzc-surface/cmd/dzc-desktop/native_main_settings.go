@@ -234,6 +234,7 @@ func (n *nativeMain) changePrivateSession(active bool) {
 	}
 	n.resetPreviewSelection()
 	n.history.clear()
+	n.clearBackground()
 	n.cancelSearchTimer()
 	if n.stopRead != nil {
 		n.stopRead()
@@ -249,6 +250,7 @@ func (n *nativeMain) changePrivateSession(active bool) {
 			if err != nil {
 				n.mutating = false
 				n.notice = n.text("privacy_action_failed", "Could not change the private session.")
+				n.loadBackground()
 				n.loadPage()
 				return
 			}
@@ -275,6 +277,7 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpa
 		nativeBooleanSetting{"app.show_app_border", n.text("show_app_border", "Show window border"), true},
 	)
 	n.typographySettings(c)
+	n.backgroundSettings(c)
 	previewOpacity := opacityPreference(n.preferences["app.preview_opacity"], n.preferences["app.surface_opacity"])
 	n.rangeSetting(c, nativePreviewOpacity, n.text("preview_opacity"), previewOpacity)
 	if surfaceOpacity != nil {

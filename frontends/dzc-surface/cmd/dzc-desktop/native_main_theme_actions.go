@@ -43,7 +43,7 @@ func (n *nativeMain) changeThemeFile(action nativeThemeAction, selected protocol
 	if n.session == nil || n.mutating || n.history.state.ServiceInstanceId == "" {
 		return
 	}
-	n.mutating, n.themeWorking, n.notice = true, true, ""
+	n.mutating, n.appearanceBusy, n.notice = true, true, ""
 	session, epoch, window := n.session, n.history.state.PrivacyEpoch, n.window
 	language := n.language()
 	n.shell.dock.dialogs.Add(1)
@@ -60,8 +60,8 @@ func (n *nativeMain) changeThemeFile(action nativeThemeAction, selected protocol
 			cancel()
 		}
 		n.update(session, func() {
-			n.mutating, n.themeWorking = false, false
-			if refresh || n.themeRefresh {
+			n.mutating, n.appearanceBusy = false, false
+			if refresh || n.appearanceSync {
 				n.prepare(n.resume)
 			}
 			n.notice = notice

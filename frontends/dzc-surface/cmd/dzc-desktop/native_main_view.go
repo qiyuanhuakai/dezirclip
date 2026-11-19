@@ -22,6 +22,7 @@ func (n *nativeMain) view(c *ui.Context) {
 		palette.Background = ui.Color{}
 		c.SetTheme(&palette)
 	}
+	n.drawBackground(c, preset.Tokens().Radius)
 	n.list.List.Selected = &n.history.selected
 	n.list.List.Key = func(index int) any {
 		if index >= 0 && index < len(n.history.rows) {

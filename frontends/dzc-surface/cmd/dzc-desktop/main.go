@@ -385,6 +385,9 @@ func run() error {
 			shell.idle.cancel()
 			dock.hidden = false
 			dock.shown = time.Now()
+			if native != nil {
+				native.animateBackground()
+			}
 			visibilityChanged.Emit(win, true)
 		})
 		win.OnHide(func() {

@@ -48,8 +48,9 @@ type nativeMain struct {
 	theme, mode      string
 	importedThemes   []protocol.DesktopThemePackage
 	importedTheme    *nativeTheme
-	themeWorking     bool
-	themeRefresh     bool
+	appearanceBusy   bool
+	appearanceSync   bool
+	background       nativeBackground
 	systemDark       bool
 	focusSearch      bool
 	temporarySearch  bool
@@ -112,7 +113,8 @@ func (n *nativeMain) stopSession() {
 	n.capturing = false
 	n.profile.reading = false
 	n.resetOpen = false
-	n.themeWorking, n.themeRefresh = false, false
+	n.appearanceBusy, n.appearanceSync = false, false
+	n.background.pause()
 	n.tags = nil
 	n.closeEntryEditor()
 	n.closeTransform()
@@ -159,6 +161,7 @@ func (n *nativeMain) open(session context.Context) {
 				n.configured(settings)
 				n.private = status.Privacy.Active
 				n.history.reset(status.State, n.historyFilter())
+				n.loadBackground()
 				n.list.Reset()
 				n.loadPage()
 				go n.watch(session, status.State.EventSequence)
@@ -260,9 +263,7 @@ func (n *nativeMain) loadPage() {
 	}
 	if n.history.filter.sort != "" && n.history.filter.tag == "" {
 		n.reading, n.failed = false, false
-		if n.resume != 0 {
-			go n.reveal(n.session, n.resume, n.history.state)
-		}
+		n.revealWhenReady()
 		return
 	}
 	request := n.history.request()
@@ -284,9 +285,7 @@ func (n *nativeMain) loadPage() {
 				}
 				return
 			}
-			if n.resume != 0 {
-				go n.reveal(session, n.resume, page.state)
-			}
+			n.revealWhenReady()
 		})
 	}()
 }
@@ -312,6 +311,12 @@ func (n *nativeMain) reveal(session context.Context, request uint64, state proto
 	})
 }
 
+func (n *nativeMain) revealWhenReady() {
+	if n.resume != 0 && !n.reading && !n.failed && !n.background.loading {
+		go n.reveal(n.session, n.resume, n.history.state)
+	}
+}
+
 func (n *nativeMain) watch(session context.Context, cursor uint64) {
 	for session.Err() == nil {
 		read, cancel := context.WithTimeout(session, 5*time.Second)
@@ -331,6 +336,7 @@ func (n *nativeMain) watch(session context.Context, cursor uint64) {
 func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 	current, next := n.history.state, events.State
 	if current.ServiceInstanceId != next.ServiceInstanceId || current.PrivacyEpoch != next.PrivacyEpoch || events.ResyncRequired {
+		n.clearBackground()
 		n.prepare(n.resume)
 		return
 	}
@@ -353,8 +359,8 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 			n.queueCount.observe(*event.Data.Status)
 			switch *event.Data.Status {
 			case "view_settings_changed", "custom_themes_changed":
-				if n.themeWorking {
-					n.themeRefresh = true
+				if n.appearanceBusy {
+					n.appearanceSync = true
 					continue
 				}
 				n.prepare(n.resume)
