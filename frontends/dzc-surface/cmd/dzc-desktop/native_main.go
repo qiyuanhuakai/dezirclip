@@ -42,6 +42,8 @@ type nativeMain struct {
 	theme, mode      string
 	importedThemes   []protocol.DesktopThemePackage
 	importedTheme    *nativeTheme
+	themeWorking     bool
+	themeRefresh     bool
 	systemDark       bool
 	focusSearch      bool
 	temporarySearch  bool
@@ -83,6 +85,7 @@ func (n *nativeMain) stopSession() {
 	n.temporarySearch = false
 	n.searchWheel, n.towardsTop = 0, time.Time{}
 	n.capturing = false
+	n.themeWorking, n.themeRefresh = false, false
 	n.tags = nil
 	n.tagLibrary = nil
 	n.emoji = nil
@@ -288,10 +291,19 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 			n.cardTagColors = nil
 			n.tagColorRevision++
 		}
-		if event.Event == protocol.EventKindServiceStateChanged && event.Data.Status != nil &&
-			(*event.Data.Status == "view_settings_changed" || *event.Data.Status == "application_settings_reset") {
-			n.prepare(n.resume)
-			return
+		if event.Event == protocol.EventKindServiceStateChanged && event.Data.Status != nil {
+			switch *event.Data.Status {
+			case "view_settings_changed", "custom_themes_changed":
+				if n.themeWorking {
+					n.themeRefresh = true
+					continue
+				}
+				n.prepare(n.resume)
+				return
+			case "application_settings_reset":
+				n.prepare(n.resume)
+				return
+			}
 		}
 	}
 	if next.HistoryRevision > current.HistoryRevision {

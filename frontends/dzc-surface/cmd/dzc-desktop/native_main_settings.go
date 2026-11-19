@@ -190,6 +190,7 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpa
 		themes = append(themes, uikit.SelectOption{Value: "custom:" + imported.Id, Label: imported.Name})
 	}
 	n.settingSelect(c, kit, "app.theme", "Theme", "mica", themes)
+	n.themeActions(c)
 	n.settingSelect(c, kit, "app.color_mode", "Color mode", "system", []uikit.SelectOption{
 		{Value: "system", Label: "System"}, {Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"},
 	})

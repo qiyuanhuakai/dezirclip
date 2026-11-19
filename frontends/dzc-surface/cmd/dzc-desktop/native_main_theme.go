@@ -8,6 +8,8 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
 )
 
+const maxImportedThemes = 32
+
 type nativeTheme struct {
 	base        string
 	light, dark presets.Preset
@@ -17,7 +19,7 @@ func (n *nativeMain) configureThemes(selection, catalog string) {
 	if catalog != n.preferences["app.custom_themes"] {
 		var imported []protocol.DesktopThemePackage
 		n.importedThemes = nil
-		if json.Unmarshal([]byte(catalog), &imported) == nil && len(imported) <= 32 {
+		if json.Unmarshal([]byte(catalog), &imported) == nil && len(imported) <= maxImportedThemes {
 			for _, entry := range imported {
 				if entry.Format == "dezirclip-theme" && entry.Version == 1 && entry.Id != "" && entry.Name != "" {
 					n.importedThemes = append(n.importedThemes, entry)
@@ -28,18 +30,24 @@ func (n *nativeMain) configureThemes(selection, catalog string) {
 		return
 	}
 	n.importedTheme = nil
-	id, isCustom := strings.CutPrefix(selection, "custom:")
-	if !isCustom {
-		return
-	}
-	for _, entry := range n.importedThemes {
-		if entry.Id == id {
-			n.importedTheme = &nativeTheme{
-				base: entry.Base, light: presets.Imported(entry.Base, "light", entry.Css), dark: presets.Imported(entry.Base, "dark", entry.Css),
-			}
-			return
+	if entry := n.findImportedTheme(selection); entry != nil {
+		n.importedTheme = &nativeTheme{
+			base: entry.Base, light: presets.Imported(entry.Base, "light", entry.Css), dark: presets.Imported(entry.Base, "dark", entry.Css),
 		}
 	}
+}
+
+func (n *nativeMain) findImportedTheme(selection string) *protocol.DesktopThemePackage {
+	id, isCustom := strings.CutPrefix(selection, "custom:")
+	if !isCustom {
+		return nil
+	}
+	for i := range n.importedThemes {
+		if n.importedThemes[i].Id == id {
+			return &n.importedThemes[i]
+		}
+	}
+	return nil
 }
 
 func (n *nativeMain) themeBase() string {
