@@ -152,9 +152,11 @@ const samples = [
     historyActionIcon: [".item-actions .btn-icon svg"],
   }],
   ["history-card", "selected", { historyCardSelected: [".history-item.selected"] }],
+  ["history-typography", "default", { historyConcealed: [".privacy-hidden-content"] }],
   ["history-card", "hover", { historyCardHover: [".history-item"] }],
   ["history-card", "compact", {
     historyCardCompact: [".history-item.compact"], historyContentCompact: [".content-preview"],
+    historyMetaCompact: [".item-meta"],
     historyActionsCompactAnchor: [".history-card-meta-right"], historyActionsCompact: [".item-actions"],
     historyActionCompact: [".item-actions .btn-icon"], historyActionCompactIcon: [".item-actions .btn-icon svg"],
   }],
@@ -300,6 +302,22 @@ function readStyles(sample) {
     if (!element) throw Error("Missing fixture element " + selector);
     const style = getComputedStyle(element, pseudo);
     const text = label ? getComputedStyle(document.querySelector(label)) : style;
+    const historyContent = id === "historyContent" || id === "historyContentCompact";
+    let usesMonoFont = false;
+    if (historyContent) {
+      const roots = [document.documentElement.style, document.body.style];
+      const saved = roots.map(root => [root.getPropertyValue("--font-mono"), root.getPropertyPriority("--font-mono")]);
+      try {
+        for (const root of roots) root.setProperty("--font-mono", '"Deziro Font Probe"', "important");
+        usesMonoFont = getComputedStyle(element).fontFamily.includes("Deziro Font Probe");
+      } finally {
+        roots.forEach((root, index) => {
+          const [value, priority] = saved[index];
+          if (value) root.setProperty("--font-mono", value, priority);
+          else root.removeProperty("--font-mono");
+        });
+      }
+    }
 
     const shadows = style.boxShadow.split(/,(?![^()]*\))/).flatMap(layer => {
       const tint = layer.match(/(?:rgba?|color|oklch)\([^)]*\)/)?.[0];
@@ -347,6 +365,12 @@ function readStyles(sample) {
       ...(gradient ? { gradient: { angle: Number(gradient[1]), from: color(gradient[2]), to: color(gradient[3]) } } : {}),
       ...(letterSpacing ? { letterSpacing } : {}),
       ...(lineHeight ? { lineHeight: Math.round(lineHeight * 1000) / 1000 } : {}),
+      ...(historyContent ? {
+        minHeightEm: Math.round(number(style.minHeight) / fontSize * 1000) / 1000,
+        maxLines: number(style.webkitLineClamp),
+        ...(number(style.maxHeight) ? { maxHeight: number(style.maxHeight) } : {}),
+        ...(usesMonoFont ? { usesMonoFont } : {}),
+      } : {}),
       ...(columnGap ? { columnGap } : {}),
       ...(rowGap ? { rowGap } : {}),
       ...(switchFace ? { top: number(bounds.top - switchBounds.top), left: number(bounds.left - switchBounds.left) } : top ? { top } : {}),

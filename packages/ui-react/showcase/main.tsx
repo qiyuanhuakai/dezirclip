@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import "../src/styles/components/privacy.css";
 import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
-import { AppHeader, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardMeta, HotkeyBinding, MatchHighlight,
+import { AppHeader, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HotkeyBinding, MatchHighlight,
   ProgressToast, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail,
   SettingsSlider, SettingsToggle, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
@@ -101,8 +101,34 @@ function HistoryListFixture() {
           <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
           <HistoryCardAction title="Delete"><X size={12} /></HistoryCardAction>
         </>} />
-        <div className="content-preview">{row.summary}</div>
+        <HistoryCardContent>{row.summary}</HistoryCardContent>
       </HistoryCard>} />
+  </div>;
+}
+
+function HistoryTypographyFixture() {
+  const compact = state.startsWith("compact");
+  const custom = state === "custom";
+  const size = state === "small" ? 11 : state.endsWith("large") ? 18 : 13;
+  const style = {
+    width: 336, display: "flex", flexDirection: "column", "--clipboard-item-font-size": `${size}px`,
+    ...(custom ? { "--font-main": '"Georgia"', "--font-mono": '"Courier New"' } : {}),
+  } as CSSProperties;
+  return <div style={style}>
+    {([
+      ["short", "Font sample: Wm12 中文"],
+      ["wrapped", "A clipboard preview can wrap naturally at the card edge. ".repeat(8).trim()],
+      ["concealed", "Sensitive content hidden"],
+    ] as const).map(([name, text]) => <div key={name} style={{ paddingBottom: compact ? 2 : 4 }}>
+      <HistoryCard compact={compact} disableLayout data-card-metrics={name}>
+      <HistoryCardMeta source="Editor" time="12:30" actions={<>
+        <HistoryCardAction title="Pin"><Pin size={12} /></HistoryCardAction>
+        <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
+        <HistoryCardAction title="Delete"><X size={12} /></HistoryCardAction>
+      </>} />
+      <HistoryCardContent concealed={name === "concealed"}>{text}</HistoryCardContent>
+      </HistoryCard>
+    </div>)}
   </div>;
 }
 
@@ -142,6 +168,7 @@ function Showcase() {
     "history-card-meta": <HistoryCard disableLayout><HistoryCardMeta source="Editor" time="12:30"
       sourceIcon={<Pin size={10} />} actions={<button type="button" className="btn-icon" title="Tags"><Tag size={12} /></button>} /></HistoryCard>,
     "history-list": <HistoryListFixture />,
+    "history-typography": <HistoryTypographyFixture />,
     "settings-rail": <SettingsRail t={key => key} groups={settingsGroups} activeGroup={activeSettings} onSelect={setActiveSettings} />,
     "settings-footer": <SettingsFooter t={key => footerLabels[key] ?? key} productName="DezirClip 0.2"
       compact={state === "compact"} onFeedback={() => undefined} onWebsite={() => undefined} onResetSettings={() => undefined} />,
@@ -171,7 +198,7 @@ function Showcase() {
           <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
           <HistoryCardAction title="Delete"><X size={12} /></HistoryCardAction>
         </>} />
-      <div className="content-preview">Copied from the active editor</div>
+      <HistoryCardContent>Copied from the active editor</HistoryCardContent>
     </HistoryCard>,
     select: <ThemedSelect options={options} value={selection} onChange={setSelection}
       isDisabled={state === "disabled"} searchable ariaLabel="Color mode" />,

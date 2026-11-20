@@ -8,24 +8,25 @@ import (
 )
 
 type HistoryCardOptions struct {
-	Source   string
-	Time     string
-	Summary  string
-	Selected bool
-	Compact  bool
-	First    bool
-	Pinned   bool
-	Actions  []HeaderAction
-	Tags     []HistoryTag
-	Match    string
-	TextFont string
-	TextSize float32
-	TextRows int
-	TagSize  float32
-	Body     func()
-	Leading  func()
-	Activate func()
-	Reorder  *HistoryReorder
+	Source    string
+	Time      string
+	Summary   string
+	Selected  bool
+	Compact   bool
+	Concealed bool
+	First     bool
+	Pinned    bool
+	Actions   []HeaderAction
+	Tags      []HistoryTag
+	Match     string
+	TextFont  string
+	TextSize  float32
+	TextRows  int
+	TagSize   float32
+	Body      func()
+	Leading   func()
+	Activate  func()
+	Reorder   *HistoryReorder
 }
 
 // HistoryReorder enables a local drag grip and Alt+arrow movement for a pinned card.
@@ -89,11 +90,14 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 		}
 		card.Description(strings.Join(names, ", "))
 	}
-	if options.Body == nil {
-		card.MinHeight(style.Height)
-	}
 	card.Children(func() {
 		contentColumn := func() {
+			if options.Compact {
+				// Some themes retain a pixel of metadata padding in compact cards.
+				if spacer := k.style("historyMetaCompact").Height; spacer > 0 {
+					ui.Box(c).Height(spacer)
+				}
+			}
 			if !options.Compact && (options.Source != "" || options.Time != "" || options.Pinned || len(options.Actions) > 0) {
 				k.HistoryCardMeta(c, HistoryCardMetaOptions{
 					Source: options.Source, Time: options.Time, Pinned: options.Pinned, Actions: options.Actions, Reorder: options.Reorder,
@@ -102,26 +106,7 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 			if options.Body != nil {
 				options.Body()
 			} else {
-				content := k.style("historyContent")
-				if options.Compact {
-					content = k.style("historyContentCompact")
-				}
-				if options.TextSize > 0 {
-					content.Size = options.TextSize
-				}
-				if options.TextFont != "" {
-					content.Font = options.TextFont
-				}
-				var summary ui.Element
-				if spans := k.matchSpans(options.Summary, options.Match); spans != nil {
-					summary = styledText(ui.RichText(c, spans...), content)
-				} else {
-					summary = text(c, options.Summary, content)
-				}
-				summary.Padding(content.Padding[:]...).Wrap()
-				if options.TextRows > 0 {
-					summary.MaxLines(options.TextRows)
-				}
+				k.historyCardText(c, options)
 			}
 			if len(options.Tags) > 0 {
 				k.historyTags(c, options.Tags, options.TagSize)
@@ -151,6 +136,47 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 	return card
 }
 
+func (k Kit) historyCardText(c *ui.Context, options HistoryCardOptions) {
+	widget := "historyContent"
+	if options.Compact {
+		widget = "historyContentCompact"
+	}
+	content := k.style(widget)
+	if options.TextSize > 0 {
+		content.Size = options.TextSize
+	}
+	if options.TextFont != "" {
+		content.Font = options.TextFont
+	}
+	minHeight := content.Size * content.MinHeightEm
+	if options.Concealed {
+		concealed := k.style("historyConcealed")
+		content.Size, content.Text, content.Padding, content.Font = concealed.Size, concealed.Text, concealed.Padding, concealed.Font
+	}
+	summary := strings.Join(strings.FieldsFunc(options.Summary, func(r rune) bool {
+		switch r {
+		case ' ', '\t', '\n', '\r', '\f':
+			return true
+		}
+		return false
+	}), " ")
+	var label ui.Element
+	if spans := k.matchSpans(summary, options.Match); spans != nil {
+		label = styledText(ui.RichText(c, spans...), content)
+	} else {
+		label = text(c, summary, content)
+	}
+	label.Padding(content.Padding[:]...).Wrap().MinHeight(minHeight)
+	maxLines := content.MaxLines
+	if options.TextRows > 0 {
+		maxLines = options.TextRows
+	}
+	label.MaxLines(maxLines)
+	if content.MaxHeight > 0 {
+		label.MaxHeight(content.MaxHeight).Clip()
+	}
+}
+
 func (k Kit) historyTags(c *ui.Context, tags []HistoryTag, size float32) {
 	if size <= 0 {
 		size = 10
@@ -166,7 +192,7 @@ func (k Kit) historyTags(c *ui.Context, tags []HistoryTag, size float32) {
 // HistoryCardMeta renders the source label, available actions and timestamp.
 func (k Kit) HistoryCardMeta(c *ui.Context, options HistoryCardMetaOptions) {
 	meta := k.style("historyMeta")
-	paint(ui.Row(c).Height(meta.Height).Gap(8).AlignItems(ui.Center), meta).Children(func() {
+	paint(ui.Row(c).Height(meta.Height).Margin(0, 0, meta.MarginBottom).Gap(8).AlignItems(ui.Center), meta).Children(func() {
 		source := k.style("historySource")
 		ui.Row(c).Grow(1).Gap(source.ColumnGap).AlignItems(ui.Center).Children(func() {
 			if drag := options.Reorder; drag != nil {

@@ -403,9 +403,14 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.Width, style.Height = 12, 12
 	case "historyActionCompactIcon":
 		style.Width, style.Height = 14, 14
-	case "historyContentCompact":
-		style = DefaultWidgetStyle("historyContent", palette)
-		style.LineHeight = 1.3
+	case "historyContent", "historyContentCompact":
+		style.Font, style.UsesMonoFont = "monospace", true
+		style.LineHeight, style.MinHeightEm, style.MaxLines = 1.35, 1.35, 4
+		if widget == "historyContentCompact" {
+			style.LineHeight, style.MaxLines, style.MaxHeight = 1.3, 2, 40
+		}
+	case "historyConcealed":
+		style.Size, style.Text, style.Padding = 12, muted, [4]float32{12, 0, 12, 0}
 	case "historyIcon":
 		style.Width, style.Height, style.Text = 14, 14, muted
 	case "searchModeIcon":

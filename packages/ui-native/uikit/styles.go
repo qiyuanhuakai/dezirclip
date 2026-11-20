@@ -14,6 +14,7 @@ type Kit struct {
 	tokens         *theme.Tokens
 	widgets        map[string]theme.WidgetStyle
 	interfaceFont  string
+	monospaceFont  string
 	hotkeyPlatform string
 }
 
@@ -27,6 +28,12 @@ func NewKit(mode string, tokens theme.Tokens, widgets map[string]theme.WidgetSty
 // WithInterfaceFont overrides the UI font without changing the catalog or its monospace styles.
 func (k Kit) WithInterfaceFont(font string) Kit {
 	k.interfaceFont = strings.TrimSpace(font)
+	return k
+}
+
+// WithMonospaceFont overrides the font of text that uses the theme's monospace family.
+func (k Kit) WithMonospaceFont(font string) Kit {
+	k.monospaceFont = strings.TrimSpace(font)
 	return k
 }
 
@@ -54,17 +61,22 @@ func (k Kit) Apply(c *ui.Context) {
 }
 
 func (k Kit) style(widget string) theme.WidgetStyle {
-	if style, ok := k.widgets[widget]; ok {
-		if k.surfaceOpacity != nil && *k.surfaceOpacity != 65 {
-			style.Fill = materialColor(style.Fill, style.FillRange, *k.surfaceOpacity)
-			style.Border = materialColor(style.Border, style.BorderRange, *k.surfaceOpacity)
-		}
-		if k.interfaceFont != "" && style.Font != "monospace" && !strings.HasSuffix(style.Font, ", monospace") {
-			style.Font = k.interfaceFont
-		}
-		return style
+	style, catalog := k.widgets[widget]
+	if !catalog {
+		style = DefaultWidgetStyle(widget, k.palette())
 	}
-	return DefaultWidgetStyle(widget, k.palette())
+	if k.surfaceOpacity != nil && *k.surfaceOpacity != 65 {
+		style.Fill = materialColor(style.Fill, style.FillRange, *k.surfaceOpacity)
+		style.Border = materialColor(style.Border, style.BorderRange, *k.surfaceOpacity)
+	}
+	if style.UsesMonoFont {
+		if k.monospaceFont != "" {
+			style.Font = k.monospaceFont
+		}
+	} else if catalog && k.interfaceFont != "" && style.Font != "monospace" && !strings.HasSuffix(style.Font, ", monospace") {
+		style.Font = k.interfaceFont
+	}
+	return style
 }
 
 // WithSurfaceOpacity adapts CSS-derived materials to the current window opacity.

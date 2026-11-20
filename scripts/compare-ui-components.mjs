@@ -38,6 +38,7 @@ const cases = {
   "wheel-hot-zone": { states: ["default", "scrolled"], text: "Wheel input" },
   "history-card-meta": { states: ["default"], text: "Editor" },
   "history-list": { states: ["default", "selected"], text: "Release checklist and verification notes" },
+  "history-typography": { states: ["default", "small", "large", "compact", "compact-large", "custom"], text: "Font sample: Wm12" },
   "settings-rail": { states: ["default", "selected"], text: "Appearance" },
   "settings-footer": { states: ["default", "compact"], text: "Reset defaults" },
   "history-card": { states: ["default", "selected", "pinned", "compact", "compact-hover", "compact-action-hover", "compact-active-hover"], text: "Copied from the active editor" },
@@ -261,7 +262,8 @@ try {
             const webImage = await page.screenshot({ path: join(output, id + "_web.png"), animations: "disabled" });
             const { stdout } = await execute(resolve(native), nativeArgs, { timeout: 10000 });
             const nativeImage = await readFile(target);
-            const nativeText = JSON.parse(stdout).join(" ");
+            const inspection = JSON.parse(stdout);
+            const nativeText = (Array.isArray(inspection) ? inspection : inspection.Texts).join(" ");
             let webText = await page.locator("body").innerText();
             if (fixture === "privacy-rules") {
               const confirmation = page.getByRole("group", { name: "Remove privacy rule", exact: true });
@@ -342,6 +344,24 @@ try {
               const current = await bar.getAttribute("aria-valuenow");
               if (current !== ({ default: "42", installing: "100", "unknown-size": null })[state]) {
                 throw Error("Update progress range disagrees with the download state");
+              }
+            }
+            if (fixture === "history-typography") {
+              const measurements = await page.locator("[data-card-metrics]").evaluateAll(cards => cards.map(card => {
+                const bounds = card.getBoundingClientRect();
+                const content = getComputedStyle(card.querySelector(".content-preview"));
+                return { name: card.dataset.cardMetrics, width: bounds.width, height: bounds.height, font: content.fontFamily };
+              }));
+              for (const recorded of measurements) {
+                const counterpart = inspection.Cards[recorded.name];
+                if (!counterpart || Math.abs(counterpart.H - recorded.height) > 2 ||
+                    Math.abs(counterpart.W - recorded.width) > 2) {
+                  throw Error(`Card ${recorded.name} WebView ${recorded.width}×${recorded.height}, MyGo ${counterpart?.W}×${counterpart?.H}`);
+                }
+              }
+              if (state === "custom") {
+                const family = ["mica", "acrylic"].includes(theme) ? "Georgia" : "Courier New";
+                if (!measurements[0].font.includes(family)) throw Error("Unexpected theme font source: " + measurements[0].font);
               }
             }
             const ratio = pixels.inkNative / pixels.inkWeb;

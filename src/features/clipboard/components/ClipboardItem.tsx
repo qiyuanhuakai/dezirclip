@@ -1,4 +1,4 @@
-import { HistoryCard, HistoryCardAction, HistoryCardMeta } from "@deziro/ui-react/components/HistoryCard";
+import { HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta } from "@deziro/ui-react/components/HistoryCard";
 import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
 import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
 import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
@@ -1035,10 +1035,10 @@ const ClipboardItem = ({
                     <Pin size={10} fill="currentColor" />
                 </div>
             )}
-            <div className={`content-preview ${item.content_type === 'rich_text' ? 'rich-text' : ''} ${isSensitiveHidden ? 'privacy-concealed' : ''}`}
+            <HistoryCardContent rich={item.content_type === "rich_text"} concealed={isSensitiveHidden}
                 data-privacy-protected={isSensitiveEntry(item) ? "true" : undefined}
                 onDragStart={event => { if (isSensitiveEntry(item)) event.preventDefault(); }}>
-                {isSensitiveHidden ? <div className="privacy-hidden-content">{t("privacy_sensitive_hidden")}</div>
+                {isSensitiveHidden ? t("privacy_sensitive_hidden")
                     : ["file", "files", "video"].includes(item.content_type) ? <AttachmentPreview compact={compactMode} fileLabel={t("type_file")} html={displayHtml} names={displayPreview || item.content} video={item.content_type === "video"} />
                     : item.content_type === "image" ? (
                     <div style={{ position: 'relative' }}>
@@ -1149,7 +1149,7 @@ const ClipboardItem = ({
                             <FileText size={14} aria-hidden="true" /><span>{emptyPreviewLabel}</span>
                         </div>
                 )}
-            </div>
+            </HistoryCardContent>
 
             {ocrStatus === "done" && ocrText && (
                 <div

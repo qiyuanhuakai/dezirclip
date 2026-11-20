@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
+import type { ButtonHTMLAttributes, ComponentPropsWithoutRef, ReactNode, Ref } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
 
 export interface HistoryCardProps extends HTMLMotionProps<"div"> {
@@ -15,6 +15,17 @@ export function HistoryCard({ selected, compact, pinned, disableLayout, classNam
   return <motion.div {...props} data-test-clipboard-item className={classes}
     layout={!disableLayout} initial={false} animate={disableLayout ? undefined : { marginBottom: 0 }}
     exit={disableLayout ? undefined : { opacity: 0, scale: 0.95 }} transition={disableLayout ? undefined : { duration: 0.1 }} />;
+}
+
+export function HistoryCardContent({ rich, concealed, className = "", children, ...props }: ComponentPropsWithoutRef<"div"> & {
+  rich?: boolean;
+  concealed?: boolean;
+}) {
+  const classes = ["content-preview", rich && "rich-text", concealed && "privacy-concealed", className]
+    .filter(Boolean).join(" ");
+  return <div {...props} className={classes}>
+    {concealed ? <div className="privacy-hidden-content">{children}</div> : children}
+  </div>;
 }
 
 export function HistoryCardActions({ children }: { children?: ReactNode }) {

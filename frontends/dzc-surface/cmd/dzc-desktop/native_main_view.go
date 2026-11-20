@@ -17,6 +17,7 @@ func (n *nativeMain) currentSurfaceOpacity() int {
 
 func (n *nativeMain) mainKit() uikit.Kit {
 	return n.preset().Kit().WithInterfaceFont(nativeInterfaceFont(n.preferences)).
+		WithMonospaceFont(n.preferences["app.font_mono"]).
 		WithSurfaceOpacity(n.currentSurfaceOpacity())
 }
 
@@ -286,17 +287,13 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit) {
 				uikit.HeaderAction{Icon: "hide", Label: n.text("delete", "Delete entry"), Disabled: n.mutating,
 					Run: func() { n.rowAction(row, generation, nativeDelete) }},
 			)
-			textRows := 4
-			if compact {
-				textRows = 2
-			}
 			if batch != nil {
 				activate := func() { n.toggleTagBatchRow(batch, row.Id, generation) }
 				label := n.text("tag_select_entry")
 				kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
 					Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
 					Pinned: row.IsPinned, Selected: batch.selection.includes(row.Id), Compact: compact,
-					TextRows: textRows, TextFont: n.preferences["app.font_mono"], TextSize: float32(itemSize),
+					Concealed: !contentVisible, TextSize: float32(itemSize),
 					Tags: n.cardTags(row.Tags), TagSize: float32(tagSize), Activate: activate,
 					Leading: func() {
 						checked := batch.selection.includes(row.Id)
@@ -311,14 +308,13 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit) {
 			card := kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
 				Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
 				Pinned: row.IsPinned, Selected: cell.Selected(), Compact: compact, First: cell.Index == first,
-				Match:    n.history.filter.query,
-				TextFont: n.preferences["app.font_mono"],
-				TextSize: float32(itemSize),
-				TextRows: textRows,
-				TagSize:  float32(tagSize),
-				Tags:     n.cardTags(row.Tags),
-				Body:     n.cardBody(cell.Context, row, protected, compact, generation),
-				Reorder:  n.pinReorderGrip(row, cell.Index, generation, reorderPins, func() { draggingPin = true }),
+				Match:     n.history.filter.query,
+				Concealed: !contentVisible,
+				TextSize:  float32(itemSize),
+				TagSize:   float32(tagSize),
+				Tags:      n.cardTags(row.Tags),
+				Body:      n.cardBody(cell.Context, row, protected, compact, generation),
+				Reorder:   n.pinReorderGrip(row, cell.Index, generation, reorderPins, func() { draggingPin = true }),
 				Activate: func() {
 					if n.fileGesture.takeClick(row.Id) {
 						return

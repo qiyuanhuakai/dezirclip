@@ -180,8 +180,8 @@ select.search-input option {
   margin: 0 8px;
   /* Horizontal breathing room */
 
-  /* Variable height controlled by virtual list */
-  height: 100%;
+  /* The virtual list measures the card's content and its outer spacing. */
+  height: auto;
   overflow: visible;
   /* Allow AI options to overflow in non-compact mode */
   display: flex;
@@ -192,7 +192,6 @@ select.search-input option {
 
 /* Compact mode override */
 .history-item.compact {
-  height: 100%;
   padding: 4px 8px 2px 8px;
 }
 

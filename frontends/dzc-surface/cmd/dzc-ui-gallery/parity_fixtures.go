@@ -2,6 +2,7 @@ package main
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
@@ -69,6 +70,8 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 				kit.SettingsDataAction(c, "Import data", "import", false)
 			})
 		})
+	case "history-typography":
+		g.historyTypographyFixture(c, kit)
 	case "backup-dialog":
 		g.backupDialogFixture(c, kit)
 	case "settings-update":
@@ -157,6 +160,38 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 		return false
 	}
 	return true
+}
+
+var historyTypographySamples = []struct{ name, body string }{
+	{"short", "Font sample: Wm12 中文"},
+	{"wrapped", strings.TrimSpace(strings.Repeat("A clipboard preview can wrap naturally at the card edge. ", 8))},
+	{"concealed", "Sensitive content hidden"},
+}
+
+func (g *gallery) historyTypographyFixture(c *ui.Context, kit uikit.Kit) {
+	size := float32(13)
+	switch {
+	case g.state == "small":
+		size = 11
+	case strings.HasSuffix(g.state, "large"):
+		size = 18
+	case g.state == "custom":
+		kit = kit.WithInterfaceFont("Georgia").WithMonospaceFont("Courier New")
+	}
+	compact := strings.HasPrefix(g.state, "compact")
+	gap := float32(4)
+	if compact {
+		gap = 2
+	}
+	ui.Column(c).Width(336).Gap(gap).AlignItems(ui.Stretch).Children(func() {
+		for _, sample := range historyTypographySamples {
+			kit.HistoryCard(c, uikit.HistoryCardOptions{
+				Source: "Editor", Time: "12:30", Summary: sample.body, TextSize: size,
+				Compact: compact, Concealed: sample.name == "concealed",
+				Actions: []uikit.HeaderAction{{Icon: "pin", Label: "Pin"}, {Icon: "tag", Label: "Tags"}, {Icon: "hide", Label: "Delete"}},
+			}).Label(sample.name)
+		}
+	})
 }
 
 func (g *gallery) backupDialogFixture(c *ui.Context, kit uikit.Kit) {

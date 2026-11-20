@@ -431,6 +431,31 @@ func TestNativeUpdateProgressSurvivesClosingSettings(t *testing.T) {
 	}
 }
 
+func TestNativeHistoryCardsResizeWithClipboardFont(t *testing.T) {
+	const plain = "Fixture history text"
+	const spaced = "Text with \r\n\t repeated  spacing"
+	window := nativeMain{theme: "macos", mode: "light", preferences: map[string]string{"app.language": "en"}}
+	window.history.rows = []protocol.DesktopEntry{
+		{Id: 1, SourceApp: "Editor", ContentType: "text", Preview: plain, Tags: []string{}},
+		{Id: 2, SourceApp: "Editor", ContentType: "text", Preview: spaced, Tags: []string{}},
+	}
+	for _, compact := range []string{"false", "true"} {
+		window.preferences["app.compact_mode"] = compact
+		window.preferences["app.clipboard_item_font_size"] = "11"
+		tester := ui.NewTester(window.view, 360, 400)
+		small, found := tester.Find(plain)
+		if !found || !tester.HasText("Text with repeated spacing") {
+			t.Fatal("history preview did not render using normalized display spacing")
+		}
+		window.preferences["app.clipboard_item_font_size"] = "18"
+		tester.Frame()
+		large, found := tester.Find(plain)
+		if !found || large.H-small.H < 7 {
+			t.Fatalf("compact=%s: 11px card height %.1f, 18px card height %.1f", compact, small.H, large.H)
+		}
+	}
+}
+
 func TestNativeMainNavigationAndDismissal(t *testing.T) {
 	for _, theme := range []string{"retro", "mica", "acrylic", "liquid-glass", "macos", "scifi"} {
 		for _, mode := range []string{"light", "dark"} {

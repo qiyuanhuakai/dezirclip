@@ -30,6 +30,9 @@ type WidgetStyle struct {
 	Gradient      *Gradient
 	LetterSpacing float32
 	LineHeight    float32
+	MinHeightEm   float32
+	MaxHeight     float32
+	MaxLines      int
 	ColumnGap     float32
 	RowGap        float32
 	Top           float32
@@ -52,6 +55,7 @@ type WidgetStyle struct {
 	MarginBottom  float32
 	Padding       [4]float32
 	Font          string
+	UsesMonoFont  bool
 	Size          float32
 	Weight        int
 	Uppercase     bool
