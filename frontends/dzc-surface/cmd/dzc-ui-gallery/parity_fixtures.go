@@ -10,6 +10,15 @@ import (
 func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool {
 	switch name {
 	case "settings-section-card":
+		if g.state == "wide" {
+			kit.SettingsSectionGrid(c, "General settings", 700, func() {
+				kit.SettingsLabel(c, "Start hidden")
+				kit.SettingsLabel(c, "Open near pointer")
+				path := "C:/Example/Clipboard"
+				ui.Column(c).ColumnSpan(-1).Children(func() { kit.TextField(c, &path, "Data path") })
+			})
+			break
+		}
 		kit.SettingsSectionCard(c, "General settings", &g.groupOpen, func() {
 			kit.SettingsLabel(c, "Keep clipboard history")
 		})

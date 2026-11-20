@@ -62,14 +62,20 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 		for _, pane := range panes {
 			sections = append(sections, pane.SettingsSection)
 		}
-		kit.SettingsRail(c, n.text("native_settings_sections"), n.settingsSection, sections, func(id string) {
-			n.settingsSection = id
-			n.settingsScroll = ui.ScrollState{}
+		ui.Scroll(c).Shrink(0).FillHeight().MinHeight(0).Children(func() {
+			kit.SettingsRail(c, n.text("native_settings_sections"), n.settingsSection, sections, func(id string) {
+				n.settingsSection = id
+				n.settingsScroll = ui.ScrollState{}
+			})
 		})
 		for _, pane := range panes {
 			if pane.ID == n.settingsSection {
 				ui.Scroll(c).Grow(1).MinWidth(0).FillHeight().MinHeight(0).TrackScroll(&n.settingsScroll).Children(func() {
-					kit.SettingsSectionCard(c, pane.Label, nil, pane.draw)
+					if pane.ID == "data" || pane.ID == "about" {
+						kit.SettingsSectionCard(c, pane.Label, nil, pane.draw)
+						return
+					}
+					kit.SettingsSectionGrid(c, pane.Label, width, pane.draw)
 				})
 				break
 			}
@@ -157,7 +163,7 @@ func (n *nativeMain) settingEnabled(key string, initial bool) bool {
 }
 
 func (n *nativeMain) generalSettings(c *ui.Context) {
-	n.loginSettings(c)
+	ui.Column(c).Gap(8).Children(func() { n.loginSettings(c) })
 	n.booleanSettings(c,
 		nativeBooleanSetting{"app.silent_start", n.text("silent_start", "Start hidden"), true},
 		nativeBooleanSetting{"app.follow_mouse", n.text("follow_mouse", "Show window near the mouse"), true},
@@ -211,18 +217,20 @@ func (n *nativeMain) clipboardSettings(c *ui.Context, kit uikit.Kit) {
 		nativeBooleanSetting{"app.delete_after_paste", n.text("delete_after_paste", "Delete entries after pasting"), false},
 		nativeBooleanSetting{"app.move_to_top_after_paste", n.text("move_to_top_after_paste", "Move pasted entries to top"), true},
 	)
-	n.pasteMethodSetting(c, kit)
+	ui.Column(c).Gap(8).Children(func() { n.pasteMethodSetting(c, kit) })
 	n.sequentialSettings(c)
 }
 
 func (n *nativeMain) privacySettings(c *ui.Context, kit uikit.Kit) {
-	private := n.private
-	if n.mainKit().SettingsToggle(c, &private, n.text("privacy_session_title", "Private session")).Disabled(n.mutating).Changed() {
-		n.changePrivateSession(private)
-	}
-	n.shortcutSetting(c, "app.privacy_session_hotkey", n.text("privacy_session_hotkey"), "")
+	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() {
+		private := n.private
+		if kit.SettingsToggle(c, &private, n.text("privacy_session_title", "Private session")).Disabled(n.mutating).Changed() {
+			n.changePrivateSession(private)
+		}
+		n.shortcutSetting(c, "app.privacy_session_hotkey", n.text("privacy_session_hotkey"), "")
+	})
+	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() { n.drawPrivacyRules(c) })
 	n.booleanSettings(c, nativeBooleanSetting{"app.privacy_protection", n.text("privacy_protection", "Protect sensitive clipboard content"), true})
-	n.drawPrivacyRules(c)
 	n.drawPrivacyDetection(c, kit)
 }
 
@@ -265,8 +273,10 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpa
 	for _, imported := range n.importedThemes {
 		themes = append(themes, uikit.SelectOption{Value: "custom:" + imported.Id, Label: imported.Name})
 	}
-	n.settingChoices(c, kit, "app.theme", n.text("visual_theme", "Theme"), "mica", themes)
-	n.themeActions(c)
+	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() {
+		n.settingChoices(c, kit, "app.theme", n.text("visual_theme", "Theme"), "mica", themes)
+		n.themeActions(c)
+	})
 	n.settingChoices(c, kit, "app.color_mode", n.text("color_mode", "Color mode"), "system", []uikit.SelectOption{
 		{Value: "system", Label: n.text("mode_system")}, {Value: "light", Label: n.text("mode_light")}, {Value: "dark", Label: n.text("mode_dark")},
 	})
@@ -278,7 +288,7 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpa
 		nativeBooleanSetting{"app.show_app_border", n.text("show_app_border", "Show window border"), true},
 	)
 	n.typographySettings(c)
-	n.backgroundSettings(c)
+	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() { n.backgroundSettings(c) })
 	previewOpacity := opacityPreference(n.preferences["app.preview_opacity"], n.preferences["app.surface_opacity"])
 	n.rangeSetting(c, nativePreviewOpacity, n.text("preview_opacity"), previewOpacity)
 	if surfaceOpacity != nil {
@@ -287,19 +297,21 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpa
 }
 
 func (n *nativeMain) settingChoices(c *ui.Context, kit uikit.Kit, key, label, fallback string, options []uikit.SelectOption) {
-	kit.SettingsLabel(c, label)
-	value := n.preferences[key]
-	if value == "" {
-		value = fallback
-	}
-	kit.SettingsChoices(c, label, value, options, false, n.mutating, func(value string) { n.saveSetting(key, value) })
+	ui.Column(c).Gap(8).Children(func() {
+		kit.SettingsLabel(c, label)
+		value := n.preferences[key]
+		if value == "" {
+			value = fallback
+		}
+		kit.SettingsChoices(c, label, value, options, false, n.mutating, func(value string) { n.saveSetting(key, value) })
+	})
 }
 
 func (n *nativeMain) toolsSettings(c *ui.Context) {
 	enabled := n.settingEnabled("app.screenshot_enabled", true)
 	n.panelCheckbox(c, "screenshot", n.text("screenshot_enabled", "Enable screenshots"), enabled)
 	if enabled {
-		ui.Row(c).Gap(6).Wrap().Children(func() {
+		ui.Row(c).ColumnSpan(-1).Gap(6).Wrap().Children(func() {
 			for _, option := range []struct {
 				label string
 				full  bool
@@ -320,7 +332,7 @@ func (n *nativeMain) toolsSettings(c *ui.Context) {
 		n.shortcutSetting(c, "app.quick_paste_hotkey", n.text("quick_paste_hotkey_label"), "Ctrl+Shift+V")
 	}
 	n.booleanSettings(c, nativeBooleanSetting{"app.ocr_enabled", n.text("ocr_enabled", "Recognize text in images"), true})
-	n.drawOCREngine(c)
+	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() { n.drawOCREngine(c) })
 }
 
 func (n *nativeMain) panelCheckbox(c *ui.Context, id, label string, enabled bool) {

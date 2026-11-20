@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ContextMenuItem, ContextMenuSurface, EmojiAddTile, EmojiFavoriteTile, HotkeyBinding, HotkeyList, HotkeyListLayout, NumberField,
   SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsRemoveButton, SettingsSectionCard, TagToolbar, TextArea, TextField } from "../src";
 import { Ellipsis, Eye, ListChecks, ListCollapse, Plus, Tag } from "lucide-react";
+import { settingsPaneColumns } from "../src/components/SettingsSectionCard";
 
 export function TextFieldsFixture() {
   return <div className="showcase-fields">
@@ -45,6 +46,18 @@ export function SettingsSectionFixture({ open }: { open: boolean }) {
   return <SettingsSectionCard title="General settings" collapsed={collapsed} onToggle={() => setCollapsed(value => !value)}>
     <p className="item-label">Keep clipboard history</p>
   </SettingsSectionCard>;
+}
+
+export function SettingsSectionGridFixture() {
+  return <div className="settings-layout--split showcase-settings-grid">
+    <div className={`settings-pane settings-pane--cols-${settingsPaneColumns(700)}`}>
+      <SettingsSectionCard title="General settings" collapsed={false} onToggle={() => undefined}>
+        <div className="item-label">Start hidden</div>
+        <div className="item-label">Open near pointer</div>
+        <div className="settings-row--wide"><TextField aria-label="Data path" defaultValue="C:/Example/Clipboard" /></div>
+      </SettingsSectionCard>
+    </div>
+  </div>;
 }
 
 export function SettingsChoicesFixture() {

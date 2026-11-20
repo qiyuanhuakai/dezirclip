@@ -72,6 +72,23 @@ func (k Kit) SettingsRemoveButton(c *ui.Context, label string, iconOnly, disable
 
 // SettingsSectionCard paints an accordion card, or a fixed section when open is nil.
 func (k Kit) SettingsSectionCard(c *ui.Context, title string, open *bool, content func()) {
+	k.settingsSectionCard(c, title, open, 1, content)
+}
+
+// SettingsSectionGrid paints an open settings card with responsive field columns.
+// Fields can span the card by setting ColumnSpan(-1) on their outer element.
+func (k Kit) SettingsSectionGrid(c *ui.Context, title string, viewportWidth float32, content func()) {
+	columns := 1
+	switch {
+	case viewportWidth >= 1000:
+		columns = 3
+	case viewportWidth >= 700:
+		columns = 2
+	}
+	k.settingsSectionCard(c, title, nil, columns, content)
+}
+
+func (k Kit) settingsSectionCard(c *ui.Context, title string, open *bool, columns int, content func()) {
 	expanded := open == nil || *open
 	suffix := ""
 	if expanded {
@@ -101,7 +118,11 @@ func (k Kit) SettingsSectionCard(c *ui.Context, title string, open *bool, conten
 			*open = !*open
 		}
 		if expanded {
-			paint(ui.Column(c).FillWidth().Gap(8), k.style("settingsGroupContent")).Children(content)
+			body := ui.Column(c)
+			if columns > 1 {
+				body.Grid().Columns(columns).AlignItems(ui.Start).GapX(20)
+			}
+			paint(body.FillWidth().GapY(8), k.style("settingsGroupContent")).Children(content)
 		}
 	})
 }

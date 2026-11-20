@@ -33,7 +33,7 @@ func (n *nativeMain) pasteMethodSetting(c *ui.Context, kit uikit.Kit) {
 		saved = "shift_insert"
 	}
 	selected, label := saved, n.text("paste_method")
-	ui.Text(c, label).FontWeight(600)
+	kit.SettingsLabel(c, label)
 	if kit.Select(c, &selected, label, options, n.mutating).Changed() && selected != saved {
 		if selected == "game_mode" {
 			n.enableGameMode(saved)
@@ -175,7 +175,7 @@ func (n *nativeMain) sequentialSettings(c *ui.Context) {
 			n.loadQueueCount()
 		}
 	case n.queueCount.known:
-		ui.Row(c).Wrap().Gap(6).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).ColumnSpan(-1).Wrap().Gap(6).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, strings.ReplaceAll(n.text("sequential_paste_queue_count"), "{count}", strconv.FormatUint(uint64(n.queueCount.count), 10)))
 			if n.mainKit().Button(c, uikit.ButtonOptions{
 				Label: n.text("sequential_paste_clear_queue"), Disabled: n.queueCount.count == 0 || n.mutating,
@@ -223,25 +223,28 @@ func (n *nativeMain) numberSetting(c *ui.Context, key, label string, fallback, m
 	if saved == "" {
 		saved = strconv.Itoa(fallback)
 	}
-	ui.Text(c, label)
 	type limitDraft struct {
 		value, saved string
 	}
-	row := ui.Row(c).FillWidth().Gap(6).Wrap()
+	row := ui.Column(c.Key(key)).Gap(8)
 	draft := ui.Local(row, key, func() limitDraft { return limitDraft{value: saved, saved: saved} })
 	if draft.saved != saved {
 		draft.value, draft.saved = saved, saved
 	}
 	row.Children(func() {
-		input := n.mainKit().NumberField(c, &draft.value, label).Width(112).ReadOnly(n.mutating)
-		limit, valid := nativeBoundedNumber(draft.value, minimum, maximum)
-		save := n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: n.mutating || !valid || draft.value == saved})
-		if save.Clicked() || input.Submitted() && valid && !n.mutating {
-			draft.value = limit
-			if limit != saved {
-				n.saveSetting(key, limit)
+		kit := n.mainKit()
+		kit.SettingsLabel(c, label)
+		ui.Row(c).FillWidth().Gap(6).Wrap().Children(func() {
+			input := kit.NumberField(c, &draft.value, label).Width(112).ReadOnly(n.mutating)
+			limit, valid := nativeBoundedNumber(draft.value, minimum, maximum)
+			save := kit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: n.mutating || !valid || draft.value == saved})
+			if save.Clicked() || input.Submitted() && valid && !n.mutating {
+				draft.value = limit
+				if limit != saved {
+					n.saveSetting(key, limit)
+				}
 			}
-		}
+		})
 	})
 }
 

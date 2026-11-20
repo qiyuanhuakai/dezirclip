@@ -20,6 +20,9 @@
  * Appearance stays in `packages/ui-react/src/styles/` -- layout here, paint there.
  */
 
+import { settingsPaneColumns } from "@deziro/ui-react/components/SettingsSectionCard";
+export { PANE_TWO_COLUMNS_MIN_WIDTH, PANE_THREE_COLUMNS_MIN_WIDTH } from "@deziro/ui-react/components/SettingsSectionCard";
+
 export type SettingsGroupId =
   | "general"
   | "clipboard"
@@ -60,12 +63,6 @@ export function createCollapsedSettingsGroups(): Record<string, boolean> {
  */
 export const SPLIT_MIN_WIDTH = 560;
 
-/** Detail pane reaches ~530px, which fits two ~250px rows. */
-export const PANE_TWO_COLUMNS_MIN_WIDTH = 700;
-
-/** Detail pane reaches ~830px, which fits three ~265px rows. */
-export const PANE_THREE_COLUMNS_MIN_WIDTH = 1000;
-
 export interface SettingsLayout {
   readonly split: boolean;
   readonly paneColumns: 1 | 2 | 3;
@@ -75,9 +72,7 @@ const STACK: SettingsLayout = { split: false, paneColumns: 1 };
 
 export const resolveSettingsLayout = (width: number): SettingsLayout => {
   if (width < SPLIT_MIN_WIDTH) return STACK;
-  if (width >= PANE_THREE_COLUMNS_MIN_WIDTH) return { split: true, paneColumns: 3 };
-  if (width >= PANE_TWO_COLUMNS_MIN_WIDTH) return { split: true, paneColumns: 2 };
-  return { split: true, paneColumns: 1 };
+  return { split: true, paneColumns: settingsPaneColumns(width) };
 };
 
 /**

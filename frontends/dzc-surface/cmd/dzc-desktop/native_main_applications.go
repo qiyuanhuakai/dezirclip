@@ -31,12 +31,14 @@ func (n *nativeMain) defaultAppsSettings(c *ui.Context) {
 		n.loadApplications()
 	}
 	if catalog.loading {
-		ui.Text(c, n.text("searching_apps")).TextColor(c.Theme().TextMuted)
+		ui.Text(c, n.text("searching_apps")).TextColor(c.Theme().TextMuted).ColumnSpan(-1)
 	} else if catalog.failed {
-		ui.Text(c, n.text("native_application_lookup_failed")).TextColor(c.Theme().TextMuted).Wrap()
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: n.mutating}).Clicked() {
-			n.loadApplications()
-		}
+		ui.Row(c).ColumnSpan(-1).Gap(6).Wrap().AlignItems(ui.Center).Children(func() {
+			ui.Text(c, n.text("native_application_lookup_failed")).TextColor(c.Theme().TextMuted).Wrap()
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: n.mutating}).Clicked() {
+				n.loadApplications()
+			}
+		})
 	}
 	for _, item := range []struct{ kind, label string }{
 		{"text", n.text("type_text")}, {"rich_text", n.text("type_rich_text")}, {"image", n.text("type_image")},
@@ -72,16 +74,22 @@ func (n *nativeMain) applicationSetting(c *ui.Context, kind, label string) {
 			options = append(options, selected)
 		}
 	}
-	ui.Text(c, label).FontWeight(600)
-	field, changed := n.mainKit().Combo(c, &selected, label, "", options, n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "")
-	field.FillWidth()
-	if changed {
-		if selected == system {
-			n.saveSetting(key, "")
-		} else if choice := catalog.pathsByLabel[selected]; choice != "" {
-			n.saveSetting(key, choice)
+	ui.Column(c.Key(key)).Gap(8).Children(func() {
+		kit := n.mainKit()
+		kit.SettingsLabel(c, strings.ToUpper(label)).FontSize(11).Opacity(0.8)
+		field, changed := kit.Combo(c, &selected, label, "", options, n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "")
+		field.FillWidth()
+		if path != "" {
+			ui.Text(c, applicationFilename(path)).FontSize(10).TextColor(c.Theme().TextMuted).Wrap()
 		}
-	}
+		if changed {
+			if selected == system {
+				n.saveSetting(key, "")
+			} else if choice := catalog.pathsByLabel[selected]; choice != "" {
+				n.saveSetting(key, choice)
+			}
+		}
+	})
 }
 
 func applicationFilename(path string) string {

@@ -95,6 +95,28 @@ func TestNativeWideSettingsScroll(t *testing.T) {
 	if nav, ok := view.Find("Privacy"); !ok || nav.X > 170 || nav.Y < 0 {
 		t.Fatalf("settings navigation moved with the detail pane: %+v", nav)
 	}
+	view.Scroll(85, 175, 0, 540)
+	if err := view.Click(n.text("about_settings")); err != nil || n.settingsSection != "about" {
+		t.Fatalf("bottom rail item remained unreachable in a short window: %v", err)
+	}
+}
+
+func TestNativeResponsiveSettingsFieldPlacement(t *testing.T) {
+	n := nativeMain{showSettings: true, settingsSection: "general", preferences: map[string]string{"app.language": "en"}}
+	view := ui.NewTester(n.view, 699, 420)
+	for _, test := range []struct{ width, columns int }{{699, 1}, {700, 2}, {999, 2}, {1000, 3}} {
+		view.SetSize(test.width, 420)
+		first, firstOK := view.Find(n.text("autostart"))
+		second, secondOK := view.Find("Start hidden")
+		third, thirdOK := view.Find("Show window near the mouse")
+		if !firstOK || !secondOK || !thirdOK {
+			t.Fatalf("settings controls missing at width %d: %v", test.width, view.Texts())
+		}
+		if (second.X > first.X) != (test.columns >= 2) || (third.X > second.X) != (test.columns == 3) ||
+			(second.Y == first.Y) != (test.columns >= 2) || (third.Y == first.Y) != (test.columns == 3) {
+			t.Fatalf("width %d: expected %d columns, got bounds %v, %v, %v", test.width, test.columns, first, second, third)
+		}
+	}
 }
 
 func TestNativeCompactChromeAndEmojiGrid(t *testing.T) {

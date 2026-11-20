@@ -251,6 +251,7 @@ func (n *nativeMain) drawPrivacyRule(c *ui.Context, rule protocol.PolicyRuleValu
 }
 
 func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
+	n.privacyTextSetting(c, kit, "app.excluded_source_apps", n.text("excluded_source_apps"), n.text("excluded_source_apps_hint"), "Example Editor\nexample-editor.exe")
 	kit.SettingsDisclosure(c, n.text("privacy_protection_kinds"), &n.privacyKindsOpen, func() {
 		const key = "app.privacy_protection_kinds"
 		raw, stored := n.preferences[key]
@@ -271,7 +272,7 @@ func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
 			{"password", n.text("privacy_kind_password")},
 		} {
 			checked := slices.Contains(selected, kind.id)
-			if kit.Checkbox(c, &checked, kind.label).Disabled(n.mutating).Changed() {
+			if kit.SettingsToggle(c, &checked, kind.label).Disabled(n.mutating).Changed() {
 				next := slices.DeleteFunc(slices.Clone(selected), func(id string) bool { return id == kind.id })
 				if checked {
 					next = append(next, kind.id)
@@ -280,17 +281,12 @@ func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
 			}
 		}
 	})
-	for _, field := range []struct{ key, label, hint string }{
-		{"app.excluded_source_apps", n.text("excluded_source_apps"), n.text("excluded_source_apps_hint")},
-		{"app.privacy_protection_custom_rules", n.text("privacy_protection_custom_rules"), n.text("privacy_rules_custom_patterns_hint")},
-	} {
-		n.privacyTextSetting(c, kit, field.key, field.label, field.hint)
-	}
+	n.privacyTextSetting(c, kit, "app.privacy_protection_custom_rules", n.text("privacy_protection_custom_rules"), n.text("privacy_rules_custom_patterns_hint"), "")
 }
 
-func (n *nativeMain) privacyTextSetting(c *ui.Context, kit uikit.Kit, key, label, hint string) {
+func (n *nativeMain) privacyTextSetting(c *ui.Context, kit uikit.Kit, key, label, hint, placeholder string) {
 	type privacyDraft struct{ saved, value string }
-	row := ui.Column(c.Key(key)).FillWidth().Gap(5)
+	row := ui.Column(c.Key(key)).ColumnSpan(-1).FillWidth().Gap(5)
 	saved := n.preferences[key]
 	draft := ui.Local(row, "privacy-draft", func() privacyDraft { return privacyDraft{saved: saved, value: saved} })
 	if draft.saved != saved {
@@ -299,7 +295,7 @@ func (n *nativeMain) privacyTextSetting(c *ui.Context, kit uikit.Kit, key, label
 	disabled := n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating
 	row.Children(func() {
 		kit.SettingsLabel(c, label).Wrap()
-		kit.TextArea(c, &draft.value, label).FillWidth().Height(82).ReadOnly(disabled).Tooltip(hint)
+		kit.TextArea(c, &draft.value, label).FillWidth().Height(88).Placeholder(placeholder).ReadOnly(disabled).Tooltip(hint)
 		if draft.value != saved {
 			if kit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: disabled}).Clicked() {
 				n.saveSetting(key, draft.value)

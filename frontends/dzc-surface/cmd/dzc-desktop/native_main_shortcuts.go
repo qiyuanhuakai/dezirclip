@@ -42,14 +42,16 @@ func (n *nativeMain) clipboardShortcuts(c *ui.Context) {
 	kit := n.mainKit()
 	bindings := nativeMainChords(n.shortcutValue(mainShortcutSetting, ""))
 	disabled := !n.shortcutAvailable()
-	kit.HotkeyListEditor(c, label, func() {
-		if kit.HotkeyBinding(c, "+ "+label, "", "+ "+label, false, disabled).Clicked() {
-			n.openShortcut(mainShortcutSetting, label)
-		}
-	}, func() {
-		kit.HotkeyList(c, bindings, n.text("not_set"), n.text("delete"), disabled, func(chord string) {
-			updated := slices.DeleteFunc(slices.Clone(bindings), func(value string) bool { return value == chord })
-			n.saveNativeShortcut(mainShortcutSetting, strings.Join(updated, "\n"))
+	ui.Column(c).ColumnSpan(-1).Children(func() {
+		kit.HotkeyListEditor(c, label, func() {
+			if kit.HotkeyBinding(c, "+ "+label, "", "+ "+label, false, disabled).Clicked() {
+				n.openShortcut(mainShortcutSetting, label)
+			}
+		}, func() {
+			kit.HotkeyList(c, bindings, n.text("not_set"), n.text("delete"), disabled, func(chord string) {
+				updated := slices.DeleteFunc(slices.Clone(bindings), func(value string) bool { return value == chord })
+				n.saveNativeShortcut(mainShortcutSetting, strings.Join(updated, "\n"))
+			})
 		})
 	})
 	n.shortcutSetting(c, "app.search_hotkey", n.text("search_hotkey_label"), "Alt+F")

@@ -17,6 +17,7 @@ const figures = [
   ["context-menu", "text", 215],
   ["text-fields", "default", 275],
   ["settings-section-card", "expanded", 120],
+  ["settings-section-card", "wide", 195, 0, "settings-section-grid"],
   ["settings-choices", "default", 170],
   ["hotkey-list", "multiple", 120],
   ["emoji-favorites", "default", 125],

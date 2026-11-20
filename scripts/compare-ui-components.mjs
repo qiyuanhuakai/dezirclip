@@ -17,7 +17,7 @@ const selectedTheme = flags.get("theme");
 const selectedFixtures = flags.get("fixture")?.split(",");
 const presets = JSON.parse(await readFile(resolve(root, "packages/ui-presets/builtin-presets.json"), "utf8"));
 const cases = {
-  "settings-section-card": { states: ["default", "expanded"], text: "General settings" },
+  "settings-section-card": { states: ["default", "expanded", "wide"], text: "General settings" },
   "settings-choices": { states: ["default"], text: "Update channel" },
   "hotkey-list": { states: ["default", "multiple"], text: "Global hotkey" },
   "emoji-favorites": { states: ["default"], text: "Add emoji" },

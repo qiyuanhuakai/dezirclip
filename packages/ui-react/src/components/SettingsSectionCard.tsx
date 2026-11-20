@@ -1,6 +1,15 @@
 import type { ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
+export const PANE_TWO_COLUMNS_MIN_WIDTH = 700;
+export const PANE_THREE_COLUMNS_MIN_WIDTH = 1000;
+
+export function settingsPaneColumns(width: number): 1 | 2 | 3 {
+  if (width >= PANE_THREE_COLUMNS_MIN_WIDTH) return 3;
+  if (width >= PANE_TWO_COLUMNS_MIN_WIDTH) return 2;
+  return 1;
+}
+
 export function SettingsGroupHeader({ title, collapsed, onToggle }: {
   title: ReactNode;
   collapsed: boolean;

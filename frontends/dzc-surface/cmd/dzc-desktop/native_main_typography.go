@@ -68,7 +68,6 @@ func (n *nativeMain) findFonts() {
 
 func (n *nativeMain) fontSetting(c *ui.Context, key, label string, choices []string) {
 	kit := n.mainKit()
-	kit.SettingsLabel(c, label)
 	system := n.text("font_default_option")
 	options := append([]string{system}, choices...)
 	selected := n.preferences[key]
@@ -77,14 +76,17 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label string, choices []str
 	} else if !slices.Contains(options, selected) {
 		options = append(options, selected)
 	}
-	field, changed := kit.Combo(c, &selected, label, system, options, n.mutating)
-	field.FillWidth()
-	if changed {
-		if selected == system {
-			selected = ""
+	ui.Column(c.Key(key)).Gap(8).Children(func() {
+		kit.SettingsLabel(c, label)
+		field, changed := kit.Combo(c, &selected, label, system, options, n.mutating)
+		field.FillWidth()
+		if changed {
+			if selected == system {
+				selected = ""
+			}
+			n.saveSetting(key, selected)
 		}
-		n.saveSetting(key, selected)
-	}
+	})
 }
 
 func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, label string, saved int) int {

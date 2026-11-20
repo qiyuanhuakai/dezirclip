@@ -8,7 +8,7 @@ import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { AttachmentFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
 import { ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture,
-  SettingsDataFixture, SettingsRemoveFixture, SettingsSectionFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
+  SettingsDataFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
 import "../src/base.css";
 import "../src/styles/components/index.css";
 import "./showcase.css";
@@ -121,7 +121,7 @@ function Showcase() {
   const examples = {
     "text-fields": <TextFieldsFixture />,
     "context-menu": <ContextMenuFixture state={state} />,
-    "settings-section-card": <SettingsSectionFixture open={state === "expanded"} />,
+    "settings-section-card": state === "wide" ? <SettingsSectionGridFixture /> : <SettingsSectionFixture open={state === "expanded"} />,
     "settings-choices": <SettingsChoicesFixture />,
     "hotkey-list": <HotkeyListFixture multiple={state === "multiple"} />,
     "emoji-favorites": <EmojiFavoritesFixture />,
