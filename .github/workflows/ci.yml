@@ -1351,15 +1351,46 @@ jobs:
             frontends/dzc-surface/go.sum
             packages/ui-native/go.sum
             packages/ui-presets/go.sum
+      - name: Resolve Ubuntu's CJK font package
+        if: runner.os == 'Linux'
+        id: cjk-fonts
+        run: |
+          if ! metadata=$(apt-cache --no-all-versions show fonts-noto-cjk) || [[ -z "$metadata" ]]; then
+            sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 update -qq
+            metadata=$(apt-cache --no-all-versions show fonts-noto-cjk)
+          fi
+          archive=$(sed -n 's/^Filename: //p' <<< "$metadata")
+          checksum=$(sed -n 's/^SHA256: //p' <<< "$metadata")
+          [[ "$archive" =~ ^pool/main/f/fonts-noto-cjk/fonts-noto-cjk_[a-zA-Z0-9.+~_-]+_all\.deb$ ]]
+          [[ "$checksum" =~ ^[a-f0-9]{64}$ ]]
+          printf 'archive=%s\nchecksum=%s\n' "$archive" "$checksum" >> "$GITHUB_OUTPUT"
+      - name: Cache verified CJK font download
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/fonts-noto-cjk.deb
+          key: go-development-cjk-fonts-${{ steps.cjk-fonts.outputs.checksum }}
       - name: Provision CJK fonts for headless rendering tests
         if: runner.os == 'Linux'
-        timeout-minutes: 5
+        timeout-minutes: 4
+        env:
+          FONT_ARCHIVE: ${{ steps.cjk-fonts.outputs.archive }}
+          FONT_SHA256: ${{ steps.cjk-fonts.outputs.checksum }}
         run: |
-          if [[ "$(dpkg-query -W -f='${Status}\n' fonts-noto-cjk fontconfig 2>/dev/null | grep -c '^install ok installed$')" != 2 ]]; then
-            options=(-o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
-            sudo apt-get "${options[@]}" update -qq
-            sudo apt-get "${options[@]}" install -y --no-install-recommends fonts-noto-cjk fontconfig
+          font_package="$RUNNER_TEMP/fonts-noto-cjk.deb"
+          verify_font_package() {
+            printf '%s  %s\n' "$FONT_SHA256" "$font_package" | sha256sum --check --status
+          }
+          if [[ ! -f "$font_package" ]] || ! verify_font_package; then
+            for mirror in https://archive.ubuntu.com/ubuntu https://mirrors.kernel.org/ubuntu https://ftp.osuosl.org/pub/ubuntu; do
+              if curl --fail --location --silent --show-error --connect-timeout 10 --max-time 55 \
+                --output "$font_package" "$mirror/$FONT_ARCHIVE" && verify_font_package; then
+                break
+              fi
+            done
           fi
+          printf '%s  %s\n' "$FONT_SHA256" "$font_package" | sha256sum --check --strict
+          sudo dpkg -i "$font_package"
           fc-match 'sans-serif:lang=zh-cn'
       - name: Test local protocol client
         working-directory: clients/go
