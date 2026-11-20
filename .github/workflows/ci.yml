@@ -1312,7 +1312,8 @@ jobs:
         env:
           RUST_CHECK_MODE: ${{ matrix.mode }}
         run: |
-          packages=(libpipewire-0.3-dev libgbm-dev libx11-dev libxi-dev libxrandr-dev libxtst-dev libdbus-1-dev)
+          packages=(libpipewire-0.3-dev libgbm-dev libx11-dev libxi-dev libxrandr-dev libxtst-dev libdbus-1-dev
+            libegl-dev libwayland-dev libfontconfig1-dev libfreetype-dev)
           if [[ "$RUST_CHECK_MODE" == desktop-check ]]; then
             packages+=(libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev)
           fi
