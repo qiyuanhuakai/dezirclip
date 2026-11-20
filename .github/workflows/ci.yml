@@ -105,9 +105,36 @@ jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-22.04
+    outputs:
+      mygo_installer_required: ${{ steps.mygo-installer-scope.outputs.required }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Check whether the legacy MyGo installer needs acceptance
+        id: mygo-installer-scope
+        shell: bash
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          FULL_VALIDATION: ${{ inputs.full_validation }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            push) base="$PUSH_BEFORE" ;;
+            pull_request) base="$PR_BASE_SHA" ;;
+            *) base= ;;
+          esac
+
+          # The runner tests the published alpha.9 payload with installer sources from this checkout.
+          required=true
+          if [[ "$FULL_VALIDATION" != true && "$base" =~ ^[0-9a-f]{40}$ && "$base" != 0000000000000000000000000000000000000000 ]] &&
+            { git cat-file -e "$base^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "$base"; } &&
+            git diff --quiet "$base" HEAD -- .github/workflows/ci.yml .github/workflows/release.yml \
+              scripts/build-mygo-installer.py scripts/mygo-installer.nsi scripts/package-published-mygo.py \
+              'scripts/tests/mygo-*-windows.*' scripts/tests/service-process-receipt.ps1 src-tauri/icons/icon.ico; then
+            required=false
+          fi
+          echo "required=$required" >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -1228,6 +1255,8 @@ jobs:
 
   mygo-installer:
     name: MyGo installer acceptance
+    needs: frontend
+    if: needs.frontend.outputs.mygo_installer_required == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

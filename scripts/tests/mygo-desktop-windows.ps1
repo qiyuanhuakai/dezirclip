@@ -1064,8 +1064,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
     if ($NativeMain) {
         $null = Get-ControlPoint $root $marker
-        $lifecycle = Join-Path $dir.FullName 'desktop-lifecycle-main.log'
-        $events = @(Get-Content -LiteralPath $lifecycle | ForEach-Object { (ConvertFrom-Json -InputObject $_).event })
+        $mainLifecycleLog = Join-Path $dir.FullName 'desktop-lifecycle-main.log'
+        $events = @(Get-Content -LiteralPath $mainLifecycleLog | ForEach-Object { (ConvertFrom-Json -InputObject $_).event })
         if ($events -notcontains 'native-content-ready' -or $events -contains 'page-loaded') {
             throw 'Default main window did not render through native MyGo'
         }

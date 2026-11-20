@@ -213,7 +213,6 @@ jobs:
   publish-desktop:
     name: Dual desktop release (${{ matrix.name }})
     if: github.event_name == 'push'
-    needs: create-release
     runs-on: ${{ matrix.platform }}
     env:
       CARGO_PROFILE_RELEASE_LTO: thin
@@ -348,7 +347,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           MYGO_TARGET: ${{ matrix.target }}
-          PLATFORM: ${{ matrix.name }}
+          MYGO_PLATFORM: ${{ matrix.name }}
           SIDECARS: ${{ steps.desktop.outputs.directory }}
         run: |
           set -euo pipefail
@@ -357,7 +356,7 @@ jobs:
             rpm_pid=$!
           fi
           result=0
-          python scripts/bundle-mygo.py --target "$PLATFORM" --sidecars "$SIDECARS" \
+          python scripts/bundle-mygo.py --target "$MYGO_PLATFORM" --sidecars "$SIDECARS" \
             --native "artifacts/dzc-desktop/$MYGO_TARGET" --output "$RUNNER_TEMP/mygo-release" \
             --revision "$GITHUB_SHA" --tag "$GITHUB_REF_NAME" --smoke || result=$?
           if [[ -n "${rpm_pid:-}" ]]; then
@@ -375,12 +374,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
           BUNDLE_ROOT: ${{ steps.desktop.outputs.directory }}
           TAURI_RPM: ${{ steps.additional-bundles.outputs.rpm }}
         run: |
-          $draft = gh api "repos/$env:GITHUB_REPOSITORY/releases/$env:RELEASE_ID" --jq '.draft'
-          if ($LASTEXITCODE -or $draft -cne 'true') { throw 'Expected the original draft' }
+          $deadline = [DateTime]::UtcNow.AddMinutes(3)
+          while ($true) {
+            $metadata = gh release view "$env:GITHUB_REF_NAME" --json isDraft,tagName 2>$null
+            if ($LASTEXITCODE -eq 0) { break }
+            if ([DateTime]::UtcNow -ge $deadline) { throw 'Release draft was not available before the upload deadline' }
+            Start-Sleep -Seconds 5
+          }
+          $draft = $metadata | ConvertFrom-Json
+          if (-not $draft.isDraft -or $draft.tagName -cne $env:GITHUB_REF_NAME) { throw 'Expected the original draft' }
+          $source = gh api "repos/$env:GITHUB_REPOSITORY/commits/$env:GITHUB_REF_NAME" --jq '.sha'
+          if ($LASTEXITCODE -ne 0 -or $source -cne $env:GITHUB_SHA) { throw 'Release tag no longer identifies the built commit' }
           $formats = if ($IsWindows) { @('nsis') } else { @('deb', 'appimage') }
           $files = @(foreach ($format in $formats) {
             Get-ChildItem -LiteralPath (Join-Path $env:BUNDLE_ROOT "bundle/$format") -File |

@@ -229,12 +229,15 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   for (const target of ["linux-x86_64", "linux-aarch64", "windows-x86_64", "windows-aarch64"]) {
     assert(desktop.includes(`- name: ${target}`));
   }
-  assert.match(desktop, /python scripts\/bundle-mygo\.py --target "\$PLATFORM" --sidecars "\$SIDECARS"/);
+  assert.match(desktop, /python scripts\/bundle-mygo\.py --target "\$MYGO_PLATFORM" --sidecars "\$SIDECARS"/);
   assert.match(desktop, /--revision "\$GITHUB_SHA" --tag "\$GITHUB_REF_NAME" --smoke/);
   assert.doesNotMatch(desktop, /--portable|package-portable\.ps1|portable-release/);
   assert.match(desktop, /'--bin', 'dezirclip', '--features', 'tauri\/custom-protocol'/);
   assert.match(desktop, /'tauri', 'bundle'/);
-  assert.match(desktop, /--jq '\.draft'/);
+  assert.doesNotMatch(desktop, /needs:.*create-release/);
+  assert.match(desktop, /gh release view "\$env:GITHUB_REF_NAME" --json isDraft,tagName/);
+  assert.match(desktop, /-not \$draft\.isDraft -or \$draft\.tagName -cne \$env:GITHUB_REF_NAME/);
+  assert.match(desktop, /\$source -cne \$env:GITHUB_SHA/);
   assert.match(desktop, /gh release upload "\$env:GITHUB_REF_NAME" @files --clobber/);
   assert.match(releaseJob(workflow, 'build-standalone-cli'), /package-only: true/);
   assert.match(promotion, /needs: \[create-release, publish-desktop, publish-standalone-cli\]/);
