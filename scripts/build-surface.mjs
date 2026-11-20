@@ -29,6 +29,20 @@ export function verifySurfaceIdentity(info, expected, component = 'surface') {
     || info.protocol_version?.major !== 1 || info.protocol_version?.minor !== 0) throw new Error('Surface runtime identity is incompatible');
 }
 
+function publishBinary(temporary, executable) {
+  const retryable = ['EBUSY', 'EPERM', 'EACCES'];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      renameSync(temporary, executable);
+      return;
+    } catch (error) {
+      // Windows scanners can briefly hold the verified executable after it exits.
+      if (process.platform !== 'win32' || attempt === 12 || !retryable.includes(error.code)) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+    }
+  }
+}
+
 export function buildSurface(args = process.argv.slice(2), env = process.env) {
   const run = (command, argv, options = {}) => execFileSync(command, argv, { cwd: root, encoding: 'utf8', ...options });
   const host = run('rustc', ['--print', 'host-tuple']).trim();
@@ -133,7 +147,7 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
         Object.entries(webAssets).some(([path, hash]) => embedded[path] !== hash)) throw new Error('Embedded React resources differ');
     }
   }
-  renameSync(temporary, executable);
+  publishBinary(temporary, executable);
   const proof = { schema_version: 1, kind: component + '-build', created_at: new Date().toISOString(),
     executable, sha256: sha256(readFileSync(executable)), expected, build_info: buildInfo,
     identity_verification: buildInfo ? 'executed_native_build_info' : 'cross_target_not_executed',
