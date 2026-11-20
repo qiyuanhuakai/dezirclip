@@ -10,7 +10,7 @@ import re
 REPOSITORY = Path(__file__).resolve().parents[3]
 FUNCTIONAL_CONTROLLER_BASE_COMMIT = 'c5083f9849d9543f81d71f0b57ce49522a51e9e4'
 REVIEWED_TARGET_LF_SHA256 = '7cb2934f7a4b8d9e47a6a498ab768802cd2ce62e5174aab25dc6356c20d1d429'
-REVIEWED_CONTROLLER_LF_SHA256 = 'd564b44a31d648a0db8455174cef61851a5a72c47b60a601a34917d45dc5f3c2'
+REVIEWED_CONTROLLER_LF_SHA256 = 'a21820538b7664e7998426e2d2dfb29ae10da212688d274a129ac05eb4897997'
 REVIEWED_LIFECYCLE_LF_SHA256 = '88a38835a31e00e5f767b3bc928ca8cd53a0c7f5d9d2cd4cdad6568dda7f3a15'
 
 
@@ -82,21 +82,27 @@ def native_streaming_plumbing(plumbing):
     return plumbing[:start] + native + plumbing[end:]
 
 
+def require_reviewed(source, expected, label):
+    actual = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    assert actual == expected, f'Functional {label} changed; review the derivation before use (LF SHA-256: {actual})'
+
+
 def derive_sources(controller, original_target, crash_events):
     # Compare canonical LF text so Git's Windows checkout conversion is harmless.
     controller = controller.replace('\r\n', '\n')
     original_target = original_target.replace('\r\n', '\n')
     crash_events = crash_events.replace('\r\n', '\n')
-    assert hashlib.sha256(controller.encode('utf-8')).hexdigest() == REVIEWED_CONTROLLER_LF_SHA256, 'Functional controller changed; review the derivation before use'
-    assert hashlib.sha256(crash_events.encode('utf-8')).hexdigest() == 'b8fd4ea818c09963e8e0d9f746ffd2a2e7ca8b2e90993cf931989b7b09d61400', 'Functional crash diagnostics changed; review the derivation before use'
+    require_reviewed(controller, REVIEWED_CONTROLLER_LF_SHA256, 'controller')
+    require_reviewed(crash_events, 'b8fd4ea818c09963e8e0d9f746ffd2a2e7ca8b2e90993cf931989b7b09d61400', 'crash diagnostics')
     original_plumbing = controller.split('export async function runSurfaceAcceptance(', 1)[0]
     plumbing = original_plumbing.replace("from '../build-surface.mjs'", "from '../../scripts/build-surface.mjs'")
+    plumbing = plumbing.replace("from '../mygo-surface-patch.mjs'", "from '../../scripts/mygo-surface-patch.mjs'")
     plumbing = plumbing.replace("from '../release-windows-upgrade.mjs'", "from '../../scripts/release-windows-upgrade.mjs'")
     plumbing = plumbing.replace("new URL('./native-windows-surface-target.py', import.meta.url)",
                                 "new URL('./native-target.py', import.meta.url)")
     plumbing = native_streaming_plumbing(plumbing)
     plumbing += '\nexport { repository, sha, json, delay, normalized, regular, owned, save, copy, canarySnapshot, environment, LoggedProcess, NativeChannel, availablePort, fixedSurfaceInputs, toolkitPatchId, within, finalizeManagedChild, stopManagedChild, exitFailedController };\n'
-    assert hashlib.sha256(original_target.encode('utf-8')).hexdigest() == REVIEWED_TARGET_LF_SHA256, 'Functional target changed; review the derivation before use'
+    require_reviewed(original_target, REVIEWED_TARGET_LF_SHA256, 'target')
     target = original_target
 
 
@@ -204,7 +210,7 @@ def generate(repository, destination):
     crash_events = (repository / 'scripts/tests/native-windows-crash-events.mjs').read_text(encoding='utf-8')
     files = derive_sources(controller, target, crash_events)
     lifecycle = (repository / 'scripts/tests/native-windows-lifecycle.mjs').read_text(encoding='utf-8').replace('\r\n', '\n')
-    assert hashlib.sha256(lifecycle.encode('utf-8')).hexdigest() == REVIEWED_LIFECYCLE_LF_SHA256, 'Functional lifecycle changed; review the derivation before use'
+    require_reviewed(lifecycle, REVIEWED_LIFECYCLE_LF_SHA256, 'lifecycle')
     files['native-windows-lifecycle.mjs'] = lifecycle
     source_directory = repository / 'scripts/tests/windows-performance'
     for name in ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs', 'native-stream.mjs', 'native-stream.node.mjs'):
@@ -218,6 +224,7 @@ def generate(repository, destination):
                     ('native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-crash-events.mjs', 'native-windows-lifecycle.mjs')]
     source_paths += ['scripts/tests/windows-performance/' + name for name in
                      ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs', 'native-stream.mjs', 'native-stream.node.mjs')]
+    source_paths += ['scripts/mygo-surface-patch.mjs', 'frontends/dzc-surface/internal/buildinfo/mygo-toolkit.json']
     source_files = {}
     for name in source_paths:
         raw = (repository / name).read_bytes()

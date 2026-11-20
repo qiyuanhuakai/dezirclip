@@ -1,6 +1,8 @@
 use dzc_host::wire::{SurfaceBuildIdentity, VERSION};
 use serde::Deserialize;
-pub(super) const TOOLKIT_PATCH: &str = "mygo-v0.6.4-native-alpha-v8";
+pub(super) const TOOLKIT_PATCH: &str = env!("DZC_MYGO_TOOLKIT_PATCH");
+const TOOLKIT_VERSION: &str = env!("DZC_MYGO_TOOLKIT_VERSION");
+const TOOLKIT_SOURCE: &str = env!("DZC_MYGO_TOOLKIT_SOURCE");
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Identity {
@@ -26,8 +28,8 @@ pub(super) fn validate(raw: &[u8], expected: &SurfaceBuildIdentity) -> Result<()
     if value.component != "surface"
         || value.source_state != "verified_checkout"
         || value.protocol_version != VERSION
-        || value.mygo_version != "v0.6.4"
-        || value.mygo_source_revision != "6255ea40139d06e0762a7c4a32626148ba410478"
+        || value.mygo_version != TOOLKIT_VERSION
+        || value.mygo_source_revision != TOOLKIT_SOURCE
         || value.toolkit_patch_id != TOOLKIT_PATCH
         || !dzc_core::protocol::surface_control::same_build(&build, expected)
     {
@@ -47,7 +49,7 @@ mod tests {
             target: "x86_64-pc-windows-msvc".into(),
         };
         let valid = serde_json::json!({"component":"surface","component_version":build.component_version,"source_revision":build.source_revision,"build_id":build.build_id,"target":build.target,
-            "source_state":"verified_checkout","protocol_version":{"major":1,"minor":0},"mygo_version":"v0.6.4","mygo_source_revision":"6255ea40139d06e0762a7c4a32626148ba410478","toolkit_patch_id":TOOLKIT_PATCH});
+            "source_state":"verified_checkout","protocol_version":{"major":1,"minor":0},"mygo_version":TOOLKIT_VERSION,"mygo_source_revision":TOOLKIT_SOURCE,"toolkit_patch_id":TOOLKIT_PATCH});
         validate(&serde_json::to_vec(&valid).unwrap(), &build).unwrap();
         for key in [
             "component",

@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { verifySurfaceIdentity } from '../build-surface.mjs';
-import { MYGO_PATCH_ID } from '../mygo-surface-patch.mjs';
+import { MYGO_PATCH_ID, MYGO_TOOLKIT } from '../mygo-surface-patch.mjs';
 
 const expected = {
   component_version: '0.2.0-alpha.5', source_revision: 'a'.repeat(40), source_state: 'verified_checkout',
   build_id: `0.2.0-alpha.5@${'a'.repeat(40)}`, target: 'x86_64-pc-windows-msvc',
   toolkit_patch_id: MYGO_PATCH_ID,
 };
-const identity = () => ({ ...expected, component: 'surface', mygo_version: 'v0.6.4', protocol_version: { major: 1, minor: 0 } });
+const identity = () => ({
+  ...expected, component: 'surface', mygo_version: MYGO_TOOLKIT.version,
+  mygo_source_revision: MYGO_TOOLKIT.source_revision, protocol_version: { major: 1, minor: 0 },
+});
 
 test('matching native helper metadata is accepted without substituting desktop metadata', () => {
   verifySurfaceIdentity(identity(), expected);

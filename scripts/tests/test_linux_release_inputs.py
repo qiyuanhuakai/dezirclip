@@ -46,28 +46,23 @@ class Inputs(unittest.TestCase):
                      'packages/ui-native/go.mod', 'packages/ui-native/go.sum',
                      'scripts/build-surface.mjs', 'scripts/mygo-surface-patch.mjs']:
             self.put(name, b'synthetic source, never executed\n')
+        self.put(MODULE.TOOLKIT_PATH, (MODULE.ROOT / MODULE.TOOLKIT_PATH).read_bytes())
         self.helper = self.root / 'artifacts/dzc-surface' / MODULE.TARGET / 'dzc-surface'
         self.helper.parent.mkdir(parents=True)
         self.helper.write_bytes(synthetic_elf())
         self.proof_path = Path(str(self.helper) + '.proof.json')
         expected = {'component_version': self.version, 'source_revision': self.source,
             'source_state': 'verified_checkout', 'build_id': self.version + '@' + self.source,
-            'target': MODULE.TARGET, 'toolkit_patch_id': MODULE.PATCH}
+            'target': MODULE.TARGET, 'toolkit_patch_id': MODULE.TOOLKIT['id']}
         paths = ['frontends/dzc-surface/go.mod', 'frontends/dzc-surface/go.sum',
                  'packages/ui-native/go.mod', 'packages/ui-native/go.sum', 'scripts/build-surface.mjs',
-                 'scripts/mygo-surface-patch.mjs', 'package.json', 'Cargo.toml', 'Cargo.lock']
+                 'scripts/mygo-surface-patch.mjs', MODULE.TOOLKIT_PATH, 'package.json', 'Cargo.toml', 'Cargo.lock']
         self.proof = {'schema_version': 1, 'kind': 'surface-build', 'expected': expected,
             'executable': str(self.helper), 'sha256': MODULE.digest(self.helper.read_bytes()),
             'identity_verification': 'executed_native_build_info', 'toolchain': 'go version go1.27.3 linux/amd64',
-            'build_info': {**expected, 'component': 'surface', 'mygo_version': 'v0.6.4',
-                           'mygo_source_revision': MODULE.MYGO_SOURCE, 'protocol_version': {'major': 1, 'minor': 0}},
-            'toolkit_patch': {'id': MODULE.PATCH, 'strategy': 'isolated_module_copy', 'module': 'github.com/egoist/mygo',
-                'version': 'v0.6.4', 'source_revision': MODULE.MYGO_SOURCE,
-                'changed_files': ['app.go', 'internal/windows/webview2.go', 'internal/windows/webview2_options.go',
-                    'internal/windows/window.go', 'internal/windows/surface.go', 'internal/linux/surface.go', 'ui/input.go'],
-                'module_sum': 'h1:VzCqZKgvXcym5cSYKoC6IkTgcVeGZquPiui/a3oE36o=',
-                'module_go_mod_sum': 'h1:dVav53PwF2xEotjf4oA5lTY2Jp2exgzyjLhbSXhbMwE=',
-                'upstream_app_sha256': 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9'},
+            'build_info': {**expected, 'component': 'surface', 'mygo_version': MODULE.TOOLKIT['version'],
+                           'mygo_source_revision': MODULE.TOOLKIT['source_revision'], 'protocol_version': {'major': 1, 'minor': 0}},
+            'toolkit_patch': copy.deepcopy(MODULE.TOOLKIT),
             'inputs': [{'path': name, 'sha256': MODULE.digest((self.root / name).read_bytes())} for name in paths]}
         self.write_proof(self.proof)
         runner = patch.object(MODULE, 'small', side_effect=self.fake_run)
@@ -170,6 +165,8 @@ class Inputs(unittest.TestCase):
             lambda p: p.update(sha256='b' * 64), lambda p: p.update(identity_verification='cross_target_not_executed'),
             lambda p: p.update(toolchain='go version go1.27.3 linux/arm64'),
             lambda p: p['toolkit_patch'].update(id='other'), lambda p: p['build_info'].update(mygo_source_revision='b' * 40),
+            lambda p: p['toolkit_patch']['changed_files'].pop(),
+            lambda p: p['toolkit_patch'].update(patched_app_sha256='b' * 64),
             lambda p: p['build_info'].update(protocol_version={'major': True, 'minor': 0}), lambda p: p.update(inputs=[])]
         for change in changes:
             proof = copy.deepcopy(self.proof); change(proof); self.write_proof(proof)

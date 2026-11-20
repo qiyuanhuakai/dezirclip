@@ -13,8 +13,8 @@ import tomllib
 TARGET = 'x86_64-unknown-linux-gnu'
 REPOSITORY = 'qiyuanhuakai/dezirclip'
 ROOT = Path(__file__).resolve().parents[1]
-PATCH = 'mygo-v0.6.4-native-alpha-v8'
-MYGO_SOURCE = '6255ea40139d06e0762a7c4a32626148ba410478'
+TOOLKIT_PATH = 'frontends/dzc-surface/internal/buildinfo/mygo-toolkit.json'
+TOOLKIT = json.loads((ROOT / TOOLKIT_PATH).read_text(encoding='utf-8'))
 MAX_BINARY = 256 * 1024 * 1024
 MAX_METADATA = 32 * 1024 * 1024
 MAX_JSON = 1024 * 1024
@@ -155,7 +155,7 @@ def surface(root, identity, version):
     proof = json_value(proof_data)
     expected = {'component_version': version, 'source_revision': identity['source_revision'],
                 'source_state': 'verified_checkout', 'build_id': version + '@' + identity['source_revision'],
-                'target': TARGET, 'toolkit_patch_id': PATCH}
+                'target': TARGET, 'toolkit_patch_id': TOOLKIT['id']}
     require(type(proof.get('schema_version')) is int and proof['schema_version'] == 1
             and proof.get('kind') == 'surface-build' and proof.get('expected') == expected
             and proof.get('sha256') == digest(data)
@@ -164,18 +164,13 @@ def surface(root, identity, version):
             and proof.get('toolchain') == 'go version go1.27.3 linux/amd64', 'Existing Surface build proof differs')
     info = proof.get('build_info', {})
     require(all(info.get(name) == value for name, value in expected.items())
-            and info.get('component') == 'surface' and info.get('mygo_version') == 'v0.6.4'
-            and info.get('mygo_source_revision') == MYGO_SOURCE
+            and info.get('component') == 'surface' and info.get('mygo_version') == TOOLKIT['version']
+            and info.get('mygo_source_revision') == TOOLKIT['source_revision']
             and info.get('protocol_version') == {'major': 1, 'minor': 0}
             and all(type(info['protocol_version'].get(name)) is int for name in ('major', 'minor')),
             'Existing Surface runtime identity differs')
     patch = proof.get('toolkit_patch', {})
-    require(all(patch.get(name) == value for name, value in {
-        'id': PATCH, 'strategy': 'isolated_module_copy', 'module': 'github.com/egoist/mygo',
-        'version': 'v0.6.4', 'source_revision': MYGO_SOURCE, 'changed_files': ['app.go', 'internal/windows/webview2.go', 'internal/windows/webview2_options.go', 'internal/windows/window.go', 'internal/windows/surface.go', 'internal/linux/surface.go', 'ui/input.go'],
-        'module_sum': 'h1:VzCqZKgvXcym5cSYKoC6IkTgcVeGZquPiui/a3oE36o=',
-        'module_go_mod_sum': 'h1:dVav53PwF2xEotjf4oA5lTY2Jp2exgzyjLhbSXhbMwE=',
-        'upstream_app_sha256': 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9'}.items()),
+    require(all(patch.get(name) == value for name, value in TOOLKIT.items()),
         'Existing Surface toolkit patch differs')
     inputs = proof.get('inputs')
     require(type(inputs) is list and 0 < len(inputs) <= 4096, 'Surface source input set is missing')
@@ -188,7 +183,7 @@ def surface(root, identity, version):
         require(digest(regular(root / path, MAX_METADATA)) == item['sha256'], 'Surface source bytes changed')
     require({'frontends/dzc-surface/go.mod', 'frontends/dzc-surface/go.sum', 'packages/ui-native/go.mod',
              'packages/ui-native/go.sum', 'scripts/build-surface.mjs', 'scripts/mygo-surface-patch.mjs',
-             'package.json', 'Cargo.toml', 'Cargo.lock'} <= seen,
+             'package.json', 'Cargo.toml', 'Cargo.lock', TOOLKIT_PATH} <= seen,
             'Surface proof omits required source inputs')
     return data, proof_data
 

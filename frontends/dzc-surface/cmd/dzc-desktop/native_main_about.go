@@ -247,7 +247,7 @@ func (n *nativeMain) aboutBuildDetails(c *ui.Context) {
 		{n.text("build_source_state"), source},
 		{n.text("build_target"), buildinfo.Target},
 		{n.text("build_protocol"), fmt.Sprintf("%d.%d", version.Major, version.Minor)},
-		{"MyGo", buildinfo.MyGoVersion},
+		{"MyGo", buildinfo.MyGoVersion()},
 	} {
 		n.aboutValue(c, pair[0], pair[1])
 	}

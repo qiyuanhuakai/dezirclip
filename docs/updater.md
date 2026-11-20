@@ -94,8 +94,8 @@ Stable 只读取 stable.json，排除全部预发布。Preview 分别读取两�
 常规发布由 tag 触发，按以下步骤运行。
 
 1. 核对同步版本及签名配置，创建 GitHub 草稿。
-2. 四个平台并行打包。每个平台单独编译 Tauri 主程序，再在打包时生成同一组 Rust 辅助程序供 Tauri 和 MyGo 使用。桌面发布使用 ThinLTO，Windows NSIS 使用 zlib，Linux 并行打包 Tauri RPM 与 MyGo。独立 CLI 并行执行四个平台的兼容构建和实际制品验证。
-3. 同一平台任务直接检查制品架构、构建身份和 MyGo 安装包。Linux 启动提取后的 deb 与 AppImage 检查入口。Windows x64 用独立桌面会话执行 MyGo 的安装、覆盖升级和卸载。开发检查由 PR CI 执行，历史安装和故障回归可用 CI 的全量验收模式运行。
+2. 四个平台与草稿准备同时启动。每个平台单独编译 Tauri 主程序，再在打包时生成同一组 Rust 辅助程序供 Tauri 和 MyGo 使用。上传前核对草稿及 tag 源码。桌面发布使用 ThinLTO，Windows NSIS 使用 zlib，Linux 并行打包 Tauri RPM 与 MyGo。独立 CLI 并行执行四个平台的兼容构建和实际制品验证。
+3. 同一平台任务直接检查制品架构、构建身份和 MyGo 安装包。Linux 启动提取后的 deb 与 AppImage 检查入口。Windows x64 用独立桌面会话执行 MyGo 的安装、覆盖升级和卸载。普通 CI 在安装脚本或验收输入变动时测试历史 MyGo 安装包。也可以手动运行 CI 的全量验收。
 4. `publish-dual` 核对原 tag 推送、精确 run/attempt、构建任务和资产清单，重新下载八份 NSIS/AppImage 与配套签名，校验 SHA-256、签名、版本和文件名。通过后公开草稿，并写入包含两种桌面的单份通道索引。
 5. 预发布推进 `preview.json`，正式版推进 `stable.json`。先上传版本索引并回读，再激活。等版本必须内容一致，较新通道继续生效。deb 和 rpm 通过原安装方式更新。
 

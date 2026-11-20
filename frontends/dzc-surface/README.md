@@ -1,7 +1,7 @@
 # Experimental Quick Paste Surface
 
-This module uses MyGo **v0.6.4**, commit
-`6255ea40139d06e0762a7c4a32626148ba410478`, and Go **1.27.3**.
+This module uses Go **1.27.3** and the MyGo version pinned in
+[`mygo-toolkit.json`](internal/buildinfo/mygo-toolkit.json).
 It creates one initially hidden native Panel and reuses it across activations.
 It does not register shortcuts, read a database, capture a clipboard, expose a
 network service, or install an updater.
@@ -48,14 +48,18 @@ Build with the repository's `pnpm run surface:build` entry. It supplies the
 version, source, state, build ID and Rust target triple through `-ldflags`.
 The builder verifies the original module and patches an isolated copy.
 It removes MyGo's automatic updater-cleanup call and sets fixed software-rendering options through
-the WebView2 API when the main window starts with GPU rendering disabled. It also includes the native transparent-window composition fix from [MyGo PR #660](https://github.com/egoist/mygo/pull/660). Clicks on controls in a non-activating Windows flyout preserve keyboard focus in the main window. On X11, software-rendered frames are flushed before GTK presents them. The patch ID is
-`mygo-v0.6.4-native-alpha-v8`; the module cache and committed `go.mod`
-stay unchanged. A temporary modfile selects that verified copy. The helper
-requires that patch ID at runtime and reports it as `toolkit_patch_id`.
+the WebView2 API when the main window starts with GPU rendering disabled. It also includes the native transparent-window composition fix from [MyGo PR #660](https://github.com/egoist/mygo/pull/660). Clicks on controls in a non-activating Windows flyout preserve keyboard focus in the main window. On X11, software-rendered frames are flushed before GTK presents them.
+A temporary modfile selects the verified copy. The helper
+requires the manifest's patch ID at runtime and reports it as `toolkit_patch_id`.
 `--build-info` prints this Go helper's own identity and fixed MyGo identity;
 it does not claim to link Rust Core. Normal UI execution requires
 `source_state=verified_checkout`, the fixed toolkit patch and an exactly
 matching parent/Host build. An ordinary unpatched `go build` cannot start UI.
+
+When upgrading the toolkit, update the manifest and refresh the MyGo
+requirements and checksums in this module, `packages/ui-native`, and
+`packages/ui-presets`. Run `node --test scripts/tests/mygo-surface-patch.node.mjs`
+from the repository root to check the locks before pushing.
 
 Pure model and build identity checks:
 

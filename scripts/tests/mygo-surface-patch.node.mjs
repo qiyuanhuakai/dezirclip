@@ -1,18 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { MYGO_PATCH_ID, patchVerifiedMyGoApp, removeStartupCleanupCall } from '../mygo-surface-patch.mjs';
+import { MYGO_TOOLKIT, patchVerifiedMyGoApp, removeStartupCleanupCall } from '../mygo-surface-patch.mjs';
 
-test('Rust admission and packaged Go/Linux helpers require the patch actually built', () => {
-  const files = [
-    ['../../src-tauri/src/app/surface_supervisor/identity.rs', /const TOOLKIT_PATCH: &str = "([^"]+)"/],
-    ['../../frontends/dzc-surface/internal/buildinfo/buildinfo.go', /const RequiredToolkitPatch = "([^"]+)"/],
-    ['../build-linux-release-inputs.py', /PATCH = '([^']+)'/],
-    ['./native-windows-surface.mjs', /const toolkitPatchId = '([^']+)'/],
-  ];
-  for (const [file, pattern] of files) {
-    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
-    assert.equal(pattern.exec(source)?.[1], MYGO_PATCH_ID, file);
+test('Go module locks match the reviewed MyGo toolkit manifest', () => {
+  const { version, module, module_sum: moduleSum, module_go_mod_sum: goModSum } = MYGO_TOOLKIT;
+  for (const directory of ['frontends/dzc-surface', 'packages/ui-native', 'packages/ui-presets']) {
+    const read = file => readFileSync(new URL(`../../${directory}/${file}`, import.meta.url), 'utf8');
+    const requirements = read('go.mod').split(/\r?\n/).map(line => line.trim().replace(/^require\s+/, ''));
+    assert(requirements.includes(`${module} ${version}`), `${directory}/go.mod needs ${module} ${version}`);
+    const sums = read('go.sum').split(/\r?\n/);
+    assert(sums.includes(`${module} ${version} ${moduleSum}`), `${directory}/go.sum has a different MyGo module checksum`);
+    assert(sums.includes(`${module} ${version}/go.mod ${goModSum}`), `${directory}/go.sum has a different MyGo go.mod checksum`);
   }
 });
 

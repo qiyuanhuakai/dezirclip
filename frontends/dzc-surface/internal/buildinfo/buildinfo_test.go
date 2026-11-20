@@ -13,7 +13,7 @@ func TestRuntimeRequiresVerifiedCheckoutAndMatchingBuildIdentity(t *testing.T) {
 	})
 	Version, SourceRevision, SourceState, Target = "0.2.0-alpha.5", strings.Repeat("a", 40), "verified_checkout", "x86_64-pc-windows-msvc"
 	BuildID = Version + "@" + SourceRevision
-	ToolkitPatch = RequiredToolkitPatch
+	ToolkitPatch = toolkit.ID
 	if !Valid() {
 		t.Fatal("verified build rejected")
 	}
@@ -30,7 +30,7 @@ func TestRuntimeRequiresVerifiedCheckoutAndMatchingBuildIdentity(t *testing.T) {
 			t.Fatalf("accepted toolkit patch %q", invalid)
 		}
 	}
-	ToolkitPatch = RequiredToolkitPatch
+	ToolkitPatch = toolkit.ID
 	BuildID = "different-build"
 	if Valid() {
 		t.Fatal("mismatched build ID accepted")
@@ -46,7 +46,7 @@ func TestReportDescribesOnlyThisSurfaceAndItsFixedToolkit(t *testing.T) {
 	if json.Unmarshal(raw, &report) != nil {
 		t.Fatal("invalid build report")
 	}
-	if report["component"] != "surface" || report["mygo_version"] != "v0.6.4" || report["mygo_source_revision"] != MyGoSource {
+	if report["component"] != "surface" || report["mygo_version"] != toolkit.Version || report["mygo_source_revision"] != toolkit.Source {
 		t.Fatal("untruthful toolkit identity")
 	}
 	if report["toolkit_patch_id"] != ToolkitPatch {

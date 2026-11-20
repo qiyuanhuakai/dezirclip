@@ -3,18 +3,17 @@ import test from 'node:test';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { MYGO_TOOLKIT } from '../mygo-surface-patch.mjs';
 import { validateCiContext, validateBuildProof, validateDesktopIdentity, verifyPresented, verifyNativePanel, verifyNativeTauriPanel, verifyMainDestroyed, mainBridgeReady } from './native-windows-surface.mjs';
 
 const source = 'a'.repeat(40);
 const expected = { component_version: '0.2.0-alpha.5', source_revision: source, source_state: 'verified_checkout',
-  build_id: '0.2.0-alpha.5@' + source, target: 'x86_64-pc-windows-msvc', toolkit_patch_id: 'mygo-v0.6.4-native-alpha-v8' };
+  build_id: '0.2.0-alpha.5@' + source, target: 'x86_64-pc-windows-msvc', toolkit_patch_id: MYGO_TOOLKIT.id };
 const info = { ...expected, component: 'surface', protocol_version: { major: 1, minor: 0 },
-  mygo_version: 'v0.6.4', mygo_source_revision: '6255ea40139d06e0762a7c4a32626148ba410478' };
+  mygo_version: MYGO_TOOLKIT.version, mygo_source_revision: MYGO_TOOLKIT.source_revision };
 const proof = { schema_version: 1, kind: 'surface-build', identity_verification: 'executed_native_build_info',
   sha256: 'b'.repeat(64), expected, build_info: info, inputs: [{ path: 'frontends/dzc-surface/go.mod', sha256: 'c'.repeat(64) }],
-  toolkit_patch: { id: expected.toolkit_patch_id, strategy: 'isolated_module_copy',
-    upstream_app_sha256: 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9',
-    patched_app_sha256: 'e79050f98a9aae53d3413e0680eb91e66d3d18cc677163acca97ed101ac1fa68', changed_files: ['app.go', 'internal/windows/webview2.go', 'internal/windows/webview2_options.go', 'internal/windows/window.go', 'internal/windows/surface.go', 'internal/linux/surface.go', 'ui/input.go'] } };
+  toolkit_patch: structuredClone(MYGO_TOOLKIT) };
 const helper = 'C:/fixture/candidate/dzc-surface.exe';
 const status = { renderer: 'mygo', managed_pid: 20, session_id: 'actual-session', visible: true, last_error: null };
 const observation = { processes: [{ pid: 20, running: true, image: helper, creation_time_100ns: 100 }],
@@ -50,6 +49,7 @@ test('Surface proof binds actual source/version/target and raw binary hash', () 
   assert.throws(() => validateBuildProof({ ...proof, toolkit_patch: { ...proof.toolkit_patch, strategy: 'modified_module_cache' } }, info, expected, proof.sha256));
   assert.throws(() => validateBuildProof({ ...proof, toolkit_patch: { ...proof.toolkit_patch, upstream_app_sha256: 'd'.repeat(64) } }, info, expected, proof.sha256));
   assert.throws(() => validateBuildProof({ ...proof, toolkit_patch: { ...proof.toolkit_patch, patched_app_sha256: 'd'.repeat(64) } }, info, expected, proof.sha256));
+  assert.throws(() => validateBuildProof({ ...proof, toolkit_patch: { ...proof.toolkit_patch, changed_files: [] } }, info, expected, proof.sha256));
 });
 
 test('presented status alone never substitutes for real native process, window and foreground', () => {

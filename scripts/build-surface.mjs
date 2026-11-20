@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MYGO_PATCH_ID, prepareMyGoPatch } from './mygo-surface-patch.mjs';
+import { MYGO_PATCH_ID, MYGO_TOOLKIT, prepareMyGoPatch } from './mygo-surface-patch.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const identityPackage = 'github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo';
@@ -24,7 +24,8 @@ export function verifySurfaceIdentity(info, expected, component = 'surface') {
   for (const field of ['component_version', 'source_revision', 'source_state', 'build_id', 'target', 'toolkit_patch_id']) {
     if (info[field] !== expected[field]) throw new Error(`Surface identity differs: ${field}`);
   }
-  if (info.component !== component || info.mygo_version !== 'v0.6.4' || info.toolkit_patch_id !== MYGO_PATCH_ID
+  if (info.component !== component || info.mygo_version !== MYGO_TOOLKIT.version
+    || info.mygo_source_revision !== MYGO_TOOLKIT.source_revision || info.toolkit_patch_id !== MYGO_PATCH_ID
     || info.protocol_version?.major !== 1 || info.protocol_version?.minor !== 0) throw new Error('Surface runtime identity is incompatible');
 }
 
@@ -58,7 +59,9 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
   const expected = { component_version: version, source_revision: revision, source_state: sourceState, build_id: `${version}@${revision}`, target, toolkit_patch_id: MYGO_PATCH_ID };
   const moduleRoot = join(root, 'frontends/dzc-surface');
   const module = readFileSync(join(moduleRoot, 'go.mod'), 'utf8');
-  if (!/^go 1\.27\.3\s*$/m.test(module) || !/github\.com\/egoist\/mygo v0\.6\.4(?:\s|$)/m.test(module)
+  const dependency = MYGO_TOOLKIT.module + ' ' + MYGO_TOOLKIT.version;
+  const moduleLines = module.split(/\r?\n/).map(line => line.trim().replace(/^require\s+/, ''));
+  if (!/^go 1\.27\.3\s*$/m.test(module) || !moduleLines.includes(dependency)
     || /replace\s+(?:\([^)]*)?github\.com\/egoist\/mygo/m.test(module)) throw new Error('Surface dependency pin differs');
   const fingerprint = () => {
     const paths = run('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--',

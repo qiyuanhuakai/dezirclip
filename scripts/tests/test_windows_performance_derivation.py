@@ -136,6 +136,7 @@ class PerformanceDerivationTests(unittest.TestCase):
                      ('native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-crash-events.mjs', 'native-windows-lifecycle.mjs')]
             names += ['scripts/tests/windows-performance/' + name for name in
                       ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs', 'native-stream.mjs', 'native-stream.node.mjs')]
+            names += ['scripts/mygo-surface-patch.mjs', 'frontends/dzc-surface/internal/buildinfo/mygo-toolkit.json']
             for name in names:
                 path = repository / name
                 path.parent.mkdir(parents=True, exist_ok=True)

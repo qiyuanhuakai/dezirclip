@@ -2,12 +2,10 @@ import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-export const MYGO_PATCH_ID = 'mygo-v0.6.4-native-alpha-v8';
-export const MYGO_APP_SHA256 = 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9';
-const modulePath = 'github.com/egoist/mygo';
-const version = 'v0.6.4';
-const moduleSum = 'h1:VzCqZKgvXcym5cSYKoC6IkTgcVeGZquPiui/a3oE36o=';
-const goModSum = 'h1:dVav53PwF2xEotjf4oA5lTY2Jp2exgzyjLhbSXhbMwE=';
+export const MYGO_TOOLKIT_PATH = 'frontends/dzc-surface/internal/buildinfo/mygo-toolkit.json';
+export const MYGO_TOOLKIT = JSON.parse(readFileSync(new URL('../' + MYGO_TOOLKIT_PATH, import.meta.url), 'utf8'));
+export const MYGO_PATCH_ID = MYGO_TOOLKIT.id;
+const { module: modulePath, version, module_sum: moduleSum, module_go_mod_sum: goModSum } = MYGO_TOOLKIT;
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
 export function removeStartupCleanupCall(source) {
@@ -17,8 +15,10 @@ export function removeStartupCleanupCall(source) {
 }
 
 export function patchVerifiedMyGoApp(source) {
-  if (sha256(source) !== MYGO_APP_SHA256) throw new Error('MyGo app.go differs from the reviewed source');
-  return Buffer.from(removeStartupCleanupCall(source.toString('utf8')), 'utf8');
+  if (sha256(source) !== MYGO_TOOLKIT.upstream_app_sha256) throw new Error('MyGo app.go differs from the reviewed source');
+  const patched = Buffer.from(removeStartupCleanupCall(source.toString('utf8')), 'utf8');
+  if (sha256(patched) !== MYGO_TOOLKIT.patched_app_sha256) throw new Error('Patched MyGo app.go differs from the reviewed toolkit manifest');
+  return patched;
 }
 
 function treeFiles(directory, prefix = '') {
@@ -137,6 +137,9 @@ export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
   }
   const changes = new Map([['app.go', patchedApp], ...windowsPatches(verifiedSource), ...linuxPatches(verifiedSource),
     localDragPatch(verifiedSource)]);
+  if (JSON.stringify([...changes.keys()]) !== JSON.stringify(MYGO_TOOLKIT.changed_files)) {
+    throw new Error('MyGo patch file list differs from the reviewed toolkit manifest');
+  }
   for (const [path, bytes] of changes) writeFileSync(join(patchedModule, path), bytes);
   const patchedFiles = treeFiles(patchedModule);
   const expectedFiles = originalFiles.map(file => changes.has(file.path) ? { ...file, sha256: sha256(changes.get(file.path)) } : file);
@@ -155,10 +158,7 @@ export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
   return {
     modfile,
     proof: {
-      id: MYGO_PATCH_ID, strategy: 'isolated_module_copy', module: modulePath, version,
-      source_revision: '6255ea40139d06e0762a7c4a32626148ba410478',
-      module_sum: moduleSum, module_go_mod_sum: goModSum,
-      changed_files: [...changes.keys()], upstream_app_sha256: MYGO_APP_SHA256, patched_app_sha256: sha256(patchedApp),
+      ...MYGO_TOOLKIT,
       upstream_tree_sha256: sha256(JSON.stringify(originalFiles)), patched_tree_sha256: sha256(JSON.stringify(patchedFiles)),
       file_count: patchedFiles.length,
     },

@@ -178,7 +178,7 @@ test('a discovery or RPC crossing the shared deadline cannot create later socket
   }
 });
 test('a spawn crossing startup deadline preserves its caller role before the postcheck', () => {
-  const source = readFileSync(new URL('./native-windows-service-paste.mjs', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('./native-windows-service-paste.mjs', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   const line = source.split('\n').find(value => value.trimStart().startsWith('const managed = (...values) =>'));
   assert(line); assert.match(source, /native = managed\([^\n]+\);\n    startupBudget\(startupDeadline\);/);
   let clock = 0;

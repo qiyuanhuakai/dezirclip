@@ -2,6 +2,9 @@
 package buildinfo
 
 import (
+	_ "embed"
+	"encoding/json"
+
 	"github.com/qiyuanhuakai/dezirclip/clients/go/control"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
@@ -14,16 +17,36 @@ var Target = "unknown"
 var BuildID = "unknown"
 var ToolkitPatch = "unknown"
 
-const MyGoVersion = "v0.6.4"
-const MyGoSource = "6255ea40139d06e0762a7c4a32626148ba410478"
-const RequiredToolkitPatch = "mygo-v0.6.4-native-alpha-v8"
+//go:embed mygo-toolkit.json
+var toolkitManifest []byte
+
+var toolkit = loadToolkit()
+
+type toolkitIdentity struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+	Source  string `json:"source_revision"`
+}
+
+func loadToolkit() toolkitIdentity {
+	var identity toolkitIdentity
+	if err := json.Unmarshal(toolkitManifest, &identity); err != nil {
+		panic(err)
+	}
+	if identity.ID == "" || identity.Version == "" || identity.Source == "" {
+		panic("incomplete MyGo toolkit manifest")
+	}
+	return identity
+}
+
+func MyGoVersion() string { return toolkit.Version }
 
 func Identity() protocol.SurfaceBuildIdentity {
 	return protocol.SurfaceBuildIdentity{ComponentVersion: Version, SourceRevision: SourceRevision, BuildId: BuildID, Target: Target}
 }
 
 func Valid() bool {
-	return SourceState == "verified_checkout" && ToolkitPatch == RequiredToolkitPatch && control.SameBuild(Identity(), Identity())
+	return SourceState == "verified_checkout" && ToolkitPatch == toolkit.ID && control.SameBuild(Identity(), Identity())
 }
 
 func Report() any {
@@ -46,5 +69,5 @@ func componentReport(component string) any {
 		MyGoSource       string                   `json:"mygo_source_revision"`
 		Target           string                   `json:"target"`
 		ToolkitPatchID   string                   `json:"toolkit_patch_id"`
-	}{component, Version, SourceRevision, SourceState, BuildID, protocol.Version, MyGoVersion, MyGoSource, Target, ToolkitPatch}
+	}{component, Version, SourceRevision, SourceState, BuildID, protocol.Version, toolkit.Version, toolkit.Source, Target, ToolkitPatch}
 }

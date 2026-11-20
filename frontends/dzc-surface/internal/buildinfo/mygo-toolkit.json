@@ -1,0 +1,20 @@
+{
+  "id": "mygo-v0.6.4-native-alpha-v8",
+  "strategy": "isolated_module_copy",
+  "module": "github.com/egoist/mygo",
+  "version": "v0.6.4",
+  "source_revision": "6255ea40139d06e0762a7c4a32626148ba410478",
+  "module_sum": "h1:VzCqZKgvXcym5cSYKoC6IkTgcVeGZquPiui/a3oE36o=",
+  "module_go_mod_sum": "h1:dVav53PwF2xEotjf4oA5lTY2Jp2exgzyjLhbSXhbMwE=",
+  "upstream_app_sha256": "af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9",
+  "patched_app_sha256": "e79050f98a9aae53d3413e0680eb91e66d3d18cc677163acca97ed101ac1fa68",
+  "changed_files": [
+    "app.go",
+    "internal/windows/webview2.go",
+    "internal/windows/webview2_options.go",
+    "internal/windows/window.go",
+    "internal/windows/surface.go",
+    "internal/linux/surface.go",
+    "ui/input.go"
+  ]
+}
