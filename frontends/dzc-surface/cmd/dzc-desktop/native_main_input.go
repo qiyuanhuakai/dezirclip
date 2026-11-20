@@ -66,7 +66,13 @@ func (n *nativeMain) searchKey(key ui.TextKey) bool {
 		return true
 	case ui.KeyEnter:
 		if key.Text() == n.historyQuery() && n.keyboard {
-			n.selectedAction(nativePaste)
+			if batch := n.activeTagBatch(); batch != nil {
+				if row, ok := n.selectedEntry(); ok {
+					n.toggleTagBatchRow(batch, row.Id, n.history.generation)
+				}
+			} else {
+				n.selectedAction(nativePaste)
+			}
 		}
 		return true
 	}

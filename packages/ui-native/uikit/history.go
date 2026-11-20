@@ -22,6 +22,7 @@ type HistoryCardOptions struct {
 	TextRows int
 	TagSize  float32
 	Body     func()
+	Leading  func()
 	Activate func()
 	Reorder  *HistoryReorder
 }
@@ -129,9 +130,11 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 				})
 			}
 		}
-		if options.Compact && (options.Reorder != nil || options.Pinned) {
+		if options.Leading != nil || options.Compact && (options.Reorder != nil || options.Pinned) {
 			ui.Row(c).Grow(1).Gap(4).AlignItems(ui.Center).Children(func() {
-				if options.Reorder != nil {
+				if options.Leading != nil {
+					options.Leading()
+				} else if options.Reorder != nil {
 					k.historyReorderGrip(c, options.Reorder, k.style("historySource"), 22)
 				} else {
 					ui.Icon(c, headerIcons["pin"]).Size(10, 10).TextColor(c.Theme().TextMuted).PassThrough()

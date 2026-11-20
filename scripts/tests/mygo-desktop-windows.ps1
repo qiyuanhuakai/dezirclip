@@ -1065,7 +1065,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             [Math]::Abs($clientRect.right - 670) -le 1 -and [Math]::Abs($clientRect.bottom - 608) -le 1
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
-    if ($NativeMain) {
+    if ($NativeMain -and !$Emoji) {
         $null = Get-ControlPoint $root $marker
         $mainLifecycleLog = Join-Path $dir.FullName 'desktop-lifecycle-main.log'
         $events = @(Get-Content -LiteralPath $mainLifecycleLog | ForEach-Object { (ConvertFrom-Json -InputObject $_).event })
@@ -1089,14 +1089,6 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Click-Control $main (Get-ControlPoint $root 'Close')
         $null = Get-ControlPoint $root $marker
         Write-Host 'Verified native history, Settings close, and collapsed Privacy'
-        Click-Control $main (Get-ControlPoint $root 'Emoji')
-        Click-Control $main (Get-ControlPoint $root 'Symbols')
-        Click-Control $main (Get-ControlPoint $root 'Search by character, name or U+ code')
-        [Windows.Forms.SendKeys]::SendWait('U{+}2A7D')
-        $null = Get-ControlPoint $root ([char]0x2a7d)
-        Click-Control $main (Get-ControlPoint $root 'Back')
-        $null = Get-ControlPoint $root $marker
-        Write-Host 'Verified Unicode code-point search in the native symbol picker'
         $beforeDrag = [MyGoInput+Rect]::new()
         if (![MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$beforeDrag)) { throw 'Cannot read native main bounds' }
         $dragX = $beforeDrag.left + 60
@@ -1553,7 +1545,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         return
     }
     if ($Emoji) {
-        Click-Control $main (Get-ControlPoint $root 'Stickers')
+        $emojiPanelLabel = if ($NativeMain) { 'Emoji' } else { 'Stickers' }
+        Click-Control $main (Get-ControlPoint $root $emojiPanelLabel)
         Click-Control $main (Get-ControlPoint $root 'Symbols')
         Click-Control $main (Get-ControlPoint $root 'Search by character, name or U+ code')
         [Windows.Forms.SendKeys]::SendWait('U{+}2A7D')
@@ -1570,7 +1563,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         if ($LASTEXITCODE -or $afterPaste.state.service_instance_id -cne $startedService.state.service_instance_id -or !$afterPaste.capture_owner) {
             throw 'Symbol paste did not preserve the original capture Service'
         }
-        Write-Output 'Verified WebView2 symbol search and exact paste into the original editor using an already-running Service'
+        $renderer = if ($NativeMain) { 'MyGo Native' } else { 'WebView2' }
+        Write-Output "Verified $renderer symbol search and exact paste into the original editor using an already-running Service"
         return
     }
     if (!$LegacyCloseAfterPaste) {

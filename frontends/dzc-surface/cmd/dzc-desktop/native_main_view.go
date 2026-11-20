@@ -149,8 +149,13 @@ func (n *nativeMain) view(c *ui.Context) {
 	if n.tags != nil {
 		n.tagEditorView(c, kit, n.tags)
 	}
-	if n.tagLibrary != nil && n.tagLibrary.dialog != nil {
-		n.tagLibraryDialog(c, kit, n.tagLibrary)
+	if tags := n.tagLibrary; tags != nil {
+		if tags.dialog != nil {
+			n.tagLibraryDialog(c, kit, tags)
+		}
+		if tags.batch.pending != nil {
+			n.tagBatchDialog(c, kit, tags)
+		}
 	}
 	if n.backup != nil {
 		n.backupView(c, kit, n.backup)
@@ -192,7 +197,8 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 	itemSize, tagSize := nativeItemSize.value(n.preferences), nativeTagSize.value(n.preferences)
 	first, last := n.list.List.Visible()
 	n.pruneProtectedRows(first, last)
-	reorderPins := n.canReorderVisiblePins()
+	batch := n.activeTagBatch()
+	reorderPins := batch == nil && n.canReorderVisiblePins()
 	draggingPin := false
 	var hovered protocol.DesktopEntry
 	var hoverBounds ui.Rect
@@ -218,6 +224,9 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 			}
 			summary := nativeCardSummary(row, n.language())
 			protected := n.protectedBody(row)
+			if batch != nil {
+				protected = nil
+			}
 			if editableHistoryKind(row.ContentType) {
 				actions = append(actions, uikit.HeaderAction{Icon: "edit", Label: n.text("edit_item"),
 					Disabled: !n.canOpenHistoryDialog() || nativeConcealed(row) && protected == nil,
@@ -244,6 +253,24 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 			textRows := 4
 			if compact {
 				textRows = 1
+			}
+			if batch != nil {
+				activate := func() { n.toggleTagBatchRow(batch, row.Id, generation) }
+				label := n.text("tag_select_entry")
+				kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
+					Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
+					Pinned: row.IsPinned, Selected: batch.selection.includes(row.Id), Compact: compact,
+					TextRows: textRows, TextFont: n.preferences["app.font_mono"], TextSize: float32(itemSize),
+					Tags: n.cardTags(row.Tags), TagSize: float32(tagSize), Activate: activate,
+					Leading: func() {
+						checked := batch.selection.includes(row.Id)
+						if kit.Checkbox(cell.Context, &checked, "").Label(label + ": " + summary).
+							Width(24).Shrink(0).Disabled(row.Id <= 0 || n.mutating).Changed() {
+							activate()
+						}
+					},
+				})
+				return
 			}
 			card := kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
 				Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
@@ -280,7 +307,12 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 			}
 		},
 	})
-	list.TrackScroll(&n.historyScroll).HandleInput(n.historyWheel)
+	list.TrackScroll(&n.historyScroll).HandleInput(func(event ui.InputEvent) bool {
+		if batch != nil && n.tagBatchKey(batch, event) {
+			return true
+		}
+		return n.historyWheel(event)
+	})
 	if reorderPins {
 		_, over := ui.DragOver[nativePinSource](list)
 		draggingPin = draggingPin || over
@@ -296,7 +328,11 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 		n.focusList = false
 	}
 	if list.Submitted() && n.history.selected >= 0 && n.history.selected < len(n.history.rows) {
-		n.selectedAction(nativePaste)
+		if batch != nil {
+			n.toggleTagBatchRow(batch, n.history.rows[n.history.selected].Id, generation)
+		} else {
+			n.selectedAction(nativePaste)
+		}
 	}
 	if first > 0 && !draggingPin && n.preferences["app.show_scroll_top_button"] != "false" {
 		ui.Row(c).Padding(0, 8, 5).Justify(ui.End).Children(func() {

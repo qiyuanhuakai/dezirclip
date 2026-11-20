@@ -22,6 +22,7 @@ type nativeHistoryPage struct {
 	state protocol.RuntimeState
 	rows  []protocol.DesktopEntry
 	more  bool
+	total uint64
 }
 
 func (l *Library) nativeHistoryPage(ctx context.Context, request nativeHistoryRequest) (nativeHistoryPage, error) {
@@ -68,7 +69,7 @@ func (l *Library) nativeTagPage(ctx context.Context, request nativeHistoryReques
 			*page.NextOffset != request.offset+uint32(len(page.Items))) {
 			return client.ErrProtocol
 		}
-		result = nativeHistoryPage{state: state, rows: page.Items, more: page.HasMore}
+		result = nativeHistoryPage{state: state, rows: page.Items, more: page.HasMore, total: page.Total}
 		return nil
 	})
 	return result, err
@@ -84,6 +85,7 @@ type nativeHistory struct {
 	rows       []protocol.DesktopEntry
 	selected   int
 	more       bool
+	total      uint64
 }
 
 func (h *nativeHistory) clear() {
@@ -92,6 +94,7 @@ func (h *nativeHistory) clear() {
 	h.rows = nil
 	h.selected = -1
 	h.more = false
+	h.total = 0
 }
 
 func (h *nativeHistory) reset(state protocol.RuntimeState, filter nativeHistoryFilter) {
@@ -120,7 +123,7 @@ func (h *nativeHistory) apply(request nativeHistoryRequest, page nativeHistoryPa
 		return false
 	}
 	page.state.EventSequence = max(page.state.EventSequence, h.state.EventSequence)
-	h.state, h.more = page.state, page.more
+	h.state, h.more, h.total = page.state, page.more, page.total
 	h.rows = append(h.rows, page.rows...)
 	return true
 }

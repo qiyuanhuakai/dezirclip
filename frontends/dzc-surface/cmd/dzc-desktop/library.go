@@ -301,7 +301,9 @@ func (l *Library) movePin(ctx context.Context, state protocol.RuntimeState, move
 }
 
 func (l *Library) DeleteTagEntries(ctx context.Context, params protocol.LibraryTagBatchParams) (uint64, error) {
-	params.ServiceInstanceId = l.owner.Hello().State.ServiceInstanceId
+	if params.ServiceInstanceId == "" {
+		params.ServiceInstanceId = l.owner.Hello().State.ServiceInstanceId
+	}
 	return l.deleteEntries(ctx, protocol.MethodDesktopTagsDeleteEntries, params)
 }
 

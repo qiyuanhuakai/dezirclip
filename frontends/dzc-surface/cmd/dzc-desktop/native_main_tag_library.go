@@ -14,6 +14,7 @@ import (
 type nativeTagLibrary struct {
 	selected, query, sort, nameQuery string
 	dialog                           *nativeTagDialog
+	batch                            nativeTagBatch
 }
 
 type nativeTagDialog struct {
@@ -30,7 +31,7 @@ func (n *nativeMain) historyQuery() string {
 
 func (n *nativeMain) hasHistoryDialog() bool {
 	return n.tags != nil || n.editor != nil || n.transform != nil || n.qr != nil || n.privacyDialog != nil ||
-		n.tagLibrary != nil && n.tagLibrary.dialog != nil
+		n.tagLibrary != nil && (n.tagLibrary.dialog != nil || n.tagLibrary.batch.pending != nil)
 }
 
 func (n *nativeMain) openTagLibrary() {
@@ -62,6 +63,7 @@ func (n *nativeMain) tagLibraryView(c *ui.Context, kit uikit.Kit) {
 			n.focusSearch = false
 		}
 		n.editQuery(field.Composing())
+		n.tagBatchToolbar(c, kit, tags)
 		n.historyView(c, kit)
 	}
 	width, _ := c.Size()
