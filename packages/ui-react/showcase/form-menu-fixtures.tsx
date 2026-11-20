@@ -4,6 +4,7 @@ import { BackupActions, BackupChoices, BackupDialog, BackupField, BackupPreview,
   PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField, SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsRemoveButton, SettingsSectionCard, TagPickerTrigger, TagSearchField, TagToolbar, TextArea, TextField } from "../src";
 import { Ellipsis, Eye, ListChecks, ListCollapse, Plus, Tag } from "lucide-react";
 import { settingsPaneColumns } from "../src/components/SettingsSectionCard";
+import { UpdateProgress, UpdateVersionRow } from "../src/components/SettingsUpdate";
 
 export function TextFieldsFixture() {
   return <div className="showcase-fields">
@@ -139,6 +140,18 @@ export function BackupDialogFixture({ state }: { state: string }) {
     <BackupField label="File path" value={path} readOnly browse="Browse" />
     {restoring && <BackupPreview label="Preview entries" entries={["Release checklist", "Example screenshot", "Draft notes"]} />}
   </BackupDialog>;
+}
+
+export function SettingsUpdateFixture({ state }: { state: string }) {
+  const installing = state === "installing";
+  const unknown = state === "unknown-size";
+  return <div className="showcase-fields">
+    <UpdateVersionRow label="Installed version" version="0.2.0-beta.4" />
+    <UpdateVersionRow label="Channel version" version="0.2.0-beta.5" />
+    <UpdateProgress label="Update download progress" status={installing ? "Installing and restarting…" : "Downloading update…"}
+      amount={installing ? "100%" : unknown ? "2.5 MiB" : "42%"} percent={installing ? 100 : unknown ? null : 42}
+      verified={installing ? "Official update signature verified" : undefined} />
+  </div>;
 }
 
 export function SettingsRemoveFixture() {

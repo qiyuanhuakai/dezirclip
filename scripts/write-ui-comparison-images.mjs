@@ -27,6 +27,8 @@ const figures = [
   ["backup-dialog", "default", 310, 55, "backup-dialog"],
   ["backup-dialog", "encrypted", 396, 12, "backup-dialog-encrypted"],
   ["backup-dialog", "import", 376, 22, "backup-dialog-import"],
+  ["settings-update", "default", 155, 0, "settings-update"],
+  ["settings-update", "installing", 175, 0, "settings-update-installing"],
   ["settings-remove", "default", 115],
   ["privacy-rules", "default", 390],
   ["tag-toolbar", "default", 85],

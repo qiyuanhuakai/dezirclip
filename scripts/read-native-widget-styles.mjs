@@ -43,6 +43,11 @@ const samples = [
   ["backup-dialog", "hover-choice", { backupChoiceHover: [".data-radio-item:nth-child(2)"] }],
   ["backup-dialog", "hover-cancel", { backupCancelHover: [".data-btn-cancel"] }],
   ["backup-dialog", "hover-submit", { backupSubmitHover: [".data-btn-primary"] }],
+  ["settings-update", "installing", {
+    updateVersion: [".update-version-row"], updateVersionValue: [".update-version-row strong"],
+    updateProgressText: [".settings-range-header"], updateProgressTrack: [".update-progress"],
+    updateProgressFill: [".update-progress-fill"], updateProgressVerified: [".update-verified"],
+  }],
   ["hotkey-list", "multiple", {
     hotkeyEditor: [".hotkey-list-editor"],
     hotkeyEditorHeader: [".hotkey-list-editor > .hotkey-recorder", ".hotkey-list-editor .item-label"],

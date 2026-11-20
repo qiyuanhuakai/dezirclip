@@ -71,6 +71,20 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 		})
 	case "backup-dialog":
 		g.backupDialogFixture(c, kit)
+	case "settings-update":
+		ui.Column(c).Width(330).Gap(8).Children(func() {
+			kit.UpdateVersionRow(c, "Installed version", "0.2.0-beta.4")
+			kit.UpdateVersionRow(c, "Channel version", "0.2.0-beta.5")
+			options := uikit.UpdateProgressOptions{Label: "Update download progress", Status: "Downloading update…", Amount: "42%", Fraction: 0.42}
+			switch g.state {
+			case "installing":
+				options.Status, options.Amount, options.Fraction = "Installing and restarting…", "100%", 1
+				options.Verified = "Official update signature verified"
+			case "unknown-size":
+				options.Amount, options.Fraction = "2.5 MiB", -1
+			}
+			kit.UpdateProgress(c, options)
+		})
 	case "search-select":
 		ui.Column(c).Width(385).Gap(12).Children(func() {
 			ui.Column(c).FillWidth().Gap(6).Padding(6, 0).Children(func() {

@@ -20,15 +20,30 @@ import (
 )
 
 type nativeUpdater struct {
-	channel              string
-	automatic, notesOpen bool
-	confirm, installing  bool
-	timer                *time.Timer
-	cancel               context.CancelFunc
-	generation           uint64
-	result               nativeUpdateResult
-	err                  error
-	checked              time.Time
+	channel                string
+	automatic, notesOpen   bool
+	confirm, installFailed bool
+	timer                  *time.Timer
+	cancel                 context.CancelFunc
+	generation             uint64
+	result                 nativeUpdateResult
+	err                    error
+	checked                time.Time
+	install                nativeInstallProgress
+}
+
+type nativeInstallPhase uint8
+
+const (
+	updateNotInstalling nativeInstallPhase = iota
+	updateDownloading
+	updateVerified
+	updateInstalling
+)
+
+type nativeInstallProgress struct {
+	phase             nativeInstallPhase
+	downloaded, total int64
 }
 
 type nativeUpdateResult struct {
@@ -127,7 +142,8 @@ func (check *nativeUpdateCheck) validFor(channel, version string, now time.Time)
 func (n *nativeMain) stopUpdater() {
 	u := &n.updater
 	u.generation++
-	u.confirm, u.installing = false, false
+	u.confirm, u.installFailed = false, false
+	u.install = nativeInstallProgress{}
 	if u.timer != nil {
 		u.timer.Stop()
 		u.timer = nil
@@ -198,22 +214,38 @@ func (n *nativeMain) installUpdate() {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
-	u.cancel, u.installing = cancel, true
+	u.cancel, u.installFailed = cancel, false
+	u.install = nativeInstallProgress{phase: updateDownloading}
 	u.err = nil
 	generation, target := u.generation, u.result.installTarget
+	postProgress := func(status nativeInstallProgress) {
+		n.window.Update(func() {
+			if !n.window.IsDestroyed() && u.generation == generation {
+				u.install = status
+			}
+		})
+	}
 	go func() {
 		defer cancel()
 		version, artifact := available.Version, *available.Artifact
-		path, err := downloadMyGoUpdate(ctx, artifact, version, target)
+		path, err := downloadMyGoUpdate(ctx, artifact, version, target, func(downloaded, total int64) {
+			postProgress(nativeInstallProgress{phase: updateDownloading, downloaded: downloaded, total: total})
+		})
 		if err == nil {
+			postProgress(nativeInstallProgress{phase: updateVerified})
 			request := mygoInstallRequest{Path: path, Version: version, Signature: artifact.Signature}
 			err = n.shell.resident.send(ctx, residentRequest{Operation: "install-update", Update: &request}, 30*time.Second)
+			if err == nil {
+				postProgress(nativeInstallProgress{phase: updateInstalling})
+				return
+			}
 		}
 		n.window.Update(func() {
 			if n.window.IsDestroyed() || u.generation != generation {
 				return
 			}
-			u.cancel, u.installing, u.err = nil, false, err
+			u.cancel, u.installFailed, u.err = nil, true, err
+			u.install = nativeInstallProgress{}
 		})
 	}()
 }
@@ -338,16 +370,13 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	if u.result.CurrentVersion != "" {
 		current = u.result.CurrentVersion
 	}
-	n.aboutValue(c, n.text("updater_current_version"), current)
+	kit.UpdateVersionRow(c, n.text("updater_current_version"), current)
 	if u.result.ChannelVersion != "" {
-		n.aboutValue(c, n.text("updater_channel_version"), u.result.ChannelVersion)
+		kit.UpdateVersionRow(c, n.text("updater_channel_version"), u.result.ChannelVersion)
 	}
 	check := n.text("updater_check_now")
-	if busy {
+	if busy && u.install.phase == updateNotInstalling {
 		check = n.text("updater_checking")
-		if u.installing {
-			check = n.text("updater_downloading")
-		}
 	}
 	ui.Row(c).Gap(6).Wrap().Children(func() {
 		if n.mainKit().Button(c, uikit.ButtonOptions{Label: check, Disabled: disabled}).Clicked() {
@@ -369,6 +398,7 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 			}
 		}
 	})
+	n.drawUpdateProgress(c, kit)
 	if u.result.installSupport != "" {
 		support := n.text("updater_support_unavailable")
 		switch u.result.installSupport {
@@ -419,12 +449,57 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	}
 }
 
+func (n *nativeMain) drawUpdateProgress(c *ui.Context, kit uikit.Kit) {
+	progress := n.updater.install
+	options := uikit.UpdateProgressOptions{Amount: "100%", Fraction: 1, Label: n.text("updater_download_progress")}
+	switch progress.phase {
+	case updateDownloading:
+		options.Status = n.text("updater_downloading")
+		if progress.total > 0 {
+			options.Fraction = min(1, float64(progress.downloaded)/float64(progress.total))
+			options.Amount = fmt.Sprintf("%d%%", min(100, progress.downloaded*100/progress.total))
+		} else {
+			options.Fraction = -1
+			options.Amount = fmt.Sprintf("%.1f MiB", float64(progress.downloaded)/(1024*1024))
+		}
+	case updateVerified, updateInstalling:
+		options.Verified = n.text("updater_verified")
+		options.Status = options.Verified
+		if progress.phase == updateInstalling {
+			options.Status = n.text("updater_installing")
+		}
+	default:
+		return
+	}
+	kit.UpdateProgress(c, options)
+}
+
+func (n *nativeMain) drawBackgroundUpdate(c *ui.Context, kit uikit.Kit) {
+	u := &n.updater
+	if u.install.phase == updateNotInstalling && !u.installFailed {
+		return
+	}
+	ui.Column(c).FillWidth().Padding(4, 8).Children(func() {
+		n.drawUpdateProgress(c, kit)
+		if u.installFailed && u.err != nil {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Role(ui.RoleStatus).Children(func() {
+				ui.Text(c, n.updateError(u.err)).Grow(1).Wrap().TextColor(c.Theme().Danger)
+				if kit.Button(c, uikit.ButtonOptions{Label: n.text("common_close")}).Clicked() {
+					u.installFailed = false
+				}
+			})
+		}
+	})
+}
+
 func (n *nativeMain) updateError(err error) string {
 	switch err.Error() {
 	case "update_download_or_signature_failed":
 		return n.text("updater_error_download_verify")
 	case "update_busy":
 		return n.text("updater_error_busy")
+	case "update_installation_unsupported":
+		return n.text("updater_support_unavailable")
 	case errUpdateSchedule.Error():
 		return n.text("updater_error_storage")
 	case errUpdateLink.Error():

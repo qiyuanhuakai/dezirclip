@@ -8,7 +8,7 @@ import { AppHeader, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, 
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { AttachmentFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
-import { BackupDialogFixture, ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture,
+import { BackupDialogFixture, ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture, SettingsUpdateFixture,
   PrivacyRulesFixture, SettingsDataFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, SearchSelectFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
 import "../src/base.css";
 import "../src/styles/components/index.css";
@@ -128,6 +128,7 @@ function Showcase() {
     "emoji-favorites": <EmojiFavoritesFixture />,
     "settings-data": <SettingsDataFixture />,
     "backup-dialog": <BackupDialogFixture state={state} />,
+    "settings-update": <SettingsUpdateFixture state={state} />,
     "settings-remove": <SettingsRemoveFixture />,
     "privacy-rules": <PrivacyRulesFixture />,
     "tag-toolbar": <TagToolbarFixture />,

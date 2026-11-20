@@ -404,6 +404,33 @@ func TestNativeBackupFormatsAndReplaceConfirmation(t *testing.T) {
 	}
 }
 
+func TestNativeUpdateProgressSurvivesClosingSettings(t *testing.T) {
+	window := nativeMain{showSettings: true, settingsSection: "about", preferences: map[string]string{"app.language": "en"}}
+	window.updater.cancel = func() { t.Error("closing settings cancelled the download") }
+	window.updater.install = nativeInstallProgress{phase: updateDownloading, downloaded: 42, total: 100}
+	tester := ui.NewTester(window.view, 640, 540)
+	if !tester.HasText("42%") {
+		t.Fatal("update download progress is missing from About")
+	}
+	if err := tester.Click(window.text("common_close")); err != nil {
+		t.Fatal(err)
+	}
+	if window.showSettings || !window.updater.pending() || !tester.HasText("42%") {
+		t.Fatal("closing settings hid or cancelled the download")
+	}
+	window.updater.install.phase = updateInstalling
+	tester.Frame()
+	if !tester.HasText(window.text("updater_installing")) || !tester.HasText(window.text("updater_verified")) {
+		t.Fatal("install handoff is missing from the main view")
+	}
+	window.updater.cancel, window.updater.err, window.updater.installFailed = nil, errUpdateVerification, true
+	window.updater.install = nativeInstallProgress{}
+	tester.Frame()
+	if !tester.HasText(window.text("updater_error_download_verify")) {
+		t.Fatal("the failure was hidden after settings were closed")
+	}
+}
+
 func TestNativeMainNavigationAndDismissal(t *testing.T) {
 	for _, theme := range []string{"retro", "mica", "acrylic", "liquid-glass", "macos", "scifi"} {
 		for _, mode := range []string{"light", "dark"} {

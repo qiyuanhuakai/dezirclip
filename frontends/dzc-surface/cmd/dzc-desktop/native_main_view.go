@@ -118,6 +118,15 @@ func (n *nativeMain) view(c *ui.Context) {
 				header.QueryFocus = func(focused bool) { queryFocused = focused }
 			}
 			kit.Header(c, header)
+			width, _ := c.Size()
+			about := n.settingsSection == "about"
+			if width < nativeSplitWidth {
+				open := n.settingsOpen["about"]
+				about = open != nil && *open
+			}
+			if !n.showSettings || !about {
+				n.drawBackgroundUpdate(c, kit)
+			}
 			if n.showSettings {
 				n.settingsView(c, kit, surfaceOpacity)
 			} else if n.showEmoji {

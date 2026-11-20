@@ -28,6 +28,17 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.BorderWidth, style.Radius = 1, float32(palette.Radius)
 	}
 	switch widget {
+	case "updateVersion", "updateVersionValue":
+		style.ColumnGap, style.MarginTop, style.MarginBottom = 8, 8, 8
+		if widget == "updateVersionValue" {
+			style.Weight = palette.EmphasisWeight
+		}
+	case "updateProgressTrack":
+		style.Height, style.MarginTop, style.Fill = 8, 8, rgba(ui.Hex(palette.Muted).Alpha(0.2))
+	case "updateProgressFill":
+		style.Fill = accent
+	case "updateProgressVerified":
+		style.Text, style.MarginTop, style.MarginBottom = muted, 10, 10
 	case "backupDialog":
 		surface()
 		style.Width, style.BorderWidth, style.Padding = 500, 4, [4]float32{16, 16, 16, 16}

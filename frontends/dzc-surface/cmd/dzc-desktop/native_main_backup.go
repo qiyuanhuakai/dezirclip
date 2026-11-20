@@ -86,7 +86,7 @@ func (n *nativeMain) backupView(c *ui.Context, kit uikit.Kit, form *nativeBackup
 			ReadOnly: true, Disabled: n.mutating, OnBrowse: func() { n.chooseBackupFile(form, title) },
 		})
 		if form.restoring && form.encrypted() {
-			n.backupPassword(c, kit, &form.passphrase, "data.import.passphrase_prompt", form.passphraseError)
+			n.backupPassword(c, kit, &form.passphrase, n.text("data.import.passphrase_prompt"), form.passphraseError)
 		}
 		if len(form.preview) != 0 {
 			entries := make([]string, len(form.preview))
@@ -134,13 +134,13 @@ func (n *nativeMain) backupExportFields(c *ui.Context, kit uikit.Kit, form *nati
 		form.passphraseError, form.confirmationError = "", ""
 	}
 	if form.encrypted() {
-		n.backupPassword(c, kit, &form.passphrase, "data.export.passphrase_prompt", form.passphraseError)
-		n.backupPassword(c, kit, &form.confirmation, "data.export.confirm_passphrase", form.confirmationError)
+		n.backupPassword(c, kit, &form.passphrase, n.text("data.export.passphrase_prompt"), form.passphraseError)
+		n.backupPassword(c, kit, &form.confirmation, n.text("data.export.confirm_passphrase"), form.confirmationError)
 	}
 }
 
 func (n *nativeMain) backupPassword(c *ui.Context, kit uikit.Kit, value *string, label, message string) {
-	kit.BackupField(c, uikit.BackupFieldOptions{Label: n.text(label), Value: value, Placeholder: "••••••••••••",
+	kit.BackupField(c, uikit.BackupFieldOptions{Label: label, Value: value, Placeholder: "••••••••••••",
 		Error: message, Password: true, Disabled: n.mutating})
 }
 

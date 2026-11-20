@@ -23,6 +23,7 @@ const cases = {
   "emoji-favorites": { states: ["default"], text: "Add emoji" },
   "settings-data": { states: ["default"], text: "Data storage path" },
   "backup-dialog": { states: ["default", "encrypted", "error", "import"], text: "File path" },
+  "settings-update": { states: ["default", "unknown-size", "installing"], text: "Installed version" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
   "privacy-rules": { states: ["default"], text: "Privacy rules" },
   "tag-toolbar": { states: ["default"], text: "Work" },
@@ -294,6 +295,9 @@ try {
               : comparable(webText, marker) && comparable(nativeText, marker);
             const extra = state === "popup" ? "Light" : state === "expanded" && fixture === "disclosure" ? "Preview channel"
               : fixture === "context-menu" && state !== "default" ? state === "text" ? "Uppercase" : "Ignore this source"
+              : fixture === "settings-update" ? {
+                default: "42%", "unknown-size": "2.5 MiB", installing: "Official update signature verified",
+              }[state]
               : fixture === "backup-dialog" ? {
                 default: "Export format", encrypted: "Confirm passphrase", error: "Passphrase must be at least 12 characters",
                 import: "Release checklist",
@@ -331,6 +335,13 @@ try {
                 await dialog.waitFor({ state: "hidden" });
               } finally {
                 await page.setViewportSize(size);
+              }
+            }
+            if (fixture === "settings-update") {
+              const bar = page.getByRole("progressbar", { name: "Update download progress" });
+              const current = await bar.getAttribute("aria-valuenow");
+              if (current !== ({ default: "42", installing: "100", "unknown-size": null })[state]) {
+                throw Error("Update progress range disagrees with the download state");
               }
             }
             const ratio = pixels.inkNative / pixels.inkWeb;

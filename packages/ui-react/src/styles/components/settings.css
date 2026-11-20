@@ -1177,6 +1177,7 @@
 .settings-disclosure-toggle .item-label { font-family: var(--font-main); font-size: var(--font-size-md); font-weight: 700; }
 .settings-disclosure-chevron { width: 24px; height: 24px; box-sizing: border-box; padding: 3px; }
 .update-download { flex-basis: 100%; font-size: var(--font-size-sm); }
+.update-download .settings-range-header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0 8px; }
 .update-progress { position: relative; overflow: hidden; height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--text-secondary) 20%, transparent); margin-top: 8px; }
 .update-progress-fill { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--accent-color); transform-origin: left; transition: transform 180ms ease; }
 .update-progress.is-indeterminate .update-progress-fill { animation: settings-download 1.5s ease-in-out infinite; }

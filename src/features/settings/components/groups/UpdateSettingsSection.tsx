@@ -3,7 +3,8 @@ import { SettingsChoices } from "@deziro/ui-react/components/SettingsChoices";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { SettingHelp, SettingsLabel } from "../SettingHelp";
 import SettingsDisclosure from "../SettingsDisclosure";
-import { Download, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
+import { Download, ExternalLink, RefreshCw } from "lucide-react";
+import { UpdateProgress, UpdateVersionRow } from "@deziro/ui-react/components/SettingsUpdate";
 import { checkForUpdate, getUpdaterSnapshot, installAvailableUpdate, openUpdateRelease, saveUpdatePreference, subscribeUpdater } from "../../utils/updaterClient";
 
 const supportKey = (reason: string | undefined): string => {
@@ -56,12 +57,8 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
                     options={[{ value: "stable", label: "Stable" }, { value: "preview", label: "Preview" }]}
                     onChange={channel => { setConfirmationId(null); void saveUpdatePreference("channel", channel); }} />
             </div>
-            <div className="update-version-row">
-                <span>{t("updater_current_version")}</span><strong>{state.currentVersion ? `v${state.currentVersion}` : "—"}</strong>
-            </div>
-            {channelVersion && <div className="update-version-row">
-                <span>{t("updater_channel_version")}</span><strong>v{channelVersion}</strong>
-            </div>}
+            <UpdateVersionRow label={t("updater_current_version")} version={state.currentVersion} />
+            {channelVersion && <UpdateVersionRow label={t("updater_channel_version")} version={channelVersion} />}
             <div className="setting-btn-group update-actions">
                 <button type="button" className="btn-icon settings-action" disabled={disabled}
                     onClick={() => { setConfirmationId(null); void checkForUpdate(); }}>
@@ -72,18 +69,11 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
                         <Download size={14} />{t("updater_install")}
                     </button>
                 )}
-                {installPhase && <div className="update-download" role="status" aria-live="polite">
-                    <div className="settings-range-header">
-                        <span>{t(state.phase === "downloading" ? "updater_downloading" : state.phase === "verified" ? "updater_verified" : "updater_installing")}</span>
-                        <span>{state.phase === "downloading" ? percent === null ? `${(state.downloaded / 1048576).toFixed(1)} MiB` : `${percent}%` : "100%"}</span>
-                    </div>
-                    <div className={`update-progress${state.phase === "downloading" && percent === null ? " is-indeterminate" : ""}`}
-                        role="progressbar" aria-label={t("updater_download_progress")} aria-valuemin={0} aria-valuemax={100}
-                        aria-valuenow={state.phase === "downloading" ? percent ?? undefined : 100}>
-                        <span className="update-progress-fill" style={{ transform: `scaleX(${state.phase === "downloading" ? (percent ?? 35) / 100 : 1})` }} />
-                    </div>
-                    {state.verified && <p className="update-verified"><ShieldCheck size={14} />{t("updater_verified")}</p>}
-                </div>}
+                {installPhase && <UpdateProgress
+                    status={t(state.phase === "downloading" ? "updater_downloading" : state.phase === "verified" ? "updater_verified" : "updater_installing")}
+                    amount={state.phase === "downloading" ? percent === null ? `${(state.downloaded / 1048576).toFixed(1)} MiB` : `${percent}%` : "100%"}
+                    percent={state.phase === "downloading" ? percent : 100}
+                    label={t("updater_download_progress")} verified={state.verified ? t("updater_verified") : undefined} />}
                 <button type="button" className="btn-icon settings-action" onClick={() => void openUpdateRelease()}>
                     <ExternalLink size={14} />{t(available ? "updater_open_release" : "updater_all_releases")}
                 </button>

@@ -91,7 +91,9 @@ func verifyMyGoUpdate(reader io.Reader, encodedKey, encodedSignature, version, f
 	return nil
 }
 
-func downloadMyGoUpdate(ctx context.Context, artifact mygoArtifact, version, target string) (string, error) {
+const maxUpdateBytes = 512 * 1024 * 1024
+
+func downloadMyGoUpdate(ctx context.Context, artifact mygoArtifact, version, target string, report func(int64, int64)) (string, error) {
 	filename := mygoUpdateName(version)
 	endpoint, err := url.Parse(artifact.URL)
 	if err != nil || filename == "" || endpoint.Scheme != "https" || endpoint.Host != "github.com" || endpoint.User != nil ||
@@ -109,8 +111,7 @@ func downloadMyGoUpdate(ctx context.Context, artifact mygoArtifact, version, tar
 		return "", errUpdateVerification
 	}
 	defer response.Body.Close()
-	const limit = 512 * 1024 * 1024
-	if response.StatusCode != http.StatusOK || response.ContentLength > limit {
+	if response.StatusCode != http.StatusOK || response.ContentLength > maxUpdateBytes {
 		return "", errUpdateVerification
 	}
 	parent := ""
@@ -134,9 +135,8 @@ func downloadMyGoUpdate(ctx context.Context, artifact mygoArtifact, version, tar
 		return "", err
 	}
 	defer file.Close()
-	size, err := io.Copy(file, io.LimitReader(response.Body, limit+1))
-	if err != nil || size == 0 || size > limit || (response.ContentLength >= 0 && size != response.ContentLength) {
-		return "", errUpdateVerification
+	if err := copyUpdateBody(file, response.Body, response.ContentLength, report); err != nil {
+		return "", err
 	}
 	if _, err = file.Seek(0, io.SeekStart); err != nil {
 		return "", errUpdateVerification
@@ -151,6 +151,42 @@ func downloadMyGoUpdate(ctx context.Context, artifact mygoArtifact, version, tar
 	return path, nil
 }
 
+type updateDownloadProgress struct {
+	total, written, reported int64
+	last                     time.Time
+	report                   func(int64, int64)
+}
+
+func (p *updateDownloadProgress) Write(buffer []byte) (int, error) {
+	p.written += int64(len(buffer))
+	if time.Since(p.last) >= 100*time.Millisecond {
+		p.emit()
+	}
+	return len(buffer), nil
+}
+
+func (p *updateDownloadProgress) emit() {
+	p.last, p.reported = time.Now(), p.written
+	p.report(p.written, p.total)
+}
+
+func copyUpdateBody(target io.Writer, body io.Reader, total int64, report func(int64, int64)) error {
+	var progress *updateDownloadProgress
+	if report != nil {
+		progress = &updateDownloadProgress{total: total, report: report}
+		progress.emit()
+		target = io.MultiWriter(target, progress)
+	}
+	size, err := io.Copy(target, io.LimitReader(body, maxUpdateBytes+1))
+	if err != nil || size == 0 || size > maxUpdateBytes || (total >= 0 && size != total) {
+		return errUpdateVerification
+	}
+	if progress != nil && progress.reported != size {
+		progress.emit()
+	}
+	return nil
+}
+
 type mygoInstallRequest struct {
 	Path, Version, Signature string
 }
@@ -162,7 +198,7 @@ func (r mygoInstallRequest) validate() error {
 		return errUpdateVerification
 	}
 	info, err := os.Lstat(r.Path)
-	if err != nil || !info.Mode().IsRegular() || info.Size() > 512*1024*1024 {
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maxUpdateBytes {
 		return errUpdateVerification
 	}
 	file, err := os.Open(r.Path)

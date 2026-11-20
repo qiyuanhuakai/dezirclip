@@ -1,10 +1,29 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
+	"io"
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestUpdateDownloadReportsWrittenBytesAndRejectsTruncation(t *testing.T) {
+	for _, total := range []int64{6, -1} {
+		var written bytes.Buffer
+		var updates [][2]int64
+		err := copyUpdateBody(&written, strings.NewReader("update"), total, func(written, total int64) {
+			updates = append(updates, [2]int64{written, total})
+		})
+		if err != nil || written.String() != "update" || !slices.Equal(updates, [][2]int64{{0, total}, {6, total}}) {
+			t.Fatalf("download length %d wrote %q and reported %v: %v", total, written.String(), updates, err)
+		}
+	}
+	if err := copyUpdateBody(io.Discard, strings.NewReader("update"), 7, nil); err != errUpdateVerification {
+		t.Fatalf("truncated update returned %v", err)
+	}
+}
 
 func TestVerifyMyGoUpdateUsesAuthenticatedVersionFilenameAndBytes(t *testing.T) {
 	// Public Tauri updater 2.14.0 test vector.
