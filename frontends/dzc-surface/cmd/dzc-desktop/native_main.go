@@ -155,6 +155,18 @@ func (n *nativeMain) prepare(request uint64) {
 	go n.open(session)
 }
 
+func (n *nativeMain) reloadViewSettings() {
+	tags := n.tagLibrary
+	n.prepare(n.resume)
+	if tags != nil && n.tagLibrary == nil {
+		// Keep the navigation after the settings refresh. Dialogs, batch
+		// selections and revealed contents belong to the retired session.
+		n.tagLibrary = &nativeTagLibrary{
+			selected: tags.selected, query: tags.query, sort: tags.sort, nameQuery: tags.nameQuery,
+		}
+	}
+}
+
 func (n *nativeMain) open(session context.Context) {
 	for session.Err() == nil {
 		read, cancel := context.WithTimeout(session, 4*time.Second)
@@ -380,7 +392,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 					n.appearanceSync = true
 					continue
 				}
-				n.prepare(n.resume)
+				n.reloadViewSettings()
 				return
 			case "application_settings_reset":
 				n.prepare(n.resume)
@@ -509,7 +521,7 @@ func (n *nativeMain) writeSettingWithEffect(write func(context.Context, uint64) 
 			if onSaved != nil {
 				onSaved()
 			}
-			n.prepare(n.resume)
+			n.reloadViewSettings()
 		})
 	}()
 }
