@@ -1309,9 +1309,31 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Linux development libraries
         if: runner.os == 'Linux'
+        env:
+          RUST_CHECK_MODE: ${{ matrix.mode }}
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libpipewire-0.3-dev libgbm-dev libx11-dev libxi-dev libxrandr-dev libxtst-dev libdbus-1-dev
+          packages=(libpipewire-0.3-dev libgbm-dev libx11-dev libxi-dev libxrandr-dev libxtst-dev libdbus-1-dev)
+          if [[ "$RUST_CHECK_MODE" == desktop-check ]]; then
+            packages+=(libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev)
+          fi
+          network=(-o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
+          install_libraries() {
+            sudo apt-get "${network[@]}" "$@" update -qq &&
+              sudo apt-get "${network[@]}" "$@" install -y --no-install-recommends "${packages[@]}"
+          }
+          ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources
+          if [[ -f "$ubuntu_sources" ]]; then
+            fast_sources="$RUNNER_TEMP/rust-dev-ubuntu.sources"
+            sed -E \
+              -e 's|^URIs: .*apt-mirrors[.]txt.*$|URIs: https://archive.ubuntu.com/ubuntu/|' \
+              -e 's|^URIs: https?://([^/ ]+[.])?archive[.]ubuntu[.]com/ubuntu/?[[:space:]]*$|URIs: https://archive.ubuntu.com/ubuntu/|' \
+              -e 's|^URIs: http://security[.]ubuntu[.]com/ubuntu/?[[:space:]]*$|URIs: https://security.ubuntu.com/ubuntu/|' \
+              "$ubuntu_sources" > "$fast_sources"
+            if install_libraries -o "Dir::Etc::sourcelist=$fast_sources" -o Dir::Etc::sourceparts=-; then
+              exit 0
+            fi
+          fi
+          install_libraries
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
