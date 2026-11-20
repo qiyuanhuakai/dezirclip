@@ -138,37 +138,7 @@ func (k Kit) ClipboardSearch(c *ui.Context, options HeaderOptions) {
 	}
 	style := k.style("headerSearch")
 	paint(ui.Column(c), style).Margin(style.MarginTop, 0, 0, 0).Children(func() {
-		field := k.style("headerInput")
-		ui.Box(c).Height(field.Height).Children(func() {
-			input := ui.TextInputBase(c, options.Query).Fill().Label(options.Placeholder)
-			styledText(paint(input, field), field)
-			if options.OnQueryKey != nil {
-				input.OnTextKey(options.OnQueryKey)
-			}
-			if options.QueryFocus != nil {
-				options.QueryFocus(input.Focused())
-			}
-			if options.FocusQuery != nil && *options.FocusQuery {
-				input.Focus()
-				*options.FocusQuery = false
-			}
-			if options.OnQueryEdit != nil {
-				options.OnQueryEdit(input.Composing())
-			}
-			if *options.Query == "" && !input.Composing() {
-				placeholder := k.style("headerInputPlaceholder")
-				field.Text = placeholder.Text
-				ui.Row(c).Absolute().Left(field.Padding[3] + field.BorderWidth).
-					Right(field.Padding[1] + field.BorderWidth).Height(field.Height).AlignItems(ui.Center).PassThrough().
-					Children(func() { text(c, options.Placeholder, field).SingleLine().PassThrough() })
-			}
-			icon := k.style("headerInputIcon")
-			ui.Icon(c, headerIcons["search"]).Absolute().Left(icon.Left).Top((field.Height-icon.Height)/2).
-				Size(icon.Width, icon.Height).TextColor(styleColor(icon.Text)).PassThrough()
-			if options.QueryPopup != nil {
-				options.QueryPopup(input)
-			}
-		})
+		k.searchField(c, options, "header")
 		if len(options.Filters) == 0 || options.Filter == nil {
 			return
 		}
@@ -192,5 +162,46 @@ func (k Kit) ClipboardSearch(c *ui.Context, options HeaderOptions) {
 				}
 			}
 		})
+	})
+}
+
+// CharacterSearch draws an accessible field for finding emoji and Unicode symbols.
+func (k Kit) CharacterSearch(c *ui.Context, query *string, label string, onEdit func(composing bool)) {
+	if query != nil {
+		k.searchField(c, HeaderOptions{Query: query, Placeholder: label, OnQueryEdit: onEdit}, "character")
+	}
+}
+
+func (k Kit) searchField(c *ui.Context, options HeaderOptions, prefix string) {
+	field := k.style(prefix + "Input")
+	ui.Box(c).Height(field.Height).Children(func() {
+		input := ui.TextInputBase(c, options.Query).Fill().Label(options.Placeholder)
+		styledText(paint(input, field), field)
+		if options.OnQueryKey != nil {
+			input.OnTextKey(options.OnQueryKey)
+		}
+		if options.QueryFocus != nil {
+			options.QueryFocus(input.Focused())
+		}
+		if options.FocusQuery != nil && *options.FocusQuery {
+			input.Focus()
+			*options.FocusQuery = false
+		}
+		if options.OnQueryEdit != nil {
+			options.OnQueryEdit(input.Composing())
+		}
+		if *options.Query == "" && !input.Composing() {
+			placeholder := k.style(prefix + "InputPlaceholder")
+			field.Text = placeholder.Text
+			ui.Row(c).Absolute().Left(field.Padding[3] + field.BorderWidth).
+				Right(field.Padding[1] + field.BorderWidth).Height(field.Height).AlignItems(ui.Center).PassThrough().
+				Children(func() { text(c, options.Placeholder, field).SingleLine().PassThrough() })
+		}
+		icon := k.style(prefix + "InputIcon")
+		ui.Icon(c, headerIcons["search"]).Absolute().Left(icon.Left).Top((field.Height-icon.Height)/2).
+			Size(icon.Width, icon.Height).TextColor(styleColor(icon.Text)).PassThrough()
+		if options.QueryPopup != nil {
+			options.QueryPopup(input)
+		}
 	})
 }

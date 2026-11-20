@@ -246,8 +246,7 @@ func (k Kit) SettingsDisclosure(c *ui.Context, title string, open *bool, content
 		if *open {
 			arrow = chevronDown
 		}
-		row := ui.ButtonBase(c).Label(title).FillWidth().Height(style.Height).Justify(ui.Start).Gap(8)
-		style = k.interactive(c, row, style, *open)
+		row := ui.ButtonBase(c).Label(title).FillWidth().Height(style.Height).Justify(ui.Start).Gap(8).FocusRing(true)
 		paint(row, style)
 		row.Children(func() {
 			chevron := k.style("disclosureChevron")

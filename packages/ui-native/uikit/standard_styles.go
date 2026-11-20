@@ -130,12 +130,12 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.ColumnGap, style.Padding = 6, [4]float32{8, 0, 4, 0}
 	case "headerTitle", "confirmTitle", "tagTitle":
 		style.Size, style.Weight = 18, palette.EmphasisWeight
-	case "headerInput", "searchInput":
+	case "headerInput", "characterInput", "searchInput":
 		surface()
 		style.Height, style.Padding = 38, [4]float32{0, 32, 0, 32}
-	case "headerInputPlaceholder":
+	case "headerInputPlaceholder", "characterInputPlaceholder":
 		style.Text = muted
-	case "headerInputIcon":
+	case "headerInputIcon", "characterInputIcon":
 		style.Width, style.Height, style.Left = 14, 14, 12
 	case "searchModes":
 		surface()

@@ -1,3 +1,4 @@
+import { once } from "node:events";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,10 +9,12 @@ import { readNativeWidgetStyles } from "./read-native-widget-styles.mjs";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const generated = resolve(root, "packages/ui-presets/builtin-presets.json");
 const widgetFile = resolve(root, "packages/ui-presets/builtin-widget-styles.json");
-const server = await createServer({ root, configFile: false, server: { host: "127.0.0.1", port: 0, hmr: false, watch: null } });
+const server = await createServer({ root, configFile: false, server: { host: "127.0.0.1", hmr: false, watch: null } });
 let browser;
 try {
-  await server.listen();
+  const listening = once(server.httpServer, "listening");
+  server.httpServer.listen(0, "127.0.0.1");
+  await listening;
   const address = server.httpServer.address();
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 560, height: 420 }, locale: "en-US" });

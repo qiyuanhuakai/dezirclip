@@ -1,3 +1,4 @@
+import { once } from "node:events";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -40,6 +41,7 @@ const cases = {
   "tag-dialog": { states: ["default", "busy"], text: "Create tag" },
 };
 const additionalExamples = {
+  "character-search": { states: ["default", "filled"], text: "Search symbols" },
   "clipboard-search": { states: ["default", "selected"], text: "富文本" },
   "settings-toggle": { states: ["enabled", "default"], text: "Keep clipboard history" },
   "settings-slider": { states: ["default", "keyboard"], text: "Opacity 72%" },
@@ -56,7 +58,7 @@ for (const fixture of selectedFixtures ?? []) {
 const fixtures = selectedFixtures
   ? selectedFixtures.map(name => [name, available[name]])
   : Object.entries(flags.get("examples") === "all" ? available : cases);
-const server = await createServer({ root, configFile: false, server: { host: "127.0.0.1", port: 0, hmr: false, watch: null } });
+const server = await createServer({ root, configFile: false, server: { host: "127.0.0.1", hmr: false, watch: null } });
 const output = await mkdtemp(join(tmpdir(), "deziro-ui-parity-"));
 const size = { width: 560, height: 420 };
 const reportPath = join(output, "results.json");
@@ -113,7 +115,9 @@ function comparePixels({ web, native }) {
 
 let browser;
 try {
-  await server.listen();
+  const listening = once(server.httpServer, "listening");
+  server.httpServer.listen(0, "127.0.0.1");
+  await listening;
   const base = "http://127.0.0.1:" + server.httpServer.address().port;
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: size, locale: "en-US" });
@@ -187,7 +191,12 @@ try {
             const { stdout } = await execute(resolve(native), nativeArgs, { timeout: 10000 });
             const nativeImage = await readFile(target);
             const nativeText = JSON.parse(stdout).join(" ");
-            const webText = await page.locator("body").innerText();
+            let webText = await page.locator("body").innerText();
+            if (fixture === "character-search") {
+              const field = page.getByRole("searchbox", { name: "Search symbols" });
+              if (await field.inputValue() !== (state === "filled" ? "Clipboard" : "")) throw Error("Wrong character search query");
+              webText += await field.getAttribute("aria-label");
+            }
             const comparable = (value, expected) => value.toLowerCase().includes(expected.toLowerCase());
             const marker = fixture === "app-header" && state === "settings" ? "Settings"
               : fixture === "settings-slider" && state === "keyboard" ? "Opacity 73%"

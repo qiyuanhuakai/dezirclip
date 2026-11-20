@@ -37,6 +37,11 @@ const samples = [
     hotkeyRow: [".hotkey-recorder"], hotkeyGroup: [".key-group"], hotkeyCap: [".key-cap"],
   }],
   ["hotkey-binding", "recording", { hotkeyCapRecording: [".key-cap"] }],
+  ["character-search", "default", {
+    characterInput: [".emoji-search .search-input"],
+    characterInputPlaceholder: [".emoji-search .search-input", null, "::placeholder"],
+    characterInputIcon: [".emoji-search .search-icon"],
+  }],
   ["emoji-tabs", "default", {
     emojiTab: [".emoji-tab:not(.active)"], emojiTabActive: [".emoji-tab.active"], emojiTabs: [".emoji-tabs"],
   }],
@@ -229,7 +234,7 @@ function readStyles(selectors) {
       ...(rowGap ? { rowGap } : {}),
       ...(switchFace ? { top: number(bounds.top - switchBounds.top), left: number(bounds.left - switchBounds.left) } : top ? { top } : {}),
       ...(id.startsWith("settingsSwitchThumb") ? { left: number(left + translateX) } : {}),
-      ...(id === "headerInputIcon" ? { left } : {}),
+      ...(id.endsWith("InputIcon") ? { left } : {}),
       ...(content.startsWith('"') ? { caption: JSON.parse(content) } : {}),
       ...(marginBottom ? { marginBottom } : {}),
       ...(id.startsWith("historyCard") || id.startsWith("hotkey")

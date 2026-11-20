@@ -96,6 +96,8 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 			ui.Text(c, "Clipboard history").FontSize(16)
 			kit.ScrollToTopButton(c, "Scroll to top").Absolute().Right(16).Bottom(16)
 		})
+	case "character-search":
+		kit.CharacterSearch(c, &g.query, "Search symbols", nil)
 	case "emoji-tabs":
 		kit.EmojiTabs(c, "Emoji", "Favorites", g.emojiFavorites, false, func(favorites bool) { g.emojiFavorites = favorites })
 	case "emoji-grid":

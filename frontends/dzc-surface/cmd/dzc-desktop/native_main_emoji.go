@@ -144,15 +144,12 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 	}
 	panel := n.emojiPanel()
 	ui.Column(c).FillWidth().Padding(0, 8).Children(func() {
-		kit.ClipboardSearch(c, uikit.HeaderOptions{
-			Query: &panel.query, Placeholder: n.text("emoji_search"),
-			OnQueryEdit: func(composing bool) {
-				if !composing && (panel.tab != tab || panel.searched != panel.query) {
-					panel.matches = searchCharacters(tab, panel.query)
-					panel.tab, panel.searched, panel.limit = tab, panel.query, characterPageSize
-					panel.scroll = ui.ScrollState{}
-				}
-			},
+		kit.CharacterSearch(c, &panel.query, n.text("emoji_search"), func(composing bool) {
+			if !composing && (panel.tab != tab || panel.searched != panel.query) {
+				panel.matches = searchCharacters(tab, panel.query)
+				panel.tab, panel.searched, panel.limit = tab, panel.query, characterPageSize
+				panel.scroll = ui.ScrollState{}
+			}
 		})
 	})
 	width, _ := c.Size()
