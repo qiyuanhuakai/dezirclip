@@ -30,6 +30,14 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 	switch widget {
 	case "settingsToggleRow":
 		style.Height, style.Padding = 34, [4]float32{6, 0, 6, 0}
+	case "settingsRangeTrack":
+		surface()
+		style.Height, style.Radius = 8, 4
+	case "settingsRangeFill":
+		style.Fill = accent
+	case "settingsRangeThumb":
+		style.Width, style.Height, style.Radius = 16, 16, 8
+		style.Fill, style.Border, style.BorderWidth = accent, border, 1
 	case "settingsSwitch":
 		style.Width, style.Height = 44, 22
 	case "settingsSwitchTrack", "settingsSwitchTrackOn":

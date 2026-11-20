@@ -83,8 +83,8 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 	case "settings-toggle":
 		kit.SettingsToggle(c, &g.settingEnabled, "Keep clipboard history")
 	case "settings-slider":
-		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			ui.Text(c, fmt.Sprintf("Opacity %.0f%%", g.previewOpacity))
+		ui.Column(c).FillWidth().Padding(6, 0).Children(func() {
+			kit.SettingsLabel(c, fmt.Sprintf("Opacity %.0f%%", g.previewOpacity))
 			kit.Slider(c, &g.previewOpacity, 0, 100, "Opacity").FillWidth().Step(1)
 		})
 	case "hotkey-binding":
@@ -206,6 +206,14 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 }
 
 func (g *gallery) prepare(tester *ui.Tester) error {
+	if g.fixture == "settings-slider" && g.state == "keyboard" {
+		tester.Key(0, ui.KeyTab)
+		tester.Key(0, ui.KeyRight)
+		if g.previewOpacity != 73 {
+			return fmt.Errorf("slider keyboard step = %.0f, expected 73", g.previewOpacity)
+		}
+		return nil
+	}
 	if g.fixture == "clipboard-search" && g.state == "selected" {
 		if err := tester.Click("图片"); err != nil {
 			return err

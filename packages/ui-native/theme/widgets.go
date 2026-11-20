@@ -7,8 +7,9 @@ type Shadow struct {
 }
 
 type Outline struct {
-	Width float32
-	Color [4]uint8
+	Offset float32
+	Width  float32
+	Color  [4]uint8
 }
 
 type Gradient struct {

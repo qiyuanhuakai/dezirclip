@@ -42,7 +42,7 @@ const cases = {
 const additionalExamples = {
   "clipboard-search": { states: ["default", "selected"], text: "富文本" },
   "settings-toggle": { states: ["enabled", "default"], text: "Keep clipboard history" },
-  "settings-slider": { states: ["default"], text: "Opacity 72%" },
+  "settings-slider": { states: ["default", "keyboard"], text: "Opacity 72%" },
   "hotkey-binding": { states: ["default", "recording"], text: "Quick Paste" },
   "scroll-to-top": { states: ["default"], text: "Clipboard history" },
   "emoji-tabs": { states: ["default", "favorites"], text: "Favorites" },
@@ -151,6 +151,11 @@ try {
               }
             }
             await page.mouse.move(450, 390);
+            if (fixture === "settings-slider" && state === "keyboard") {
+              const range = page.getByRole("slider", { name: "Opacity" });
+              await range.press("ArrowRight");
+              if (await range.inputValue() !== "73") throw Error("Slider keyboard step did not change opacity to 73");
+            }
             const combo = page.getByRole("combobox", { name: "Color mode" });
             if (state === "hover") await combo.hover();
             if (state === "focus") await combo.focus();
@@ -182,6 +187,7 @@ try {
             const webText = await page.locator("body").innerText();
             const comparable = (value, expected) => value.toLowerCase().includes(expected.toLowerCase());
             const marker = fixture === "app-header" && state === "settings" ? "Settings"
+              : fixture === "settings-slider" && state === "keyboard" ? "Opacity 73%"
               : fixture === "search-history" && state === "empty" ? "No recent searches"
               : fixture === "help" && state === "default" ? "" : text;
             const sameText = marker === "Clipboard history"

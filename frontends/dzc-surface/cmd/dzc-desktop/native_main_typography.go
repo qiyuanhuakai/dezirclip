@@ -87,15 +87,19 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 		value float64
 		dirty bool
 	}
-	row := ui.Row(c).Gap(8).AlignItems(ui.Center)
+	row := ui.Column(c).FillWidth().Padding(6, 0)
 	edit := ui.Local(row, setting.key, func() draft { return draft{value: float64(saved)} })
 	if !edit.dirty && !n.mutating {
 		edit.value = float64(saved)
 	}
 	row.Children(func() {
-		ui.Text(c, label).MinWidth(100)
-		slider := n.mainKit().Slider(c, &edit.value, float64(setting.minimum), float64(setting.maximum), label).
-			Step(1).Label(label).Grow(1).Disabled(n.mutating)
+		kit := n.mainKit()
+		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+			kit.SettingsLabel(c, label).Grow(1).Wrap()
+			kit.SettingsLabel(c, strconv.Itoa(int(edit.value))+setting.unit).FontSize(11).TextColor(c.Theme().TextMuted)
+		})
+		slider := kit.Slider(c, &edit.value, float64(setting.minimum), float64(setting.maximum), label).
+			Step(1).FillWidth().Disabled(n.mutating)
 		edit.dirty = edit.dirty || slider.Changed()
 		value := int(edit.value)
 		// Keep dragging local and save once the pointer is released.
@@ -105,7 +109,6 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 				n.saveSetting(setting.key, strconv.Itoa(value))
 			}
 		}
-		ui.Text(c, strconv.Itoa(value)+setting.unit).MinWidth(36)
 	})
 	return int(edit.value)
 }

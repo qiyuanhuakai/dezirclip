@@ -163,20 +163,43 @@ func (k Kit) Combo(c *ui.Context, value *string, label, placeholder string, choi
 }
 
 func (k Kit) Slider(c *ui.Context, value *float64, minimum, maximum float64, label string) ui.Element {
-	palette := c.Theme()
-	slider := ui.SliderBase(c, value, minimum, maximum).Height(24).PaddingX(8).Label(label).FocusRing(true)
+	track, fill, thumb := k.style("settingsRangeTrack"), k.style("settingsRangeFill"), k.style("settingsRangeThumb")
+	inset := thumb.Width / 2
+	slider := ui.SliderBase(c, value, minimum, maximum).Height(max(20, thumb.Height)).
+		PaddingX(inset).Label(label)
+	focused := slider.FocusVisible()
+	focusStyle := k.style("settingsRangeFocus")
 	slider.Draw(func(p *ui.Painter, bounds ui.Rect) {
-		width := max(0, bounds.W-16)
 		fraction := float32(0)
 		if maximum > minimum {
 			fraction = float32(min(1, max(0, (*value-minimum)/(maximum-minimum))))
 		}
-		track := ui.Rect{X: bounds.X + 8, Y: bounds.Y + (bounds.H-8)/2, W: width, H: 8}
-		p.Fill(track, palette.Surface, 4)
-		p.Stroke(track, palette.Border, 4, 1)
-		p.Fill(ui.Rect{X: track.X, Y: track.Y, W: width * fraction, H: track.H}, palette.Accent, 4)
-		thumb := ui.Rect{X: track.X + width*fraction - 7, Y: track.Y - 3, W: 14, H: 14}
-		p.Fill(thumb, palette.Accent, 7)
+		rail := ui.Rect{X: bounds.X, Y: bounds.Y + (bounds.H-track.Height)/2, W: bounds.W, H: track.Height}
+		p.Fill(rail, styleColor(track.Fill), track.Radius)
+		p.Clip(rail, track.Radius, func() {
+			progress := ui.Rect{X: rail.X, Y: rail.Y, W: rail.W * fraction, H: rail.H}
+			p.Fill(progress, styleColor(fill.Fill), 0)
+		})
+		p.Stroke(rail, styleColor(track.Border), track.Radius, track.BorderWidth)
+		knob := ui.Rect{X: bounds.X + max(0, bounds.W-thumb.Width)*fraction,
+			Y: bounds.Y + (bounds.H-thumb.Height)/2, W: thumb.Width, H: thumb.Height}
+		for _, shadow := range thumb.Shadows {
+			if !shadow.Inset {
+				v := shadow.Values
+				p.Shadow(knob, thumb.Radius, v[0], v[1], v[2], v[3], styleColor(shadow.Color))
+			}
+		}
+		p.Fill(knob, styleColor(thumb.Fill), thumb.Radius)
+		p.Stroke(knob, styleColor(thumb.Border), thumb.Radius, thumb.BorderWidth)
+		if focused {
+			if ring := focusStyle.Outline; ring != nil {
+				offset := ring.Offset + ring.Width
+				r := ui.Rect{X: rail.X - offset, Y: rail.Y - offset, W: rail.W + 2*offset, H: rail.H + 2*offset}
+				p.Stroke(r, styleColor(ring.Color), min(track.Radius, rail.H/2)+offset, ring.Width)
+			} else {
+				p.Stroke(knob, p.Theme().Accent, thumb.Radius, 2)
+			}
+		}
 	})
 	return slider
 }

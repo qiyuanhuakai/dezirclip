@@ -26,6 +26,11 @@ const samples = [
     settingsSwitchTrackOn: [".toggle"], settingsSwitchThumbOn: [".toggle", null, "::before"],
     settingsSwitchLeftOn: [".toggle > .left"], settingsSwitchRightOn: [".toggle > .right"],
   }],
+  ["settings-slider", "keyboard", { settingsRangeFocus: [".settings-view input[type=range]"] }],
+  ["settings-slider", "default", {
+    settingsRangeTrack: ["[data-slider-sample=track]"], settingsRangeThumb: ["[data-slider-sample=thumb]"],
+    settingsRangeFill: ["[data-slider-sample=fill]"],
+  }],
   ["hotkey-binding", "default", {
     hotkeyGroup: [".key-group"], hotkeyCap: [".key-cap"],
   }],
@@ -117,6 +122,48 @@ const samples = [
   }],
 ];
 
+// Chromium returns the input's style for its internal range pseudo-elements.
+// Apply those same CSS declarations to offscreen boxes to capture their geometry and paint.
+function prepareSliderSamples() {
+  const field = document.querySelector(".settings-view input[type=range]");
+  const parts = { track: "runnable-track", thumb: "thumb" };
+  const sampleStyle = document.createElement("style");
+  const activeRules = function* (rules) {
+    for (const rule of rules) {
+      if (rule instanceof CSSStyleRule) yield rule;
+      else if (rule instanceof CSSMediaRule && matchMedia(rule.conditionText).matches ||
+               rule instanceof CSSSupportsRule && CSS.supports(rule.conditionText)) yield* activeRules(rule.cssRules);
+    }
+  };
+  const declarations = [];
+  for (const sheet of document.styleSheets) {
+    for (const rule of activeRules(sheet.cssRules)) {
+      for (const [part, suffix] of Object.entries(parts)) {
+        const rangePart = new RegExp('input\\[type="range"\\]::-webkit-slider-' + suffix + '$');
+        if (!rangePart.test(rule.selectorText)) continue;
+        declarations.push(rule.selectorText.replace(rangePart, '[data-slider-sample=' + part + ']') + '{' + rule.style.cssText + '}');
+      }
+    }
+  }
+  sampleStyle.textContent = declarations.join("\n");
+  document.head.append(sampleStyle);
+  const append = part => {
+    const sample = document.createElement("div");
+    sample.dataset.sliderSample = part;
+    sample.style.cssText = "position: absolute; visibility: hidden; pointer-events: none; box-sizing: border-box";
+    field.after(sample);
+    return sample;
+  };
+  const track = append("track");
+  append("thumb");
+  append("fill").style.backgroundColor = "var(--accent-color)";
+  const trackStyle = getComputedStyle(track);
+  if (trackStyle.backgroundColor === "rgba(0, 0, 0, 0)" && trackStyle.backgroundImage === "none") {
+    const fieldStyle = getComputedStyle(field);
+    for (const key of ["backgroundColor", "border", "borderRadius", "boxShadow"]) track.style[key] = fieldStyle[key];
+  }
+}
+
 function readStyles(selectors) {
   const drawing = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
   const color = (...values) => {
@@ -136,7 +183,7 @@ function readStyles(selectors) {
     const text = label ? getComputedStyle(document.querySelector(label)) : style;
 
     const shadows = style.boxShadow.split(/,(?![^()]*\))/).flatMap(layer => {
-      const tint = layer.match(/rgba?\([^)]*\)/)?.[0];
+      const tint = layer.match(/(?:rgba?|color|oklch)\([^)]*\)/)?.[0];
       if (!tint) return [];
       const values = layer.replace(tint, "").replace(/\binset\b/, "").trim().split(/\s+/).slice(0, 4).map(number);
       return [{ color: color(tint), values, ...(/\binset\b/.test(layer) ? { inset: true } : {}) }];
@@ -163,12 +210,16 @@ function readStyles(selectors) {
     const switchBounds = switchFace ? element.parentElement.getBoundingClientRect() : null;
     const content = switchFace ? getComputedStyle(element, "::before").content : "";
     return [id, {
-      fill: color(style.backgroundColor, tint), text: color(text.color), border: color(style["border" + borderSide + "Color"]),
-      borderWidth: borderWidths[0], radius: number(style.borderTopLeftRadius),
+      fill: color(style.backgroundColor, id === "settingsRangeTrack" ? "" : tint), text: color(text.color), border: color(style["border" + borderSide + "Color"]),
+      borderWidth: borderWidths[0],
+      radius: id === "settingsRangeThumb" && style.borderTopLeftRadius.endsWith("%")
+        ? Math.min(bounds.width, bounds.height) * number(style.borderTopLeftRadius) / 100
+        : number(style.borderTopLeftRadius),
       ...(style["border" + borderSide + "Style"] === "dashed" ? { dashed: true } : {}),
       ...(borderWidths.some(width => width !== borderWidths[0]) ? { borderWidths } : {}),
-      ...(outlineWidth > 0 && number(style.outlineOffset) === -outlineWidth
-        ? { outline: { width: outlineWidth, color: color(style.outlineColor) } } : {}),
+      ...(outlineWidth > 0 && (id === "settingsRangeFocus" || number(style.outlineOffset) === -outlineWidth)
+        ? { outline: { width: outlineWidth, color: color(style.outlineColor),
+            ...(id === "settingsRangeFocus" ? { offset: number(style.outlineOffset) } : {}) } } : {}),
       ...(gradient ? { gradient: { angle: Number(gradient[1]), from: color(gradient[2]), to: color(gradient[3]) } } : {}),
       ...(letterSpacing ? { letterSpacing } : {}),
       ...(lineHeight ? { lineHeight: Math.round(lineHeight * 1000) / 1000 } : {}),
@@ -226,6 +277,10 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
       await Promise.allSettled(document.getAnimations().filter(animation => Number.isFinite(animation.effect.getTiming().iterations))
         .map(animation => animation.finished));
     });
+    if (fixture === "settings-slider") {
+      if (state === "keyboard") await page.getByRole("slider", { name: "Opacity" }).focus();
+      else await page.evaluate(prepareSliderSamples);
+    }
     Object.assign(styles, await page.evaluate(readStyles, selectors));
   }
   const viewport = page.viewportSize();
