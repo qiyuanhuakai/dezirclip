@@ -251,7 +251,8 @@ func (n *nativeMain) drawPrivacyRule(c *ui.Context, rule protocol.PolicyRuleValu
 }
 
 func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
-	n.privacyTextSetting(c, kit, "app.excluded_source_apps", n.text("excluded_source_apps"), n.text("excluded_source_apps_hint"), "Example Editor\nexample-editor.exe")
+	n.privacyTextSetting(c, kit, "app.excluded_source_apps", n.text("excluded_source_apps"), n.text("native_excluded_source_apps_hint"),
+		n.text("excluded_source_apps_placeholder"))
 	kit.SettingsDisclosure(c, n.text("privacy_protection_kinds"), &n.privacyKindsOpen, func() {
 		const key = "app.privacy_protection_kinds"
 		raw, stored := n.preferences[key]
@@ -281,7 +282,8 @@ func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
 			}
 		}
 	})
-	n.privacyTextSetting(c, kit, "app.privacy_protection_custom_rules", n.text("privacy_protection_custom_rules"), n.text("privacy_rules_custom_patterns_hint"), "")
+	n.privacyTextSetting(c, kit, "app.privacy_protection_custom_rules", n.text("privacy_protection_custom_rules"),
+		n.text("privacy_rules_custom_patterns_hint"), n.text("privacy_protection_custom_rules_placeholder"))
 }
 
 func (n *nativeMain) privacyTextSetting(c *ui.Context, kit uikit.Kit, key, label, hint, placeholder string) {

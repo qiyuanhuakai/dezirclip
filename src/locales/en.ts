@@ -405,6 +405,7 @@ export const en = {
         privacy_protection_hint: "Encrypt credentials validated by offline structure and explicit custom rules. Ordinary email, phone and password complexity are only hints. Existing protection is not removed by this switch.",
         excluded_source_apps: "Do not record these apps",
         excluded_source_apps_hint: "One app name or path per line. Applied when you leave this field, to future captures only. Unknown sources cannot be excluded.",
+        native_excluded_source_apps_hint: "One app name or path per line. Save to exclude future captures. Unknown sources cannot be excluded.",
         excluded_source_apps_placeholder: "For example:\nBitwarden\nKeePassXC.exe\n/usr/bin/keepassxc",
         privacy_protection_kinds: "Potentially sensitive categories",
         privacy_kind_phone: "Phone",
