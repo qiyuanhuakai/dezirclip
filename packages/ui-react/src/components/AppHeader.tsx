@@ -65,8 +65,12 @@ const AppHeader = ({
 }: AppHeaderProps) => {
   const panelOnTop = showSettings || showTagManager || showEmojiPanel;
   useEffect(() => {
-    if (panelOnTop) setIsComposing(false);
-  }, [panelOnTop, setIsComposing]);
+    if (panelOnTop) {
+      setIsComposing(false);
+      setShowTagFilter(false);
+      setSearchIsFocused(false);
+    }
+  }, [panelOnTop, setIsComposing, setShowTagFilter, setSearchIsFocused]);
   const searchBoxVisible = showSearchBox || search.trim().length > 0;
   // The whole search box sits behind a panel guard, so closing a panel remounts
   // it and replays the height reveal. That reveal animates height, which re-lays

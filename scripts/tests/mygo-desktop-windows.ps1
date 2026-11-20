@@ -283,6 +283,35 @@ function Get-WebViewBrowser($main) {
     } 'No live WebView2 browser for the current MyGo main window'
 }
 
+function Test-SymbolPaste($main, $root, $edit, $form, $cli, [string]$serviceInstance, [switch]$Native) {
+    if ($Native) {
+        $renderer = 'MyGo Native'
+        $panelLabel = 'Emoji'
+        if (Get-DesktopProcesses @($main.Id) | Where-Object Name -eq 'msedgewebview2.exe') {
+            throw 'The native symbol picker started WebView2'
+        }
+    } else {
+        $renderer = 'WebView2'
+        $panelLabel = 'Stickers'
+    }
+    Click-Control $main (Get-ControlPoint $root $panelLabel)
+    Click-Control $main (Get-ControlPoint $root 'Symbols')
+    Click-Control $main (Get-ControlPoint $root 'Search by character, name or U+ code')
+    [Windows.Forms.SendKeys]::SendWait('U{+}2A7D')
+    $symbol = [string][char]0x2a7d
+    Click-Control $main (Get-ControlPoint $root $symbol)
+    $null = Wait-Until {
+        $edit.Text -ceq $symbol -and $edit.Focused -and [MyGoInput]::GetForegroundWindow() -eq $form.Handle
+    } "$renderer symbol picker did not paste the exact symbol into the original editor"
+    $clipboardSequence = [MyGoInput]::GetClipboardSequenceNumber()
+    $null = Wait-Until { [MyGoInput]::CheckClipboardText($symbol, $clipboardSequence, $form.Handle) } 'Clipboard remained locked after symbol delivery' 3
+    $afterPaste = & $cli service status --json | ConvertFrom-Json
+    if ($LASTEXITCODE -or $afterPaste.state.service_instance_id -cne $serviceInstance -or !$afterPaste.capture_owner) {
+        throw 'Symbol paste did not preserve the original capture Service'
+    }
+    Write-Host "Verified $renderer symbol search and exact paste into the original editor using an already-running Service"
+}
+
 function Click-Control($main, $point) {
     if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'MyGo main window lost focus before click' }
     Click-WindowPoint $main.MainWindowHandle $point
@@ -1065,7 +1094,11 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             [Math]::Abs($clientRect.right - 670) -le 1 -and [Math]::Abs($clientRect.bottom - 608) -le 1
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
-    if ($NativeMain -and !$Emoji) {
+    if ($NativeMain -and $Emoji) {
+        Test-SymbolPaste $main $root $edit $form $cli $startedService.state.service_instance_id -Native
+        return
+    }
+    if ($NativeMain) {
         $null = Get-ControlPoint $root $marker
         $mainLifecycleLog = Join-Path $dir.FullName 'desktop-lifecycle-main.log'
         $events = @(Get-Content -LiteralPath $mainLifecycleLog | ForEach-Object { (ConvertFrom-Json -InputObject $_).event })
@@ -1545,12 +1578,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         return
     }
     if ($Emoji) {
-        $emojiPanelLabel = if ($NativeMain) { 'Emoji' } else { 'Stickers' }
-        Click-Control $main (Get-ControlPoint $root $emojiPanelLabel)
-        Click-Control $main (Get-ControlPoint $root 'Symbols')
-        Click-Control $main (Get-ControlPoint $root 'Search by character, name or U+ code')
-        [Windows.Forms.SendKeys]::SendWait('U{+}2A7D')
-        $marker = [string][char]0x2a7d
+        Test-SymbolPaste $main $root $edit $form $cli $startedService.state.service_instance_id
+        return
     }
     Click-Control $main (Get-ControlPoint $root $marker)
     $null = Wait-Until {
@@ -1558,15 +1587,6 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     } 'Click did not paste the exact history text into the original editor'
     $clipboardSequence = [MyGoInput]::GetClipboardSequenceNumber()
     $null = Wait-Until { [MyGoInput]::CheckClipboardText($marker, $clipboardSequence, $form.Handle) } 'Clipboard remained locked after delivery' 3
-    if ($Emoji) {
-        $afterPaste = & $cli service status --json | ConvertFrom-Json
-        if ($LASTEXITCODE -or $afterPaste.state.service_instance_id -cne $startedService.state.service_instance_id -or !$afterPaste.capture_owner) {
-            throw 'Symbol paste did not preserve the original capture Service'
-        }
-        $renderer = if ($NativeMain) { 'MyGo Native' } else { 'WebView2' }
-        Write-Output "Verified $renderer symbol search and exact paste into the original editor using an already-running Service"
-        return
-    }
     if (!$LegacyCloseAfterPaste) {
         $null = Wait-Until { !$main.HasExited -and ![MyGoInput]::IsWindowVisible($main.MainWindowHandle) } 'Paste destroyed the WebView instead of hiding it'
     }
