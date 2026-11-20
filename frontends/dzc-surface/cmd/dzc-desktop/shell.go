@@ -22,6 +22,7 @@ type DesktopShell struct {
 	resumeStarted   time.Time // UI-thread owned
 	resumeDocked    bool      // UI-thread owned; edge reveal keeps its anchor.
 	nativePrepare   func(uint64)
+	updatePending   func() bool
 	idle            hiddenWebView
 	dock            edgeDock
 	resident        residentBridge

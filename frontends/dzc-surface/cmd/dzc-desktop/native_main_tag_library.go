@@ -15,6 +15,8 @@ type nativeTagLibrary struct {
 	selected, query, sort, nameQuery string
 	dialog                           *nativeTagDialog
 	batch                            nativeTagBatch
+	reveal                           map[nativeCardKey]bool
+	revealGeneration                 uint64
 }
 
 type nativeTagDialog struct {
@@ -69,11 +71,17 @@ func (n *nativeMain) tagLibraryView(c *ui.Context, kit uikit.Kit, queryFocused *
 	}
 	width, _ := c.Size()
 	if width < nativeSplitWidth {
-		contents()
+		ui.Column(c).FillWidth().Grow(1).MinHeight(0).Gap(5).Children(contents)
 		return
 	}
 	ui.Row(c).FillWidth().Grow(1).MinHeight(0).Gap(8).Padding(0, 8, 8).AlignItems(ui.Stretch).Children(func() {
 		ui.Column(c).Width(156).Shrink(0).MinHeight(0).Gap(4).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+				kit.SettingsLabel(c, n.text("tags")).Grow(1)
+				if kit.TagToolbarButton(c, uikit.HeaderAction{Icon: "add", Label: n.text("tag_create"), Disabled: n.mutating}).Clicked() {
+					n.startTagDialog(tags, "create")
+				}
+			})
 			kit.TextField(c, &tags.nameQuery, n.text("tag_search_label", "Find a tag")).
 				FillWidth().Placeholder(n.text("tag_search_label", "Find a tag…"))
 			ui.Scroll(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
@@ -99,74 +107,94 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 		n.loadTagCatalog()
 	}
 	width, _ := c.Size()
-	pickers, actionsPerRow := 2, 4
-	if width < 310 {
-		pickers = 1
+	selected := tags.selected != ""
+	if tags.reveal != nil && tags.revealGeneration != n.history.generation {
+		n.clearProtectedRows()
 	}
-	if width < 370 {
-		actionsPerRow = 2
+	compact := n.preferences["app.compact_mode"] == "true"
+	layoutIcon, layoutLabel := "collapse", n.text("tag_mode_simple", "Compact view")
+	if compact {
+		layoutIcon, layoutLabel = "list", n.text("tag_mode_detailed", "Detailed view")
 	}
-	ui.Column(c).FillWidth().Padding(0, 8).Gap(5).Children(func() {
-		wide := width >= nativeSplitWidth
-		if !wide {
-			kit.TextField(c, &tags.nameQuery, n.text("tag_search_label", "Find a tag")).
-				FillWidth().Placeholder(n.text("tag_search_label", "Find a tag…"))
+	manageIcon, manageLabel := "manage", n.text("tag_manage")
+	if tags.batch.enabled {
+		manageIcon, manageLabel = "done", n.text("tag_manage_done")
+	}
+	revealIcon, revealLabel := "reveal", n.text("tag_reveal_all", "Reveal protected items")
+	if tags.reveal != nil {
+		revealIcon, revealLabel = "conceal", n.text("tag_hide_all", "Hide protected items")
+	}
+	kit.TagToolbar(c, func() {
+		if width >= nativeSplitWidth {
+			label := tags.selected
+			if label == "" {
+				label = n.text("tags")
+			}
+			kit.SettingsLabel(c, label).Grow(1).MinWidth(0).SingleLine()
+			return
 		}
-		ui.Grid(c).Columns(pickers).Width(300).MaxWidthPercent(100).Gap(5).Children(func() {
-			options := []uikit.SelectOption{{Label: n.text("native_select_tag")}}
-			search := strings.ToLower(strings.TrimSpace(tags.nameQuery))
-			if name, ok := searchTagName(search); ok {
-				search = name
-			}
-			for _, name := range catalog.names {
-				if strings.Contains(strings.ToLower(name), search) || name == tags.selected {
-					options = append(options, uikit.SelectOption{
-						Value: name, Label: fmt.Sprintf("%s (%d)", name, catalog.counts[name]),
-					})
+		options := []uikit.SelectOption{{Label: n.text("native_select_tag")}}
+		for _, name := range catalog.names {
+			options = append(options, uikit.SelectOption{Value: name, Label: fmt.Sprintf("%s (%d)", name, catalog.counts[name])})
+		}
+		kit.Select(c, &tags.selected, n.text("tag_name", "Tag"), options, len(options) == 1).
+			Width(0).Grow(1).MinWidth(72).Height(27)
+	}, []uikit.HeaderAction{
+		{Icon: layoutIcon, Label: layoutLabel, Active: compact, Disabled: n.mutating, Run: func() {
+			n.saveSetting("app.compact_mode", fmt.Sprint(!compact))
+		}},
+		{Icon: revealIcon, Label: revealLabel, Active: tags.reveal != nil,
+			Disabled: !selected || n.mutating || n.reading || n.failed || tags.batch.enabled || len(n.history.rows) == 0,
+			Run: func() {
+				n.clearProtectedRows()
+				if revealIcon == "reveal" {
+					tags.reveal, tags.revealGeneration = make(map[nativeCardKey]bool), n.history.generation
 				}
-			}
-			if !wide {
-				kit.Select(c, &tags.selected, n.text("tag_name", "Tag"), options, len(options) == 1)
-			}
-			kit.Select(c, &tags.sort, n.text("native_sort_tag_entries"), []uikit.SelectOption{
-				{Value: "time", Label: n.text("sort_time")}, {Value: "count", Label: n.text("sort_usage", "Most used")},
-			}, tags.selected == "")
-		})
-		ui.Grid(c).Columns(actionsPerRow).MaxWidth(460).Gap(5).Children(func() {
-			canEdit := tags.selected != "" && !nativeProtectedTag(tags.selected)
-			actions := []struct {
-				id, label string
-				enabled   bool
-			}{
-				{"create", n.text("tag_create", "New tag"), true},
-				{"rename", n.text("tag_rename", "Rename"), canEdit},
-				{"remove", n.text("tag_remove", "Remove"), canEdit},
-				{"add", n.text("add_item", "Add entry"), tags.selected != ""},
-			}
-			for _, action := range actions {
-				if n.mainKit().Button(c, uikit.ButtonOptions{Label: action.label, Disabled: n.mutating || !action.enabled}).Clicked() {
-					if action.id == "add" {
-						n.addHistoryEntry(tags.selected)
-						continue
-					}
-					n.resetPreviewSelection()
-					tags.dialog = &nativeTagDialog{action: action.id, tag: tags.selected, open: true, focus: true}
-					if action.id == "rename" {
-						tags.dialog.value = tags.selected
-					}
+			}},
+		{Icon: manageIcon, Label: manageLabel, Active: tags.batch.enabled, Disabled: !selected || n.mutating, Run: func() {
+			n.clearProtectedRows()
+			tags.batch = nativeTagBatch{enabled: !tags.batch.enabled, generation: n.history.generation}
+			n.resetPreviewSelection()
+		}},
+		{Icon: "add", Label: n.text("add_item", "Add entry"), Disabled: !selected || n.mutating || tags.batch.enabled,
+			Run: func() { n.addHistoryEntry(tags.selected) }},
+	}, func() {
+		more := kit.TagToolbarButton(c, uikit.HeaderAction{Icon: "more", Label: n.text("tag_actions", "Tag actions"), Disabled: n.mutating})
+		if more.Clicked() {
+			n.menu.Open(more, func() []uikit.MenuAction {
+				sort, sortLabel := "count", n.text("sort_usage", "Most used")
+				if tags.sort == "count" {
+					sort, sortLabel = "time", n.text("sort_time")
 				}
-			}
-		})
-		if catalog.failed {
-			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry", "Retry loading tags")}).Clicked() {
-				n.loadTagCatalog()
-			}
-		} else if catalog.loading && len(catalog.names) == 0 {
-			ui.Text(c, n.text("common_loading", "Loading tags…")).TextColor(c.Theme().TextMuted)
-		} else if len(catalog.names) == 0 {
-			ui.Text(c, n.text("tag_library_empty", "No tags")).TextColor(c.Theme().TextMuted)
+				edit := tags.selected != "" && !nativeProtectedTag(tags.selected) && !tags.batch.enabled
+				return []uikit.MenuAction{
+					{Label: n.text("tag_create", "New tag"), Run: func() { n.startTagDialog(tags, "create") }},
+					{Label: sortLabel, Disabled: tags.selected == "", Run: func() { tags.sort = sort; n.editQuery(false) }},
+					{Label: n.text("tag_rename", "Rename"), Disabled: !edit, Run: func() { n.startTagDialog(tags, "rename") }},
+					{Label: n.text("tag_remove", "Remove"), Disabled: !edit, Run: func() { n.startTagDialog(tags, "remove") }},
+				}
+			})
 		}
 	})
+	if catalog.failed {
+		if kit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry", "Retry loading tags")}).Clicked() {
+			n.loadTagCatalog()
+		}
+	} else if !selected {
+		label := n.text("tag_library_empty", "No tags")
+		if catalog.loading {
+			label = n.text("common_loading", "Loading tags…")
+		}
+		ui.Text(c, label).TextColor(c.Theme().TextMuted).Padding(8)
+	}
+}
+
+func (n *nativeMain) startTagDialog(tags *nativeTagLibrary, action string) {
+	n.resetPreviewSelection()
+	tags.dialog = &nativeTagDialog{action: action, tag: tags.selected, open: true, focus: true}
+	if action == "rename" {
+		tags.dialog.value = tags.selected
+	}
 }
 
 func nativeProtectedTag(name string) bool {

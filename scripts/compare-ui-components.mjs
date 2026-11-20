@@ -17,6 +17,15 @@ const selectedTheme = flags.get("theme");
 const selectedFixtures = flags.get("fixture")?.split(",");
 const presets = JSON.parse(await readFile(resolve(root, "packages/ui-presets/builtin-presets.json"), "utf8"));
 const cases = {
+  "settings-section-card": { states: ["default", "expanded"], text: "General settings" },
+  "settings-choices": { states: ["default"], text: "Update channel" },
+  "hotkey-list": { states: ["default", "multiple"], text: "Global hotkey" },
+  "emoji-favorites": { states: ["default"], text: "Add emoji" },
+  "settings-data": { states: ["default"], text: "Data storage path" },
+  "settings-remove": { states: ["default"], text: "Remove theme" },
+  "tag-toolbar": { states: ["default"], text: "Work" },
+  "text-fields": { states: ["default"], text: "Idle timeout" },
+  "context-menu": { states: ["default", "text", "privacy"], text: "Clipboard entry" },
   "attachment-preview": { states: ["default", "compact", "media", "expanded"], text: "Notes.pdf" },
   "preview-toolbar": { states: ["default", "pinned"], text: "Content preview" },
   "preview-image": { states: ["default", "zoomed"], text: "Image preview" },
@@ -26,7 +35,7 @@ const cases = {
   "history-list": { states: ["default", "selected"], text: "Release checklist and verification notes" },
   "settings-rail": { states: ["default", "selected"], text: "Appearance" },
   "settings-footer": { states: ["default", "compact"], text: "Reset defaults" },
-  "history-card": { states: ["default", "selected", "pinned"], text: "Copied from the active editor" },
+  "history-card": { states: ["default", "selected", "pinned", "compact", "compact-hover", "compact-action-hover", "compact-active-hover"], text: "Copied from the active editor" },
   "app-header": { states: ["default", "pinned", "settings"], text: "DezirClip" },
   select: { states: ["default", "disabled", "hover", "focus", "popup"], text: "System" },
   "search-bar": { states: ["default", "filled", "loading", "error"], text: "FTS5" },
@@ -135,6 +144,7 @@ try {
             const url = new URL("/packages/ui-react/showcase/", base);
             url.search = new URLSearchParams({ theme, mode, fixture, state }).toString();
             errors.length = 0;
+            await page.mouse.move(450, 390);
             await page.goto(url.href);
             await page.locator("main[data-fixture]").waitFor();
             if (fixture === "clipboard-search") {
@@ -155,6 +165,39 @@ try {
               }
             }
             await page.mouse.move(450, 390);
+            if (fixture === "history-card" && state.startsWith("compact")) {
+              const pin = page.getByRole("button", { name: "Pin", exact: true });
+              await page.waitForFunction(() => getComputedStyle(document.querySelector(".item-actions")).visibility === "hidden");
+              if (state.endsWith("hover")) {
+                await page.locator(".history-item").hover();
+                if (state !== "compact-hover") {
+                  await pin.waitFor();
+                  const bounds = await pin.boundingBox();
+                  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+                }
+                await page.waitForFunction(() => getComputedStyle(document.querySelector(".item-actions")).opacity === "1");
+              }
+            }
+            if (fixture === "context-menu" && state !== "default") {
+              const del = page.getByRole("menuitem", { name: "Delete" });
+              const before = await del.boundingBox();
+              await page.getByRole("menuitem", { name: state === "text" ? "Text processing" : "Privacy" }).hover();
+              if (JSON.stringify(before) !== JSON.stringify(await del.boundingBox())) {
+                throw Error("Opening a submenu moved the following root item");
+              }
+            }
+            if (fixture === "text-fields") {
+              for (const [label, value] of [["Entry name", "Release checklist"], ["Idle timeout", "30"], ["Notes", "First line\nSecond line"]]) {
+                const field = page.getByRole("textbox", { name: label });
+                if (await field.inputValue() !== value || await field.evaluate(element => parseFloat(getComputedStyle(element).paddingLeft)) < 8) {
+                  throw Error("Invalid value or text inset for " + label);
+                }
+              }
+            }
+            if (fixture === "hotkey-list") {
+              const buttons = await page.getByRole("button", { name: /^Delete / }).count();
+              if (buttons !== (state === "multiple" ? 2 : 0)) throw Error("Incorrect shortcut removal controls");
+            }
             if (fixture === "settings-slider" && state === "keyboard") {
               const range = page.getByRole("slider", { name: "Opacity" });
               await range.press("ArrowRight");
@@ -206,6 +249,7 @@ try {
               ? ["Clipboard", "history"].every(word => comparable(webText, word) && comparable(nativeText, word))
               : comparable(webText, marker) && comparable(nativeText, marker);
             const extra = state === "popup" ? "Light" : state === "expanded" && fixture === "disclosure" ? "Preview channel"
+              : fixture === "context-menu" && state !== "default" ? state === "text" ? "Uppercase" : "Ignore this source"
               : state === "southeast" ? "SouthEast" : state === "scrolled" ? "1 scroll" : "";
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
             const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64") });

@@ -28,6 +28,96 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.BorderWidth, style.Radius = 1, float32(palette.Radius)
 	}
 	switch widget {
+	case "settingsDataBlock":
+		style.RowGap, style.Padding = 6, [4]float32{6, 0, 8, 0}
+	case "settingsRemove", "settingsRemoveIcon":
+		surface()
+		style.Text = rgba(ui.LightTheme().Danger)
+		style.Width, style.Height, style.Padding = 28, 30, [4]float32{4, 8, 4, 8}
+		if widget == "settingsRemoveIcon" {
+			style.Height, style.Padding = 28, [4]float32{}
+		}
+	case "settingsDataHeader", "settingsDataActions":
+		style.ColumnGap = 8
+	case "settingsDataLabel":
+		style.Text, style.Weight = rgba(ui.Hex(palette.Text)), palette.EmphasisWeight
+	case "hotkeyRemove":
+		surface()
+		style.Width, style.Height = 24, 24
+	case "tagToolbar":
+		style.Height, style.ColumnGap = 30, 2
+		style.Padding = [4]float32{0, 7, 0, 3}
+	case "tagToolbarButton", "tagToolbarButtonActive":
+		style = DefaultWidgetStyle("headerButton", palette)
+		style.Padding = [4]float32{}
+		if widget == "tagToolbarButtonActive" {
+			style.Fill, style.Border = selected, accent
+		}
+	case "settingsDataPath", "settingsDataAction":
+		surface()
+		style.Height, style.Padding, style.Size = 30, [4]float32{5, 9, 5, 9}, 12
+		if widget == "settingsDataPath" {
+			style.Font, style.Weight = "monospace", 700
+		}
+	case "emojiAddTile", "emojiAddTileHover", "emojiFavoriteTile":
+		surface()
+		style.Radius, style.Size = 8, 11
+		style.Padding = [4]float32{3, 3, 3, 3}
+		if widget != "emojiFavoriteTile" {
+			style.Dashed, style.BorderWidth, style.Weight = true, 2, 800
+		}
+		if widget == "emojiAddTileHover" {
+			style.Border, style.Text = accent, accent
+		}
+	case "emojiFavoriteRemove":
+		style.Fill, style.Text, style.Radius = [4]uint8{0, 0, 0, 217}, [4]uint8{255, 255, 255, 255}, 6
+	case "settingsGroup", "settingsGroupOpen":
+		surface()
+	case "settingsGroupHeader", "settingsGroupHeaderOpen":
+		style.Height, style.Size, style.Weight = 42, 14, palette.EmphasisWeight
+		style.Padding = [4]float32{8, 12, 8, 12}
+	case "settingsGroupContent":
+		style.Padding = [4]float32{8, 12, 12, 12}
+	case "settingsGroupChevron":
+		style.Text = muted
+	case "settingsSegments":
+		surface()
+		style.Padding, style.ColumnGap = [4]float32{2, 2, 2, 2}, 2
+	case "settingsChoiceCards":
+		style.ColumnGap = 8
+	case "settingsSegment", "settingsSegmentHover", "settingsSegmentActive", "settingsChoiceCard", "settingsChoiceCardHover", "settingsChoiceCardActive":
+		surface()
+		style.Height, style.Size, style.Weight = 36, 12, palette.EmphasisWeight
+		style.Padding = [4]float32{0, 12, 0, 12}
+		if strings.HasPrefix(widget, "settingsSegment") {
+			style.Height, style.BorderWidth, style.Fill = 30, 0, [4]uint8{}
+		}
+		if strings.HasSuffix(widget, "Active") || strings.HasSuffix(widget, "Hover") {
+			style.Fill = selected
+		}
+	case "textField", "textFieldFocus", "numberField", "numberFieldFocus":
+		surface()
+		style.Height, style.Padding = 36, [4]float32{6, 10, 6, 10}
+		if strings.HasPrefix(widget, "number") {
+			style.Height, style.Padding, style.Size = 28, [4]float32{4, 8, 4, 8}, 12
+		}
+		if strings.HasSuffix(widget, "Focus") {
+			style.Border = accent
+		}
+	case "contextMenu", "contextSubmenu":
+		surface()
+		style.Width, style.Padding = 180, [4]float32{4, 0, 4, 0}
+		if widget == "contextSubmenu" {
+			style.Width = 168
+		}
+	case "contextMenuItem", "contextMenuItemActive", "contextSubmenuItem", "contextSubmenuItemActive":
+		style.Height, style.Padding, style.Size = 34, [4]float32{0, 12, 0, 12}, 12
+		if strings.HasPrefix(widget, "contextSubmenuItem") {
+			style.Height = 30
+		}
+		if strings.HasSuffix(widget, "Active") {
+			style.Fill = selected
+		}
 	case "settingsToggleRow":
 		style.Height, style.Padding = 34, [4]float32{6, 0, 6, 0}
 	case "settingsRangeTrack":
@@ -173,8 +263,26 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		if widget == "historySource" {
 			style.ColumnGap = 4
 		}
-	case "historyActions":
+	case "historyActions", "historyActionsCompact":
 		style.ColumnGap = 4
+		if widget == "historyActionsCompact" {
+			style.TranslateY = 5
+		}
+	case "historyActionsCompactAnchor":
+		style.Top, style.Right = -8, 8
+	case "historyActionCompact", "historyActionCompactHover", "historyActionCompactActive", "historyActionCompactActiveHover":
+		surface()
+		style.Width, style.Height, style.Padding = 20, 20, [4]float32{3, 3, 3, 3}
+		if widget != "historyActionCompact" {
+			style.Fill = selected
+		}
+	case "historyActionIcon":
+		style.Width, style.Height = 12, 12
+	case "historyActionCompactIcon":
+		style.Width, style.Height = 14, 14
+	case "historyContentCompact":
+		style = DefaultWidgetStyle("historyContent", palette)
+		style.LineHeight = 1.3
 	case "historyIcon":
 		style.Width, style.Height, style.Text = 14, 14, muted
 	case "searchModeIcon":

@@ -378,7 +378,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
             {collapsed && <button type="button" className="btn-icon tag-manager-rail-add" title={t('tag_create')} aria-label={t('tag_create')} onClick={() => openDialog({ kind: 'createTag' })}><Plus size={16} /></button>}
         </aside>}
         <section className="tag-manager-content" aria-label={selectedTag ?? t('tag_manager')}>
-            <div className="tag-manager-toolbar">
+            <TagToolbar>
                 {split ? <span className="tag-manager-current" title={selectedTag ?? ''}><Tag size={14} /><span>{selectedTag ?? t('tags')}</span></span>
                     : <button ref={pickerButton} type="button" className={`btn-icon tag-manager-current tag-manager-picker-trigger${pickerOpen ? ' active' : ''}`}
                         aria-label={`${t('tags')}: ${selectedTag ?? t('tags')}`} title={selectedTag ?? t('tags')}
@@ -445,7 +445,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     <div className="item-context-menu__separator" />
                     {menuItem(<Trash2 size={14} />, t(protectedTag(selectedTag) ? 'common_delete' : 'tag_remove'), () => openDialog({ kind: 'removeTag', tag: selectedTag }), protectedTag(selectedTag) && privacyProtection)}
                 </div>}
-            </div>
+            </TagToolbar>
             <div className="search-container tag-manager-search"><Search className="search-icon" size={14} />
                 <input ref={searchInput} className="search-input" value={library.query} maxLength={256} disabled={!selectedTag}
                     onChange={event => library.setQuery(event.target.value)} placeholder={t('tag_content_search')} aria-label={t('tag_content_search')}
@@ -512,3 +512,4 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         {qrEntry && <Suspense fallback={null}><QrCodeDialog entry={qrEntry} onClose={() => setQrEntry(null)} /></Suspense>}
     </div>;
 }
+import { TagToolbar } from "@deziro/ui-react/components/TagToolbar";

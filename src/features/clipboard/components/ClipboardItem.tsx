@@ -1,4 +1,4 @@
-import { HistoryCard, HistoryCardMeta } from "@deziro/ui-react/components/HistoryCard";
+import { HistoryCard, HistoryCardAction, HistoryCardMeta } from "@deziro/ui-react/components/HistoryCard";
 import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
 import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
 import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
@@ -960,46 +960,45 @@ const ClipboardItem = ({
                 sourceIcon={<>{item.is_pinned && !dragControls && <Pin size={10} style={{ color: 'var(--accent-color)', marginRight: '-2px' }} />}
                         {renderSourceAppIcon(sourceAppIcon, item.content_type, item.source_app)}</>}
                 actions={<>{onEdit && !isSensitiveHidden && (item.content_type === "text" || item.content_type === "code") && (
-                            <button className="btn-icon" title={t('common_edit')} onClick={(event) => {
+                            <HistoryCardAction title={t('common_edit')} onClick={(event) => {
                                 event.stopPropagation();
                                 onEdit();
-                            }}><Edit2 size={12} /></button>
+                            }}><Edit2 size={12} /></HistoryCardAction>
                         )}
                         {showSensitiveVisibilityControl && isSensitiveEntry(item) && (
-                            <button
-                                className={`btn-icon ${isRevealed ? "active" : ""}`}
+                            <HistoryCardAction
+                                active={isRevealed}
                                 onClick={onToggleReveal}
                                 title={isRevealed ? t('hide') : t('reveal')}
                             >
                                 {isRevealed ? <EyeOff size={12} /> : <Eye size={12} />}
-                            </button>
+                            </HistoryCardAction>
                         )}
-                        <button
-                            className="btn-icon"
+                        <HistoryCardAction
                             onClick={onOpen}
                             aria-label={t('open')}
                             title={t('open')}
                         >
                             <ExternalLink size={12} />
-                        </button>
-                        <button
-                            className={`btn-icon ${item.is_pinned ? "active" : ""}`}
+                        </HistoryCardAction>
+                        <HistoryCardAction
+                            active={item.is_pinned}
                             onClick={event => { event.stopPropagation(); void runMetadataAction(intent => onTogglePin(event, intent)); }}
                             disabled={metadataActionPending}
                             title={item.is_pinned ? t('unpin') : t('pin')}
                         >
                             {item.is_pinned ? <PinOff size={12} /> : <Pin size={12} />}
-                        </button>
-                        <button
-                            className={`btn-icon ${item.tags && item.tags.length > 0 ? "active" : ""}`}
+                        </HistoryCardAction>
+                        <HistoryCardAction
+                            active={Boolean(item.tags?.length)}
                             onClick={onToggleTagEditor}
                             title="Tags"
                         >
                             <Tag size={12} />
-                        </button>
-                        <button className="btn-icon" onClick={onDelete} title={t('delete')}>
+                        </HistoryCardAction>
+                        <HistoryCardAction onClick={onDelete} title={t('delete')}>
                             <X size={12} />
-                        </button></>}
+                        </HistoryCardAction></>}
                 status={ocrStatus && ocrStatus !== "pending" && (
                             <span
                                 data-testid="ocr-badge"

@@ -9,7 +9,8 @@ import (
 )
 
 func (n *nativeMain) mainKit() uikit.Kit {
-	return n.preset().Kit().WithInterfaceFont(nativeInterfaceFont(n.preferences))
+	return n.preset().Kit().WithInterfaceFont(nativeInterfaceFont(n.preferences)).
+		WithSurfaceOpacity(opacityPreference(n.preferences["app.surface_opacity"]))
 }
 
 func (n *nativeMain) view(c *ui.Context) {
@@ -43,7 +44,8 @@ func (n *nativeMain) view(c *ui.Context) {
 	queryFocused := false
 	shell.Children(func() {
 		n.drawBackground(c, preset.Tokens().Radius)
-		main := ui.Column(c).Fill().Gap(6).Background(c.Theme().Background)
+		main := ui.Column(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).
+			Gap(6).Background(c.Theme().Background)
 		if n.preferences["app.show_app_border"] != "false" {
 			main.Border(1, c.Theme().Border)
 		}
@@ -67,7 +69,7 @@ func (n *nativeMain) view(c *ui.Context) {
 				header.Title = n.text("emoji_tab")
 				header.Back = &uikit.HeaderAction{Icon: "back", Label: n.text("native_back"), Run: n.closeEmoji, Disabled: n.mutating}
 			} else if n.tagLibrary != nil {
-				header.Title = n.text("tags")
+				header.Title = n.text("tag_manager", "Tag manager")
 				header.Back = &uikit.HeaderAction{Icon: "back", Label: n.text("native_back"), Run: n.closeTagLibrary, Disabled: n.mutating}
 			} else {
 				header.Actions = append(header.Actions, uikit.HeaderAction{Icon: "clear", Label: n.text("clear_history"),
@@ -172,9 +174,6 @@ func (n *nativeMain) view(c *ui.Context) {
 	if n.privacyDialog != nil {
 		n.privacyDialogView(c, kit, n.privacyDialog)
 	}
-	if n.privacyEditor != nil {
-		n.privacyEditorView(c, kit, n.privacyEditor)
-	}
 	if n.shortcut != nil && n.shortcut.open {
 		n.drawShortcutRecorder(c, kit, n.shortcut)
 	}
@@ -224,18 +223,19 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit) {
 				pinLabel = n.text("unpin", "Unpin entry")
 				pinIcon = "unpin"
 			}
-			actions := []uikit.HeaderAction{
-				{Icon: pinIcon, Label: pinLabel, Active: row.IsPinned, Disabled: n.mutating, Run: func() { n.rowAction(row, generation, nativePin) }},
-				{Icon: "hide", Label: n.text("delete", "Delete entry"), Disabled: n.mutating, Run: func() { n.rowAction(row, generation, nativeDelete) }},
-			}
+			actions := make([]uikit.HeaderAction, 0, 6)
 			summary := nativeCardSummary(row, n.language())
+			if batch == nil && nativeConcealed(row) {
+				n.revealTaggedRow(row, generation)
+			}
 			protected := n.protectedBody(row)
 			if batch != nil {
 				protected = nil
 			}
-			if editableHistoryKind(row.ContentType) {
+			contentVisible := !nativeConcealed(row) || protected != nil
+			if editableHistoryKind(row.ContentType) && contentVisible {
 				actions = append(actions, uikit.HeaderAction{Icon: "edit", Label: n.text("edit_item"),
-					Disabled: !n.canOpenHistoryDialog() || nativeConcealed(row) && protected == nil,
+					Disabled: !n.canOpenHistoryDialog(),
 					Run:      func() { n.editHistoryEntry(row, generation) }})
 			}
 			if nativeConcealed(row) {
@@ -256,9 +256,19 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit) {
 					}
 				}
 			}
+			actions = append(actions,
+				uikit.HeaderAction{Icon: "open", Label: n.text("open"), Disabled: n.mutating || !contentVisible || row.Id <= 0,
+					Run: func() { n.rowAction(row, generation, nativeOpen) }},
+				uikit.HeaderAction{Icon: pinIcon, Label: pinLabel, Active: row.IsPinned, Disabled: n.mutating,
+					Run: func() { n.rowAction(row, generation, nativePin) }},
+				uikit.HeaderAction{Icon: "tag", Label: n.text("native_edit_tags"), Active: len(row.Tags) != 0, Disabled: !n.canOpenHistoryDialog(),
+					Run: func() { n.editTags(row, generation) }},
+				uikit.HeaderAction{Icon: "hide", Label: n.text("delete", "Delete entry"), Disabled: n.mutating,
+					Run: func() { n.rowAction(row, generation, nativeDelete) }},
+			)
 			textRows := 4
 			if compact {
-				textRows = 1
+				textRows = 2
 			}
 			if batch != nil {
 				activate := func() { n.toggleTagBatchRow(batch, row.Id, generation) }
@@ -280,7 +290,7 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit) {
 			}
 			card := kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
 				Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
-				Pinned: row.IsPinned, Selected: cell.Selected(), Compact: compact,
+				Pinned: row.IsPinned, Selected: cell.Selected(), Compact: compact, First: cell.Index == first,
 				Match:    n.history.filter.query,
 				TextFont: n.preferences["app.font_mono"],
 				TextSize: float32(itemSize),

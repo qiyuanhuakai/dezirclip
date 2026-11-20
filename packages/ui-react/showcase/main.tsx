@@ -1,12 +1,14 @@
 import { useRef, useState } from "react";
 import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
-import { AppHeader, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardMeta, HotkeyBinding, MatchHighlight,
+import { AppHeader, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardMeta, HotkeyBinding, MatchHighlight,
   ProgressToast, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail,
   SettingsSlider, SettingsToggle, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { AttachmentFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
+import { ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture,
+  SettingsDataFixture, SettingsRemoveFixture, SettingsSectionFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
 import "../src/base.css";
 import "../src/styles/components/index.css";
 import "./showcase.css";
@@ -94,9 +96,9 @@ function HistoryListFixture() {
       selectedIndex={selected} isKeyboardMode={state === "selected"}
       renderItem={(row, index) => <HistoryCard selected={index === selected} disableLayout onClick={() => select(index)}>
         <HistoryCardMeta source={row.source} time={row.time} actions={<>
-          <button type="button" className="btn-icon" title="Pin"><Pin size={12} /></button>
-          <button type="button" className="btn-icon" title="Tags"><Tag size={12} /></button>
-          <button type="button" className="btn-icon" title="Delete"><X size={12} /></button>
+          <HistoryCardAction title="Pin" active={state.includes("active")}><Pin size={12} /></HistoryCardAction>
+          <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
+          <HistoryCardAction title="Delete"><X size={12} /></HistoryCardAction>
         </>} />
         <div className="content-preview">{row.summary}</div>
       </HistoryCard>} />
@@ -117,6 +119,15 @@ function Showcase() {
   const [tab, setTab] = useState<EmojiTab>(state === "favorites" ? "favorites" : "emoji");
 
   const examples = {
+    "text-fields": <TextFieldsFixture />,
+    "context-menu": <ContextMenuFixture state={state} />,
+    "settings-section-card": <SettingsSectionFixture open={state === "expanded"} />,
+    "settings-choices": <SettingsChoicesFixture />,
+    "hotkey-list": <HotkeyListFixture multiple={state === "multiple"} />,
+    "emoji-favorites": <EmojiFavoritesFixture />,
+    "settings-data": <SettingsDataFixture />,
+    "settings-remove": <SettingsRemoveFixture />,
+    "tag-toolbar": <TagToolbarFixture />,
     "attachment-preview": <AttachmentFixture state={state} />,
     "preview-toolbar": <PreviewToolbarFixture state={state} />,
     "preview-image": <PreviewImageFixture state={state} />,
@@ -145,13 +156,14 @@ function Showcase() {
       empty="No emoji" onSelect={() => undefined} />,
     "app-header": <HeaderFixture />,
     "clipboard-search": <ClipboardSearchFixture />,
-    "history-card": <HistoryCard selected={state === "selected"} pinned={state === "pinned"} disableLayout>
+    "history-card": <HistoryCard selected={state === "selected"} pinned={state === "pinned"}
+      compact={state.startsWith("compact")} disableLayout>
       <HistoryCardMeta source="Editor" time="12:30"
         sourceIcon={state === "pinned" ? <Pin size={10} /> : undefined}
         actions={<>
-          <button type="button" className="btn-icon" title="Pin"><Pin size={12} /></button>
-          <button type="button" className="btn-icon" title="Tags"><Tag size={12} /></button>
-          <button type="button" className="btn-icon" title="Delete"><X size={12} /></button>
+          <HistoryCardAction title="Pin" active={state.includes("active")}><Pin size={12} /></HistoryCardAction>
+          <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
+          <HistoryCardAction title="Delete"><X size={12} /></HistoryCardAction>
         </>} />
       <div className="content-preview">Copied from the active editor</div>
     </HistoryCard>,

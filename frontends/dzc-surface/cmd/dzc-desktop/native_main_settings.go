@@ -25,12 +25,9 @@ func (n *nativeMain) openSettings() {
 	n.settingsScroll = ui.ScrollState{}
 	if n.settingsSection == "privacy" {
 		n.settingsSection = "general"
-		if general := n.settingsOpen["general"]; general != nil {
-			*general = true
-		}
 	}
-	if privacy := n.settingsOpen["privacy"]; privacy != nil {
-		*privacy = false
+	for _, expanded := range n.settingsOpen {
+		*expanded = false
 	}
 	n.showSettings, n.showEmoji = true, false
 }
@@ -43,13 +40,13 @@ func (n *nativeMain) closeSettings() {
 
 func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *int) {
 	panes := []nativeSettingsPane{
-		{uikit.SettingsSection{ID: "general", Label: n.text("general_settings", "General")}, func() { n.generalSettings(c, kit) }},
+		{uikit.SettingsSection{ID: "general", Label: n.text("general_settings", "General")}, func() { n.generalSettings(c) }},
 		{uikit.SettingsSection{ID: "clipboard", Label: n.text("clipboard_settings")}, func() { n.clipboardSettings(c, kit) }},
 		{uikit.SettingsSection{ID: "privacy", Label: n.text("privacy_settings")}, func() { n.privacySettings(c, kit) }},
 		{uikit.SettingsSection{ID: "appearance", Label: n.text("appearance_settings")}, func() { n.appearanceSettings(c, kit, surfaceOpacity) }},
 		{uikit.SettingsSection{ID: "applications", Label: n.text("default_apps")}, func() { n.defaultAppsSettings(c) }},
-		{uikit.SettingsSection{ID: "tools", Label: n.text("tools_settings")}, func() { n.toolsSettings(c) }},
 		{uikit.SettingsSection{ID: "data", Label: n.text("data_management")}, func() { n.dataSettings(c) }},
+		{uikit.SettingsSection{ID: "tools", Label: n.text("tools_settings")}, func() { n.toolsSettings(c) }},
 		{uikit.SettingsSection{ID: "about", Label: n.text("about_settings")}, func() { n.aboutSettings(c, kit) }},
 	}
 	if n.settingsSection == "" {
@@ -72,10 +69,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 		for _, pane := range panes {
 			if pane.ID == n.settingsSection {
 				ui.Scroll(c).Grow(1).MinWidth(0).FillHeight().MinHeight(0).TrackScroll(&n.settingsScroll).Children(func() {
-					ui.Column(c).FillWidth().Gap(8).Padding(4, 8, 12).Children(func() {
-						ui.Text(c, pane.Label).FontWeight(600)
-						pane.draw()
-					})
+					kit.SettingsSectionCard(c, pane.Label, nil, pane.draw)
 				})
 				break
 			}
@@ -88,7 +82,7 @@ func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nat
 	if n.settingsOpen == nil {
 		n.settingsOpen = make(map[string]*bool, len(panes))
 		for _, pane := range panes {
-			open := pane.ID == n.settingsSection
+			open := pane.ID == "privacy" && pane.ID == n.settingsSection
 			n.settingsOpen[pane.ID] = &open
 		}
 	}
@@ -97,9 +91,7 @@ func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nat
 			for _, pane := range panes {
 				open := n.settingsOpen[pane.ID]
 				wasOpen := *open
-				kit.SettingsDisclosure(c, pane.Label, open, func() {
-					ui.Column(c).FillWidth().Gap(8).Padding(8, 4).Children(pane.draw)
-				})
+				kit.SettingsSectionCard(c, pane.Label, open, pane.draw)
 				if *open && !wasOpen {
 					n.settingsSection = pane.ID
 				}
@@ -164,12 +156,7 @@ func (n *nativeMain) settingEnabled(key string, initial bool) bool {
 	return initial
 }
 
-func (n *nativeMain) generalSettings(c *ui.Context, kit uikit.Kit) {
-	n.settingSelect(c, kit, "app.language", n.text("language"), string(n.language()), []uikit.SelectOption{
-		{Value: "zh", Label: "简体中文"},
-		{Value: "tw", Label: "繁體中文"},
-		{Value: "en", Label: "English"},
-	})
+func (n *nativeMain) generalSettings(c *ui.Context) {
 	n.loginSettings(c)
 	n.booleanSettings(c,
 		nativeBooleanSetting{"app.silent_start", n.text("silent_start", "Start hidden"), true},
@@ -278,10 +265,13 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpa
 	for _, imported := range n.importedThemes {
 		themes = append(themes, uikit.SelectOption{Value: "custom:" + imported.Id, Label: imported.Name})
 	}
-	n.settingSelect(c, kit, "app.theme", n.text("visual_theme", "Theme"), "mica", themes)
+	n.settingChoices(c, kit, "app.theme", n.text("visual_theme", "Theme"), "mica", themes)
 	n.themeActions(c)
-	n.settingSelect(c, kit, "app.color_mode", n.text("color_mode", "Color mode"), "system", []uikit.SelectOption{
+	n.settingChoices(c, kit, "app.color_mode", n.text("color_mode", "Color mode"), "system", []uikit.SelectOption{
 		{Value: "system", Label: n.text("mode_system")}, {Value: "light", Label: n.text("mode_light")}, {Value: "dark", Label: n.text("mode_dark")},
+	})
+	n.settingChoices(c, kit, "app.language", n.text("language"), string(n.language()), []uikit.SelectOption{
+		{Value: "zh", Label: "简体"}, {Value: "tw", Label: "繁體"}, {Value: "en", Label: "English"},
 	})
 	n.booleanSettings(c,
 		nativeBooleanSetting{"app.compact_mode", n.text("compact_mode", "Compact history"), false},
@@ -296,15 +286,13 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpa
 	}
 }
 
-func (n *nativeMain) settingSelect(c *ui.Context, kit uikit.Kit, key, label, fallback string, options []uikit.SelectOption) {
-	ui.Text(c, label).FontWeight(600)
-	selected := n.preferences[key]
-	if selected == "" {
-		selected = fallback
+func (n *nativeMain) settingChoices(c *ui.Context, kit uikit.Kit, key, label, fallback string, options []uikit.SelectOption) {
+	kit.SettingsLabel(c, label)
+	value := n.preferences[key]
+	if value == "" {
+		value = fallback
 	}
-	if kit.Select(c, &selected, label, options, n.mutating).Changed() {
-		n.saveSetting(key, selected)
-	}
+	kit.SettingsChoices(c, label, value, options, false, n.mutating, func(value string) { n.saveSetting(key, value) })
 }
 
 func (n *nativeMain) toolsSettings(c *ui.Context) {

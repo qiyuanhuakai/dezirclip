@@ -340,7 +340,7 @@ func (k Kit) TagNameField(c *ui.Context, value *string, label string, readOnly b
 	ui.Column(c).FillWidth().Gap(field.RowGap).Margin(0, 0, field.MarginBottom).Children(func() {
 		text(c, label, labelStyle)
 		input = ui.TextInputBase(c, value).Label(label).ReadOnly(readOnly).FillWidth().Height(style.Height)
-		styledText(paint(input, style), style)
+		styledText(paintTextField(input, style), style)
 	})
 	return input
 }

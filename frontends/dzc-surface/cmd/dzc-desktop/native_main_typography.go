@@ -1,10 +1,10 @@
 package main
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
 type nativeFontChoices struct {
@@ -40,8 +40,8 @@ func (n *nativeMain) typographySettings(c *ui.Context) {
 		ui.Text(c, n.text("native_loading_fonts")).TextColor(c.Theme().TextMuted)
 		return
 	}
-	n.fontSetting(c, "app.font_main", n.text("font_main", "Interface font"), n.text("native_reset_ui_font"), n.fontChoices.main)
-	n.fontSetting(c, "app.font_mono", n.text("font_mono", "Monospace font"), n.text("native_reset_mono_font"), n.fontChoices.mono)
+	n.fontSetting(c, "app.font_main", n.text("font_main", "Interface font"), n.fontChoices.main)
+	n.fontSetting(c, "app.font_mono", n.text("font_mono", "Monospace font"), n.fontChoices.mono)
 }
 
 func (n *nativeMain) findFonts() {
@@ -66,20 +66,25 @@ func (n *nativeMain) findFonts() {
 	}()
 }
 
-func (n *nativeMain) fontSetting(c *ui.Context, key, label, resetLabel string, choices []string) {
-	saved := n.preferences[key]
-	selected := saved
-	ui.Text(c, label).FontWeight(600)
-	ui.Row(c).Gap(6).Wrap().AlignItems(ui.Center).Children(func() {
-		field, changed := n.mainKit().Combo(c, &selected, label, n.text("font_default_option"), choices, n.mutating || len(choices) == 0)
-		field.Grow(1).MinWidth(150)
-		if changed {
-			n.saveSetting(key, selected)
+func (n *nativeMain) fontSetting(c *ui.Context, key, label string, choices []string) {
+	kit := n.mainKit()
+	kit.SettingsLabel(c, label)
+	system := n.text("font_default_option")
+	options := append([]string{system}, choices...)
+	selected := n.preferences[key]
+	if selected == "" {
+		selected = system
+	} else if !slices.Contains(options, selected) {
+		options = append(options, selected)
+	}
+	field, changed := kit.Combo(c, &selected, label, system, options, n.mutating)
+	field.FillWidth()
+	if changed {
+		if selected == system {
+			selected = ""
 		}
-		if saved != "" && n.mainKit().Button(c, uikit.ButtonOptions{Label: resetLabel, Disabled: n.mutating}).Clicked() {
-			n.saveSetting(key, "")
-		}
-	})
+		n.saveSetting(key, selected)
+	}
 }
 
 func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, label string, saved int) int {

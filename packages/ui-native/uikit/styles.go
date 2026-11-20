@@ -9,10 +9,11 @@ import (
 )
 
 type Kit struct {
-	Mode          string
-	tokens        *theme.Tokens
-	widgets       map[string]theme.WidgetStyle
-	interfaceFont string
+	surfaceOpacity *int
+	Mode           string
+	tokens         *theme.Tokens
+	widgets        map[string]theme.WidgetStyle
+	interfaceFont  string
 }
 
 // NewKit sets a palette and a catalog of widget styles supplied by the caller.
@@ -47,12 +48,46 @@ func (k Kit) Apply(c *ui.Context) {
 
 func (k Kit) style(widget string) theme.WidgetStyle {
 	if style, ok := k.widgets[widget]; ok {
+		if k.surfaceOpacity != nil && *k.surfaceOpacity != 65 {
+			style.Fill = materialColor(style.Fill, style.FillRange, *k.surfaceOpacity)
+			style.Border = materialColor(style.Border, style.BorderRange, *k.surfaceOpacity)
+		}
 		if k.interfaceFont != "" && style.Font != "monospace" && !strings.HasSuffix(style.Font, ", monospace") {
 			style.Font = k.interfaceFont
 		}
 		return style
 	}
 	return DefaultWidgetStyle(widget, k.palette())
+}
+
+// WithSurfaceOpacity adapts CSS-derived materials to the current window opacity.
+func (k Kit) WithSurfaceOpacity(percent int) Kit {
+	percent = min(100, max(0, percent))
+	k.surfaceOpacity = &percent
+	return k
+}
+
+func materialColor(current [4]uint8, values *theme.ColorRange, percent int) [4]uint8 {
+	if values == nil {
+		return current
+	}
+	from, to := values.Clear, current
+	progress := float32(percent) / 65
+	if percent > 65 {
+		from, to = current, values.Full
+		progress = float32(percent-65) / 35
+	}
+	if from[3] == 0 {
+		from[0], from[1], from[2] = to[0], to[1], to[2]
+	}
+	if to[3] == 0 {
+		to[0], to[1], to[2] = from[0], from[1], from[2]
+	}
+	for i := range current {
+		a, b := float32(from[i]), float32(to[i])
+		current[i] = uint8(a + (b-a)*progress + 0.5)
+	}
+	return current
 }
 
 func styleColor(rgba [4]uint8) ui.Color {
@@ -91,6 +126,13 @@ func paint(element ui.Element, style theme.WidgetStyle) ui.Element {
 		}
 	}
 	return element
+}
+
+func paintTextField(element ui.Element, style theme.WidgetStyle) ui.Element {
+	padding := style.Padding
+	padding[1] = max(8, padding[1])
+	padding[3] = max(8, padding[3])
+	return paint(element, style).Padding(padding[:]...)
 }
 
 func styledText(element ui.Element, style theme.WidgetStyle) ui.Element {

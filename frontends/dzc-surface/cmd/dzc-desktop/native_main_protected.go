@@ -48,6 +48,9 @@ func (n *nativeMain) forgetProtectedRow(key nativeCardKey) {
 }
 
 func (n *nativeMain) clearProtectedRows() bool {
+	if n.tagLibrary != nil {
+		n.tagLibrary.reveal = nil
+	}
 	hadRows := len(n.protectedRows) != 0
 	for key := range n.protectedRows {
 		n.forgetProtectedRow(key)
@@ -79,9 +82,26 @@ func (n *nativeMain) protectedRowAction(row protocol.DesktopEntry, generation ui
 		icon, label = "conceal", n.text("native_hide_sensitive")
 	}
 	return uikit.HeaderAction{
-		Icon: icon, Label: label, Disabled: n.mutating || n.failed,
-		Run: func() { n.toggleProtectedRow(row, generation, key) },
+		Icon: icon, Label: label, Active: icon == "conceal", Disabled: n.mutating || n.failed,
+		Run: func() {
+			if tags := n.tagLibrary; tags != nil && tags.reveal != nil {
+				tags.reveal[key] = n.protectedRows[key] != nil
+			}
+			n.toggleProtectedRow(row, generation, key)
+		},
 	}
+}
+
+func (n *nativeMain) revealTaggedRow(row protocol.DesktopEntry, generation uint64) {
+	tags := n.tagLibrary
+	if tags == nil || tags.reveal == nil || tags.revealGeneration != generation || n.mutating || n.failed {
+		return
+	}
+	key := nativeCardKey{row.Id, row.Timestamp}
+	if tags.reveal[key] || n.protectedRows[key] != nil {
+		return
+	}
+	n.toggleProtectedRow(row, generation, key)
 }
 
 func (n *nativeMain) toggleProtectedRow(row protocol.DesktopEntry, generation uint64, key nativeCardKey) {
@@ -130,6 +150,9 @@ func (n *nativeMain) toggleProtectedRow(row protocol.DesktopEntry, generation ui
 			}
 			if body == nil {
 				n.forgetProtectedRow(key)
+				if tags := n.tagLibrary; tags != nil && tags.reveal != nil && tags.revealGeneration == generation {
+					tags.reveal[key] = true
+				}
 				n.notice = n.text("privacy_action_failed", "Could not reveal the sensitive entry")
 				return
 			}

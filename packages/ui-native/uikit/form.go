@@ -63,14 +63,48 @@ func (k Kit) HotkeyRow(c *ui.Context, label string, controls func()) {
 }
 
 func (k Kit) HotkeyBinding(c *ui.Context, label, value, placeholder string, recording, disabled bool) ui.Element {
+	field := ui.ButtonBase(c).Label(label).FocusRing(true).Disabled(disabled)
+	return k.hotkeyCaps(c, field, value, placeholder, recording)
+}
+
+// HotkeyList displays registered shortcuts as read-only keycaps, with removal
+// available only while the list contains more than one binding.
+func (k Kit) HotkeyList(c *ui.Context, values []string, placeholder, remove string, disabled bool, onRemove func(string)) {
+	ui.Row(c).FillWidth().Wrap().GapX(16).GapY(8).Children(func() {
+		if len(values) == 0 {
+			k.hotkeyCaps(c, ui.Row(c), "", placeholder, false)
+		}
+		for _, value := range values {
+			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+				k.hotkeyCaps(c, ui.Row(c).Wrap(), value, "", false)
+				if len(values) > 1 && onRemove != nil &&
+					k.HotkeyRemoveButton(c, remove+" "+value, disabled).Clicked() {
+					onRemove(value)
+				}
+			})
+		}
+	})
+}
+
+func (k Kit) HotkeyRemoveButton(c *ui.Context, label string, disabled bool) ui.Element {
+	style := k.style("hotkeyRemove")
+	button := ui.ButtonBase(c).Size(style.Width, style.Height).Label(label).Tooltip(label).Center().Disabled(disabled)
+	paint(button, k.interactive(c, button, style, false)).Children(func() {
+		ui.Icon(c, shortcutRemoveIcon).Size(14, 14).TextColor(styleColor(style.Text)).PassThrough()
+	})
+	return button
+}
+
+var shortcutRemoveIcon = icon("Minus")
+
+func (k Kit) hotkeyCaps(c *ui.Context, field ui.Element, value, placeholder string, recording bool) ui.Element {
 	group := k.style("hotkeyGroup")
 	cap := k.style("hotkeyCap")
 	if recording {
 		cap = k.style("hotkeyCapRecording")
 		value = ""
 	}
-	field := ui.ButtonBase(c).Label(label).Gap(group.ColumnGap).AlignItems(ui.Center).
-		FocusRing(true).Disabled(disabled)
+	field.Gap(group.ColumnGap).AlignItems(ui.Center)
 	paint(field, group).Margin(group.Margin[:]...).Children(func() {
 		for _, chord := range strings.Split(value, "+") {
 			width := cap.Size * 2.2
@@ -115,22 +149,25 @@ func (k Kit) Checkbox(c *ui.Context, checked *bool, label string) ui.Element {
 }
 
 func (k Kit) TextField(c *ui.Context, value *string, label string) ui.Element {
-	return k.styleField(c, ui.TextInputBase(c, value).Label(label))
+	return k.styleField(c, ui.TextInputBase(c, value).Label(label), "textField")
+}
+
+func (k Kit) NumberField(c *ui.Context, value *string, label string) ui.Element {
+	return k.styleField(c, ui.TextInputBase(c, value).Label(label), "numberField").TextAlign(ui.End)
 }
 
 func (k Kit) TextArea(c *ui.Context, value *string, label string) ui.Element {
-	return k.styleField(c, ui.TextAreaBase(c, value).Label(label))
+	return k.styleField(c, ui.TextAreaBase(c, value).Label(label), "textField")
 }
 
-func (k Kit) styleField(c *ui.Context, field ui.Element) ui.Element {
-	style := k.style("select")
+func (k Kit) styleField(c *ui.Context, field ui.Element, widget string) ui.Element {
 	if field.Focused() {
-		style = k.style("selectFocus")
-	} else if field.Hovered() {
-		style = k.style("selectHover")
+		widget += "Focus"
+	} else if widget == "select" && field.Hovered() {
+		widget += "Hover"
 	}
-	style = k.animatePaint(field, style)
-	return styledText(paint(field.Height(style.Height), style), style).FocusRing(true)
+	style := k.animatePaint(field, k.style(widget))
+	return styledText(paintTextField(field.Height(style.Height), style), style).FocusRing(true)
 }
 
 func (k Kit) Combo(c *ui.Context, value *string, label, placeholder string, choices []string, disabled bool) (ui.Element, bool) {
@@ -143,24 +180,33 @@ func (k Kit) Combo(c *ui.Context, value *string, label, placeholder string, choi
 	changed := false
 	box.Children(func() {
 		parts := ui.ComboboxBase(c, &edit.text)
-		field := k.styleField(c, parts.Input.Fill().Label(label).Placeholder(placeholder).Disabled(disabled))
+		indicator := k.style("selectIndicator")
+		field := k.styleField(c, parts.Input.Fill().Label(label).Placeholder(placeholder).Disabled(disabled), "select").
+			PaddingEnd(indicator.Width + 4)
+		paint(ui.Row(c).Absolute().Right(3).Top(0).Bottom(0).Width(indicator.Width).Center().PassThrough(), indicator).
+			Children(func() {
+				ui.Icon(c, chevronDown).Size(16, 16).TextColor(styleColor(indicator.Text)).PassThrough()
+			})
 		parts.Popup(func(panel ui.Element) {
-			paint(panel, k.style("selectMenu"))
+			menu, list := k.style("selectMenu"), k.style("selectMenuList")
+			paint(panel.Translate(0, menu.MarginTop), menu)
 			query := strings.ToLower(strings.TrimSpace(edit.text))
 			ui.Scroll(c).FillWidth().MaxHeight(215).Children(func() {
-				for _, choice := range choices {
-					if parts.Filtering() && !strings.Contains(strings.ToLower(choice), query) {
-						continue
+				ui.Column(c).FillWidth().Padding(list.Padding[:]...).Children(func() {
+					for _, choice := range choices {
+						if parts.Filtering() && !strings.Contains(strings.ToLower(choice), query) {
+							continue
+						}
+						item := parts.Item(choice).Label(choice)
+						style := k.style("selectOption")
+						if item.Highlighted() || choice == *value {
+							style = k.style("selectSelected")
+						}
+						style = k.interactive(c, item, style, item.Highlighted() || choice == *value)
+						paint(item.FillWidth().Height(style.Height), style)
+						item.Children(func() { text(c, choice, style).SingleLine().PassThrough() })
 					}
-					item := parts.Item(choice).Label(choice)
-					style := k.style("selectOption")
-					if item.Highlighted() || choice == *value {
-						style = k.style("selectSelected")
-					}
-					style = k.interactive(c, item, style, item.Highlighted() || choice == *value)
-					paint(item.FillWidth().Height(style.Height), style)
-					item.Children(func() { text(c, choice, style).SingleLine().PassThrough() })
-				}
+				})
 			})
 		})
 		if choice, ok := parts.Chosen(); ok && !disabled {

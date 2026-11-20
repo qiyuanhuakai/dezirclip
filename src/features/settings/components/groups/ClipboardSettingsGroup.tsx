@@ -9,6 +9,7 @@ import ThemedSelect from "../ThemedSelect";
 import { resolveRichTextSnapshotCacheLimit } from "../../../../shared/lib/richTextSnapshotCache";
 import { setRichTextSnapshotCacheLimit as applySnapshotCacheLimit } from "../../../../shared/lib/richTextSnapshot";
 import HotkeyListEditor from "../HotkeyListEditor";
+import { NumberField } from "@deziro/ui-react/components/TextField";
 
 interface LabelWithHintProps {
     label: string;
@@ -242,11 +243,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         label={props.t('persistent_limit')}
                                         hintKey="persistent_limit"
                                     />
-                                    <input
-                                        className="numeric-input"
-                                        type="text"
-                                        inputMode="numeric"
-                                        pattern="[0-9]*"
+                                    <NumberField
                                         aria-label={props.t('persistent_limit')}
                                         disabled={limitSaving}
                                         value={persistentLimitDraft}
@@ -322,11 +319,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 label={props.t('rich_text_snapshot_cache_limit')}
                                 hintKey="rich_text_snapshot_cache_limit"
                             />
-                            <input
-                                className="numeric-input"
-                                type="text"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
+                            <NumberField
                                 value={snapshotCacheLimitDraft}
                                 aria-label={props.t('rich_text_snapshot_cache_limit')}
                                 onFocus={(e) => e.target.select()}

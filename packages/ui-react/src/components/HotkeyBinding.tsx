@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { X } from "lucide-react";
+import { HotkeyRemoveButton } from "./RemoveButton";
 
 export interface HotkeyBindingProps {
   label: string;
@@ -20,6 +20,30 @@ export interface HotkeyBindingProps {
   onBlur: ComponentProps<"div">["onBlur"];
 }
 
+export interface HotkeyListProps {
+  values: readonly string[];
+  emptyLabel: string;
+  removeLabel: string;
+  disabled?: boolean;
+  canRemove?: (value: string) => boolean;
+  onRemove?: (value: string) => void;
+}
+
+export function HotkeyList({ values, emptyLabel, removeLabel, disabled, canRemove, onRemove }: HotkeyListProps) {
+  return <div className="hotkey-list">
+    {values.map((value, index) => <div key={value + index} className="hotkey-binding">
+      <div className="key-group hotkey-binding-value">
+        {value.split("+").map((key, position) => <div key={key + position} className="key-cap">{key}</div>)}
+      </div>
+      {values.length > 1 && onRemove && (!canRemove || canRemove(value)) &&
+        <HotkeyRemoveButton disabled={disabled} onClick={() => onRemove(value)} label={removeLabel + " " + value} />}
+    </div>)}
+    {values.length === 0 && <div className="key-group hotkey-binding-value">
+      <div className="key-cap key-cap--placeholder key-cap--unset">{emptyLabel}</div>
+    </div>}
+  </div>;
+}
+
 export function HotkeyBinding(props: HotkeyBindingProps) {
   const active = props.recording && !props.disabled;
   const keys = props.value ? props.value.split("+") : [];
@@ -35,11 +59,8 @@ export function HotkeyBinding(props: HotkeyBindingProps) {
           </div>
           : keys.map((key, index) => <div key={`${key}-${index}`} className="key-cap">{key}</div>)}
       </div>
-      {props.onClear && props.value && !props.recording && <button type="button"
-        className="btn-icon btn-icon-scalable btn-icon-size-hotkey" disabled={props.disabled}
-        onClick={props.onClear} aria-label={props.clearLabel} title={props.clearTitle}>
-        <X size={14} strokeWidth={2.6} />
-      </button>}
+      {props.onClear && props.value && !props.recording && <HotkeyRemoveButton disabled={props.disabled}
+        onClick={props.onClear} label={props.clearLabel ?? props.label} title={props.clearTitle} />}
     </div>
     {props.error && <p className="hotkey-recording-error" role="alert">{props.error}</p>}
   </div>;

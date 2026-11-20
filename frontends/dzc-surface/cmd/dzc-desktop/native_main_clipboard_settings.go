@@ -233,7 +233,7 @@ func (n *nativeMain) numberSetting(c *ui.Context, key, label string, fallback, m
 		draft.value, draft.saved = saved, saved
 	}
 	row.Children(func() {
-		input := n.mainKit().TextField(c, &draft.value, label).Width(112).ReadOnly(n.mutating)
+		input := n.mainKit().NumberField(c, &draft.value, label).Width(112).ReadOnly(n.mutating)
 		limit, valid := nativeBoundedNumber(draft.value, minimum, maximum)
 		save := n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: n.mutating || !valid || draft.value == saved})
 		if save.Clicked() || input.Submitted() && valid && !n.mutating {

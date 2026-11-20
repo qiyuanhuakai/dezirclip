@@ -157,7 +157,7 @@
 }
 
 /* The right side wrapper (Buttons) */
-.history-item.compact .item-meta>div:last-child {
+.history-item.compact .history-card-meta-right {
     position: absolute;
     top: -8px;
     right: 8px;
@@ -170,7 +170,7 @@
 }
 
 /* Fix for first item buttons being clipped */
-.first-virtual-item .history-item.compact .item-meta>div:last-child {
+.first-virtual-item .history-item.compact .history-card-meta-right {
     top: -4px !important;
 }
 

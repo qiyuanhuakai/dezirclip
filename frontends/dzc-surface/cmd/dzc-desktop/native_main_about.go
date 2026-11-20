@@ -41,6 +41,10 @@ type nativeUpdateResult struct {
 	installTarget, installSupport string
 }
 
+func (u *nativeUpdater) pending() bool {
+	return u.timer != nil || u.cancel != nil
+}
+
 var (
 	preReleaseVersion = regexp.MustCompile(`^\d+\.\d+\.\d+-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*(?:\+[0-9A-Za-z.-]+)?$`)
 	errUpdateSchedule = errors.New("native_update_schedule_unavailable")
@@ -74,6 +78,7 @@ func (n *nativeMain) configureUpdater(saved string, automatic bool) {
 		u.timer = time.AfterFunc(15*time.Second, func() {
 			n.window.Update(func() {
 				if !n.window.IsDestroyed() && n.updater.generation == generation {
+					u.timer = nil
 					n.checkForUpdates(true)
 				}
 			})
@@ -278,14 +283,13 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	if kit.SettingsToggle(c, &auto, n.text("updater_auto_check")).Disabled(disabled).Changed() {
 		n.saveSetting("app.update_auto_check", strconv.FormatBool(auto))
 	}
-	channel, channelLabel := u.channel, n.text("updater_channel")
-	ui.Text(c, channelLabel).Wrap()
-	if kit.Select(c, &channel, channelLabel, []uikit.SelectOption{
-		{Value: "stable", Label: n.text("updater_channel_stable_name")},
-		{Value: "preview", Label: n.text("updater_channel_preview_name")},
-	}, disabled).Changed() {
-		n.saveSetting("app.update_channel", channel)
-	}
+	channelLabel := n.text("updater_channel")
+	kit.HotkeyRow(c, channelLabel, func() {
+		kit.SettingsChoices(c, channelLabel, u.channel, []uikit.SelectOption{
+			{Value: "stable", Label: n.text("updater_channel_stable_name")},
+			{Value: "preview", Label: n.text("updater_channel_preview_name")},
+		}, true, disabled, func(channel string) { n.saveSetting("app.update_channel", channel) })
+	})
 	current := buildinfo.Version
 	if u.result.CurrentVersion != "" {
 		current = u.result.CurrentVersion

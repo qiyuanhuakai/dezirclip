@@ -72,14 +72,23 @@ func (s *DesktopShell) hideMain(w *mygo.Window) {
 			if generation != s.idle.generation || w.IsDestroyed() || w.IsVisible() {
 				return
 			}
-			s.idle.timer = time.AfterFunc(time.Until(started.Add(time.Duration(seconds)*time.Second)), func() {
-				mygo.RunOnMain(func() {
-					if generation == s.idle.generation && !w.IsDestroyed() && !w.IsVisible() {
-						s.diagnostics.record("idle-destroy", 0, nil)
-						w.Close()
-					}
-				})
-			})
+			s.scheduleIdleClose(w, generation, time.Until(started.Add(time.Duration(seconds)*time.Second)))
 		})
 	}()
+}
+
+func (s *DesktopShell) scheduleIdleClose(w *mygo.Window, generation uint64, delay time.Duration) {
+	s.idle.timer = time.AfterFunc(delay, func() {
+		mygo.RunOnMain(func() {
+			if generation != s.idle.generation || w.IsDestroyed() || w.IsVisible() {
+				return
+			}
+			if s.updatePending != nil && s.updatePending() {
+				s.scheduleIdleClose(w, generation, time.Second)
+				return
+			}
+			s.diagnostics.record("idle-destroy", 0, nil)
+			w.Close()
+		})
+	})
 }

@@ -12,6 +12,19 @@
 .showcase section {
   min-width: 0;
 }
+.showcase-fields {
+  display: grid;
+  gap: 8px;
+  max-width: 330px;
+  font-size: 14px;
+}
+.showcase-fields label {
+  display: grid;
+  gap: 3px;
+}
+.showcase-fields .numeric-input {
+  width: 112px;
+}
 .showcase-search-history {
   position: relative;
   width: 320px;

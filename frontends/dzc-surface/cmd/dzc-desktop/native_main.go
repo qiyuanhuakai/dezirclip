@@ -67,7 +67,6 @@ type nativeMain struct {
 	privacyKindsOpen      bool
 	privacyRules          nativePrivacyRules
 	privacyDialog         *nativePrivacyDialog
-	privacyEditor         *nativePrivacyEditor
 	shortcut              *nativeShortcutForm
 	queueCount            nativeQueueCount
 	applications          nativeApplicationCatalog
@@ -132,7 +131,6 @@ func (n *nativeMain) stopSession() {
 	n.closePrivacyDialog()
 	n.cancelShortcut()
 	n.queueCount = nativeQueueCount{}
-	n.privacyEditor = nil
 	n.privacyRules = nativePrivacyRules{}
 	n.tagLibrary = nil
 	n.tagCatalog = nativeTagCatalog{}

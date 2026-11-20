@@ -2,7 +2,8 @@ import { displayPath } from "../../utils/displayPath";
 import { useEffect, useRef, useState } from "react";
 import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
-import { ChevronDown, ChevronRight, Download, Upload } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { SettingsDataPath, SettingsDataAction } from "@deziro/ui-react/components/SettingsData";
 
 import { invokePrivacyBound, subscribePrivacyInvalidation } from "../../../../shared/lib/privacySession";
 
@@ -339,12 +340,8 @@ const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGro
             </div>
             {!collapsed && (
                 <div className="group-content">
-                    <div className="setting-item column no-border">
-                        <div className="data-path-header">
-                            <span className="item-label data-path-label">{t("data_path")}</span>
-                            <div className="data-path-actions">
-                                <button
-                                    className="btn-icon btn-icon-data-action"
+                    <SettingsDataPath label={t("data_path")} path={displayPath(dataPath)}>
+                                <SettingsDataAction
                                     onClick={() => {
                                         open({
                                             directory: true,
@@ -386,36 +383,26 @@ const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGro
                                     }}
                                 >
                                     {t("change_app")}
-                                </button>
-                                <button
-                                    className="btn-icon btn-icon-data-action"
+                                </SettingsDataAction>
+                                <SettingsDataAction
                                     onClick={() => invoke("open_data_folder").catch(console.error)}
                                     title={t("open_folder") || "Open"}
                                 >
                                     {t("open_folder")}
-                                </button>
-                            </div>
-                        </div>
-                        <div className="data-panel" title={displayPath(dataPath)}>
-                            {displayPath(dataPath)}
-                        </div>
-                    </div>
+                                </SettingsDataAction>
+                    </SettingsDataPath>
 
                     <div className="data-actions-row">
-                        <button
-                            className="btn-icon btn-icon-data-action"
+                        <SettingsDataAction icon="export"
                             onClick={() => setShowExportModal(true)}
                         >
-                            <Download size={14} />
-                            <span>{t("data.export.title")}</span>
-                        </button>
-                        <button
-                            className="btn-icon btn-icon-data-action"
+                            {t("data.export.title")}
+                        </SettingsDataAction>
+                        <SettingsDataAction icon="import"
                             onClick={() => setShowImportModal(true)}
                         >
-                            <Upload size={14} />
-                            <span>{t("data.import.title")}</span>
-                        </button>
+                            {t("data.import.title")}
+                        </SettingsDataAction>
                     </div>
                 </div>
             )}

@@ -7,7 +7,6 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
 type nativeProfileSettings struct {
@@ -23,18 +22,16 @@ func (n *nativeMain) profileSettings(c *ui.Context) {
 	if ready && profile.directory == "" && !profile.reading && !profile.failed {
 		n.loadProfileSettings()
 	}
-	ui.Text(c, n.text("data_path")).FontWeight(600)
-	if profile.directory != "" {
-		path := profileDisplayPath(profile.directory)
-		ui.Text(c, path).Tooltip(path).Wrap().MaxLines(3)
-	} else if profile.reading {
-		ui.Text(c, n.text("common_loading")).TextColor(c.Theme().TextMuted)
+	path := profileDisplayPath(profile.directory)
+	if profile.reading {
+		path = n.text("common_loading")
 	} else if profile.failed {
-		ui.Text(c, n.text("native_profile_read_failed")).TextColor(c.Theme().TextMuted).Wrap()
+		path = n.text("native_profile_read_failed")
 	}
-	ui.Row(c).Gap(6).Wrap().Children(func() {
+	kit := n.mainKit()
+	kit.SettingsDataPath(c, n.text("data_path"), path, func() {
 		if profile.restartPending {
-			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: profile.moving}).Clicked() {
+			if kit.SettingsDataAction(c, n.text("common_retry"), "", profile.moving).Clicked() {
 				profile.moving = true
 				n.notice = n.text("processing")
 				window, language := n.window, n.language()
@@ -43,15 +40,15 @@ func (n *nativeMain) profileSettings(c *ui.Context) {
 			return
 		}
 		if profile.failed {
-			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: !ready || n.mutating}).Clicked() {
+			if kit.SettingsDataAction(c, n.text("common_retry"), "", !ready || n.mutating).Clicked() {
 				n.loadProfileSettings()
 			}
 		}
 		disabled := !ready || n.mutating || profile.directory == ""
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("change_app"), Disabled: disabled || n.private}).Clicked() {
+		if kit.SettingsDataAction(c, n.text("change_app"), "", disabled || n.private).Clicked() {
 			n.chooseProfileDirectory()
 		}
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("open_folder"), Disabled: disabled}).Clicked() {
+		if kit.SettingsDataAction(c, n.text("open_folder"), "", disabled).Clicked() {
 			n.openProfileDirectory()
 		}
 	})

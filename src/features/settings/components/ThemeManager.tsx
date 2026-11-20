@@ -1,4 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { SettingsChoices } from "@deziro/ui-react/components/SettingsChoices";
+import { SettingsRemoveButton } from "@deziro/ui-react/components/RemoveButton";
 import { invoke } from "../../../shared/lib/desktopInvoke";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { getCustomTheme, getCustomThemes, replaceCustomThemes, subscribeCustomThemes } from "../../../shared/lib/themeCatalog";
@@ -66,9 +68,8 @@ const ThemeManager = ({ t, theme, setTheme, saveAppSetting }: Props) => {
         })}>{t("theme_import")}</button>
       </div>
     </div>
-    <div className="theme-choices" role="group" aria-label={t("theme_builtin")}>
-      {BUILTIN_THEMES.map(id => <button type="button" className={`btn-icon ${theme === id ? "active" : ""}`} style={{ width: "100%", height: "36px", fontSize: "12px", fontWeight: "bold" }} key={id} aria-pressed={theme === id} disabled={busy} onClick={() => choose(id)}>{themeLabel(id, t)}</button>)}
-    </div>
+    <SettingsChoices className="theme-choices" label={t("theme_builtin")} value={theme} disabled={busy}
+      options={BUILTIN_THEMES.map(value => ({ value, label: themeLabel(value, t) }))} onChange={choose} />
     {themes.length > 0 && <div className="theme-custom-list" role="group" aria-label={t("theme_custom")}>
       {themes.map(item => <button type="button" className={`btn-icon theme-custom-choice ${theme === `custom:${item.id}` ? "active" : ""}`} key={item.id} aria-pressed={theme === `custom:${item.id}`} disabled={busy} onClick={() => choose(`custom:${item.id}`)}>
         {item.name}
@@ -81,12 +82,12 @@ const ThemeManager = ({ t, theme, setTheme, saveAppSetting }: Props) => {
         await invoke("export_custom_theme", { id: selected.id, path });
         setNotice(t("theme_exported"));
       })}>{t("theme_export")}</button>
-      <button type="button" className="btn-icon settings-action" disabled={busy} onClick={() => void run(async () => {
+      <SettingsRemoveButton label={t("theme_delete")} disabled={busy} onClick={() => void run(async () => {
         if (!await ask(t("theme_delete_confirm"), { title: selected.name, kind: "warning" })) return;
         await invoke("delete_custom_theme", { id: selected.id });
         await refreshThemes();
         if (theme === `custom:${selected.id}`) choose("mica");
-      })}>{t("theme_delete")}</button>
+      })} />
     </div>}
     {themes.length >= MAX_CUSTOM_THEMES && <p className="theme-manager-hint">{t("theme_limit_reached")}</p>}
 

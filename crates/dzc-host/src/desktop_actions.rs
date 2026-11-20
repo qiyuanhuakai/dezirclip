@@ -319,11 +319,21 @@ impl Host {
             else {self.history.delete(request.id,Some(&self.directory)).map_err(|_|WireErrorCode::Unavailable)?;}
             self.publish(EventKind::EntryDeleted,EventData{entry_id:Some(request.id),status:None})?;
         } else if request.id>0 && request.paste {
-            self.history.increment_use_count(request.id).map_err(|_|WireErrorCode::Unavailable)?;
-            let entry=self.history.query(&dzc_core::api::HistoryQuery {id:Some(request.id),metadata:true,limit:1,..Default::default()}).map_err(|_|WireErrorCode::Unavailable)?;
-            if request.move_to_top.unwrap_or(true) && entry.first().is_some_and(|entry|!entry.is_pinned) {self.history.touch_entry(request.id,crate::router::now_ms()?).map_err(|_|WireErrorCode::Unavailable)?;}
+            self.record_desktop_paste(request.id, request.move_to_top.unwrap_or(true))?;
         }
         encoded(OperationResult{performed:true})
+    }
+    fn record_desktop_paste(&self, id: i64, move_to_top: bool) -> Result<(), WireErrorCode> {
+        self.history.increment_use_count(id).map_err(|_| WireErrorCode::Unavailable)?;
+        if move_to_top {
+            let entry = self.history.query(&dzc_core::api::HistoryQuery {
+                id: Some(id), metadata: true, limit: 1, ..Default::default()
+            }).map_err(|_| WireErrorCode::Unavailable)?;
+            if entry.first().is_some_and(|entry| !entry.is_pinned) {
+                self.history.touch_entry(id, crate::router::now_ms()?).map_err(|_| WireErrorCode::Unavailable)?;
+            }
+        }
+        self.publish(EventKind::EntryUpdated, EventData { entry_id: Some(id), status: None })
     }
     pub(crate) fn desktop_mutate(&self,session:&Session,parameters:Value)->Result<Value,WireErrorCode> {
         let request:DesktopMutationParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
@@ -592,6 +602,29 @@ mod queue_completion_tests {
             assert_eq!(rows[0].use_count,if !missing && !change {1}else{0});
         }
     }
+    #[test]
+    fn desktop_paste_notifies_observers_and_promotes_only_when_requested() {
+        let host = crate::router::tests::synthetic_host();
+        let entry = serde_json::from_value(serde_json::json!({
+            "id": 0, "content_type": "text", "content": "first synthetic entry",
+            "preview": "example", "source_app": "Synthetic", "timestamp": 1, "is_pinned": false
+        })).unwrap();
+        let id = host.history.save(&entry, None).unwrap();
+        let owner = session(&host, ClientRole::Desktop);
+        let cursor = host.snapshot().unwrap().event_sequence;
+        let query = dzc_core::api::HistoryQuery { id: Some(id), metadata: true, limit: 1, ..Default::default() };
+        host.record_desktop_paste(id, false).unwrap();
+        let after = &host.history.query(&query).unwrap()[0];
+        assert_eq!((after.timestamp, after.use_count), (1, 1));
+        host.record_desktop_paste(id, true).unwrap();
+        let after = &host.history.query(&query).unwrap()[0];
+        assert!(after.timestamp > 1);
+        assert_eq!(after.use_count, 2);
+        let events: EventsResult = serde_json::from_value(call(&host, &owner, Method::EventsSubscribe,
+            serde_json::json!({"after_sequence": cursor, "wait_ms": 0})).result.unwrap()).unwrap();
+        assert_eq!(events.events.iter().filter(|event| event.event == EventKind::EntryUpdated).count(), 2);
+    }
+
     #[test]
     fn host_copy_only_does_not_paste_delete_or_count_and_completion_only_updates_metadata() {
         let original=crate::router::tests::synthetic_host();

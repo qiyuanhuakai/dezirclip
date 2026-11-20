@@ -3,7 +3,7 @@ import { SettingsSlider } from "@deziro/ui-react/components/SettingsSlider";
 import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { SettingsSectionCard } from "@deziro/ui-react/components/SettingsSectionCard";
 import WaylandCapabilitiesSection from "./WaylandCapabilitiesSection";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import KeyboardPreviewSetting from "./KeyboardPreviewSetting";
@@ -155,13 +155,7 @@ const GeneralSettingsGroup = ({
     };
 
     return (
-    <div className={`settings-group ${collapsed ? 'collapsed' : ''}`}>
-        <div className="group-header" onClick={onToggle}>
-            <h3 style={{ margin: 0 }}>{t('general_settings')}</h3>
-            {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-        </div>
-        {!collapsed && (
-            <div className="group-content">
+    <SettingsSectionCard title={t('general_settings')} collapsed={collapsed} onToggle={onToggle}>
                 <WaylandCapabilitiesSection t={t} />
                 <div className="setting-item">
                     <div className="item-label-group">
@@ -486,9 +480,7 @@ const GeneralSettingsGroup = ({
                         {t('restart') || "Restart"}
                     </button>
                 </div>
-            </div>
-        )}
-    </div>
+    </SettingsSectionCard>
     );
 };
 

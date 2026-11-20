@@ -1,4 +1,5 @@
 import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
+import { SettingsChoices } from "@deziro/ui-react/components/SettingsChoices";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { SettingHelp, SettingsLabel } from "../SettingHelp";
 import SettingsDisclosure from "../SettingsDisclosure";
@@ -51,15 +52,9 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
             <div className="setting-item update-channel-row">
                 <SettingsLabel label={t("updater_channel")} hintKey="updater_channel"
                     hint={t(state.channel === "stable" ? "updater_stable_hint" : "updater_preview_hint")} />
-                <div className="segmented-control" role="group" aria-label={t("updater_channel")}>
-                    {(["stable", "preview"] as const).map(channel => (
-                        <button type="button" key={channel} disabled={disabled} aria-pressed={state.channel === channel}
-                            className={`segment-btn${state.channel === channel ? " active" : ""}`}
-                            onClick={() => { setConfirmationId(null); void saveUpdatePreference("channel", channel); }}>
-                            {channel === "stable" ? "Stable" : "Preview"}
-                        </button>
-                    ))}
-                </div>
+                <SettingsChoices segmented label={t("updater_channel")} value={state.channel} disabled={disabled}
+                    options={[{ value: "stable", label: "Stable" }, { value: "preview", label: "Preview" }]}
+                    onChange={channel => { setConfirmationId(null); void saveUpdatePreference("channel", channel); }} />
             </div>
             <div className="update-version-row">
                 <span>{t("updater_current_version")}</span><strong>{state.currentVersion ? `v${state.currentVersion}` : "—"}</strong>

@@ -29,7 +29,7 @@ func (n *nativeMain) themeActions(c *ui.Context) {
 			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("theme_export"), Disabled: disabled}).Clicked() {
 				n.changeThemeFile(exportNativeTheme, *selected)
 			}
-			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("theme_delete", "Remove theme"), Disabled: disabled}).Clicked() {
+			if n.mainKit().SettingsRemoveButton(c, n.text("theme_delete", "Remove theme"), false, disabled).Clicked() {
 				n.changeThemeFile(removeNativeTheme, *selected)
 			}
 		}

@@ -1,4 +1,4 @@
-import type { ReactNode, Ref } from "react";
+import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
 
 export interface HistoryCardProps extends HTMLMotionProps<"div"> {
@@ -17,6 +17,19 @@ export function HistoryCard({ selected, compact, pinned, disableLayout, classNam
     exit={disableLayout ? undefined : { opacity: 0, scale: 0.95 }} transition={disableLayout ? undefined : { duration: 0.1 }} />;
 }
 
+export function HistoryCardActions({ children }: { children?: ReactNode }) {
+  return <div className="item-actions">{children}</div>;
+}
+
+export interface HistoryCardActionProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  active?: boolean;
+}
+
+export function HistoryCardAction({ active, className = "", ...props }: HistoryCardActionProps) {
+  return <button type="button" aria-pressed={active}
+    className={["btn-icon", active && "active", className].filter(Boolean).join(" ")} {...props} />;
+}
+
 export interface HistoryCardMetaProps {
   source: string;
   sourceIcon?: ReactNode;
@@ -32,8 +45,8 @@ export function HistoryCardMeta({ source, sourceIcon, leading, actions, status, 
       {leading}
       <div className="app-info">{sourceIcon}<span>{source}</span></div>
     </div>
-    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-      <div className="item-actions">{actions}</div>
+    <div className="history-card-meta-right" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <HistoryCardActions>{actions}</HistoryCardActions>
       <div className="app-info" style={{ opacity: 0.6, fontSize: "10px", display: "flex", gap: "6px", alignItems: "center" }}>
         {status}<span>{time}</span>
       </div>

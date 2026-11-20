@@ -13,6 +13,7 @@ type HistoryCardOptions struct {
 	Summary  string
 	Selected bool
 	Compact  bool
+	First    bool
 	Pinned   bool
 	Actions  []HeaderAction
 	Tags     []HistoryTag
@@ -102,6 +103,9 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 				options.Body()
 			} else {
 				content := k.style("historyContent")
+				if options.Compact {
+					content = k.style("historyContentCompact")
+				}
 				if options.TextSize > 0 {
 					content.Size = options.TextSize
 				}
@@ -122,13 +126,6 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 			if len(options.Tags) > 0 {
 				k.historyTags(c, options.Tags, options.TagSize)
 			}
-			if options.Compact && len(options.Actions) > 0 && (card.Hovered() || card.FocusVisible() || options.Selected) {
-				ui.Row(c).Absolute().Right(0).Top(0).Gap(4).Children(func() {
-					for _, action := range options.Actions {
-						k.historyAction(c, action)
-					}
-				})
-			}
 		}
 		if options.Leading != nil || options.Compact && (options.Reorder != nil || options.Pinned) {
 			ui.Row(c).Grow(1).Gap(4).AlignItems(ui.Center).Children(func() {
@@ -142,7 +139,10 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 				ui.Column(c).Grow(1).MinWidth(0).Children(contentColumn)
 			})
 		} else {
-			ui.Column(c).Grow(1).Children(contentColumn)
+			ui.Column(c).Grow(1).MinWidth(0).Children(contentColumn)
+		}
+		if options.Compact && len(options.Actions) > 0 {
+			k.compactHistoryActions(c, card, options)
 		}
 	})
 	if options.Activate != nil && card.Clicked() {
@@ -177,35 +177,10 @@ func (k Kit) HistoryCardMeta(c *ui.Context, options HistoryCardMetaOptions) {
 			text(c, options.Source, source).SingleLine()
 		})
 		if len(options.Actions) > 0 {
-			actions := k.style("historyActions")
-			paint(ui.Row(c).Gap(actions.ColumnGap).AlignItems(ui.Center), actions).Children(func() {
-				for _, action := range options.Actions {
-					k.historyAction(c, action)
-				}
-			})
+			k.HistoryCardActions(c, options.Actions, false)
 		}
 		text(c, options.Time, k.style("historyTime")).Opacity(0.6)
 	})
-}
-
-func (k Kit) historyAction(c *ui.Context, action HeaderAction) {
-	style := k.style("historyAction")
-	if action.Active {
-		style.Fill, style.Border = rgba(c.Theme().Selection), rgba(c.Theme().Accent)
-	}
-	button := ui.ButtonBase(c).Label(action.Label).Tooltip(action.Label).Size(style.Width, style.Height).Disabled(action.Disabled)
-	style = k.interactive(c, button, style, action.Active)
-	paint(button, style)
-	button.Children(func() {
-		if image := headerIcons[action.Icon]; image != nil {
-			ui.Icon(c, image).Size(12, 12).TextColor(styleColor(style.Text))
-		} else {
-			text(c, action.Label, style)
-		}
-	})
-	if action.Run != nil && button.Clicked() {
-		action.Run()
-	}
 }
 
 func (k Kit) historyReorderGrip(c *ui.Context, drag *HistoryReorder, source theme.WidgetStyle, height float32) {

@@ -27,7 +27,7 @@ type nativeShortcutForm struct {
 
 func (n *nativeMain) shortcutAvailable() bool {
 	return n.session != nil && n.history.state.ServiceInstanceId != "" && !n.mutating &&
-		n.shortcut == nil && n.privacyDialog == nil && n.privacyEditor == nil && n.backup == nil
+		n.shortcut == nil && n.privacyDialog == nil && n.backup == nil
 }
 
 func (n *nativeMain) shortcutValue(key, fallback string) string {
@@ -39,22 +39,18 @@ func (n *nativeMain) shortcutValue(key, fallback string) string {
 
 func (n *nativeMain) clipboardShortcuts(c *ui.Context) {
 	label := n.text("global_hotkey")
-	ui.Text(c, label).FontWeight(600)
-	for _, chord := range nativeMainChords(n.shortcutValue(mainShortcutSetting, "")) {
-		ui.Row(c).FillWidth().Gap(6).Wrap().AlignItems(ui.Center).Children(func() {
-			ui.Text(c, chord).Grow(1)
-			if n.mainKit().Button(c, uikit.ButtonOptions{
-				Label: n.text("delete") + " " + chord, Disabled: !n.shortcutAvailable(),
-			}).Clicked() {
-				bindings := nativeMainChords(n.shortcutValue(mainShortcutSetting, ""))
-				bindings = slices.DeleteFunc(bindings, func(value string) bool { return value == chord })
-				n.saveNativeShortcut(mainShortcutSetting, strings.Join(bindings, "\n"))
-			}
-		})
-	}
-	if n.mainKit().Button(c, uikit.ButtonOptions{Label: "+ " + label, Disabled: !n.shortcutAvailable()}).Clicked() {
-		n.openShortcut(mainShortcutSetting, label)
-	}
+	kit := n.mainKit()
+	bindings := nativeMainChords(n.shortcutValue(mainShortcutSetting, ""))
+	disabled := !n.shortcutAvailable()
+	kit.HotkeyRow(c, label, func() {
+		if kit.HotkeyBinding(c, "+ "+label, "", "+ "+label, false, disabled).Clicked() {
+			n.openShortcut(mainShortcutSetting, label)
+		}
+	})
+	kit.HotkeyList(c, bindings, n.text("not_set"), n.text("delete"), disabled, func(chord string) {
+		updated := slices.DeleteFunc(slices.Clone(bindings), func(value string) bool { return value == chord })
+		n.saveNativeShortcut(mainShortcutSetting, strings.Join(updated, "\n"))
+	})
 	n.shortcutSetting(c, "app.search_hotkey", n.text("search_hotkey_label"), "Alt+F")
 	n.shortcutSetting(c, "app.sequential_hotkey", n.text("sequential_paste_hotkey_label"), "Alt+V")
 	n.shortcutSetting(c, "app.rich_paste_hotkey", n.text("rich_paste_hotkey_label"), "Ctrl+Shift+Z")
@@ -73,19 +69,11 @@ func (n *nativeMain) shortcutSetting(c *ui.Context, key, label, fallback string)
 	disabled := !n.shortcutAvailable()
 	kit := n.mainKit()
 	kit.HotkeyRow(c, label, func() {
-		ui.Row(c).Wrap().Gap(6).AlignItems(ui.Center).Children(func() {
-			control := kit.HotkeyBinding(c, label, value, n.text("not_set"), false, disabled).
-				Tooltip(n.text("hotkey_click_hint"))
-			if control.Clicked() {
-				n.openShortcut(key, label)
-			}
-			if value != "" {
-				clear := n.text("privacy_session_hotkey_clear")
-				if kit.IconButton(c, "hide", clear+" · "+label, false, disabled).Clicked() {
-					n.saveNativeShortcut(key, "")
-				}
-			}
-		})
+		control := kit.HotkeyBinding(c, label, value, n.text("not_set"), false, disabled).
+			Tooltip(n.text("hotkey_click_hint"))
+		if control.Clicked() {
+			n.openShortcut(key, label)
+		}
 	})
 }
 

@@ -5,7 +5,9 @@ import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { open, message } from "@tauri-apps/plugin-dialog";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { SettingsRemoveButton } from "@deziro/ui-react/components/RemoveButton";
+import { SettingsGroupHeader } from "@deziro/ui-react/components/SettingsSectionCard";
+import { SettingsChoices } from "@deziro/ui-react/components/SettingsChoices";
 import type { Locale } from "../../../../shared/types";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import ThemedSelect from "../ThemedSelect";
@@ -147,10 +149,7 @@ const AppearanceSettingsGroup = ({
 
     return (
     <div className={`settings-group ${collapsed ? 'collapsed' : ''}`}>
-        <div className="group-header" onClick={onToggle}>
-            <h3 style={{ margin: 0 }}>{t('appearance_settings')}</h3>
-            {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-        </div>
+        <SettingsGroupHeader title={t('appearance_settings')} collapsed={collapsed} onToggle={onToggle} />
         {!collapsed && (
             <div className="group-content">
                 <div className="setting-item column">
@@ -161,50 +160,22 @@ const AppearanceSettingsGroup = ({
                     <div className="item-label-group" style={{ marginBottom: '8px' }}>
                         <span className="item-label">{t('color_mode')}</span>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-                        {[
-                            { id: 'system', name: t('mode_system') },
-                            { id: 'light', name: t('mode_light') },
-                            { id: 'dark', name: t('mode_dark') }
-                        ].map(modeItem => (
-                            <button
-                                key={modeItem.id}
-                                onClick={() => {
-                                    setColorMode(modeItem.id);
-                                    saveAppSetting('color_mode', modeItem.id);
-                                }}
-                                className={`btn-icon ${colorMode === modeItem.id ? 'active' : ''}`}
-                                style={{ flex: 1, height: '36px', fontSize: '12px', fontWeight: 'bold' }}
-                            >
-                                {modeItem.name}
-                            </button>
-                        ))}
-                    </div>
+                    <SettingsChoices label={t('color_mode')} value={colorMode}
+                        options={[
+                            { value: 'system', label: t('mode_system') },
+                            { value: 'light', label: t('mode_light') },
+                            { value: 'dark', label: t('mode_dark') },
+                        ]}
+                        onChange={value => { setColorMode(value); saveAppSetting('color_mode', value); }} />
                 </div>
 
                 <div className="setting-item column no-border">
                     <div className="item-label-group" style={{ marginBottom: '8px' }}>
                         <span className="item-label">{t('language')}</span>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-                        {[
-                            { id: 'zh', name: '简体' },
-                            { id: 'tw', name: '繁體' },
-                            { id: 'en', name: 'English' }
-                        ].map(lang => (
-                            <button
-                                key={lang.id}
-                                onClick={() => {
-                                    setLanguage(lang.id as Locale);
-                                    saveAppSetting('language', lang.id);
-                                }}
-                                className={`btn-icon ${language === lang.id ? 'active' : ''}`}
-                                style={{ flex: 1, height: '36px', fontSize: '12px', fontWeight: 'bold' }}
-                            >
-                                {lang.name}
-                            </button>
-                        ))}
-                    </div>
+                    <SettingsChoices<Locale> label={t('language')} value={language}
+                        options={[{ value: 'zh', label: '简体' }, { value: 'tw', label: '繁體' }, { value: 'en', label: 'English' }]}
+                        onChange={value => { setLanguage(value); saveAppSetting('language', value); }} />
                 </div>
 
                 <div className="setting-item">
@@ -378,18 +349,14 @@ const AppearanceSettingsGroup = ({
                                     {customBackground ? (t('change_background') || '更换背景') : (t('choose_background') || '选择背景')}
                                 </button>
                                 {customBackground && (
-                                    <button
+                                    <SettingsRemoveButton iconOnly
                                         onClick={() => {
                                             setCustomBackground('');
                                             saveAppSetting('custom_background', '');
                                         }}
-                                        type="button"
-                                        className="btn-icon settings-action settings-background-clear"
-                                        title={t('clear_background') || '清除背景'}
-                                        aria-label={t('clear_background') || '清除背景'}
-                                    >
-                                        <X size={16} />
-                                    </button>
+                                        className="settings-background-clear"
+                                        label={t('clear_background') || '清除背景'}
+                                    />
                                 )}
                             </div>
                             {customBackground && (

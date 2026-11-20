@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"image"
+	"image/color"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
@@ -165,6 +169,12 @@ func TestNativeMainShellOpacity(t *testing.T) {
 					t.Fatalf("shell alpha = %d, want %d", got, want)
 				}
 				window.showSettings, window.settingsSection = true, "appearance"
+				opened := true
+				window.settingsOpen = map[string]*bool{"appearance": &opened}
+				for _, id := range []string{"general", "clipboard", "privacy", "applications", "tools", "data", "about"} {
+					closed := false
+					window.settingsOpen[id] = &closed
+				}
 				tester.Frame()
 				if tester.HasText("Surface opacity") != customizable {
 					t.Fatal("surface slider did not follow theme support")
@@ -204,9 +214,6 @@ func TestNativeMainPrivacySettingsAreClosedOnReentry(t *testing.T) {
 			}
 			click("Settings")
 			assertClosed()
-			if width < 560 {
-				click("General")
-			}
 			click("Privacy")
 			if !tester.HasText("Protect sensitive clipboard content") {
 				t.Fatal("selecting Privacy did not open its settings")
@@ -262,9 +269,6 @@ func TestNativeMainNavigationAndDismissal(t *testing.T) {
 				if err := tester.Click("Settings"); err != nil {
 					t.Fatal(err)
 				}
-				if err := tester.Click("General"); err != nil {
-					t.Fatal(err)
-				}
 				if err := tester.Click("Appearance"); err != nil {
 					t.Fatal(err)
 				}
@@ -284,6 +288,32 @@ func TestNativeMainNavigationAndDismissal(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestNativeWallpaperStaysBehindHistoryAndControls(t *testing.T) {
+	n := nativeMain{theme: "liquid-glass", mode: "light", preferences: map[string]string{
+		"app.language": "en", "app.surface_opacity": "20", "app.custom_background_opacity": "100", backgroundSetting: "synthetic.png",
+	}}
+	n.history.state.ServiceInstanceId = "test-service"
+	n.history.rows = []protocol.DesktopEntry{{Id: 1, ContentType: "text", Preview: "Example history", Tags: []string{}}}
+	view := ui.NewTester(n.view, 360, 410)
+	before := view.Image().RGBAAt(340, 390)
+	raster := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	background := color.RGBA{R: 25, G: 85, B: 170, A: 255}
+	for y := range 2 {
+		for x := range 2 {
+			raster.SetRGBA(x, y, background)
+		}
+	}
+	n.background = nativeBackground{key: n.backgroundKey(n.history.state), bitmap: ui.NewBitmap(raster)}
+	view.Frame()
+	after := view.Image().RGBAAt(340, 390)
+	if after == background || after == before || after.A != 255 {
+		t.Fatalf("wallpaper was not composited under the surface: before=%v wallpaper=%v after=%v", before, background, after)
+	}
+	if err := view.Click("Settings"); err != nil || !n.showSettings {
+		t.Fatalf("wallpaper interfered with the controls: %v", err)
 	}
 }
 
@@ -344,5 +374,50 @@ func TestNativeScrollToTopOverlaysHistory(t *testing.T) {
 	tester.Frame()
 	if first, _ := n.list.List.Visible(); first != 0 {
 		t.Fatalf("first visible item after scrolling to top = %d", first)
+	}
+}
+
+func TestNativeCompactHistoryToolbarOpensTagsFromTheHoveredCard(t *testing.T) {
+	n := nativeMain{
+		theme: "macos", mode: "dark", preferences: map[string]string{"app.language": "en", "app.compact_mode": "true"},
+		session: context.Background(),
+	}
+	n.history.state.ServiceInstanceId = "test-service"
+	n.history.rows = []protocol.DesktopEntry{
+		{Id: 1, ContentType: "text", Preview: "Example text", Tags: []string{}},
+		{Id: 2, ContentType: "files", Preview: "Example.pdf", Tags: []string{}},
+	}
+	view := ui.NewTester(n.view, 440, 400)
+	textCard, ok := view.Find("Example text")
+	if !ok {
+		t.Fatal("text card did not render")
+	}
+	if _, ok := view.Find("Edit tags"); ok {
+		t.Fatal("a toolbar was visible before hovering")
+	}
+	view.Move(textCard.X+20, textCard.Y+textCard.H/2)
+	view.Advance(250 * time.Millisecond)
+	previous := float32(0)
+	for _, label := range []string{"Edit Item Content", "Open", "Pin entry", "Edit tags", "Delete entry"} {
+		control, ok := view.Find(label)
+		if !ok || control.X <= previous || control.Y >= textCard.Y+textCard.H/2 {
+			t.Fatalf("unexpected position for %q: %+v in card %+v, found=%t", label, control, textCard, ok)
+		}
+		previous = control.X
+	}
+	if after, _ := view.Find("Example text"); after != textCard {
+		t.Fatalf("showing the toolbar changed the card bounds: %+v -> %+v", textCard, after)
+	}
+	fileCard, ok := view.Find("Example.pdf")
+	if !ok {
+		t.Fatal("attachment card did not render")
+	}
+	view.Move(fileCard.X+20, fileCard.Y+fileCard.H/2)
+	view.Advance(250 * time.Millisecond)
+	if err := view.Click("Edit tags"); err != nil {
+		t.Fatal(err)
+	}
+	if n.tags == nil || n.tags.entry != 2 || !n.tags.open {
+		t.Fatalf("the attachment toolbar did not open its tag editor: %+v", n.tags)
 	}
 }

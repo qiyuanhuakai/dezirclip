@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { HotkeyList } from "@deziro/ui-react/components/HotkeyBinding";
 import { useRef, useState } from "react";
 import HotkeyRecorder from "./HotkeyRecorder";
 
@@ -29,21 +29,9 @@ export default function HotkeyListEditor({ t, labelKey, hotkeys, recording, setR
     <HotkeyRecorder t={t} labelKey={labelKey} hotkey="" placeholder={`+ ${t(labelKey)}`}
       recording={recording} setRecording={setRecording} disabled={disabled || saving}
       onHotkeyChange={value => { void changeBinding(() => onAdd(value, { skipAvailabilityCheck: value === "MouseMiddle" })); }} />
-    <div className="hotkey-list">
-      {hotkeys.map((hotkey, index) => <div key={`${hotkey}-${index}`} className="hotkey-binding">
-        <div className="key-group hotkey-binding-value">
-          {hotkey.split("+").map((key, i) => <div key={`${key}-${i}`} className="key-cap">{key}</div>)}
-        </div>
-        {(!canRemove || canRemove(hotkey)) && <button type="button"
-          className="btn-icon btn-icon-scalable btn-icon-size-hotkey" disabled={disabled || saving}
-          onClick={() => { void changeBinding(() => onRemove(hotkey)); }} aria-label={`${t("delete")} ${hotkey}`} title={`${t("delete")} ${hotkey}`}>
-          <X size={14} strokeWidth={2.6} />
-        </button>}
-      </div>)}
-      {hotkeys.length === 0 && <div className="key-group hotkey-binding-value">
-        <div className="key-cap key-cap--placeholder key-cap--unset">{t("not_set")}</div>
-      </div>}
-    </div>
+    <HotkeyList values={hotkeys} emptyLabel={t("not_set")} removeLabel={t("delete")}
+      disabled={disabled || saving} canRemove={canRemove}
+      onRemove={value => { void changeBinding(() => onRemove(value)); }} />
     {error && <p className="hotkey-recording-error" role="alert">{error}</p>}
   </div>;
 }

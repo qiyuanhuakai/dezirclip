@@ -98,7 +98,7 @@ export default function PrivacySettingsGroup(props: PrivacySettingsGroupProps) {
                             hintKey="excluded_source_apps"
                             hint={<>{props.t("excluded_source_apps_hint")}<br />{props.t("privacy_rules_legacy_exclusions_hint")}</>}
                         />
-                        <textarea
+                        <TextArea
                             className="search-input source-exclusion-input"
                             aria-label={props.t('excluded_source_apps')}
                             placeholder={props.t('excluded_source_apps_placeholder')}
@@ -178,7 +178,7 @@ export default function PrivacySettingsGroup(props: PrivacySettingsGroupProps) {
                             />
                         </div>
                         {props.privacyRulesOpen && (
-                            <textarea
+                            <TextArea
                                 className="search-input"
                                 style={{ width: 'calc(100% - 30px)', maxWidth: '100%', minHeight: '80px', padding: '8px', borderRadius: '0', marginLeft: '30px', boxSizing: 'border-box' }}
                                 aria-label={props.t("privacy_protection_custom_rules")}
@@ -212,3 +212,4 @@ export default function PrivacySettingsGroup(props: PrivacySettingsGroupProps) {
         </div>}
     </div>;
 }
+import { TextArea } from "@deziro/ui-react/components/TextField";

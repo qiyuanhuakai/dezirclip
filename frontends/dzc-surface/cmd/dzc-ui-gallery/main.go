@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -16,20 +17,25 @@ import (
 )
 
 type gallery struct {
-	theme, mode, fixture, state       string
-	choice, query, searchMode, filter string
-	settingsSelection                 string
-	emojiFavorites, settingEnabled    bool
-	historyList                       uikit.HistoryListState
-	historySelected                   int
-	previewImage                      uikit.PreviewImage
-	previewOpacity                    float64
-	previewPinned                     bool
-	wheelCount                        int
-	resizeDirection                   uikit.PreviewResizeDirection
-	dialog, disclosure, help, visible bool
-	focusTagName                      bool
-	active                            map[string]bool
+	theme, mode, fixture, state         string
+	choice, query, searchMode, filter   string
+	settingsSelection                   string
+	emojiFavorites, settingEnabled      bool
+	historyList                         uikit.HistoryListState
+	historySelected                     int
+	previewImage                        uikit.PreviewImage
+	previewOpacity                      float64
+	previewPinned                       bool
+	wheelCount                          int
+	resizeDirection                     uikit.PreviewResizeDirection
+	dialog, disclosure, help, visible   bool
+	focusTagName                        bool
+	active                              map[string]bool
+	contextMenu                         uikit.ContextMenu
+	entryName, searchTerms, idle, notes string
+	groupOpen                           bool
+	colorChoice, channelChoice          string
+	bindings                            []string
 }
 
 func (g *gallery) view(c *ui.Context) {
@@ -49,7 +55,37 @@ func (g *gallery) view(c *ui.Context) {
 }
 
 func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
+	if g.parityFixture(c, kit, name) {
+		return
+	}
 	switch name {
+	case "text-fields":
+		labeled := func(label string, field func()) {
+			ui.Column(c).Gap(3).Children(func() {
+				kit.SettingsLabel(c, label)
+				field()
+			})
+		}
+		ui.Column(c).Gap(8).Children(func() {
+			labeled("Entry name", func() { kit.TextField(c, &g.entryName, "Clipboard entry name").Width(330) })
+			labeled("Search terms", func() { kit.TextField(c, &g.searchTerms, "Search entries").Placeholder("Filter by name").Width(330) })
+			labeled("Idle timeout", func() { kit.NumberField(c, &g.idle, "Seconds").Width(112) })
+			labeled("Notes", func() { kit.TextArea(c, &g.notes, "Entry notes").Width(330).Height(60) })
+		})
+	case "context-menu":
+		anchor := ui.ButtonBase(c).Label("Clipboard entry").Width(185).Height(32)
+		anchor.Children(func() { ui.Text(c, "Clipboard entry").FontSize(14).SingleLine().PassThrough() })
+		if anchor.RightClicked() {
+			g.contextMenu.Open(anchor, func() []uikit.MenuAction {
+				return []uikit.MenuAction{
+					{Label: "Copy"},
+					{Label: "Text processing", Children: []uikit.MenuAction{{Label: "Uppercase"}, {Label: "Lowercase"}, {Label: "Trim spaces"}}},
+					{Label: "Privacy", Children: []uikit.MenuAction{{Label: "Ignore this source"}, {Label: "Protect this source"}, {Label: "Manage rules"}}},
+					{Label: "Delete"},
+				}
+			})
+		}
+		kit.ContextMenu(c, &g.contextMenu, "Close menu")
 	case "attachment-preview":
 		g.attachmentGallery(c, kit)
 	case "preview-toolbar":
@@ -145,9 +181,11 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 		options.Actions = append(options.Actions, uikit.HeaderAction{Icon: "hide", Label: "Hide"})
 		kit.Header(c, options)
 	case "history-card":
+		active := strings.Contains(g.state, "active")
 		kit.HistoryCard(c, uikit.HistoryCardOptions{Source: "Editor", Time: "12:30",
-			Summary: "Copied from the active editor", Selected: g.state == "selected", Pinned: g.state == "pinned",
-			Actions: []uikit.HeaderAction{{Icon: "pin", Label: "Pin"}, {Icon: "tag", Label: "Tags"}, {Icon: "hide", Label: "Delete"}}})
+			Summary: "Copied from the active editor", Selected: g.state == "selected",
+			Pinned: g.state == "pinned", Compact: strings.HasPrefix(g.state, "compact"),
+			Actions: []uikit.HeaderAction{{Icon: "pin", Label: "Pin", Active: active}, {Icon: "tag", Label: "Tags"}, {Icon: "hide", Label: "Delete"}}})
 	case "select":
 		kit.Select(c, &g.choice, "Color mode", []uikit.SelectOption{
 			{Value: "system", Label: "System"},
@@ -205,6 +243,35 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 }
 
 func (g *gallery) prepare(tester *ui.Tester) error {
+	if g.fixture == "emoji-favorites" {
+		if err := tester.RightClick("Example image"); err != nil {
+			return err
+		}
+		tester.Move(450, 390)
+		return nil
+	}
+	if g.fixture == "context-menu" {
+		tester.RightClickAt(72, 43)
+		if g.state != "default" {
+			label := "Privacy"
+			if g.state == "text" {
+				label = "Text processing"
+			}
+			previous, _ := tester.Find("Delete")
+			bounds, ok := tester.Find(label)
+			if !ok {
+				return fmt.Errorf("submenu trigger absent: %s", label)
+			}
+			tester.Move(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
+			if later, _ := tester.Find("Delete"); previous != later {
+				return fmt.Errorf("opening a submenu moved the following root item")
+			}
+		}
+		return nil
+	}
+	if g.fixture == "text-fields" && g.state == "focus-text" {
+		return tester.Click("Clipboard entry name")
+	}
 	if g.fixture == "settings-slider" && g.state == "keyboard" {
 		tester.Key(0, ui.KeyTab)
 		tester.Key(0, ui.KeyRight)
@@ -223,6 +290,29 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 		return nil
 	}
 	switch g.state {
+	case "compact", "compact-hover", "compact-active-hover", "compact-action-hover":
+		if g.fixture != "history-card" {
+			break
+		}
+		if _, ok := tester.Find("Pin"); ok {
+			return fmt.Errorf("compact toolbar was present before hovering")
+		}
+		if g.state == "compact" {
+			break
+		}
+		bounds, ok := tester.Find("Copied from the active editor")
+		if !ok {
+			return fmt.Errorf("history card is absent")
+		}
+		tester.Move(bounds.X+40, bounds.Y+bounds.H/2)
+		tester.Advance(time.Duration(presets.Select(g.theme, g.mode).Tokens().TransitionMs) * time.Millisecond)
+		pin, ok := tester.Find("Pin")
+		if !ok {
+			return fmt.Errorf("compact toolbar was absent after hovering")
+		}
+		if g.state != "compact-hover" {
+			tester.Move(pin.X+pin.W/2, pin.Y+pin.H/2)
+		}
 	case "southeast", "scrolled":
 		bounds, ok := tester.Find("Input target")
 		if !ok {
@@ -262,6 +352,7 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 
 func run() error {
 	g := gallery{choice: "system", searchMode: "fts", dialog: true, visible: true, previewOpacity: 72, active: map[string]bool{"text": true}}
+	g.entryName, g.idle, g.notes = "Release checklist", "30", "First line\nSecond line"
 	flag.StringVar(&g.theme, "theme", "mica", "built-in theme")
 	flag.StringVar(&g.mode, "mode", "light", "color mode")
 	flag.StringVar(&g.fixture, "fixture", "gallery", "component to render")
@@ -269,6 +360,12 @@ func run() error {
 	output := flag.String("output", "", "write a software-rendered PNG to this file")
 	inspect := flag.Bool("inspect", false, "write rendered text labels as JSON")
 	flag.Parse()
+	g.groupOpen = g.state == "expanded"
+	g.colorChoice, g.channelChoice = "light", "preview"
+	g.bindings = []string{"Super+V"}
+	if g.state == "multiple" {
+		g.bindings = append(g.bindings, "Ctrl+Shift+V")
+	}
 	g.settingEnabled = g.state == "enabled"
 	g.emojiFavorites = g.state == "favorites"
 	g.historySelected = -1

@@ -139,14 +139,6 @@ func (n *nativeMain) tagBatchToolbar(c *ui.Context, kit uikit.Kit, tags *nativeT
 	}
 	ui.Column(c).FillWidth().Padding(0, 8).Gap(4).Children(func() {
 		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Wrap().Children(func() {
-			button := n.text("tag_manage")
-			if batch.enabled {
-				button = n.text("tag_manage_done")
-			}
-			if kit.Button(c, uikit.ButtonOptions{Label: button, Disabled: n.mutating}).Clicked() {
-				*batch = nativeTagBatch{enabled: !batch.enabled, generation: generation}
-				n.resetPreviewSelection()
-			}
 			if !batch.enabled {
 				return
 			}

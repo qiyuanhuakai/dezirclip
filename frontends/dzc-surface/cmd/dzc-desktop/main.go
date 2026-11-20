@@ -328,6 +328,7 @@ func run() error {
 		if native != nil {
 			native.window = win
 			shell.nativePrepare = native.prepare
+			shell.updatePending = native.updater.pending
 			win.OnClosed(mygo.Theme.OnUpdated(native.systemAppearanceChanged))
 		}
 		if err := win.SetIcon(trayIcon); err != nil {

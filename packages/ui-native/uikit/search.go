@@ -34,7 +34,7 @@ func (k Kit) SearchBar(c *ui.Context, options SearchOptions) {
 					blue := c.Theme().Accent
 					field.Border = [4]uint8{blue.R, blue.G, blue.B, blue.A}
 				}
-				styledText(paint(input, field), field)
+				styledText(paintTextField(input, field), field)
 				icon := k.style("searchIcon")
 				ui.Icon(c, headerIcons["search"]).Size(icon.Width, icon.Height).TextColor(styleColor(icon.Text)).
 					Absolute().Left(10).Top((field.Height - icon.Height) / 2).PassThrough()

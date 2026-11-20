@@ -53,12 +53,13 @@ func (b *nativeBackupDialog) encrypted() bool {
 func (n *nativeMain) dataSettings(c *ui.Context) {
 	n.profileSettings(c)
 	ready := n.session != nil && n.history.state.ServiceInstanceId != "" && !n.mutating
-	ui.Row(c).Gap(6).Wrap().Children(func() {
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("data.export.title"), Disabled: !ready || n.private}).Clicked() {
+	kit := n.mainKit()
+	kit.SettingsDataActions(c, func() {
+		if kit.SettingsDataAction(c, n.text("data.export.title"), "export", !ready || n.private).Clicked() {
 			n.backup = &nativeBackupDialog{open: true, format: "json"}
 			n.notice = ""
 		}
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("data.import.title"), Disabled: !ready || n.private}).Clicked() {
+		if kit.SettingsDataAction(c, n.text("data.import.title"), "import", !ready || n.private).Clicked() {
 			n.backup = &nativeBackupDialog{open: true, restoring: true, mode: "merge"}
 			n.notice = ""
 		}

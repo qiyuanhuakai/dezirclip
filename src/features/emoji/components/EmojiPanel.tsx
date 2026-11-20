@@ -5,7 +5,7 @@ import { invoke } from "../../../shared/lib/desktopInvoke";
 import { copyHistorySelection } from "../../../shared/lib/copyHistorySelection";
 import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Plus, X } from "lucide-react";
+import { EmojiAddTile, EmojiFavoriteTile } from "@deziro/ui-react/components/EmojiFavoriteTiles";
 import { schedulePreview } from "../../../shared/lib/previewQueue";
 import { characterPageSize, searchCharacters } from "../characterCatalog";
 
@@ -509,51 +509,22 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
           }}
         >
           <div className={`emoji-fav-grid ${isDragging ? "dragging" : ""}`}>
-            <div className="emoji-fav-card emoji-fav-add">
-              <button
-                className="emoji-fav-preview emoji-fav-add-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handleSelectFiles();
-                }}
-                title={t("emoji_add_files") || "添加表情"}
-              >
-                <Plus size={18} />
-                <span>{t("emoji_add_files") || "添加表情"}</span>
-              </button>
-            </div>
+            <EmojiAddTile label={t("emoji_add_files") || "添加表情"} onAdd={() => void handleSelectFiles()} />
             {favorites.map((path) => {
               const name = path.split(/[/\\]/).pop() || path;
               const isDeleteVisible = deleteTarget === path;
               return (
-                <div
+                <EmojiFavoriteTile
                   key={path}
-                  className="emoji-fav-card"
-                  data-delete-visible={isDeleteVisible}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDeleteTarget(path);
-                  }}
+                  name={name}
+                  removeLabel={t("delete") || "删除"}
+                  removeVisible={isDeleteVisible}
+                  onRevealRemove={() => setDeleteTarget(path)}
+                  onRemove={() => { void removeFavoritePath(path).catch(console.error); }}
+                  onChoose={() => handleSend(path, "image")}
                 >
-                  <button
-                    className="btn-icon emoji-fav-remove"
-                    title={t("delete") || "删除"}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void removeFavoritePath(path).catch(console.error);
-                    }}
-                  >
-                    <X size={12} />
-                  </button>
-                  <button
-                    className="emoji-fav-preview"
-                    title={name}
-                    onClick={() => handleSend(path, "image")}
-                  >
-                    <FavoriteImage path={path} name={name} />
-                  </button>
-                </div>
+                  <FavoriteImage path={path} name={name} />
+                </EmojiFavoriteTile>
               );
             })}
           </div>

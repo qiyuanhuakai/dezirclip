@@ -18,6 +18,11 @@ type Gradient struct {
 	To    [4]uint8
 }
 
+type ColorRange struct {
+	Clear [4]uint8
+	Full  [4]uint8
+}
+
 type WidgetStyle struct {
 	BorderWidths  *[4]float32
 	CornerRadii   *[4]float32
@@ -29,11 +34,16 @@ type WidgetStyle struct {
 	RowGap        float32
 	Top           float32
 	Left          float32
+	Right         float32
+	TranslateX    float32
+	TranslateY    float32
 	Caption       string
 	Margin        [4]float32
 	Fill          [4]uint8
 	Text          [4]uint8
 	Border        [4]uint8
+	FillRange     *ColorRange
+	BorderRange   *ColorRange
 	BorderWidth   float32
 	Radius        float32
 	Width         float32

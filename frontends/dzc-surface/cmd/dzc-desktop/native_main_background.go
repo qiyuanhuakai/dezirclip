@@ -179,7 +179,7 @@ func (n *nativeMain) backgroundSettings(c *ui.Context) {
 		if n.mainKit().Button(c, uikit.ButtonOptions{Label: label, Disabled: disabled}).Clicked() {
 			n.chooseBackground(label)
 		}
-		if path != "" && n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("clear_background"), Disabled: disabled}).Clicked() {
+		if path != "" && n.mainKit().SettingsRemoveButton(c, n.text("clear_background"), true, disabled).Clicked() {
 			n.saveSetting(backgroundSetting, "")
 		}
 	})

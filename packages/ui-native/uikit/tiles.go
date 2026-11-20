@@ -111,3 +111,57 @@ func (k Kit) TileButton(c *ui.Context, label string, width, height float32, disa
 	tile := ui.ButtonBase(c).Label(label).Size(width, height).FocusRing(true).Disabled(disabled)
 	return paint(tile, k.interactive(c, tile, style, false))
 }
+
+func (k Kit) EmojiAddTile(c *ui.Context, label string, width float32, disabled bool) ui.Element {
+	style := k.style("emojiAddTile")
+	button := ui.ButtonBase(c).Label(label).Tooltip(label).Size(width, width).Disabled(disabled).Center()
+	if button.Hovered() || button.FocusVisible() {
+		style = k.style("emojiAddTileHover")
+	}
+	paint(button, k.animatePaint(button, style)).Children(func() {
+		ui.Column(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, headerIcons["add"]).Size(18, 18).TextColor(styleColor(style.Text)).PassThrough()
+			text(c, label, style).TextAlign(ui.Center).Wrap().PassThrough()
+		})
+	})
+	return button
+}
+
+type EmojiFavoriteOptions struct {
+	Name, RemoveLabel string
+	Width             float32
+	Disabled          bool
+	Preview           func()
+	OnChoose          func()
+	OnRemove          func()
+}
+
+func (k Kit) EmojiFavoriteTile(c *ui.Context, options EmojiFavoriteOptions) {
+	tile := ui.Box(c).Size(options.Width, options.Width).PassThrough()
+	removeVisible := ui.Local(tile, "favorite-tile-remove", func() bool { return false })
+	tile.Children(func() {
+		style := k.style("emojiFavoriteTile")
+		image := ui.ButtonBase(c).Fill().Center().Label(options.Name).Tooltip(options.Name).Disabled(options.Disabled)
+		paint(image, style).Children(options.Preview)
+		if image.Clicked() && options.OnChoose != nil {
+			options.OnChoose()
+		}
+		if image.RightClicked() || image.Shortcut(ui.Shift, ui.KeyF10) {
+			*removeVisible = !*removeVisible
+		}
+		hovered := tile.Hovered()
+		if options.OnRemove == nil || !(*removeVisible || hovered) {
+			return
+		}
+		remove := k.style("emojiFavoriteRemove")
+		button := ui.ButtonBase(c).Absolute().Right(-6).Top(-6).Size(20, 20).Center().
+			Label(options.RemoveLabel).Tooltip(options.RemoveLabel).Disabled(options.Disabled)
+		paint(button, k.interactive(c, button, remove, false)).Children(func() {
+			ui.Icon(c, closeIcon).Size(12, 12).TextColor(ui.RGB(255, 255, 255)).PassThrough()
+		})
+		if button.Clicked() {
+			*removeVisible = false
+			options.OnRemove()
+		}
+	})
+}

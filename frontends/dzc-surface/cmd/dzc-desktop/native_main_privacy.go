@@ -24,11 +24,6 @@ type nativePrivacyDialog struct {
 	prompt                string
 }
 
-type nativePrivacyEditor struct {
-	open, failed, focus     bool
-	key, label, hint, draft string
-}
-
 type nativePrivacyFeedbackAction struct {
 	id, label, prompt string
 }
@@ -243,7 +238,7 @@ func (n *nativeMain) drawPrivacyRule(c *ui.Context, rule protocol.PolicyRuleValu
 		if rule.Kind == "exact_exception" {
 			label, prompt = n.text("privacy_rule_revoke_exception"), n.text("privacy_rule_delete_exact_confirm")
 		}
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: label, Disabled: n.mutating || n.privacyDialog != nil}).Clicked() {
+		if n.mainKit().SettingsRemoveButton(c, label, false, n.mutating || n.privacyDialog != nil).Clicked() {
 			state := n.history.state
 			n.privacyDialog = &nativePrivacyDialog{
 				open: true, prompt: strings.ReplaceAll(prompt, "{source}", source),
@@ -289,69 +284,26 @@ func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
 		{"app.excluded_source_apps", n.text("excluded_source_apps"), n.text("excluded_source_apps_hint")},
 		{"app.privacy_protection_custom_rules", n.text("privacy_protection_custom_rules"), n.text("privacy_rules_custom_patterns_hint")},
 	} {
-		if n.mainKit().Button(c, uikit.ButtonOptions{
-			Label: field.label, Disabled: n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating || n.privacyEditor != nil,
-		}).Clicked() {
-			n.privacyEditor = &nativePrivacyEditor{open: true, focus: true, key: field.key, label: field.label, hint: field.hint, draft: n.preferences[field.key]}
+		n.privacyTextSetting(c, kit, field.key, field.label, field.hint)
+	}
+}
+
+func (n *nativeMain) privacyTextSetting(c *ui.Context, kit uikit.Kit, key, label, hint string) {
+	type privacyDraft struct{ saved, value string }
+	row := ui.Column(c.Key(key)).FillWidth().Gap(5)
+	saved := n.preferences[key]
+	draft := ui.Local(row, "privacy-draft", func() privacyDraft { return privacyDraft{saved: saved, value: saved} })
+	if draft.saved != saved {
+		*draft = privacyDraft{saved: saved, value: saved}
+	}
+	disabled := n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating
+	row.Children(func() {
+		kit.SettingsLabel(c, label).Wrap()
+		kit.TextArea(c, &draft.value, label).FillWidth().Height(82).ReadOnly(disabled).Tooltip(hint)
+		if draft.value != saved {
+			if kit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: disabled}).Clicked() {
+				n.saveSetting(key, draft.value)
+			}
 		}
-	}
-}
-
-func (n *nativeMain) privacyEditorView(c *ui.Context, kit uikit.Kit, form *nativePrivacyEditor) {
-	kit.Dialog(c, &form.open, form.label, "", n.mutating, func() {
-		_, height := c.Size()
-		ui.Scroll(c).FillWidth().MaxHeight(max(72, height-146)).Children(func() {
-			ui.Column(c).FillWidth().Gap(6).Children(func() {
-				ui.Text(c, form.hint).TextColor(c.Theme().TextMuted).Wrap()
-				field := kit.TextArea(c, &form.draft, form.label).FillWidth().Height(100).ReadOnly(n.mutating)
-				if form.focus {
-					field.Focus()
-					form.focus = false
-				}
-				if form.failed {
-					ui.Text(c, n.text("privacy_rules_save_failed")).TextColor(c.Theme().Danger).Wrap()
-				}
-			})
-		})
-		ui.Row(c).Gap(6).Justify(ui.End).Children(func() {
-			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_cancel"), Disabled: n.mutating}).Clicked() {
-				form.open = false
-			}
-			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Primary: true, Disabled: n.mutating}).Clicked() {
-				n.savePrivacyDraft(form)
-			}
-		})
 	})
-	if !form.open && n.privacyEditor == form {
-		n.privacyEditor = nil
-	}
-}
-
-func (n *nativeMain) savePrivacyDraft(form *nativePrivacyEditor) {
-	state := n.history.state
-	if n.session == nil || state.ServiceInstanceId == "" || n.mutating || n.privacyEditor != form {
-		return
-	}
-	if form.draft == n.preferences[form.key] {
-		form.open = false
-		return
-	}
-	n.mutating, form.failed = true, false
-	session, key, draft := n.session, form.key, form.draft
-	go func() {
-		ctx, cancel := context.WithTimeout(session, 5*time.Second)
-		defer cancel()
-		err := n.library.SetSetting(ctx, key, draft, state.PrivacyEpoch)
-		n.update(session, func() {
-			n.mutating = false
-			if n.privacyEditor != form {
-				return
-			}
-			if err != nil {
-				form.failed = true
-				return
-			}
-			n.prepare(n.resume)
-		})
-	}()
 }

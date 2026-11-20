@@ -9,7 +9,9 @@ var headerIcons = map[string]*ui.SVG{
 	"reveal": icon("Eye"), "conceal": icon("EyeOff"),
 	"add": icon("Plus"), "edit": icon("Pencil"),
 	"transform": icon("CaseSensitive"), "qr": icon("QrCode"),
-	"scan": icon("Scan"),
+	"scan": icon("Scan"), "open": icon("ExternalLink"),
+	"list": icon("List"), "collapse": icon("ListCollapse"), "manage": icon("ListChecks"),
+	"done": icon("Check"), "more": icon("Ellipsis"),
 }
 
 type HeaderAction struct {
@@ -176,7 +178,7 @@ func (k Kit) searchField(c *ui.Context, options HeaderOptions, prefix string) {
 	field := k.style(prefix + "Input")
 	ui.Box(c).Height(field.Height).Children(func() {
 		input := ui.TextInputBase(c, options.Query).Fill().Label(options.Placeholder)
-		styledText(paint(input, field), field)
+		styledText(paintTextField(input, field), field)
 		if options.OnQueryKey != nil {
 			input.OnTextKey(options.OnQueryKey)
 		}
@@ -193,8 +195,8 @@ func (k Kit) searchField(c *ui.Context, options HeaderOptions, prefix string) {
 		if *options.Query == "" && !input.Composing() {
 			placeholder := k.style(prefix + "InputPlaceholder")
 			field.Text = placeholder.Text
-			ui.Row(c).Absolute().Left(field.Padding[3] + field.BorderWidth).
-				Right(field.Padding[1] + field.BorderWidth).Height(field.Height).AlignItems(ui.Center).PassThrough().
+			ui.Row(c).Absolute().Left(max(8, field.Padding[3]) + field.BorderWidth).
+				Right(max(8, field.Padding[1]) + field.BorderWidth).Height(field.Height).AlignItems(ui.Center).PassThrough().
 				Children(func() { text(c, options.Placeholder, field).SingleLine().PassThrough() })
 		}
 		icon := k.style(prefix + "InputIcon")

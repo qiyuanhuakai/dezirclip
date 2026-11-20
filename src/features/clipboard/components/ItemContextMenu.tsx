@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
+import { ContextMenuSurface, ContextMenuItem } from "@deziro/ui-react/components/ContextMenu";
 import type { ClipboardEntry } from "../../../shared/types";
 import type { PrivacyFeedbackAction } from "../../../shared/lib/privacySession";
 import { translations } from "../../../locales";
@@ -334,12 +335,10 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
 
 return createPortal(
 	      <>
-	        <div
+	        <ContextMenuSurface
 	          ref={resolvedRef}
-	          role="menu"
 	          tabIndex={0}
 	          data-test-item-context-menu
-	          className="item-context-menu"
 	          style={{
 	            left: pos.left,
 	            top: pos.top,
@@ -348,14 +347,12 @@ return createPortal(
 	          }}
 	        >
 	          {menuItems.map((item, index) => (
-	            <div
+	            <ContextMenuItem
 	              key={item.key}
-	              role="menuitem"
 	              data-test-context-menu-item
 	              data-test-action={item.key}
-	              className={`item-context-menu__item ${
-	                index === activeIndex ? "item-context-menu__item--active" : ""
-	              } ${item.hasSubmenu ? "item-context-menu__item--has-submenu" : ""}`}
+	              active={index === activeIndex}
+	              hasSubmenu={item.hasSubmenu}
 	              onMouseEnter={(e) => {
                 e.stopPropagation();
                 clearSubmenuCloseTimer();
@@ -380,15 +377,12 @@ return createPortal(
               }}
 	            >
 	              <span className="item-context-menu__item-label" title={item.label}>{item.label}</span>
-	              {item.hasSubmenu && (
-	                <span className="item-context-menu__item-arrow">▶</span>
-	              )}
-	            </div>
+	            </ContextMenuItem>
 	          ))}
-	        </div>
+	        </ContextMenuSurface>
 	        {submenuOpen && submenuItems.length > 0 && (
-	          <div
-	            className="item-context-menu__submenu item-context-menu__submenu--open"
+	          <ContextMenuSurface
+	            submenu
 	            style={{
 	              left: submenuPos.left,
 	              top: submenuPos.top,
@@ -413,16 +407,12 @@ return createPortal(
 	            }}
 	          >
 	            {submenuItems.map((kind, tIdx) => (
-	              <div
+	              <ContextMenuItem
 	                key={kind.id}
-	                role="menuitem"
+	                submenu
 	                data-testid="transform-item"
 	                data-test-transform-kind={kind.id}
-	                className={`item-context-menu__submenu-item ${
-	                  tIdx === submenuActiveIndex
-	                    ? "item-context-menu__submenu-item--active"
-	                    : ""
-	                }`}
+	                active={tIdx === submenuActiveIndex}
 	                onMouseEnter={() => setSubmenuActiveIndex(tIdx)}
 	                onClick={(e) => {
 	                  e.stopPropagation();
@@ -430,9 +420,9 @@ return createPortal(
 	                }}
 	              >
 	                {kind.label}
-	              </div>
+	              </ContextMenuItem>
 	            ))}
-	          </div>
+	          </ContextMenuSurface>
 	        )}
 	      </>,
 	      document.body
