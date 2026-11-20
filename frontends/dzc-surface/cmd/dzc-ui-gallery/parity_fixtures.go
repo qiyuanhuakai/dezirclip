@@ -34,11 +34,19 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			}, true, false, func(value string) { g.channelChoice = value })
 		})
 	case "hotkey-list":
+		kit = kit.WithHotkeyPlatform("linux")
+		if g.state == "win-v" {
+			kit = kit.WithHotkeyPlatform("windows")
+		}
 		kit.HotkeyListEditor(c, "Global hotkey", func() {
 			kit.HotkeyBinding(c, "+ Global hotkey", "", "+ Global hotkey", false, false)
 		}, func() {
-			kit.HotkeyList(c, g.bindings, "Not set", "Delete", false, func(value string) {
-				g.bindings = slices.DeleteFunc(g.bindings, func(binding string) bool { return value == binding })
+			kit.HotkeyListWithOptions(c, uikit.HotkeyListOptions{
+				Values: g.bindings, Placeholder: "Not set", RemoveLabel: "Delete",
+				CanRemove: func(value string) bool { return g.state != "win-v" || value != "Super+V" },
+				OnRemove: func(value string) {
+					g.bindings = slices.DeleteFunc(g.bindings, func(binding string) bool { return value == binding })
+				},
 			})
 		})
 	case "emoji-favorites":

@@ -363,7 +363,7 @@ func run() error {
 	g.groupOpen = g.state == "expanded"
 	g.colorChoice, g.channelChoice = "light", "preview"
 	g.bindings = []string{"Super+V"}
-	if g.state == "multiple" {
+	if g.state == "multiple" || g.state == "win-v" {
 		g.bindings = append(g.bindings, "Ctrl+Shift+V")
 	}
 	g.settingEnabled = g.state == "enabled"

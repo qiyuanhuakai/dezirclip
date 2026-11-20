@@ -7,7 +7,7 @@ interface RemoveButtonProps extends ComponentPropsWithRef<"button"> {
 
 export function HotkeyRemoveButton({ label, title = label, className = "", ...props }: RemoveButtonProps) {
   return <button type="button" className={["btn-icon btn-icon-scalable btn-icon-size-hotkey", className].filter(Boolean).join(" ")}
-    aria-label={label} title={title} {...props}><X size={14} strokeWidth={2.6} /></button>;
+    aria-label={label} title={title} {...props}><X size={12} strokeWidth={2.6} /></button>;
 }
 
 export function SettingsRemoveButton({ label, title = label, className = "", iconOnly, ...props }: RemoveButtonProps & {

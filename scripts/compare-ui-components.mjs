@@ -19,7 +19,7 @@ const presets = JSON.parse(await readFile(resolve(root, "packages/ui-presets/bui
 const cases = {
   "settings-section-card": { states: ["default", "expanded", "wide"], text: "General settings" },
   "settings-choices": { states: ["default"], text: "Update channel" },
-  "hotkey-list": { states: ["default", "multiple"], text: "Global hotkey" },
+  "hotkey-list": { states: ["default", "multiple", "win-v"], text: "Global hotkey" },
   "emoji-favorites": { states: ["default"], text: "Add emoji" },
   "settings-data": { states: ["default"], text: "Data storage path" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
@@ -196,7 +196,15 @@ try {
             }
             if (fixture === "hotkey-list") {
               const buttons = await page.getByRole("button", { name: /^Delete / }).count();
-              if (buttons !== (state === "multiple" ? 2 : 0)) throw Error("Incorrect shortcut removal controls");
+              const expected = state === "multiple" ? 2 : state === "win-v" ? 1 : 0;
+              if (buttons !== expected) throw Error("Incorrect shortcut removal controls");
+              const modifier = state === "win-v" ? "Win" : "Super";
+              if (await page.locator(".hotkey-list").getByText(modifier, { exact: true }).count() !== 1) {
+                throw Error("Incorrect platform modifier on shortcut keycap");
+              }
+              if (state === "win-v" && await page.getByRole("button", { name: "Delete Win+V", exact: true }).count()) {
+                throw Error("The system-controlled Win+V binding can be removed");
+              }
             }
             if (fixture === "settings-slider" && state === "keyboard") {
               const range = page.getByRole("slider", { name: "Opacity" });

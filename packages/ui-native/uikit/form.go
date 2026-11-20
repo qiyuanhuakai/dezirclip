@@ -1,6 +1,7 @@
 package uikit
 
 import (
+	"runtime"
 	"strings"
 	"time"
 
@@ -89,16 +90,31 @@ func (k Kit) HotkeyListEditor(c *ui.Context, label string, controls, bindings fu
 // HotkeyList displays registered shortcuts as read-only keycaps, with removal
 // available only while the list contains more than one binding.
 func (k Kit) HotkeyList(c *ui.Context, values []string, placeholder, remove string, disabled bool, onRemove func(string)) {
+	k.HotkeyListWithOptions(c, HotkeyListOptions{
+		Values: values, Placeholder: placeholder, RemoveLabel: remove, Disabled: disabled, OnRemove: onRemove,
+	})
+}
+
+type HotkeyListOptions struct {
+	Values                   []string
+	Placeholder, RemoveLabel string
+	Disabled                 bool
+	CanRemove                func(string) bool
+	OnRemove                 func(string)
+}
+
+func (k Kit) HotkeyListWithOptions(c *ui.Context, options HotkeyListOptions) {
 	ui.Row(c).FillWidth().Wrap().GapX(16).GapY(8).Children(func() {
-		if len(values) == 0 {
-			k.hotkeyCaps(c, ui.Row(c), "", placeholder, false)
+		if len(options.Values) == 0 {
+			k.hotkeyCaps(c, ui.Row(c), "", options.Placeholder, false)
 		}
-		for _, value := range values {
+		for _, value := range options.Values {
 			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 				k.hotkeyCaps(c, ui.Row(c).Wrap(), value, "", false)
-				if len(values) > 1 && onRemove != nil &&
-					k.HotkeyRemoveButton(c, remove+" "+value, disabled).Clicked() {
-					onRemove(value)
+				if len(options.Values) > 1 && options.OnRemove != nil &&
+					(options.CanRemove == nil || options.CanRemove(value)) &&
+					k.HotkeyRemoveButton(c, options.RemoveLabel+" "+k.hotkeyLabel(value), options.Disabled).Clicked() {
+					options.OnRemove(value)
 				}
 			})
 		}
@@ -109,12 +125,34 @@ func (k Kit) HotkeyRemoveButton(c *ui.Context, label string, disabled bool) ui.E
 	style := k.style("hotkeyRemove")
 	button := ui.ButtonBase(c).Size(style.Width, style.Height).Label(label).Tooltip(label).Center().Disabled(disabled)
 	paint(button, k.interactive(c, button, style, false)).Children(func() {
-		ui.Icon(c, shortcutRemoveIcon).Size(14, 14).TextColor(styleColor(style.Text)).PassThrough()
+		ui.Icon(c, shortcutRemoveIcon).Size(12, 12).TextColor(styleColor(style.Text)).PassThrough()
 	})
 	return button
 }
 
 var shortcutRemoveIcon = icon("HotkeyRemove")
+
+func (k Kit) hotkeyLabel(value string) string {
+	platform := k.hotkeyPlatform
+	if platform == "" {
+		platform = runtime.GOOS
+	}
+	if platform != "windows" && platform != "linux" {
+		return value
+	}
+	modifier := "Super"
+	if platform == "windows" {
+		modifier = "Win"
+	}
+	parts := strings.Split(value, "+")
+	for i, key := range parts[:len(parts)-1] {
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "super", "meta", "win", "windows", "cmd", "command":
+			parts[i] = modifier
+		}
+	}
+	return strings.Join(parts, "+")
+}
 
 func (k Kit) hotkeyCaps(c *ui.Context, field ui.Element, value, placeholder string, recording bool) ui.Element {
 	group := k.style("hotkeyGroup")
@@ -123,6 +161,7 @@ func (k Kit) hotkeyCaps(c *ui.Context, field ui.Element, value, placeholder stri
 		cap = k.style("hotkeyCapRecording")
 		value = ""
 	}
+	value = k.hotkeyLabel(value)
 	field.Gap(group.ColumnGap).AlignItems(ui.Center)
 	paint(field, group).Margin(group.Margin[:]...).Children(func() {
 		for _, chord := range strings.Split(value, "+") {

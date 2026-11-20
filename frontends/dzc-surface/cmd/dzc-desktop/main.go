@@ -297,13 +297,13 @@ func run() error {
 	library := &Library{owner: actions}
 	shell := &DesktopShell{diagnostics: diagnostics, resident: residentBridge{output: os.Stdout, grantFocus: grantResidentFocus}}
 	preview := &Preview{owner: actions, resident: &shell.resident}
+	systemSettings := &SystemSettings{owner: actions}
+	defer systemSettings.close()
 	if !useNativeMain {
 		mygo.SetFrontend(assets)
 		mygo.Bind(history)
 		mygo.Bind(library)
-		systemSettings := &SystemSettings{owner: actions}
 		mygo.Bind(systemSettings)
-		defer systemSettings.close()
 		mygo.Bind(shell)
 		mygo.Bind(preview)
 	}
@@ -321,14 +321,14 @@ func run() error {
 			Hidden: true, SkipTaskbar: true, DisableMaximize: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true}
 		var native *nativeMain
 		if useNativeMain {
-			native = &nativeMain{shell: shell, library: library, actions: history, preview: preview, systemDark: mygo.Theme.IsDark()}
+			native = &nativeMain{shell: shell, library: library, actions: history, preview: preview, system: systemSettings, systemDark: mygo.Theme.IsDark()}
 			options.Content = ui.View(native.view)
 		}
 		win := mygo.NewWindow(options)
 		if native != nil {
 			native.window = win
 			shell.nativePrepare = native.prepare
-			shell.updatePending = native.updater.pending
+			shell.keepMainAlive = func() bool { return native.updater.pending() || native.winV.changing }
 			win.OnClosed(mygo.Theme.OnUpdated(native.systemAppearanceChanged))
 		}
 		if err := win.SetIcon(trayIcon); err != nil {
@@ -420,7 +420,15 @@ func run() error {
 		if native == nil {
 			installNativeFileDrop(win)
 		}
-		win.OnClose(func(*mygo.CloseEvent) { diagnostics.record("window-close", 0, nil); fmt.Fprintln(os.Stdout, "closing") })
+		win.OnClose(func(event *mygo.CloseEvent) {
+			if native != nil && native.winV.changing {
+				event.PreventDefault()
+				shell.hideMain(win)
+				return
+			}
+			diagnostics.record("window-close", 0, nil)
+			fmt.Fprintln(os.Stdout, "closing")
+		})
 		win.OnClosed(func() {
 			if native != nil {
 				native.stopSession()

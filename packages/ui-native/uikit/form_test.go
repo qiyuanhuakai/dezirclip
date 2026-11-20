@@ -7,10 +7,41 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestHotkeyLabelUsesThePlatformModifier(t *testing.T) {
+	for _, tt := range []struct{ platform, value, want string }{
+		{"windows", "Super+V", "Win+V"},
+		{"linux", "Win+V", "Super+V"},
+		{"windows", "Ctrl+Meta+V", "Ctrl+Win+V"},
+		{"windows", "Ctrl+V", "Ctrl+V"},
+		{"darwin", "Super+V", "Super+V"},
+	} {
+		if got := (Kit{}).WithHotkeyPlatform(tt.platform).hotkeyLabel(tt.value); got != tt.want {
+			t.Errorf("%s %q displays as %q, want %q", tt.platform, tt.value, got, tt.want)
+		}
+	}
+}
+
+func TestHotkeyListProtectsOnlyTheSystemBinding(t *testing.T) {
+	removed := ""
+	view := ui.NewTester(func(c *ui.Context) {
+		(Kit{}).WithHotkeyPlatform("windows").HotkeyListWithOptions(c, HotkeyListOptions{
+			Values: []string{"Super+V", "Alt+C"}, RemoveLabel: "Remove",
+			CanRemove: func(value string) bool { return value != "Super+V" },
+			OnRemove:  func(value string) { removed = value },
+		})
+	}, 420, 180)
+	if _, exists := view.Find("Remove Win+V"); exists {
+		t.Fatal("the protected Win+V binding has a remove control")
+	}
+	if err := view.Click("Remove Alt+C"); err != nil || removed != "Alt+C" {
+		t.Fatalf("the ordinary binding could not be removed: %v, removed=%q", err, removed)
+	}
+}
+
 func TestHotkeyListRemoveKeepsSingleBindingAndDoesNotClose(t *testing.T) {
 	bindings := []string{"Ctrl+Shift+V", "Alt+F8"}
 	closed := false
-	kit := Kit{}
+	kit := (Kit{}).WithHotkeyPlatform("linux")
 	view := ui.NewTester(func(c *ui.Context) {
 		if kit.Button(c, ButtonOptions{Label: "Close Settings"}).Clicked() {
 			closed = true

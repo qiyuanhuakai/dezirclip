@@ -27,7 +27,7 @@ type nativeShortcutForm struct {
 
 func (n *nativeMain) shortcutAvailable() bool {
 	return n.session != nil && n.history.state.ServiceInstanceId != "" && !n.mutating &&
-		n.shortcut == nil && n.privacyDialog == nil && n.backup == nil
+		n.shortcut == nil && n.privacyDialog == nil && n.backup == nil && !n.winV.changing
 }
 
 func (n *nativeMain) shortcutValue(key, fallback string) string {
@@ -48,12 +48,17 @@ func (n *nativeMain) clipboardShortcuts(c *ui.Context) {
 				n.openShortcut(mainShortcutSetting, label)
 			}
 		}, func() {
-			kit.HotkeyList(c, bindings, n.text("not_set"), n.text("delete"), disabled, func(chord string) {
-				updated := slices.DeleteFunc(slices.Clone(bindings), func(value string) bool { return value == chord })
-				n.saveNativeShortcut(mainShortcutSetting, strings.Join(updated, "\n"))
+			kit.HotkeyListWithOptions(c, uikit.HotkeyListOptions{
+				Values: bindings, Placeholder: n.text("not_set"), RemoveLabel: n.text("delete"),
+				Disabled: disabled, CanRemove: n.canRemoveMainShortcut,
+				OnRemove: func(chord string) {
+					updated := slices.DeleteFunc(slices.Clone(bindings), func(value string) bool { return value == chord })
+					n.saveNativeShortcut(mainShortcutSetting, strings.Join(updated, "\n"))
+				},
 			})
 		})
 	})
+	n.winVSettings(c, kit)
 	n.shortcutSetting(c, "app.search_hotkey", n.text("search_hotkey_label"), "Alt+F")
 	n.shortcutSetting(c, "app.sequential_hotkey", n.text("sequential_paste_hotkey_label"), "Alt+V")
 	n.shortcutSetting(c, "app.rich_paste_hotkey", n.text("rich_paste_hotkey_label"), "Ctrl+Shift+Z")

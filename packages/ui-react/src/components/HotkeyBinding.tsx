@@ -1,7 +1,16 @@
 import type { ComponentProps, ReactNode } from "react";
 import { HotkeyRemoveButton } from "./RemoveButton";
 
+function hotkeyKeys(value: string, platform = globalThis.navigator?.platform ?? ""): string[] {
+  const modifier = /^win/i.test(platform) ? "Win" : /^linux/i.test(platform) ? "Super" : undefined;
+  const keys = value.split("+");
+  if (!modifier) return keys;
+  return keys.map((key, index) => index < keys.length - 1 && /^(super|meta|win|windows|cmd|command)$/i.test(key.trim())
+    ? modifier : key);
+}
+
 export interface HotkeyBindingProps {
+  platform?: string;
   label: string;
   value: string;
   placeholder: string;
@@ -21,6 +30,7 @@ export interface HotkeyBindingProps {
 }
 
 export interface HotkeyListProps {
+  platform?: string;
   values: readonly string[];
   emptyLabel: string;
   removeLabel: string;
@@ -33,15 +43,18 @@ export function HotkeyListLayout({ children }: { children: ReactNode }) {
   return <div className="setting-item no-border column hotkey-list-editor">{children}</div>;
 }
 
-export function HotkeyList({ values, emptyLabel, removeLabel, disabled, canRemove, onRemove }: HotkeyListProps) {
+export function HotkeyList({ platform, values, emptyLabel, removeLabel, disabled, canRemove, onRemove }: HotkeyListProps) {
   return <div className="hotkey-list">
-    {values.map((value, index) => <div key={value + index} className="hotkey-binding">
-      <div className="key-group hotkey-binding-value">
-        {value.split("+").map((key, position) => <div key={key + position} className="key-cap">{key}</div>)}
-      </div>
-      {values.length > 1 && onRemove && (!canRemove || canRemove(value)) &&
-        <HotkeyRemoveButton disabled={disabled} onClick={() => onRemove(value)} label={removeLabel + " " + value} />}
-    </div>)}
+    {values.map((value, index) => {
+      const keys = hotkeyKeys(value, platform);
+      return <div key={value + index} className="hotkey-binding">
+        <div className="key-group hotkey-binding-value">
+          {keys.map((key, position) => <div key={key + position} className="key-cap">{key}</div>)}
+        </div>
+        {values.length > 1 && onRemove && (!canRemove || canRemove(value)) &&
+          <HotkeyRemoveButton disabled={disabled} onClick={() => onRemove(value)} label={removeLabel + " " + keys.join("+")} />}
+      </div>;
+    })}
     {values.length === 0 && <div className="key-group hotkey-binding-value">
       <div className="key-cap key-cap--placeholder key-cap--unset">{emptyLabel}</div>
     </div>}
@@ -50,7 +63,7 @@ export function HotkeyList({ values, emptyLabel, removeLabel, disabled, canRemov
 
 export function HotkeyBinding(props: HotkeyBindingProps) {
   const active = props.recording && !props.disabled;
-  const keys = props.value ? props.value.split("+") : [];
+  const keys = props.value ? hotkeyKeys(props.value, props.platform) : [];
   return <div className="setting-item setting-item--detail hotkey-recorder">
     <div className="item-label-group"><span className="item-label">{props.label}</span></div>
     <div className="hotkey-binding">

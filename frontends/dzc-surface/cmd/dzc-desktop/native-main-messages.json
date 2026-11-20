@@ -302,6 +302,8 @@
     "reset_confirm": "Are you sure? This will clear all custom hotkeys and app settings.",
     "reset_defaults": "Reset to Defaults",
     "reset_failed": "Reset failed: ",
+    "restart_explorer_confirm": "Windows Explorer needs to restart to apply changes. Restart now?",
+    "restart_explorer_title": "Restart Explorer Required",
     "rich_paste_hotkey_label": "Paste with Format Hotkey",
     "screenshot_captured": "Copied to clipboard",
     "screenshot_enabled": "Screenshot",
@@ -424,6 +426,8 @@
     "updater_support_unavailable": "In-place update support could not be confirmed. Choose the package matching your system and installation method on the release page.",
     "updater_title": "Software updates",
     "updater_unpublished": "This channel has not opened automatic updates yet. Keep your selection and check again later.",
+    "use_win_v_shortcut": "Use Win+V Shortcut",
+    "use_win_v_shortcut_hint": "Enable to takeover system Win+V for instant access (will restart Windows Explorer to apply), disable to restore system clipboard.",
     "visual_theme": "Visual Theme",
     "waiting_for_input": "Recording..."
   },
@@ -730,6 +734,8 @@
     "reset_confirm": "确定要恢复初始设置吗？这会清除所有自定义快捷键和打开程序设置。",
     "reset_defaults": "恢复初始设置",
     "reset_failed": "重置失败: ",
+    "restart_explorer_confirm": "需要重启 Windows 资源管理器（Explorer.exe）才能完成设置。是否现在重启？",
+    "restart_explorer_title": "需要重启资源管理器",
     "rich_paste_hotkey_label": "带格式粘贴快捷键",
     "screenshot_captured": "已复制到剪贴板",
     "screenshot_enabled": "区域截图",
@@ -852,6 +858,8 @@
     "updater_support_unavailable": "当前运行形式尚不能确认支持原位更新。请打开发布页，选择与你的系统和安装方式对应的包。",
     "updater_title": "软件更新",
     "updater_unpublished": "此通道暂未开放自动更新，可保留选择稍后重试。",
+    "use_win_v_shortcut": "是否使用 Win+V 快捷键",
+    "use_win_v_shortcut_hint": "启用后将接管系统 Win+V 快捷键实现极速呼出（修改此项会重启资源管理器），关闭后恢复系统剪贴板。",
     "visual_theme": "界面主题",
     "waiting_for_input": "等待录制..."
   },
@@ -1158,6 +1166,8 @@
     "reset_confirm": "確定要恢復初始設定嗎？這會清除所有自定義快速鍵和開啟程式設定。",
     "reset_defaults": "恢復初始設定",
     "reset_failed": "重置失敗: ",
+    "restart_explorer_confirm": "需要重啟 Windows 檔案總管 (Explorer.exe) 才能完成設定。是否現在重啟？",
+    "restart_explorer_title": "需要重啟檔案總管",
     "rich_paste_hotkey_label": "帶格式貼上快速鍵",
     "screenshot_captured": "已複製到剪貼簿",
     "screenshot_enabled": "區域截圖",
@@ -1280,6 +1290,8 @@
     "updater_support_unavailable": "目前執行形式尚無法確認支援就地更新。請開啟發佈頁，選擇對應系統與安裝方式的套件。",
     "updater_title": "軟體更新",
     "updater_unpublished": "此通道暫未開放自動更新，可保留選擇稍後重試。",
+    "use_win_v_shortcut": "是否使用 Win+V 快速鍵",
+    "use_win_v_shortcut_hint": "啟用後將接管系統 Win+V 快速鍵實現極速呼出 (修改此項會重啟檔案總管)，關閉後恢復系統剪貼簿。",
     "visual_theme": "界面主題",
     "waiting_for_input": "等待錄製..."
   }

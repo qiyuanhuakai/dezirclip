@@ -83,7 +83,7 @@ func (s *DesktopShell) scheduleIdleClose(w *mygo.Window, generation uint64, dela
 			if generation != s.idle.generation || w.IsDestroyed() || w.IsVisible() {
 				return
 			}
-			if s.updatePending != nil && s.updatePending() {
+			if s.keepMainAlive != nil && s.keepMainAlive() {
 				s.scheduleIdleClose(w, generation, time.Second)
 				return
 			}

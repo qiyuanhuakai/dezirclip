@@ -18,6 +18,8 @@ import (
 // All state below belongs to the main event thread. Reads stay on worker
 // goroutines and carry a presentation context and a snapshot ticket.
 type nativeMain struct {
+	system  *SystemSettings
+	winV    nativeWinVState
 	window  *mygo.Window
 	shell   *DesktopShell
 	library *Library
@@ -112,7 +114,7 @@ func (n *nativeMain) stopSession() {
 	n.cardImages = nativeVisibleCache[nativeCardKey, ui.ImageSource]{}
 	n.ocrJob, n.ocrEngine, n.ocrEngineLoading = nativeOCRJob{}, nil, false
 	n.cardTagColors, n.readingTagColors = nil, false
-	n.reading, n.failed, n.mutating, n.private = false, false, n.profile.moving || n.profile.restartPending, false
+	n.reading, n.failed, n.mutating, n.private = false, false, n.profile.moving || n.profile.restartPending || n.winV.changing, false
 	n.notice, n.keyboard, n.focusList = "", false, false
 	n.temporarySearch = false
 	n.searchWheel, n.towardsTop = 0, time.Time{}
@@ -130,6 +132,9 @@ func (n *nativeMain) stopSession() {
 	n.closeBackup()
 	n.closePrivacyDialog()
 	n.cancelShortcut()
+	if !n.winV.changing {
+		n.winV = nativeWinVState{}
+	}
 	n.queueCount = nativeQueueCount{}
 	n.privacyRules = nativePrivacyRules{}
 	n.tagLibrary = nil
@@ -388,6 +393,9 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 			n.queueCount.observe(*event.Data.Status)
 			switch *event.Data.Status {
 			case "view_settings_changed", "custom_themes_changed":
+				if n.winV.changing {
+					continue
+				}
 				if n.appearanceBusy {
 					n.appearanceSync = true
 					continue

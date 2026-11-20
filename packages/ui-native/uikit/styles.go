@@ -14,6 +14,7 @@ type Kit struct {
 	tokens         *theme.Tokens
 	widgets        map[string]theme.WidgetStyle
 	interfaceFont  string
+	hotkeyPlatform string
 }
 
 // NewKit sets a palette and a catalog of widget styles supplied by the caller.
@@ -26,6 +27,12 @@ func NewKit(mode string, tokens theme.Tokens, widgets map[string]theme.WidgetSty
 // WithInterfaceFont overrides the UI font without changing the catalog or its monospace styles.
 func (k Kit) WithInterfaceFont(font string) Kit {
 	k.interfaceFont = strings.TrimSpace(font)
+	return k
+}
+
+// WithHotkeyPlatform sets the target OS for shortcut labels. The default is the running OS.
+func (k Kit) WithHotkeyPlatform(platform string) Kit {
+	k.hotkeyPlatform = platform
 	return k
 }
 

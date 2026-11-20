@@ -73,13 +73,14 @@ export function SettingsChoicesFixture() {
   </div>;
 }
 
-export function HotkeyListFixture({ multiple }: { multiple: boolean }) {
+export function HotkeyListFixture({ multiple, winV }: { multiple: boolean; winV: boolean }) {
   const [values, setValues] = useState(multiple ? ["Super+V", "Ctrl+Shift+V"] : ["Super+V"]);
   return <HotkeyListLayout>
     <HotkeyBinding label="Global hotkey" value="" placeholder="+ Global hotkey" recordingLabel="Press a shortcut"
       recording={false} busy={false} disabled={false} onClick={undefined} onKeyDown={undefined}
       onMouseDown={undefined} onBlur={undefined} />
-    <HotkeyList values={values} emptyLabel="Not set" removeLabel="Delete"
+    <HotkeyList platform={winV ? "windows" : "linux"} values={values} emptyLabel="Not set" removeLabel="Delete"
+      canRemove={value => !winV || value !== "Super+V"}
       onRemove={value => setValues(current => current.filter(binding => binding !== value))} />
   </HotkeyListLayout>;
 }
