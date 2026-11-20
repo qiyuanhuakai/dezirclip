@@ -71,9 +71,9 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label, resetLabel string, c
 	selected := saved
 	ui.Text(c, label).FontWeight(600)
 	ui.Row(c).Gap(6).Wrap().AlignItems(ui.Center).Children(func() {
-		field := n.mainKit().Combo(c, &selected, label, choices, n.mutating || len(choices) == 0).Placeholder(n.text("font_default_option")).
-			Grow(1).MinWidth(150).Disabled(n.mutating || len(choices) == 0)
-		if field.Changed() && selected != saved {
+		field, changed := n.mainKit().Combo(c, &selected, label, n.text("font_default_option"), choices, n.mutating || len(choices) == 0)
+		field.Grow(1).MinWidth(150)
+		if changed {
 			n.saveSetting(key, selected)
 		}
 		if saved != "" && n.mainKit().Button(c, uikit.ButtonOptions{Label: resetLabel, Disabled: n.mutating}).Clicked() {

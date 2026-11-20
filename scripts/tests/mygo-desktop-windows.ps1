@@ -1072,6 +1072,20 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         if (Get-DesktopProcesses @($resident.Id, $main.Id) | Where-Object Name -eq 'msedgewebview2.exe') {
             throw 'Default main window started a WebView2 process'
         }
+        Click-Control $main (Get-ControlPoint $root 'Settings')
+        $null = Get-ControlPoint $root 'Privacy'
+        $protection = 'Protect sensitive clipboard content'
+        if (Get-SettingsCheckbox $root $protection) { throw 'Privacy expanded on entering Settings' }
+        Click-Control $main (Get-ControlPoint $root 'Privacy')
+        $null = Get-ControlPoint $root $protection
+        Click-Control $main (Get-ControlPoint $root 'Back')
+        $null = Get-ControlPoint $root $marker
+        Click-Control $main (Get-ControlPoint $root 'Settings')
+        $null = Get-ControlPoint $root 'Privacy'
+        if (Get-SettingsCheckbox $root $protection) { throw 'Privacy expanded on reopening Settings' }
+        Click-Control $main (Get-ControlPoint $root 'Close')
+        $null = Get-ControlPoint $root $marker
+        Write-Host 'Verified native history, Settings close, and collapsed Privacy'
         $beforeDrag = [MyGoInput+Rect]::new()
         if (![MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$beforeDrag)) { throw 'Cannot read native main bounds' }
         $dragX = $beforeDrag.left + 60
@@ -1090,25 +1104,15 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             [MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$afterDrag) -and
                 [Math]::Abs($afterDrag.top - $beforeDrag.top) -ge 20
         } 'Dragging the native title bar did not move the window' 5
-        Click-Control $main (Get-ControlPoint $root 'Settings')
-        $null = Get-ControlPoint $root 'Privacy'
-        $protection = 'Protect sensitive clipboard content'
-        if (Get-SettingsCheckbox $root $protection) { throw 'Privacy expanded on entering Settings' }
-        Click-Control $main (Get-ControlPoint $root 'Privacy')
-        $null = Get-ControlPoint $root $protection
-        Click-Control $main (Get-ControlPoint $root 'Back')
-        Click-Control $main (Get-ControlPoint $root 'Settings')
-        $null = Get-ControlPoint $root 'Privacy'
-        if (Get-SettingsCheckbox $root $protection) { throw 'Privacy expanded on reopening Settings' }
-        Click-Control $main (Get-ControlPoint $root 'Close')
-        $null = Get-ControlPoint $root $marker
+        Write-Host 'Verified the native title bar physically moves the window'
+        if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'The native main window is no longer foreground' }
         [Windows.Forms.SendKeys]::SendWait('^+v')
         $panel = Get-ResidentPanel $resident ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34'))
         $panelRoot = [Windows.Automation.AutomationElement]::FromHandle($panel)
         $null = Get-ControlPoint $panelRoot $marker
         [Windows.Forms.SendKeys]::SendWait('{ESC}')
         $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } 'Quick Paste opened from the native main window but did not dismiss'
-        Write-Host 'Verified native title bar drag, history, Settings close, collapsed Privacy and Quick Paste from the main window'
+        Write-Host 'Verified Quick Paste from the native main window'
         return
     }
     if ($TrayPaste) {

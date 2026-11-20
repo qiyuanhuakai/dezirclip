@@ -93,6 +93,7 @@ func (p *pinnedPreview) conceal() {
 func (p *pinnedPreview) view(c *ui.Context) {
 	a := p.ticket.Appearance
 	a.Opacity = p.opacity.value
+	kit := a.kit()
 	a.panel(c).Children(func() {
 		ui.Row(c).FillWidth().Height(30).Gap(6).Children(func() {
 			label := a.Title
@@ -101,7 +102,7 @@ func (p *pinnedPreview) view(c *ui.Context) {
 			}
 			ui.Text(c, label).Grow(1).FontSize(13).SingleLine().DragWindow()
 			p.opacity.draw(c, a)
-			if previewIcon(c, a.Close, false).Clicked() {
+			if kit.PreviewAction(c, "hide", a.Close, false, false).Clicked() {
 				p.window.Update(p.window.Close)
 			}
 		})
@@ -118,12 +119,6 @@ func (p *pinnedPreview) view(c *ui.Context) {
 			return
 		}
 		ui.Text(c, a.Concealed).Wrap()
-		kit := uikit.Kit{}
-		if a.Palette != nil && a.Palette.Valid() {
-			kit = uikit.NewKit(a.Palette.Mode, a.Palette.Tokens, nil)
-		} else if a.Dark {
-			kit.Mode = "dark"
-		}
 		if kit.Button(c, uikit.ButtonOptions{Label: a.Retry, Disabled: p.loading}).Clicked() {
 			p.refresh(true)
 		}

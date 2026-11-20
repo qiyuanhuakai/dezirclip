@@ -55,6 +55,24 @@ func TestSelectReportsChoiceAndRejectsDisabledOption(t *testing.T) {
 	}
 }
 
+func TestComboCommitsKeyboardChoice(t *testing.T) {
+	kit := Kit{}
+	choice := ""
+	tester := ui.NewTester(func(c *ui.Context) {
+		kit.Apply(c)
+		ui.Column(c).Fill().Children(func() {
+			field, _ := kit.Combo(c, &choice, "Font", "Default", []string{"Example Sans", "Example Serif"}, false)
+			field.FillWidth()
+		})
+	}, 260, 220)
+	tester.ClickAt(20, 16)
+	tester.Key(0, ui.KeyDown)
+	tester.Key(0, ui.KeyEnter)
+	if choice != "Example Sans" {
+		t.Fatalf("keyboard choice = %q, texts %v", choice, tester.Texts())
+	}
+}
+
 func TestSettingsNavigationAndFooterUseApplicationActions(t *testing.T) {
 	kit := Kit{}
 	active, action := "appearance", ""

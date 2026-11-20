@@ -158,36 +158,14 @@ func (a previewAppearance) panel(c *ui.Context) ui.Element {
 	return ui.Column(c).Fill().Background(background).Radius(max(12, theme.Radius)).Border(1, theme.Border.Alpha(.6)).Padding(10).Gap(6)
 }
 
-func previewIcon(c *ui.Context, label string, pin bool) ui.Element {
-	t := c.Theme()
-	return ui.ButtonBase(c).Size(26, 26).Radius(8).Border(1, t.Text.Alpha(.2)).Background(t.Surface.Alpha(.65)).Label(label).Tooltip(label).Draw(func(p *ui.Painter, r ui.Rect) {
-		x, y := r.X+13, r.Y+13
-		if pin {
-			var outline ui.Path
-			outline.MoveTo(x-4, y-7)
-			outline.LineTo(x+4, y-7)
-			outline.LineTo(x+4, y-5)
-			outline.LineTo(x+2, y-4)
-			outline.LineTo(x+2, y)
-			outline.LineTo(x+5, y+2)
-			outline.LineTo(x+5, y+4)
-			outline.LineTo(x-5, y+4)
-			outline.LineTo(x-5, y+2)
-			outline.LineTo(x-2, y)
-			outline.LineTo(x-2, y-4)
-			outline.LineTo(x-4, y-5)
-			outline.Close()
-			p.StrokePath(&outline, 1.4, t.Text)
-			p.Line(x, y+4, x, y+8, 1.4, t.Text)
-		} else {
-			var cross ui.Path
-			cross.MoveTo(x-4, y-4)
-			cross.LineTo(x+4, y+4)
-			cross.MoveTo(x+4, y-4)
-			cross.LineTo(x-4, y+4)
-			p.StrokePath(&cross, 1.5, t.Text)
-		}
-	})
+func (a previewAppearance) kit() uikit.Kit {
+	if a.Palette != nil && a.Palette.Valid() {
+		return uikit.NewKit(a.Palette.Mode, a.Palette.Tokens, nil)
+	}
+	if a.Dark {
+		return uikit.Kit{Mode: "dark"}
+	}
+	return uikit.Kit{Mode: "light"}
 }
 
 func (p *Preview) ShowEntry(ctx context.Context, sequence uint64, id int64, instance string, epoch uint64, reveal bool, placement previewPlacement, appearance previewAppearance) {
@@ -444,14 +422,15 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 					}
 					ui.Text(c, title).Grow(1).FontSize(13).SingleLine()
 					opacity.draw(c, appearance)
-					if appearance.Close != "" && previewIcon(c, appearance.Close, false).Disabled(pinning).Clicked() {
+					kit := appearance.kit()
+					if appearance.Close != "" && kit.PreviewAction(c, "hide", appearance.Close, false, pinning).Clicked() {
 						main.Update(func() {
 							if p.generation == sequence {
 								p.clear()
 							}
 						})
 					}
-					if appearance.Pin != "" && previewIcon(c, appearance.Pin, true).Disabled(pinning).Clicked() {
+					if appearance.Pin != "" && kit.PreviewAction(c, "pin", appearance.Pin, pinning, pinning).Clicked() {
 						pinning = true
 						ticket := pinPreviewRequest{Params: params, Appearance: appearance, Bounds: p.window.Bounds()}
 						go func() {

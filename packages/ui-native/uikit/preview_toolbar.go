@@ -47,11 +47,11 @@ func (k Kit) PreviewToolbar(c *ui.Context, options PreviewToolbarOptions) ui.Ele
 			}
 		})
 		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-			label, run := options.PinLabel, options.OnPin
+			label, run, symbol := options.PinLabel, options.OnPin, headerIcons["pin"]
 			if options.Pinned {
-				label, run = options.CloseLabel, options.OnClose
+				label, run, symbol = options.CloseLabel, options.OnClose, closeIcon
 			}
-			if k.previewButton(c, label, "", headerIcons["pin"], options.Pinned, options.PinPending).Clicked() && run != nil {
+			if k.previewButton(c, label, "", symbol, false, options.PinPending).Clicked() && run != nil {
 				run()
 			}
 			if !options.Pinned && k.previewButton(c, options.CloseLabel, "", closeIcon, false, false).Clicked() && options.OnClose != nil {
@@ -60,6 +60,11 @@ func (k Kit) PreviewToolbar(c *ui.Context, options PreviewToolbarOptions) ui.Ele
 		})
 	})
 	return toolbar
+}
+
+// PreviewAction draws a toolbar icon in compact or floating previews.
+func (k Kit) PreviewAction(c *ui.Context, name, label string, active, disabled bool) ui.Element {
+	return k.previewButton(c, label, "", headerIcons[name], active, disabled)
 }
 
 func (k Kit) previewButton(c *ui.Context, label, value string, symbol *ui.SVG, active, disabled bool) ui.Element {
@@ -75,7 +80,7 @@ func (k Kit) previewButton(c *ui.Context, label, value string, symbol *ui.SVG, a
 	paint(button, style)
 	button.Children(func() {
 		if symbol != nil {
-			ui.Icon(c, symbol).Size(14, 14).TextColor(styleColor(style.Text))
+			ui.Icon(c, symbol).Size(14, 14).TextColor(styleColor(style.Text)).PassThrough()
 		} else {
 			text(c, value, style)
 		}

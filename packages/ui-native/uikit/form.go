@@ -103,27 +103,44 @@ func (k Kit) styleField(c *ui.Context, field ui.Element) ui.Element {
 	return styledText(paint(field.Height(style.Height), style), style).FocusRing(true)
 }
 
-func (k Kit) Combo(c *ui.Context, value *string, label string, choices []string, disabled bool) ui.Element {
-	parts := ui.ComboboxBase(c, value)
-	field := k.styleField(c, parts.Input.Label(label).Disabled(disabled))
-	if !disabled && parts.Open() {
+func (k Kit) Combo(c *ui.Context, value *string, label, placeholder string, choices []string, disabled bool) (ui.Element, bool) {
+	type draft struct{ text, saved string }
+	box := ui.Box(c).Height(k.style("select").Height)
+	edit := ui.Local(box, "deziro-combobox", func() draft { return draft{text: *value, saved: *value} })
+	if edit.saved != *value {
+		edit.text, edit.saved = *value, *value
+	}
+	changed := false
+	box.Children(func() {
+		parts := ui.ComboboxBase(c, &edit.text)
+		field := k.styleField(c, parts.Input.Fill().Label(label).Placeholder(placeholder).Disabled(disabled))
 		parts.Popup(func(panel ui.Element) {
 			paint(panel, k.style("selectMenu"))
-			for _, choice := range choices {
-				if parts.Filtering() && !strings.Contains(strings.ToLower(choice), strings.ToLower(*value)) {
-					continue
+			query := strings.ToLower(strings.TrimSpace(edit.text))
+			ui.Scroll(c).FillWidth().MaxHeight(215).Children(func() {
+				for _, choice := range choices {
+					if parts.Filtering() && !strings.Contains(strings.ToLower(choice), query) {
+						continue
+					}
+					item := parts.Item(choice).Label(choice)
+					style := k.style("selectOption")
+					if item.Highlighted() || choice == *value {
+						style = k.style("selectSelected")
+					}
+					style = k.interactive(c, item, style, item.Highlighted() || choice == *value)
+					paint(item.FillWidth().Height(style.Height), style)
+					item.Children(func() { text(c, choice, style).SingleLine().PassThrough() })
 				}
-				item := parts.Item(choice).Label(choice)
-				style := k.style("selectOption")
-				if choice == *value || item.Highlighted() {
-					style = k.style("selectSelected")
-				}
-				paint(item.Height(style.Height), k.interactive(c, item, style, choice == *value))
-				item.Children(func() { text(c, choice, style) })
-			}
+			})
 		})
-	}
-	return field
+		if choice, ok := parts.Chosen(); ok && !disabled {
+			changed = *value != choice
+			*value, edit.text, edit.saved = choice, choice, choice
+		} else if !field.Focused() && !parts.Open() {
+			edit.text = *value
+		}
+	})
+	return box, changed
 }
 
 func (k Kit) Slider(c *ui.Context, value *float64, minimum, maximum float64, label string) ui.Element {

@@ -72,11 +72,10 @@ func (n *nativeMain) applicationSetting(c *ui.Context, kind, label string) {
 			options = append(options, selected)
 		}
 	}
-	before := selected
 	ui.Text(c, label).FontWeight(600)
-	field := n.mainKit().Combo(c, &selected, label, options, n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "").FillWidth().
-		Disabled(n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "")
-	if field.Changed() && selected != before {
+	field, changed := n.mainKit().Combo(c, &selected, label, "", options, n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "")
+	field.FillWidth()
+	if changed {
 		if selected == system {
 			n.saveSetting(key, "")
 		} else if choice := catalog.pathsByLabel[selected]; choice != "" {

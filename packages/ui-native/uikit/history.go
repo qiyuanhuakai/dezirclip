@@ -55,8 +55,10 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 	// Keep row actions and attachments available to assistive technology.
 	card := ui.ButtonBase(c).Role(ui.RoleGroup).Label(options.Summary)
 	style := k.style("historyCard")
+	hoverStyle := "historyCardHover"
 	if options.Compact {
 		style = k.style("historyCardCompact")
+		hoverStyle = "historyCardCompactHover"
 		if options.Selected {
 			if _, ok := k.widgets["historyCardCompactSelected"]; ok {
 				style = k.style("historyCardCompactSelected")
@@ -64,16 +66,16 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 				selected := k.style("historyCardSelected")
 				style.Fill, style.Border, style.Outline, style.Shadows = selected.Fill, selected.Border, selected.Outline, selected.Shadows
 			}
-		} else if _, ok := k.widgets["historyCardCompactHover"]; ok && card.Hovered() {
-			style = k.style("historyCardCompactHover")
 		}
 	} else if options.Selected {
 		style = k.style("historyCardSelected")
-	} else if _, ok := k.widgets["historyCardHover"]; ok && card.Hovered() {
-		style = k.style("historyCardHover")
 	}
-	if card.Hovered() && (options.Selected || style.Fill == k.style("historyCard").Fill || options.Compact) || card.Pressed() {
-		style = k.interactive(c, card, style, options.Selected)
+	_, themedHover := k.widgets[hoverStyle]
+	if !options.Selected && card.Hovered() && themedHover {
+		style = k.style(hoverStyle)
+	}
+	if card.Pressed() || !options.Selected && card.Hovered() && !themedHover {
+		style = k.interactive(c, card, style, false)
 	} else {
 		style = k.animatePaint(card, style)
 	}

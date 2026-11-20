@@ -1,7 +1,8 @@
 import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
+import { SettingsSlider } from "@deziro/ui-react/components/SettingsSlider";
 import { SettingHelp } from "../SettingHelp";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
-import type { ComponentType, ReactNode, CSSProperties } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { open, message } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
@@ -52,20 +53,6 @@ interface AppearanceSettingsGroupProps {
     setSurfaceOpacity: (val: number) => void;
     saveAppSetting: (key: string, val: string) => void;
 }
-
-const clampProgress = (value: number, min: number, max: number) => {
-    if (max <= min) return "0%";
-    const pct = ((value - min) / (max - min)) * 100;
-    return `${Math.min(100, Math.max(0, pct))}%`;
-};
-
-const buildRangeStyle = (value: number, min: number, max: number) =>
-    ({
-        width: '100%',
-        cursor: 'pointer',
-        accentColor: 'var(--accent-color)',
-        "--range-progress": clampProgress(value, min, max)
-    }) as CSSProperties;
 
 type SystemFont = { family: string; is_mono: boolean; path: string };
 
@@ -256,10 +243,10 @@ const AppearanceSettingsGroup = ({
                             {clipboardItemFontSize}px
                         </span>
                     </div>
-                    <input
-                        type="range"
-                        min="11"
-                        max="18"
+                    <SettingsSlider
+                        aria-label={t('clipboard_item_font_size')}
+                        min={11}
+                        max={18}
                         step="1"
                         value={clipboardItemFontSize}
                         onChange={(e) => {
@@ -267,7 +254,6 @@ const AppearanceSettingsGroup = ({
                             setClipboardItemFontSize(val);
                             saveAppSetting('clipboard_item_font_size', String(val));
                         }}
-                        style={buildRangeStyle(clipboardItemFontSize, 11, 18)}
                     />
                 </div>
 
@@ -281,10 +267,10 @@ const AppearanceSettingsGroup = ({
                             {clipboardTagFontSize}px
                         </span>
                     </div>
-                    <input
-                        type="range"
-                        min="8"
-                        max="14"
+                    <SettingsSlider
+                        aria-label={t('clipboard_tag_font_size')}
+                        min={8}
+                        max={14}
                         step="1"
                         value={clipboardTagFontSize}
                         onChange={(e) => {
@@ -292,7 +278,6 @@ const AppearanceSettingsGroup = ({
                             setClipboardTagFontSize(val);
                             saveAppSetting('clipboard_tag_font_size', String(val));
                         }}
-                        style={buildRangeStyle(clipboardTagFontSize, 8, 14)}
                     />
                 </div>
 
@@ -343,14 +328,14 @@ const AppearanceSettingsGroup = ({
                             </div>
                             <span className="settings-range-value">{draftPreviewOpacity ?? previewPreferences.opacity}%</span>
                         </div>
-                        <input id="preview-opacity" type="range" min="0" max="100"
+                        <SettingsSlider id="preview-opacity" min={0} max={100}
                             aria-label={t("preview_opacity")} value={draftPreviewOpacity ?? previewPreferences.opacity}
                             disabled={!previewReady}
                             onChange={event => {
                                 const value = Number(event.target.value);
                                 setDraftPreviewOpacity(value);
                                 void savePreview(() => savePreviewPreference("opacity", value));
-                            }} style={buildRangeStyle(draftPreviewOpacity ?? previewPreferences.opacity, 0, 100)} />
+                            }} />
                     </div>
                     {(previewSaveError || previewLoadError) && <p className="hint" role="alert">{t("preview_preferences_failed")}</p>}
                 </NativeFeatureBoundary>
@@ -419,17 +404,16 @@ const AppearanceSettingsGroup = ({
                                         <span className="item-label">{t('background_opacity')}</span>
                                         <span className="settings-range-value">{customBackgroundOpacity}%</span>
                                     </div>
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="100"
+                                    <SettingsSlider
+                                        aria-label={t('background_opacity')}
+                                        min={0}
+                                        max={100}
                                         value={customBackgroundOpacity}
                                         onChange={(e) => {
                                             const val = parseInt(e.target.value);
                                             setCustomBackgroundOpacity(val);
                                             saveAppSetting('custom_background_opacity', String(val));
                                         }}
-                                        style={buildRangeStyle(customBackgroundOpacity, 0, 100)}
                                     />
                                 </div>
                             )}
@@ -441,17 +425,16 @@ const AppearanceSettingsGroup = ({
                                 <span className="item-label">{t('surface_opacity') || '界面底板透明度'}</span>
                                 <span className="settings-range-value">{surfaceOpacity}%</span>
                             </div>
-                            <input
-                                type="range"
-                                min="0"
-                                max="100"
+                            <SettingsSlider
+                                aria-label={t('surface_opacity')}
+                                min={0}
+                                max={100}
                                 value={surfaceOpacity}
                                 onChange={(e) => {
                                     const val = parseInt(e.target.value);
                                     setSurfaceOpacity(val);
                                     saveAppSetting('surface_opacity', String(val));
                                 }}
-                                style={buildRangeStyle(surfaceOpacity, 0, 100)}
                             />
 
                         </div>

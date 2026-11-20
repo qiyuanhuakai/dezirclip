@@ -2,6 +2,7 @@ package presets
 
 import (
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
@@ -51,7 +52,9 @@ func TestImportedWidgetStyles(t *testing.T) {
 }
 
 func TestImportedCardPaintsHoverAndCompactSelection(t *testing.T) {
-	kit := Imported("mica", "light", widgetTheme).Kit()
+	preset := Imported("mica", "light", widgetTheme)
+	kit := preset.Kit()
+	duration := time.Duration(preset.Tokens().TransitionMs) * time.Millisecond
 	options := uikit.HistoryCardOptions{Summary: "Forest entry"}
 	tester := ui.NewTester(func(c *ui.Context) {
 		kit.Apply(c)
@@ -66,12 +69,14 @@ func TestImportedCardPaintsHoverAndCompactSelection(t *testing.T) {
 	}
 	x, y := card.X+card.W-18, card.Y+card.H/2
 	tester.Move(x, y)
+	tester.Advance(duration)
 	pixel := tester.Image().RGBAAt(int(x), int(y))
 	if pixel.R != 210 || pixel.G != 226 || pixel.B != 211 {
 		t.Fatalf("hover pixel = %v", pixel)
 	}
 	options.Compact, options.Selected = true, true
 	tester.Frame()
+	tester.Advance(duration)
 	card, ok = tester.Find("Forest entry")
 	if !ok {
 		t.Fatal("compact card not laid out")

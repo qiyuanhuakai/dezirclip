@@ -1,4 +1,5 @@
 import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
+import { SettingsSlider } from "@deziro/ui-react/components/SettingsSlider";
 import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
@@ -354,10 +355,9 @@ const GeneralSettingsGroup = ({
                             <span className="item-label">{t('sound_volume') || "Sound Volume"}</span>
                             <span className="item-desc">{soundVolume}%</span>
                         </div>
-                        <input
-                            type="range"
-                            min="0"
-                            max="100"
+                        <SettingsSlider
+                            min={0}
+                            max={100}
                             step="1"
                             aria-label={t("sound_volume")}
                             value={soundVolume}

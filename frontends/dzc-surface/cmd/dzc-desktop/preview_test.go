@@ -26,8 +26,8 @@ func TestPreviewTooltipPaintsOpaqueTextOnTransparentRoot(t *testing.T) {
 					ui.Row(c).FillWidth().Height(30).Gap(6).Children(func() {
 						ui.Text(c, "内容预览").Grow(1).FontSize(13)
 						opacity.draw(c, a)
-						previewIcon(c, a.Pin, true)
-						previewIcon(c, a.Close, false)
+						a.kit().PreviewAction(c, "pin", a.Pin, false, false)
+						a.kit().PreviewAction(c, "hide", a.Close, false, false)
 					})
 				})
 			}, 360, 160)

@@ -20,5 +20,6 @@ export { VirtualClipboardList, type VirtualClipboardListHandle, type VirtualClip
 export { HistoryCard, HistoryCardMeta, type HistoryCardProps, type HistoryCardMetaProps } from "./components/HistoryCard";
 export { EmojiGrid, EmojiTabs, type EmojiTab } from "./components/EmojiPicker";
 export { SettingsToggle, type SettingsToggleProps } from "./components/SettingsToggle";
+export { SettingsSlider, type SettingsSliderProps } from "./components/SettingsSlider";
 export { ScrollToTopButton } from "./components/ScrollToTopButton";
 export { HotkeyBinding, type HotkeyBindingProps } from "./components/HotkeyBinding";
