@@ -12,3 +12,5 @@ Build the gallery in frontends/dzc-surface/cmd/dzc-ui-gallery. It can create a n
 
     go -C frontends/dzc-surface build -o ../../dzc-ui-gallery ./cmd/dzc-ui-gallery
     node scripts/compare-ui-components.mjs native=./dzc-ui-gallery
+
+See the [WebView and MyGo Native comparisons](../ui-react/README.md#webview-and-mygo-native-comparisons) for settings toggles, sliders, shortcut bindings, scroll-to-top buttons, and emoji controls.

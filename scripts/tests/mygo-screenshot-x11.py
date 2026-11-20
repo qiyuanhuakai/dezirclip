@@ -314,12 +314,17 @@ def check(desktop, helpers, *, native_main=False):
         switch('Language', '繁體中文', 'tw', '語言')
         wait(lambda: find('顯示搜尋欄'), 'Traditional Chinese settings did not render')
         main = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+        click('關閉')
+        wait(lambda: find('隱藏') and not find('語言', Atspi.Role.COMBO_BOX),
+             'Closing Settings did not return to the native history')
         click('隱藏')
-        wait(lambda: not find('語言', Atspi.Role.COMBO_BOX), 'The main window was not hidden')
+        wait(lambda: 'IsViewable' not in subprocess.check_output(['xwininfo', '-id', main], text=True),
+             'The main window was not hidden')
         chord(Gdk.KEY_F8)
         wait(lambda: subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1] == main
-             and find('語言', Atspi.Role.COMBO_BOX),
-             'Traditional Chinese did not survive hiding and summoning the main window')
+             and find('隱藏'), 'Traditional Chinese did not survive summoning the native history')
+        click('設定')
+        wait(lambda: find('語言', Atspi.Role.COMBO_BOX), 'Traditional Chinese settings did not reopen')
 
         click('隱私設定')
         wait(lambda: find('隱私保護'), 'The privacy settings did not use Traditional Chinese')
