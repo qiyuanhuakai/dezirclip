@@ -333,9 +333,14 @@ func (n *nativeMain) revealWhenReady() {
 
 func (n *nativeMain) watch(session context.Context, cursor uint64) {
 	for session.Err() == nil {
-		read, cancel := context.WithTimeout(session, 5*time.Second)
+		// Finish the bounded read when a view refresh retires its presentation.
+		// Interrupting the transport here would also retire the original paste target.
+		read, cancel := context.WithTimeout(context.WithoutCancel(session), 5*time.Second)
 		events, err := n.actions.Changes(read, &cursor)
 		cancel()
+		if session.Err() != nil {
+			return
+		}
 		if err != nil {
 			n.update(session, func() { n.prepare(n.resume) })
 			return
