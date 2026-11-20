@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"log"
 	"os"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -259,6 +260,8 @@ func run() error {
 		if err := g.prepare(tester); err != nil {
 			return err
 		}
+		transition := presets.Select(g.theme, g.mode).Tokens().TransitionMs
+		tester.Advance(time.Duration(transition) * time.Millisecond)
 		if *inspect {
 			if err := json.NewEncoder(os.Stdout).Encode(tester.Texts()); err != nil {
 				return err
