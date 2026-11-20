@@ -12,8 +12,10 @@ def nsis_string(value):
     return str(value).replace('$', '$$').replace('"', '$\\"')
 
 
-def build(stage, output, version, unicode_path_fixture=False, arm64=False):
+def build(stage, output, version, unicode_path_fixture=False, arm64=False, fast_compression=False):
     extra = ['/DMYGO_ARM64'] if arm64 else []
+    if fast_compression:
+        extra.append('/DMYGO_FAST_COMPRESSION')
     if unicode_path_fixture:
         if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
             raise RuntimeError('Unicode installation fixture requires a disposable GitHub runner')

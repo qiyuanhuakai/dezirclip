@@ -20,7 +20,7 @@ def run(arguments, **kwargs):
     subprocess.run(arguments, check=True, cwd=ROOT, stdout=sys.stderr, **kwargs)
 
 
-def build(platform, directory):
+def build(platform, directory, package_only=False):
     target = TARGETS[platform]
     directory = directory.resolve()
     directory.mkdir(parents=True, exist_ok=True)
@@ -37,13 +37,14 @@ def build(platform, directory):
         command = ["cargo", "--manifest-path", str(ROOT / "src-tauri" / "Cargo.toml")]
         common = ["--locked", "--no-default-features", "--release", "--target", target, "--target-dir", str(directory)]
         run([command[0], "build", *command[1:], "--bin", "dzc", *common], env=environment)
-        before = hashlib.sha256(binary.read_bytes()).hexdigest()
-        run([command[0], "check", *command[1:], "--lib", "--bin", "dzc", *common], env=environment)
-        if platform == "windows-x86_64":
-            run([command[0], "test", *command[1:], "--lib", "--bin", "dzc", *common], env=environment)
-            run(["cargo", "test", "-p", "dzc-core", "-p", "dzc-platform", "-p", "dzc-protocol", "--lib", *common], env=environment)
-        if hashlib.sha256(binary.read_bytes()).hexdigest() != before:
-            raise ValueError("cargo check replaced the standalone CLI artifact")
+        if not package_only:
+            before = hashlib.sha256(binary.read_bytes()).hexdigest()
+            run([command[0], "check", *command[1:], "--lib", "--bin", "dzc", *common], env=environment)
+            if platform == "windows-x86_64":
+                run([command[0], "test", *command[1:], "--lib", "--bin", "dzc", *common], env=environment)
+                run(["cargo", "test", "-p", "dzc-core", "-p", "dzc-platform", "-p", "dzc-protocol", "--lib", *common], env=environment)
+            if hashlib.sha256(binary.read_bytes()).hexdigest() != before:
+                raise ValueError("cargo check replaced the standalone CLI artifact")
     else:
         active = subprocess.check_output(["rustup", "show", "active-toolchain"], text=True).split()[0]
         rustup = subprocess.check_output(["rustup", "show", "home"], text=True).strip()
@@ -62,6 +63,9 @@ tar -C /source --exclude=target --exclude='crates/*/target' --exclude=src-tauri/
     | tar -C /work/project -xf -
 cd /work/project
 cargo build --manifest-path src-tauri/Cargo.toml --release --bin dzc --locked --no-default-features --target "$DZC_BUILD_TARGET"
+if [ "$DZC_CLI_PACKAGE_ONLY" = 1 ]; then
+    exit 0
+fi
 binary="/target/$DZC_BUILD_TARGET/release/dzc"
 before="$(sha256sum "$binary")"
 cargo check --manifest-path src-tauri/Cargo.toml --release --lib --bin dzc --locked --no-default-features --target "$DZC_BUILD_TARGET"
@@ -89,7 +93,8 @@ test "$before" = "$(sha256sum "$binary")"
              "-e", "CARGO_HOME=/cargo", "-e", "CARGO_TARGET_DIR=/target",
              "-e", "CARGO_BUILD_JOBS=4",
              "-e", "HOME=/work/home", "-e", "PATH=/rust-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-             "-e", f"DZC_BUILD_TARGET={target}", *provenance, image, "bash", "-c", script])
+             "-e", f"DZC_BUILD_TARGET={target}", "-e", f"DZC_CLI_PACKAGE_ONLY={int(package_only)}",
+             *provenance, image, "bash", "-c", script])
     enforce(inspect_binary(binary, platform))
     return binary
 
@@ -98,10 +103,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=TARGETS, required=True)
     parser.add_argument("--target-dir", type=Path)
+    parser.add_argument("--package-only", action="store_true")
     args = parser.parse_args()
     try:
         directory = args.target_dir or ROOT / ".harness" / "cli-target" / args.platform
-        print(build(args.platform, directory))
+        print(build(args.platform, directory, args.package_only))
         return 0
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"standalone dzc build: {error}", file=sys.stderr)

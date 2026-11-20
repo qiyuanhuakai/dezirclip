@@ -351,6 +351,7 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
   }
   return { run_id: Number(runId), run_attempt: Number(runAttempt), workflow_id: workflow.id,
     status: run.status, conclusion: run.conclusion, asset_cutoff: dual ? Math.max(...times) : Math.min(...times),
+    ...(dual ? { run_started_at: run.run_started_at } : {}),
     jobs: jobs.map(job => ({ id: job.id, name: job.name, status: job.status, conclusion: job.conclusion,
       started_at: job.started_at })).sort((a, b) => a.id - b.id) };
 }
@@ -372,12 +373,6 @@ function verifiedReleaseAssets(release, version, cutoff, dual = false) {
       ...['amd64', 'arm64'].map(arch => `DezirClip-MyGo_${value}_${arch}.deb`)];
     names.push(...signedMyGo.flatMap(name => [name, `${name}.sig`]),
       ...['x86_64', 'aarch64'].map(arch => `DezirClip-MyGo-${rpmVersion}-${rpmRelease}.${arch}.rpm`));
-    for (const arch of ['x64', 'arm64']) {
-      for (const desktop of ['Tauri', 'MyGo']) {
-        const archive = `DezirClip-v${value}-windows-${arch}-${desktop}-portable.zip`;
-        names.push(archive, `${archive}.sha256`);
-      }
-    }
   } else {
     names.push(...['x86_64', 'aarch64'].map(arch => `DezirClip-${value}-linux-${arch}.flatpak`));
     if (requiresMyGo(value)) names.push(`DezirClip-v${value}-windows-x64-MyGo${value === '0.2.0-alpha.9' ? '.zip' : '-setup.exe'}`);

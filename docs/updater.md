@@ -94,10 +94,12 @@ Stable 只读取 stable.json，排除全部预发布。Preview 分别读取两�
 常规发布由 tag 触发，按以下步骤运行。
 
 1. 核对同步版本及签名配置，创建 GitHub 草稿。
-2. 四个平台并行打包。每个平台的 Tauri 与 MyGo 共用同一组发布版 Rust 辅助程序。Windows 两份便携 ZIP 共用该平台的便携辅助程序。独立 CLI 保留四个平台的兼容构建。
+2. 四个平台并行打包。每个平台单独编译 Tauri 主程序，再在打包时生成同一组 Rust 辅助程序供 Tauri 和 MyGo 使用。桌面发布使用 ThinLTO，Windows NSIS 使用 zlib，Linux 并行打包 Tauri RPM 与 MyGo。独立 CLI 并行执行四个平台的兼容构建和实际制品验证。
 3. 同一平台任务直接检查制品架构、构建身份和 MyGo 安装包。Linux 启动提取后的 deb 与 AppImage 检查入口。Windows x64 用独立桌面会话执行 MyGo 的安装、覆盖升级和卸载。开发检查由 PR CI 执行，历史安装和故障回归可用 CI 的全量验收模式运行。
 4. `publish-dual` 核对原 tag 推送、精确 run/attempt、构建任务和资产清单，重新下载八份 NSIS/AppImage 与配套签名，校验 SHA-256、签名、版本和文件名。通过后公开草稿，并写入包含两种桌面的单份通道索引。
-5. 预发布推进 `preview.json`，正式版推进 `stable.json`。先上传版本索引并回读，再激活。等版本必须内容一致，较新通道继续生效。deb、rpm 和便携 ZIP 通过原安装方式更新。
+5. 预发布推进 `preview.json`，正式版推进 `stable.json`。先上传版本索引并回读，再激活。等版本必须内容一致，较新通道继续生效。deb 和 rpm 通过原安装方式更新。
+
+首次成功的 tag 发布会在 Actions 摘要记录从工作流开始到通道发布的时长。目标为 15–20 分钟，重跑的耗时不纳入这项指标。
 
 双桌面版若只在最后一步失败，从 `master` 手动运行 Release。草稿选择 `resume-dual-draft`，已公开版选择 `sync-dual-channel`。填写原版 tag、run ID 和 attempt。恢复沿用原始制品、签名和构建结果。旧版可沿用 `resume-verified-draft` 和 `sync-published-channel`，这两个入口仍依赖其原始 Windows 升级汇总。
 
@@ -109,7 +111,7 @@ Stable 只读取 stable.json，排除全部预发布。Preview 分别读取两�
 
 整个 release 工作流共用串行锁，配置 `queue: max` 保留排队任务且禁止取消正在运行的发布，避免补同步挤掉排队发行，或 Stable/Preview 互相覆盖。版本比较仍拒绝旧版本回退。签名缺失、缺包、验签失败及构建失败均保持 draft，不推进通道。已公开且有完整已验签制品的旧版本允许保留发布，但不覆盖较新通道。队列配置遵循 [GitHub Actions 并发规则](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
 
-旧 Flatpak 留在对应历史发布页。常规发布提供两种桌面的 NSIS、AppImage、deb、rpm 和适用于 Windows 的便携 ZIP。
+旧 Flatpak 留在对应历史发布页。常规发布提供两种桌面的 NSIS、AppImage、deb 和 rpm。
 
 GitHub Release 资产重命名不提供事务：替换活动索引时可能短暂出现 404。脚本先保留旧资产，重命名失败会检查操作是否其实成功，并尝试恢复旧名称；断网或 GitHub 故障可能需要维护者恢复活动资产名。这影响索引可用性，不绕过客户端签名/版本检查。首次通道 release 也先建 draft，索引上传核验后才公开。遗留 draft channel release 会中止自动操作，维护者应检查后恢复，不自动猜测未完成状态。
 

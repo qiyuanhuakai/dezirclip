@@ -412,6 +412,7 @@ pub async fn update_pinned_order(app: AppHandle, orders: Vec<(i64, i64)>) -> App
     let orders = orders.into_iter().map(|(id, order)| LibraryPinOrder { id, order }).collect();
     edit_library(&app, Method::DesktopHistoryReorder, LibraryOrderParams {
         service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, orders,
+        relative_order: None,
     }).await
 }
 

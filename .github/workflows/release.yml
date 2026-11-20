@@ -172,11 +172,11 @@ jobs:
   build-standalone-cli:
     name: Build compatible standalone CLI
     if: github.event_name == 'push'
-    needs: create-release
     uses: ./.github/workflows/standalone-cli.yml
     with:
       artifact-prefix: release-cli
       version: ${{ github.ref_name }}
+      package-only: true
 
   publish-standalone-cli:
     name: Publish verified standalone archives
@@ -215,34 +215,29 @@ jobs:
     if: github.event_name == 'push'
     needs: create-release
     runs-on: ${{ matrix.platform }}
+    env:
+      CARGO_PROFILE_RELEASE_LTO: thin
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '8'
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: linux-x86_64
             platform: ubuntu-24.04
-            args: ''
-            rust_target: ''
             msvc_arch: ''
-            mygo_target: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-gnu
           - name: linux-aarch64
             platform: ubuntu-24.04-arm
-            args: ''
-            rust_target: ''
             msvc_arch: ''
-            mygo_target: aarch64-unknown-linux-gnu
+            target: aarch64-unknown-linux-gnu
           - name: windows-x86_64
             platform: windows-latest
-            args: ''
-            rust_target: ''
             msvc_arch: ''
-            mygo_target: x86_64-pc-windows-msvc
+            target: x86_64-pc-windows-msvc
           - name: windows-aarch64
             platform: windows-latest
-            args: --target aarch64-pc-windows-msvc
-            rust_target: aarch64-pc-windows-msvc
             msvc_arch: amd64_arm64
-            mygo_target: aarch64-pc-windows-msvc
+            target: aarch64-pc-windows-msvc
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -252,23 +247,16 @@ jobs:
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            pkg-config \
-            libpipewire-0.3-dev \
-            libgbm-dev \
-            libx11-dev \
-            libxi-dev \
-            libxrandr-dev \
-            libxtst-dev \
-            libdbus-1-dev \
-            xdg-utils \
-            squashfs-tools
+          packages=(libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+            pkg-config libpipewire-0.3-dev libgbm-dev libx11-dev libxi-dev libxrandr-dev
+            libxtst-dev libdbus-1-dev xdg-utils squashfs-tools)
+          options=(-o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
+          if ! sudo apt-get "${options[@]}" install -y --no-install-recommends "${packages[@]}"; then
+            sudo apt-get "${options[@]}" update
+            sudo apt-get "${options[@]}" install -y --no-install-recommends "${packages[@]}"
+          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -282,14 +270,9 @@ jobs:
           cache: pnpm
 
       - name: Install Rust stable
-        if: matrix.rust_target == ''
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Rust stable with target
-        if: matrix.rust_target != ''
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust_target }}
+          targets: ${{ matrix.target }}
 
       - name: Setup MSVC ARM64 toolchain
         if: matrix.msvc_arch != ''
@@ -308,103 +291,107 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
+          shared-key: release-thin-lto-${{ matrix.name }}
+
+      - name: Cache Linux packaging tools
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/tauri
+          key: tauri-linux-bundle-tools-2.12.3-${{ runner.arch }}
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Publish Tauri bundles
-        uses: tauri-apps/tauri-action@v0
+      - name: Build the Tauri executable and MyGo Native
+        id: desktop
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
-          tagName: ${{ github.ref_name }}
-          releaseName: DezirClip ${{ github.ref_name }}
-          releaseBody: Native dzc includes pick, TUI, Shell initialization and read-only MCP. Download the matching DezirClip installer or standalone dzc archive for your platform; SHA-256 checksums accompany standalone archives.
-          releaseDraft: true
-          includeUpdaterJson: false
-          prerelease: ${{ needs.create-release.outputs.prerelease == 'true' }}
-          args: ${{ matrix.args }}
-
-      - name: Bundle and upload RPM with pre-release package ordering
-        if: runner.os == 'Linux'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        shell: bash
+          TARGET_TRIPLE: ${{ matrix.target }}
         run: |
-          node scripts/bundle-rpm.mjs --receipt "$RUNNER_TEMP/rpm-bundle.json" --reuse-sidecars
-          rpm_path="$(node -e 'const fs=require("node:fs"); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).artifact);' "$RUNNER_TEMP/rpm-bundle.json")"
-          test -s "$rpm_path"
-          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/${{ needs.create-release.outputs.release_id }}" --jq '.draft')" = true
-          gh release upload "$GITHUB_REF_NAME" "$rpm_path" --clobber
+          pnpm run build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $build = @('build', '--locked', '--release', '--manifest-path', 'src-tauri/Cargo.toml',
+                     '--bin', 'dezirclip', '--features', 'tauri/custom-protocol', '--target', $env:TARGET_TRIPLE)
+          cargo @build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          pnpm run desktop:mygo:build --target "$env:TARGET_TRIPLE"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $metadata = cargo metadata --format-version 1 --no-deps --locked | ConvertFrom-Json
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $buildRoot = Join-Path $metadata.target_directory $env:TARGET_TRIPLE
+          "directory=$(Join-Path $buildRoot 'release')" >> $env:GITHUB_OUTPUT
 
-      - name: Build and package MyGo Native with the same release sidecars
+      - name: Bundle and sign Tauri using the standalone sidecars
+        shell: pwsh
+        env:
+          TARGET_TRIPLE: ${{ matrix.target }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $bundle = @('exec', 'tauri', 'bundle', '--ci', '--target', $env:TARGET_TRIPLE,
+                      '--features', 'tauri/custom-protocol', '--bundles')
+          if ($IsWindows) {
+            $override = Join-Path $env:RUNNER_TEMP 'release-nsis.json'
+            Set-Content -LiteralPath $override -Value '{"bundle":{"windows":{"nsis":{"compression":"zlib"}}}}' -Encoding utf8
+            $bundle += @('nsis', '--config', $override)
+          } else {
+            $bundle += 'deb,appimage'
+          }
+          pnpm @bundle
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Package MyGo Native and the Tauri RPM
+        id: additional-bundles
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          MYGO_TARGET: ${{ matrix.mygo_target }}
+          MYGO_TARGET: ${{ matrix.target }}
           PLATFORM: ${{ matrix.name }}
-          RUST_TARGET: ${{ matrix.rust_target }}
+          SIDECARS: ${{ steps.desktop.outputs.directory }}
         run: |
           set -euo pipefail
-          pnpm run desktop:mygo:build --target "$MYGO_TARGET"
-          cargo_target="$(cargo metadata --format-version 1 --no-deps --locked | node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(0)).target_directory)')"
-          sidecars="$cargo_target/${RUST_TARGET:+$RUST_TARGET/}release"
-          python scripts/bundle-mygo.py --target "$PLATFORM" --sidecars "$sidecars" \
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            node scripts/bundle-rpm.mjs --receipt "$RUNNER_TEMP/rpm-bundle.json" --reuse-sidecars &
+            rpm_pid=$!
+          fi
+          result=0
+          python scripts/bundle-mygo.py --target "$PLATFORM" --sidecars "$SIDECARS" \
             --native "artifacts/dzc-desktop/$MYGO_TARGET" --output "$RUNNER_TEMP/mygo-release" \
-            --revision "$GITHUB_SHA" --tag "$GITHUB_REF_NAME" --smoke
+            --revision "$GITHUB_SHA" --tag "$GITHUB_REF_NAME" --smoke || result=$?
+          if [[ -n "${rpm_pid:-}" ]]; then
+            wait "$rpm_pid" || result=$?
+          fi
+          if (( result != 0 )); then exit "$result"; fi
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            rpm_path="$(node -e 'const fs=require("node:fs"); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).artifact);' "$RUNNER_TEMP/rpm-bundle.json")"
+            test -s "$rpm_path"
+            echo "rpm=$rpm_path" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Attach MyGo packages to the original draft
-        shell: bash
+      - name: Attach both desktop variants to the original draft
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+          BUNDLE_ROOT: ${{ steps.desktop.outputs.directory }}
+          TAURI_RPM: ${{ steps.additional-bundles.outputs.rpm }}
         run: |
-          set -euo pipefail
-          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.draft')" = true
-          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/mygo-release/"* --clobber
-
-      - name: Package both Windows portable desktops
-        if: runner.os == 'Windows'
-        shell: bash
-        env:
-          MYGO_TARGET: ${{ matrix.mygo_target }}
-          PLATFORM: ${{ matrix.name }}
-          TAURI_ENV_TARGET_TRIPLE: ${{ matrix.mygo_target }}
-        run: |
-          set -euo pipefail
-          pnpm exec tauri build --ci --no-bundle --features portable --target "$MYGO_TARGET" \
-            --config '{"build":{"beforeBuildCommand":null}}'
-          pnpm run tauri:prepare-sidecars --portable --release --phase portable
-          cargo_target="$(cargo metadata --format-version 1 --no-deps --locked | node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(0)).target_directory)')"
-          sidecars="$cargo_target/$MYGO_TARGET/release"
-          python scripts/bundle-mygo.py --portable --target "$PLATFORM" --sidecars "$sidecars" \
-            --native "artifacts/dzc-desktop/$MYGO_TARGET" --output "$RUNNER_TEMP/portable-release" \
-            --revision "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable.ps1 \
-            -TargetDirectory "$sidecars" -OutputDirectory "$RUNNER_TEMP/portable-release"
-          arch=x64
-          if [[ "$PLATFORM" == windows-aarch64 ]]; then arch=arm64; fi
-          cd "$RUNNER_TEMP/portable-release"
-          mv dezirclip-portable.zip "DezirClip-$GITHUB_REF_NAME-windows-$arch-Tauri-portable.zip"
-          for archive in *.zip; do sha256sum "$archive" > "$archive.sha256"; done
-
-      - name: Attach Windows portable packages and checksums
-        if: runner.os == 'Windows'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
-        run: |
-          set -euo pipefail
-          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.draft')" = true
-          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/portable-release/"*.zip* --clobber
+          $draft = gh api "repos/$env:GITHUB_REPOSITORY/releases/$env:RELEASE_ID" --jq '.draft'
+          if ($LASTEXITCODE -or $draft -cne 'true') { throw 'Expected the original draft' }
+          $formats = if ($IsWindows) { @('nsis') } else { @('deb', 'appimage') }
+          $files = @(foreach ($format in $formats) {
+            Get-ChildItem -LiteralPath (Join-Path $env:BUNDLE_ROOT "bundle/$format") -File |
+              Where-Object Extension -In '.exe', '.deb', '.AppImage', '.sig' |
+              Select-Object -ExpandProperty FullName
+          })
+          if ($env:TAURI_RPM) { $files += $env:TAURI_RPM }
+          $files += @(Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'mygo-release') -File |
+            Select-Object -ExpandProperty FullName)
+          gh release upload "$env:GITHUB_REF_NAME" @files --clobber
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
   collect-release-identities:
     name: Collect actual final package identities
@@ -459,6 +446,20 @@ jobs:
           name: updater-channel-sync-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/updater-channel-sync.json
           if-no-files-found: error
+      - name: Record the first-attempt release time
+        if: github.run_attempt == '1'
+        shell: bash
+        run: |
+          node --input-type=module - "$RUNNER_TEMP/updater-channel-sync.json" <<'JS'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          const { workflow } = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+          const elapsed = Math.round((Date.now() - Date.parse(workflow.run_started_at)) / 1000);
+          if (Number.isFinite(elapsed) && elapsed >= 0) {
+            const minutes = (elapsed / 60).toFixed(1);
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+              `### Release timing\nFirst attempt: **${minutes} minutes** from workflow start to channel publication. Target: **15–20 minutes**.\n`);
+          }
+          JS
 
   publish-historical-recovery:
     name: Publish the fixed historical recovery

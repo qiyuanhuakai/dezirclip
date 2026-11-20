@@ -8,7 +8,6 @@ import runpy
 import shutil
 import subprocess
 import tempfile
-import zipfile
 
 from release_identities import inspect_machine
 
@@ -138,14 +137,11 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--revision', required=True)
     parser.add_argument('--tag', required=True)
-    parser.add_argument('--portable', action='store_true')
     parser.add_argument('--smoke', action='store_true')
     args = parser.parse_args()
     version = json.loads((ROOT / 'package.json').read_text(encoding='utf-8'))['version']
     if args.tag != 'v' + version:
         raise ValueError('Desktop package version differs from the tag')
-    if args.portable and not args.target.startswith('windows-'):
-        raise ValueError('The portable ZIP format is supported on Windows')
     pnpm = shutil.which('pnpm')
     if not pnpm:
         raise ValueError('pnpm is required for packaging and signing')
@@ -163,20 +159,12 @@ def main():
         else:
             arm = args.target == 'windows-aarch64'
             arch = 'arm64' if arm else 'x64'
-            if args.portable:
-                (stage_dir / 'data').mkdir()
-                archive = output / f'DezirClip-v{version}-windows-{arch}-MyGo-portable.zip'
-                with zipfile.ZipFile(archive, 'x', compression=zipfile.ZIP_DEFLATED, compresslevel=3) as package:
-                    for path in sorted(stage_dir.rglob('*')):
-                        package.write(path, path.relative_to(stage_dir))
-                runpy.run_path(str(ROOT / 'scripts/stage-mygo-windows.py'))['verify_archive'](archive, stage_dir)
-            else:
-                installer = output / f'DezirClip-v{version}-windows-{arch}-MyGo-setup.exe'
-                build = runpy.run_path(str(ROOT / 'scripts/build-mygo-installer.py'))['build']
-                build(stage_dir, installer, version, arm64=arm)
-                if args.smoke and not arm:
-                    verify = runpy.run_path(str(ROOT / 'scripts/tests/mygo-installer-windows.py'))['verify']
-                    verify(installer, stage_dir, native_main=True)
+            installer = output / f'DezirClip-v{version}-windows-{arch}-MyGo-setup.exe'
+            build = runpy.run_path(str(ROOT / 'scripts/build-mygo-installer.py'))['build']
+            build(stage_dir, installer, version, arm64=arm, fast_compression=True)
+            if args.smoke and not arm:
+                verify = runpy.run_path(str(ROOT / 'scripts/tests/mygo-installer-windows.py'))['verify']
+                verify(installer, stage_dir, native_main=True, focused=True)
     for file in output.iterdir():
         if file.suffix in {'.AppImage', '.exe', '.deb'}:
             run([pnpm, 'exec', 'tauri', 'signer', 'sign', '--app-version', version, file], cwd=ROOT)

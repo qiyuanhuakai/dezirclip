@@ -143,17 +143,10 @@ function publisherFixture(options = {}) {
       state.product.assets.push(asset(`DezirClip-${suffix}`, Buffer.from('rpm')));
       if (options.dual) state.product.assets.push(asset(`DezirClip-MyGo-${suffix}`, Buffer.from('rpm')));
     }
-    if (options.dual) {
-      for (const arch of ['x64', 'arm64']) {
-        for (const desktop of ['Tauri', 'MyGo']) {
-          const name = `DezirClip-v${version}-windows-${arch}-${desktop}-portable.zip`;
-          state.product.assets.push(asset(name, Buffer.from('zip')), asset(`${name}.sha256`, Buffer.from('checksum')));
-        }
-      }
-    }
     state.workflow = { id: 303481695, path: '.github/workflows/release.yml', state: 'active' };
     state.run = { id: 7001, run_attempt: 1, workflow_id: state.workflow.id, path: state.workflow.path,
       event: 'push', head_branch: tag, head_sha: 'a'.repeat(40),
+      run_started_at: '2026-10-21T00:00:00Z',
       repository: { full_name: repository }, head_repository: { full_name: repository },
       status: options.running ? 'in_progress' : 'completed', conclusion: options.running ? null : 'success' };
     const names = [
@@ -320,9 +313,12 @@ test('one atomic channel index carries both verified desktop variants without Fl
   const { state, config, transport, active } = publisherFixture({ version, sync: true, dual: true, running: true });
   const receipt = publishDual('publish-dual', version, config, 7001, 1, () => {}, transport);
   const manifest = active('preview.json');
-  assert.equal(state.product.assets.length, 44);
+  assert.equal(state.product.assets.length, 36);
+  assert.equal(state.product.assets.filter(asset => asset.name.endsWith('.zip')).length, 2);
+  assert(state.product.assets.filter(asset => asset.name.endsWith('.zip')).every(asset => asset.name.startsWith('dzc-')));
   assert.equal(receipt.signed_assets.length, 16);
   assert.equal(receipt.status, 'synchronized');
+  assert.equal(receipt.workflow.run_started_at, '2026-10-21T00:00:00Z');
   assert.equal(Object.keys(manifest.mygo_platforms).length, 4);
   assert.match(manifest.platforms['linux-aarch64'].url, /DezirClip_.*_aarch64\.AppImage$/);
   assert.match(manifest.mygo_platforms['linux-aarch64'].url, /DezirClip-MyGo_.*_aarch64\.AppImage$/);

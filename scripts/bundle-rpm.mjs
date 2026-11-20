@@ -30,21 +30,25 @@ export function bundleRpm({ repoRoot = root, platform = process.platform, env = 
   const override = rpmBundleConfig(pkg.version);
   const metadata = JSON.parse(run("cargo", ["metadata", "--format-version", "1", "--no-deps", "--locked"], { cwd: repoRoot, env, encoding: "utf8" }));
   if (!isAbsolute(metadata.target_directory)) throw new Error("Cargo target directory must be absolute");
+  const targetArgs = [];
+  let releaseDir = join(metadata.target_directory, "release");
   if (reuseSidecars) {
     const target = run("rustc", ["--print", "host-tuple"], { cwd: repoRoot, env, encoding: "utf8" }).trim();
+    releaseDir = join(metadata.target_directory, target, "release");
+    targetArgs.push("--target", target);
     const proof = JSON.parse(readFileSync(join(repoRoot, "src-tauri/binaries", `dzc-${target}.proof.json`), "utf8"));
     if (proof.phase !== "bundle" || proof.profile !== "release" || proof.target !== target
         || proof.declaredBuildSet?.sourceRevision !== env.DZC_BUILD_REVISION) {
       throw new Error("Previous Tauri bundle did not prepare the current release sidecars");
     }
     for (const [name, sha256] of [["dzc", proof.sha256], ["dzc-service", proof.serviceHelper?.sha256]]) {
-      const path = join(metadata.target_directory, "release", name);
+      const path = join(releaseDir, name);
       if (createHash("sha256").update(readFileSync(path)).digest("hex") !== sha256) throw new Error(`RPM sidecar differs: ${name}`);
     }
     override.build = { beforeBundleCommand: null };
   }
-  run("pnpm", ["exec", "tauri", "bundle", "--bundles", "rpm", "--config", JSON.stringify(override)], { cwd: repoRoot, env, stdio: "inherit" });
-  const directory = join(metadata.target_directory, "release/bundle/rpm");
+  run("pnpm", ["exec", "tauri", "bundle", ...targetArgs, "--bundles", "rpm", "--config", JSON.stringify(override)], { cwd: repoRoot, env, stdio: "inherit" });
+  const directory = join(releaseDir, "bundle/rpm");
   const release = override.bundle.linux.rpm.release;
   const prefix = `${config.productName}-${override.version}-${release}.`;
   const artifacts = readdirSync(directory).filter((name) => name.startsWith(prefix) && name.endsWith(".rpm"));

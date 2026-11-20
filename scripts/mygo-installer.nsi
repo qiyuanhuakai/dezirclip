@@ -6,7 +6,11 @@ OutFile "${OUTPUT}"
 !define INSTALL_FOLDER "DezirClip-MyGo"
 !endif
 InstallDir "$LOCALAPPDATA\Programs\${INSTALL_FOLDER}"
+!ifdef MYGO_FAST_COMPRESSION
+SetCompressor zlib
+!else
 SetCompressor /SOLID lzma
+!endif
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "x64.nsh"

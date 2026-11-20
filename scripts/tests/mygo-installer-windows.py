@@ -14,7 +14,7 @@ def digest(path):
 
 
 def verify(installer, stage, unicode_path_fixture=False, pointer_margin=16, follow_pointer=False,
-           legacy_close_after_paste=False, native_main=False):
+           legacy_close_after_paste=False, native_main=False, focused=False):
     if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
         raise RuntimeError('Installer execution requires a disposable GitHub-hosted runner')
     folder = 'DezirClip-MyGo-测试-Ω' if unicode_path_fixture else 'DezirClip-MyGo'
@@ -55,22 +55,23 @@ def verify(installer, stage, unicode_path_fixture=False, pointer_margin=16, foll
     preserved.write_text('Keep user data', encoding='utf-8')
     subprocess.run([str(installer), '/S'], check=True, timeout=90)
     assert_payload()
-    # A held executable must prevent both replacement and removal, without killing processes.
-    import ctypes
-    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-    kernel.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
-                                  ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
-    kernel.CreateFileW.restype = ctypes.c_void_p
-    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
-    handle = kernel.CreateFileW(str(root / 'dzc-service.exe'), 0x80000000, 0, None, 3, 0, None)
-    assert handle not in (None, ctypes.c_void_p(-1).value)
     uninstaller = root / 'uninstall.exe'
-    try:
-        assert subprocess.run([str(installer), '/S'], timeout=90).returncode != 0
-        assert subprocess.run([str(uninstaller), '/S', '_?=' + str(root)], timeout=90).returncode != 0
-    finally:
-        kernel.CloseHandle(handle)
-    assert_payload()
+    if not focused:
+        # A held executable must prevent both replacement and removal, without killing processes.
+        import ctypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+                                      ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+        kernel.CreateFileW.restype = ctypes.c_void_p
+        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+        handle = kernel.CreateFileW(str(root / 'dzc-service.exe'), 0x80000000, 0, None, 3, 0, None)
+        assert handle not in (None, ctypes.c_void_p(-1).value)
+        try:
+            assert subprocess.run([str(installer), '/S'], timeout=90).returncode != 0
+            assert subprocess.run([str(uninstaller), '/S', '_?=' + str(root)], timeout=90).returncode != 0
+        finally:
+            kernel.CloseHandle(handle)
+        assert_payload()
     subprocess.run([str(uninstaller), '/S', '_?=' + str(root)], check=True, timeout=90)
     assert all(not (root / relative).exists() for relative in expected)
     assert preserved.read_text(encoding='utf-8') == 'Keep user data'
@@ -80,6 +81,9 @@ def verify(installer, stage, unicode_path_fixture=False, pointer_margin=16, foll
             raise AssertionError('Uninstall registration remains')
     except FileNotFoundError:
         pass
+    if focused:
+        print('MYGO_INSTALL_NATIVE_STARTUP_UPGRADE_UNINSTALL_PASSED', flush=True)
+        return
     subprocess.run([str(installer), '/S'], check=True, timeout=90)
     assert_payload()
     assert preserved.read_text(encoding='utf-8') == 'Keep user data'

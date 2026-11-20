@@ -209,13 +209,11 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.equal(pkg.scripts["tauri:bundle:rpm"], "node scripts/bundle-rpm.mjs");
   assert.deepEqual(config.bundle.targets, ["nsis", "deb", "appimage"]);
   const workflow = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
-  const rpmStep = workflow.split("- name: Bundle and upload RPM with pre-release package ordering")[1]?.split("- name: Build and package MyGo Native")[0];
+  const rpmStep = workflow.split("- name: Package MyGo Native and the Tauri RPM")[1]?.split("- name: Attach both desktop variants")[0];
   assert(rpmStep);
-  assert.match(rpmStep, /if: runner\.os == 'Linux'/);
+  assert.match(rpmStep, /if \[\[ "\$RUNNER_OS" == Linux \]\]/);
   assert.match(rpmStep, /node scripts\/bundle-rpm\.mjs --receipt/);
-  assert.match(rpmStep, /needs\.create-release\.outputs\.release_id/);
-  assert.match(rpmStep, /--jq '\.draft'\)" = true/);
-  assert.match(rpmStep, /gh release upload "\$GITHUB_REF_NAME" "\$rpm_path" --clobber/);
+  assert.match(rpmStep, /echo "rpm=\$rpm_path" >> "\$GITHUB_OUTPUT"/);
   assert.match(rpmStep, /--reuse-sidecars/);
   const { identities, upgrades } = assertReleaseSourceRouting(workflow);
   assert.match(identities, /needs: create-release/);
@@ -231,10 +229,14 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   for (const target of ["linux-x86_64", "linux-aarch64", "windows-x86_64", "windows-aarch64"]) {
     assert(desktop.includes(`- name: ${target}`));
   }
-  assert.match(desktop, /python scripts\/bundle-mygo\.py --target "\$PLATFORM" --sidecars "\$sidecars"/);
+  assert.match(desktop, /python scripts\/bundle-mygo\.py --target "\$PLATFORM" --sidecars "\$SIDECARS"/);
   assert.match(desktop, /--revision "\$GITHUB_SHA" --tag "\$GITHUB_REF_NAME" --smoke/);
-  assert.match(desktop, /python scripts\/bundle-mygo\.py --portable/);
-  assert.match(desktop, /scripts\/package-portable\.ps1/);
+  assert.doesNotMatch(desktop, /--portable|package-portable\.ps1|portable-release/);
+  assert.match(desktop, /'--bin', 'dezirclip', '--features', 'tauri\/custom-protocol'/);
+  assert.match(desktop, /'tauri', 'bundle'/);
+  assert.match(desktop, /--jq '\.draft'/);
+  assert.match(desktop, /gh release upload "\$env:GITHUB_REF_NAME" @files --clobber/);
+  assert.match(releaseJob(workflow, 'build-standalone-cli'), /package-only: true/);
   assert.match(promotion, /needs: \[create-release, publish-desktop, publish-standalone-cli\]/);
   assert.match(promotion, /updater-release\.mjs publish-dual/);
   assert.doesNotMatch(workflow, /publish-flatpak|uses: \.\/\.github\/workflows\/ci\.yml/);
@@ -330,6 +332,29 @@ test("RPM wrapper skips Windows before reading files or starting any command", (
   for (const env of [{ CARGO_BUILD_TARGET: "aarch64-unknown-linux-gnu" }, { TAURI_ENV_TARGET_TRIPLE: "aarch64-unknown-linux-gnu" }]) {
     assert.throws(() => bundleRpm({ repoRoot: "missing-fixture", platform: "linux", env, run: () => { throw new Error("must not execute"); } }), /native Linux release/);
   }
+});
+
+test("release RPM reuses verified sidecars in the explicit target directory", (t) => {
+  const f = fixture(t, { host: "aarch64-unknown-linux-gnu" });
+  const env = { DZC_BUILD_REVISION: "a".repeat(40) };
+  prepareSidecars({ repoRoot: f.directory, run: f.run, args: ["--phase", "bundle"], env });
+  writeFileSync(join(f.directory, "src-tauri/tauri.conf.json"),
+    JSON.stringify({ version: "0.2.0-alpha.1", productName: "DezirClip" }));
+  const expected = join(f.targetDirectory, f.target, "release/bundle/rpm/DezirClip-0.2.0-0.alpha.1.aarch64.rpm");
+  let bundles = 0;
+  const options = { repoRoot: f.directory, platform: "linux", env, reuseSidecars: true,
+    run: (command, args, invocation) => {
+      if (command !== "pnpm") return f.run(command, args, invocation);
+      bundles++;
+      assert.deepEqual(args.slice(0, 8), ["exec", "tauri", "bundle", "--target", f.target, "--bundles", "rpm", "--config"]);
+      assert.equal(JSON.parse(args[8]).build.beforeBundleCommand, null);
+      mkdirSync(dirname(expected), { recursive: true });
+      writeFileSync(expected, "RPM test payload");
+    } };
+  assert.equal(bundleRpm(options).artifact, expected);
+  writeFileSync(f.serviceSource, "changed service payload");
+  assert.throws(() => bundleRpm(options), /RPM sidecar differs: dzc-service/);
+  assert.equal(bundles, 1);
 });
 
 test("RPM wrapper rejects unsupported versions and preserves bundle failures", (t) => {
