@@ -49,6 +49,7 @@ export const en = {
         native_file_drag_failed: "Could not drag this file",
         native_pin_reorder: "Move pinned entry. Drag or press Alt+Up or Alt+Down",
         native_pin_reorder_failed: "Could not save the pinned entry order.",
+        native_autostart_failed: "Could not read or change the startup setting.",
         native_setting_save_failed: "Could not save settings.",
         native_loading_fonts: "Loading fonts…",
         native_reset_ui_font: "Reset interface font",

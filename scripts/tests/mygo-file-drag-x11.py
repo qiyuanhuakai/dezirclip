@@ -107,8 +107,7 @@ def check(desktop, helpers, *, native_main=False):
 
     status = json.loads(subprocess.check_output([cli, 'service', 'start', '--json'], text=True))
     assert status['capture_owner'], 'File history fixture requires an active capture owner'
-    env = dict(os.environ, DZC_MYGO_NATIVE_MAIN='1', MYGO_GPU='0') if native_main else None
-    process = subprocess.Popen([desktop], env=env)
+    process = subprocess.Popen([desktop])
     try:
         main = wait(lambda: helpers['visible_main_window'](process.pid, desktop), 'Main window missing')
         x11.XMoveWindow(display, main, 350, 20)

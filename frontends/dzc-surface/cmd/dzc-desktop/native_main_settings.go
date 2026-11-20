@@ -160,6 +160,7 @@ func (n *nativeMain) generalSettings(c *ui.Context, kit uikit.Kit) {
 		{Value: "tw", Label: "繁體中文"},
 		{Value: "en", Label: "English"},
 	})
+	n.loginSettings(c)
 	n.booleanSettings(c,
 		nativeBooleanSetting{"app.silent_start", n.text("silent_start", "Start hidden"), true},
 		nativeBooleanSetting{"app.follow_mouse", n.text("follow_mouse", "Show window near the mouse"), true},

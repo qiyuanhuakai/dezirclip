@@ -89,6 +89,7 @@ type nativeMain struct {
 	tagSuggestions   nativeTagSuggestions
 	fileGesture      nativeFileGesture
 	pinFocus         nativePinSource
+	login            nativeLoginState
 	tagLibrary       *nativeTagLibrary
 	editor           *nativeEntryEditor
 	transform        *nativeTransformDialog
@@ -132,6 +133,9 @@ func (n *nativeMain) stopSession() {
 	n.tagSuggestions = nativeTagSuggestions{}
 	n.fileGesture = nativeFileGesture{}
 	n.pinFocus = nativePinSource{}
+	if n.login.pending {
+		n.login = nativeLoginState{}
+	}
 	n.emoji = nil
 	n.resetPreviewSelection()
 }

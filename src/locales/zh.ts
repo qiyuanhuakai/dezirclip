@@ -60,6 +60,7 @@ export const zh = {
         native_file_drag_failed: "无法拖出此文件",
         native_pin_reorder: "调整置顶顺序，可拖动或按 Alt+↑、Alt+↓",
         native_pin_reorder_failed: "无法保存置顶顺序。",
+        native_autostart_failed: "无法读取或更改登录启动设置。",
         native_setting_save_failed: "无法保存设置。",
         native_loading_fonts: "正在加载字体…",
         native_reset_ui_font: "重置界面字体",

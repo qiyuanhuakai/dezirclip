@@ -234,6 +234,7 @@ jobs:
         run: |
           Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -FileDrag
+          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -NativeMain
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Lifecycle
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -TrayPaste
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -RichPaste
@@ -246,9 +247,10 @@ jobs:
         run: |
           cp "artifacts/dzc-desktop/$(rustc --print host-tuple)/dzc-desktop" target/debug/dzc-desktop
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --file-drag
-          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --file-drag --webview-main
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --webview-main
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --screenshots
-          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --screenshots --native-main
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --screenshots --webview-main
           DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --idle
       - name: Verify X11 screenshot pixels across color depths
         if: runner.os == 'Linux'
@@ -597,9 +599,10 @@ jobs:
           cp "artifacts/dzc-desktop/$(rustc --print host-tuple)/dzc-desktop" target/debug/dzc-desktop
           /usr/bin/python3 scripts/tests/test_mygo_audio_fixture.py
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --file-drag
-          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop
-          DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,mouse_hotkey /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --pinned
-          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --pin-preview
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --webview-main
+          DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,mouse_hotkey /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --pinned --webview-main
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --pin-preview --webview-main
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --screenshots
           DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --idle
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --paste-hotkeys
           DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --middle-paste-hotkeys
@@ -612,6 +615,7 @@ jobs:
         run: |
           Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -FileDrag
+          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -NativeMain
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -WakeTiming
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -WakeTiming -WakeBackground

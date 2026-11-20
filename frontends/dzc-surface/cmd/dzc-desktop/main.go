@@ -282,31 +282,31 @@ func run() error {
 		return client.ErrProtocol
 	}
 	mygo.App.SetName("DezirClip MyGo")
+	useNativeMain := os.Getenv("DZC_MYGO_NATIVE_MAIN") != "0"
 	if !mainWindow {
-		return runResident(actions, minimized, activation)
+		return runResident(actions, minimized, activation, useNativeMain)
 	}
 	if actions.Hello().State.ServiceInstanceId != os.Args[2] {
 		return client.ErrProtocol
 	}
 	desktopTiming("child authentication", bootStarted)
-	useNativeMain := os.Getenv("DZC_MYGO_NATIVE_MAIN") == "1"
-	if !useNativeMain {
-		mygo.SetFrontend(assets)
-	}
 	diagnostics := newDesktopDiagnostics(actions, "main")
 	diagnostics.record("start", 0, nil)
 	defer diagnostics.record("run-returned", 0, nil)
 	history := &History{actions: actions, diagnostics: diagnostics}
-	mygo.Bind(history)
 	library := &Library{owner: actions}
-	mygo.Bind(library)
-	systemSettings := &SystemSettings{owner: actions}
-	mygo.Bind(systemSettings)
-	defer systemSettings.close()
 	shell := &DesktopShell{diagnostics: diagnostics, resident: residentBridge{output: os.Stdout, grantFocus: grantResidentFocus}}
-	mygo.Bind(shell)
 	preview := &Preview{owner: actions, resident: &shell.resident}
-	mygo.Bind(preview)
+	if !useNativeMain {
+		mygo.SetFrontend(assets)
+		mygo.Bind(history)
+		mygo.Bind(library)
+		systemSettings := &SystemSettings{owner: actions}
+		mygo.Bind(systemSettings)
+		defer systemSettings.close()
+		mygo.Bind(shell)
+		mygo.Bind(preview)
+	}
 	settings := library.windowPreferences(ctx)
 	follow := settings.FollowMouse != "false"
 	savedSize := settings.savedSize()

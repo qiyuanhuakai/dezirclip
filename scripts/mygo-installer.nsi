@@ -49,18 +49,6 @@ FunctionEnd
 !macroend
 
 Section "Install"
-  SetRegView 32
-  ReadRegStr $2 HKLM "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
-  ReadRegStr $3 HKCU "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
-  SetRegView 64
-  ${If} $2 == ""
-  ${OrIf} $2 == "0.0.0.0"
-    ${If} $3 == ""
-    ${OrIf} $3 == "0.0.0.0"
-      SetErrorLevel 4
-      Abort "Install Microsoft Edge WebView2 Runtime first: https://developer.microsoft.com/microsoft-edge/webview2/"
-    ${EndIf}
-  ${EndIf}
   ReadRegStr $1 HKCU "${KEY}" "InstallLocation"
   ${If} $1 != ""
   ${AndIf} $1 != $INSTDIR

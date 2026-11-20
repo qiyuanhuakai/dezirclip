@@ -49,6 +49,7 @@ export const tw = {
         native_file_drag_failed: "無法拖出此檔案",
         native_pin_reorder: "調整置頂順序，可拖曳或按 Alt+↑、Alt+↓",
         native_pin_reorder_failed: "無法儲存置頂順序。",
+        native_autostart_failed: "無法讀取或變更登入啟動設定。",
         native_setting_save_failed: "無法儲存設定。",
         native_loading_fonts: "正在載入字型…",
         native_reset_ui_font: "重設介面字型",

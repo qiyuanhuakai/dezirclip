@@ -1510,7 +1510,7 @@ def check(desktop, pinned, audio, pin_preview=False):
     check_storage_limit(cli)
 
 
-def check_reset_settings(desktop):
+def check_reset_settings(desktop, *, native_main=False):
     import gi
     gi.require_version('Atspi', '2.0')
     from gi.repository import Atspi
@@ -1520,7 +1520,8 @@ def check_reset_settings(desktop):
     with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', [
             ('app.language', 'en'), ('app.theme', 'retro'), ('app.hotkey', 'Ctrl+Shift+F8'),
-            ('app.silent_start', 'false'), ('app.hide_tray_icon', 'true')])
+            ('app.silent_start', 'false'), ('app.hide_tray_icon', 'true'),
+            ('app.window_width', '720'), ('app.window_height', '610')])
     subprocess.run([cli, 'service', 'start', '--no-capture', '--json'], check=True, stdout=subprocess.DEVNULL)
     resident = subprocess.Popen([desktop, '--show'], stdout=subprocess.DEVNULL)
     replacement = None
@@ -1535,6 +1536,9 @@ def check_reset_settings(desktop):
         return next((node for node, name, interfaces, _ in mygo_nodes(Atspi, desktop)
                      if name.casefold() == label.casefold() and 'Action' in interfaces), None)
     def click(node):
+        if native_main:
+            assert Atspi.Action.do_action(node, 0)
+            return
         Atspi.Component.scroll_to(node, Atspi.ScrollType.ANYWHERE)
         bounds = Atspi.Component.get_extents(node, Atspi.CoordType.SCREEN)
         assert Atspi.generate_mouse_event(bounds.x + bounds.width//2, bounds.y + bounds.height//2, 'b1c')
@@ -1544,7 +1548,7 @@ def check_reset_settings(desktop):
         assert Atspi.Action.do_action(wait(lambda: control('Confirm'), 'Reset confirmation unavailable'), 0)
         wait(lambda: resident.poll() is not None, 'Reset did not replace the native resident')
         node = wait(lambda: next((node for node, _, _, text in mygo_nodes(Atspi, desktop) if text == marker), None),
-                    'Reset did not reopen history in the replacement WebView')
+                    'Reset did not reopen history in the replacement main window')
         parent = int(Path(f'/proc/{node.get_process_id()}/stat').read_text().rsplit(')', 1)[1].split()[1])
         if b'--main-window' in Path(f'/proc/{parent}/cmdline').read_bytes().split(b'\0'):
             parent = int(Path(f'/proc/{parent}/stat').read_text().rsplit(')', 1)[1].split()[1])
@@ -1556,7 +1560,7 @@ def check_reset_settings(desktop):
             assert settings['app.hide_tray_icon'] == 'false'
             assert db.execute('SELECT count(*) FROM clipboard_history WHERE content=?', (marker,)).fetchone() == (1,)
         wait(lambda: tray_item(replacement, '退出', activate=False), 'Reset did not restore the native tray')
-        print('Verified React reset confirmation, default preferences, resident replacement, restored tray and preserved history', flush=True)
+        print('Verified settings confirmation, default preferences, resident replacement, restored tray and preserved history', flush=True)
     finally:
         with observed_service_cleanup(cli):
             if resident.poll() is None: resident.terminate()
@@ -1962,8 +1966,7 @@ def check_profile_move(executable, home, *, native_main=False):
     obstruction = target/'clipboard.db-journal'
     obstruction.write_bytes(b'fixture')
     original = json.loads(run('service', 'start', '--no-capture', '--json'))['state']['service_instance_id']
-    env = dict(os.environ, DZC_MYGO_NATIVE_MAIN='1', MYGO_GPU='0') if native_main else None
-    process = subprocess.Popen([executable, '--show'], env=env)
+    process = subprocess.Popen([executable, '--show'])
     def nodes(): return mygo_nodes(Atspi, executable)
     def wait(probe, message):
         deadline = time.monotonic() + 9
@@ -2073,7 +2076,8 @@ def check_profile_move(executable, home, *, native_main=False):
 
 if __name__ == '__main__':
     desktop = Path(sys.argv[1]).resolve(strict=True)
-    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview', '--idle', '--paste-hotkeys', '--middle-paste-hotkeys', '--reset-settings', '--file-drag', '--screenshots'):
+    if len(sys.argv) == 2 or sys.argv[2].startswith('--'):
+        flags = sys.argv[2:] or ['--screenshots']
         with private_desktop_directory() as path:
             home = Path(path)
             for name in ('runtime', 'data', 'config', 'cache'):
@@ -2084,9 +2088,14 @@ if __name__ == '__main__':
                    'GTK_A11Y':'atspi', 'NO_AT_BRIDGE':'0'}
             for name in ('DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY', 'AT_SPI_BUS_ADDRESS'):
                 env.pop(name, None)
-            if '--screenshots' in sys.argv[2:]:
+            if '--webview-main' in flags:
+                env['DZC_MYGO_NATIVE_MAIN'] = '0'
+            else:
+                env.pop('DZC_MYGO_NATIVE_MAIN', None)
+                env['MYGO_GPU'] = '0'
+            if '--screenshots' in flags:
                 env.update(WAYLAND_DISPLAY='', WAYLAND_SOCKET='', XDG_CURRENT_DESKTOP='X-Cinnamon')
-            if '--pinned' in sys.argv[2:]:
+            if '--pinned' in flags:
                 env.update(HTTPS_PROXY='http://127.0.0.1:0', NO_PROXY='', no_proxy='')
                 applications = home/'data/applications'
                 applications.mkdir()
@@ -2137,8 +2146,8 @@ with open(sys.argv[1], 'r+') as document:
                 recorder.write_text('#!/bin/sh\nprintf "%s\\n" "$1" > "$HOME/opened-guide"\n')
                 recorder.chmod(0o700)
                 env['PATH'] = str(recorder.parent) + os.pathsep + env['PATH']
-            display_options = ['-s','-screen 0 800x600x24'] if '--pin-preview' in sys.argv else []
-            subprocess.run(['xvfb-run', '-a', *display_options, 'dbus-run-session', '--', sys.executable, __file__, desktop, path, *sys.argv[2:]],
+            display_options = ['-s','-screen 0 800x600x24'] if '--pin-preview' in flags else []
+            subprocess.run(['xvfb-run', '-a', *display_options, 'dbus-run-session', '--', sys.executable, __file__, desktop, path, *flags],
                            env=env, check=True, timeout=105)
     else:
         home = Path(sys.argv[2]).resolve(strict=True)
@@ -2153,20 +2162,21 @@ with open(sys.argv[1], 'r+') as document:
                 assert wm.poll() is None and time.monotonic() < deadline, 'Window manager failed to start'
                 time.sleep(.05)
             pinned = '--pinned' in sys.argv[3:]
+            native_main = '--webview-main' not in sys.argv[3:]
             if '--file-drag' in sys.argv[3:]:
                 runpy.run_path(str(Path(__file__).with_name('mygo-file-drag-x11.py')))['check'](
-                    desktop, globals(), native_main='--native-main' in sys.argv[3:])
+                    desktop, globals(), native_main=native_main)
             elif '--screenshots' in sys.argv[3:]:
                 runpy.run_path(str(Path(__file__).with_name('mygo-screenshot-x11.py')))['check'](
-                    desktop, globals(), native_main='--native-main' in sys.argv[3:])
+                    desktop, globals(), native_main=native_main)
             elif '--reset-settings' in sys.argv[3:]:
-                check_reset_settings(desktop)
+                check_reset_settings(desktop, native_main=native_main)
             elif '--paste-hotkeys' in sys.argv[3:] or '--middle-paste-hotkeys' in sys.argv[3:]:
                 check_paste_hotkeys(desktop, middle='--middle-paste-hotkeys' in sys.argv[3:])
             elif '--idle' in sys.argv[3:]:
                 check_idle(desktop)
             elif '--move-profile' in sys.argv[3:]:
-                check_profile_move(desktop, home, native_main='--native-main' in sys.argv[3:])
+                check_profile_move(desktop, home, native_main=native_main)
             else:
                 with (contextlib.nullcontext() if pinned or '--pin-preview' in sys.argv else private_audio(home)) as audio:
                     check(desktop, pinned, audio, '--pin-preview' in sys.argv)

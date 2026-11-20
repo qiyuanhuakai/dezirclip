@@ -58,9 +58,9 @@ func refreshMainShortcuts(owner *client.Client, registered map[string]bool, togg
 	return values
 }
 
-// Only the main window loads the WebView runtime. Parent and child use
-// inherited pipes for window lifecycle, and authenticate separately to Rust.
-func runResident(owner *client.Client, minimized bool, activation string) error {
+// Parent and child use inherited pipes for window lifecycle, and authenticate
+// separately to Rust.
+func runResident(owner *client.Client, minimized bool, activation string, useNativeMain bool) error {
 	diagnostics := newDesktopDiagnostics(owner, "resident")
 	diagnostics.record("start", 0, nil)
 	defer diagnostics.record("run-returned", 0, nil)
@@ -221,11 +221,13 @@ func runResident(owner *client.Client, minimized bool, activation string) error 
 				return
 			}
 			child := exec.Command(executable, "--main-window", owner.Hello().State.ServiceInstanceId)
-			if saved := (&Library{owner}).windowPreferences(context.Background()).GpuDisabled; saved != "" {
-				gpuDisabled = saved == "true"
-			}
-			if gpuDisabled {
-				configureSoftwareWebview(child)
+			if !useNativeMain {
+				if saved := (&Library{owner}).windowPreferences(context.Background()).GpuDisabled; saved != "" {
+					gpuDisabled = saved == "true"
+				}
+				if gpuDisabled {
+					configureSoftwareWebview(child)
+				}
 			}
 			child.Stderr = os.Stderr
 			input, err := child.StdinPipe()

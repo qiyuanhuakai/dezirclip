@@ -1,9 +1,11 @@
 """Exercise screenshot buttons and shortcuts on an isolated X11 desktop."""
 import os
 import ctypes
+import json
 import sqlite3
 import subprocess
 import time
+from pathlib import Path
 
 
 def check(desktop, helpers, *, native_main=False):
@@ -197,6 +199,37 @@ def check(desktop, helpers, *, native_main=False):
             wait(lambda: setting(key) == '', f'{label} did not reset to its theme default')
         print('Verified native appearance saves typography and independent surface and preview opacity', flush=True)
 
+    def check_native_startup_settings():
+        protection = 'Protect sensitive clipboard content'
+        assert not find(protection), 'Privacy expanded on entering settings'
+        click('Privacy')
+        wait(lambda: find(protection), 'Privacy did not open on request')
+        click('Back')
+        click('Settings')
+        wait(lambda: find('Launch at Startup'), 'Reopened settings did not return to General')
+        assert not find(protection), 'Privacy expanded after reopening settings'
+        entry = Path(os.environ['XDG_CONFIG_HOME'])/'autostart/dezirclip.desktop'
+        assert not entry.exists()
+        click('Launch at Startup')
+        wait(entry.is_file, 'Native startup setting did not register the app')
+        assert '--minimized' in entry.read_text()
+        click('Launch at Startup')
+        wait(lambda: not entry.exists(), 'Native startup setting did not remove the registration')
+        print('Verified default-native privacy disclosure and login startup settings', flush=True)
+
+    def check_webview_privacy_settings():
+        protection = 'Setting help: Privacy Protection'
+        wait(lambda: find('Privacy'), 'Settings did not open')
+        assert not find(protection), 'Privacy expanded on entering WebView Settings'
+        click('Privacy')
+        wait(lambda: find(protection), 'WebView Privacy did not open on request')
+        click('Close')
+        wait(lambda: not find('Privacy'), 'WebView Settings did not close')
+        click('Settings')
+        wait(lambda: find('Privacy'), 'WebView Settings did not reopen')
+        assert not find(protection), 'Privacy expanded after reopening WebView Settings'
+        print('Verified WebView Privacy stays collapsed on each entry to Settings', flush=True)
+
     def check_native_protected_entry():
         secret = 'fixture-private-only-20261120'
         marker = 'fixture-safe-clipboard-marker'
@@ -299,16 +332,22 @@ def check(desktop, helpers, *, native_main=False):
         switch('语言', 'English', 'en', 'Language')
         print('Verified live language changes and persistence when summoning the native main window again', flush=True)
 
-    env = dict(os.environ, DZC_MYGO_NATIVE_MAIN='1', MYGO_GPU='0') if native_main else None
-    process = subprocess.Popen([desktop], env=env)
+    process = subprocess.Popen([desktop])
     try:
         if native_main:
             check_native_repaint()
+            assert 'DZC_MYGO_NATIVE_MAIN' not in os.environ
+            log = Path(os.environ['DEZIRCLIP_DB_PATH']).with_name('desktop-lifecycle-main.log')
+            events = {json.loads(line)['event'] for line in log.read_text().splitlines()}
+            assert 'native-content-ready' in events and 'page-loaded' not in events, events
             check_native_protected_entry()
         click('Settings')
         if native_main:
+            check_native_startup_settings()
             check_native_appearance()
             check_native_languages()
+        else:
+            check_webview_privacy_settings()
         click('Tools')
         wait(lambda: find('Full Screen Capture'), 'Capture controls missing')
         clipboard.set_text('waiting for button full screenshot', -1)

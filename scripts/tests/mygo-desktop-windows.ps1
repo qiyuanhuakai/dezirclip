@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$QuickPasteFollowPointer, [switch]$FileDrag, [switch]$Lifecycle, [switch]$WakeTiming, [switch]$WakeBackground, [switch]$TrayPaste, [switch]$LegacyCloseAfterPaste, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$NativeMain, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$QuickPasteFollowPointer, [switch]$FileDrag, [switch]$Lifecycle, [switch]$WakeTiming, [switch]$WakeBackground, [switch]$TrayPaste, [switch]$LegacyCloseAfterPaste, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -225,7 +225,7 @@ function Get-ControlPoint($root, [string]$Name, [Windows.Automation.ControlType]
                 return [System.Drawing.Point]::new([int]($bounds.Left + $bounds.Width / 2), [int]($bounds.Top + $bounds.Height / 2))
             }
         }
-    } "Control missing from the shared WebView2 accessibility tree: $Name"
+    } "Control missing from the main-window accessibility tree: $Name"
 }
 
 function Get-SettingsCheckbox($root, [string]$Label = 'Disable WebView GPU') {
@@ -827,6 +827,8 @@ $startedService = $null
 $startedServiceProcess = $null
 $serviceCrashReceipt = $null
 $quitVerified = $false
+$previousRenderer = $env:DZC_MYGO_NATIVE_MAIN
+$env:DZC_MYGO_NATIVE_MAIN = if ($NativeMain) { $null } else { '0' }
 try {
     & $cli add $marker | Out-Null
     if ($LASTEXITCODE) { throw 'Could not seed isolated clipboard history' }
@@ -1060,6 +1062,29 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             [Math]::Abs($clientRect.right - 670) -le 1 -and [Math]::Abs($clientRect.bottom - 608) -le 1
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+    if ($NativeMain) {
+        $null = Get-ControlPoint $root $marker
+        $lifecycle = Join-Path $dir.FullName 'desktop-lifecycle-main.log'
+        $events = @(Get-Content -LiteralPath $lifecycle | ForEach-Object { (ConvertFrom-Json -InputObject $_).event })
+        if ($events -notcontains 'native-content-ready' -or $events -contains 'page-loaded') {
+            throw 'Default main window did not render through native MyGo'
+        }
+        if (Get-DesktopProcesses @($resident.Id, $main.Id) | Where-Object Name -eq 'msedgewebview2.exe') {
+            throw 'Default main window started a WebView2 process'
+        }
+        Click-Control $main (Get-ControlPoint $root 'Settings')
+        $null = Get-ControlPoint $root 'Privacy'
+        $protection = 'Protect sensitive clipboard content'
+        if (Get-SettingsCheckbox $root $protection) { throw 'Privacy expanded on entering Settings' }
+        Click-Control $main (Get-ControlPoint $root 'Privacy')
+        $null = Get-ControlPoint $root $protection
+        Click-Control $main (Get-ControlPoint $root 'Back')
+        Click-Control $main (Get-ControlPoint $root 'Settings')
+        $null = Get-ControlPoint $root 'Privacy'
+        if (Get-SettingsCheckbox $root $protection) { throw 'Privacy expanded on reopening Settings' }
+        Write-Host 'Verified default native history and collapsed Privacy settings without WebView2'
+        return
+    }
     if ($TrayPaste) {
         . (Join-Path $PSScriptRoot 'mygo-tray-paste-windows.ps1')
         return
@@ -1626,6 +1651,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     }
     throw $failure
 } finally {
+    $env:DZC_MYGO_NATIVE_MAIN = $previousRenderer
     if ($WakeTiming -or $Capture) {
         $timingLog = Join-Path $dir.FullName 'desktop.log'
         if (Test-Path -LiteralPath $timingLog) { Get-Content -LiteralPath $timingLog | Write-Host }
