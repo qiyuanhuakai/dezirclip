@@ -24,7 +24,11 @@ const samples = [
     settingsDataLabel: [".data-path-label"], settingsDataHeader: [".data-path-header"],
     settingsDataBlock: [".showcase-fields .setting-item"], settingsDataActions: [".data-actions-row"],
   }],
-  ["hotkey-list", "multiple", { hotkeyRemove: [".hotkey-list .btn-icon"] }],
+  ["hotkey-list", "multiple", {
+    hotkeyEditor: [".hotkey-list-editor"],
+    hotkeyEditorHeader: [".hotkey-list-editor > .hotkey-recorder", ".hotkey-list-editor .item-label"],
+    hotkeyRemove: [".hotkey-list .btn-icon"],
+  }],
   ["settings-remove", "default", {
     settingsRemove: [".settings-remove:not(.settings-remove-icon)"],
     settingsRemoveIcon: [".settings-remove-icon"],

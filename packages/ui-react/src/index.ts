@@ -30,5 +30,5 @@ export { CharacterSearch, EmojiGrid, EmojiTabs, type EmojiTab } from "./componen
 export { SettingsToggle, type SettingsToggleProps } from "./components/SettingsToggle";
 export { SettingsSlider, type SettingsSliderProps } from "./components/SettingsSlider";
 export { ScrollToTopButton } from "./components/ScrollToTopButton";
-export { HotkeyBinding, HotkeyList, type HotkeyBindingProps, type HotkeyListProps } from "./components/HotkeyBinding";
+export { HotkeyBinding, HotkeyList, HotkeyListLayout, type HotkeyBindingProps, type HotkeyListProps } from "./components/HotkeyBinding";
 export { HotkeyRemoveButton, SettingsRemoveButton } from "./components/RemoveButton";

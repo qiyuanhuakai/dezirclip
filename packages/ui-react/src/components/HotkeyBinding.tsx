@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { HotkeyRemoveButton } from "./RemoveButton";
 
 export interface HotkeyBindingProps {
@@ -27,6 +27,10 @@ export interface HotkeyListProps {
   disabled?: boolean;
   canRemove?: (value: string) => boolean;
   onRemove?: (value: string) => void;
+}
+
+export function HotkeyListLayout({ children }: { children: ReactNode }) {
+  return <div className="setting-item no-border column hotkey-list-editor">{children}</div>;
 }
 
 export function HotkeyList({ values, emptyLabel, removeLabel, disabled, canRemove, onRemove }: HotkeyListProps) {

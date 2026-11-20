@@ -1,4 +1,4 @@
-import { HotkeyList } from "@deziro/ui-react/components/HotkeyBinding";
+import { HotkeyList, HotkeyListLayout } from "@deziro/ui-react/components/HotkeyBinding";
 import { useRef, useState } from "react";
 import HotkeyRecorder from "./HotkeyRecorder";
 
@@ -25,7 +25,7 @@ export default function HotkeyListEditor({ t, labelKey, hotkeys, recording, setR
     catch (failure) { setError(t("hotkey_register_failed") + String(failure)); }
     finally { pending.current = false; setSaving(false); }
   };
-  return <div className="setting-item no-border column hotkey-list-editor">
+  return <HotkeyListLayout>
     <HotkeyRecorder t={t} labelKey={labelKey} hotkey="" placeholder={`+ ${t(labelKey)}`}
       recording={recording} setRecording={setRecording} disabled={disabled || saving}
       onHotkeyChange={value => { void changeBinding(() => onAdd(value, { skipAvailabilityCheck: value === "MouseMiddle" })); }} />
@@ -33,5 +33,5 @@ export default function HotkeyListEditor({ t, labelKey, hotkeys, recording, setR
       disabled={disabled || saving} canRemove={canRemove}
       onRemove={value => { void changeBinding(() => onRemove(value)); }} />
     {error && <p className="hotkey-recording-error" role="alert">{error}</p>}
-  </div>;
+  </HotkeyListLayout>;
 }

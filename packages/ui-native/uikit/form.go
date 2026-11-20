@@ -67,6 +67,25 @@ func (k Kit) HotkeyBinding(c *ui.Context, label, value, placeholder string, reco
 	return k.hotkeyCaps(c, field, value, placeholder, recording)
 }
 
+// HotkeyListEditor groups the add-shortcut control with the registered bindings.
+func (k Kit) HotkeyListEditor(c *ui.Context, label string, controls, bindings func()) {
+	editor, header := k.style("hotkeyEditor"), k.style("hotkeyEditorHeader")
+	add := k.style("hotkeyGroup")
+	if add.Height > 0 {
+		inset := max(0, header.Height-add.Height-add.Margin[0]-add.Margin[2]-header.Padding[0]-header.Padding[2]) / 2
+		header.Padding[0] += inset
+		header.Padding[2] += inset
+	}
+	paint(ui.Column(c).FillWidth().Gap(editor.RowGap), editor).Margin(editor.Margin[:]...).Children(func() {
+		paint(ui.Row(c).FillWidth().MinHeight(header.Height).Wrap().GapX(header.ColumnGap).
+			GapY(header.RowGap).AlignItems(ui.Center), header).Children(func() {
+			text(c, label, header).Grow(1).MinWidth(160).Wrap()
+			controls()
+		})
+		bindings()
+	})
+}
+
 // HotkeyList displays registered shortcuts as read-only keycaps, with removal
 // available only while the list contains more than one binding.
 func (k Kit) HotkeyList(c *ui.Context, values []string, placeholder, remove string, disabled bool, onRemove func(string)) {

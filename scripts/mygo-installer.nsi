@@ -32,7 +32,9 @@ SetCompressor /SOLID lzma
 Function ${PREFIX}.onInit
   SetShellVarContext current
   SetRegView 64
+  !if "${PREFIX}" == ""
   StrCpy $INSTDIR "$LOCALAPPDATA\Programs\${INSTALL_FOLDER}"
+  !endif
   !ifdef MYGO_ARM64
   ${IfNot} ${IsNativeARM64}
     SetErrorLevel 1
@@ -78,6 +80,20 @@ Section "Install"
     ${EndIf}
   ${EndIf}
   ReadRegStr $1 HKCU "${KEY}" "InstallLocation"
+  ${If} $UpdateParent != ""
+    ${If} $1 == ""
+      SetErrorLevel 3
+      Abort "The registered MyGo installation is required for an update."
+    ${EndIf}
+    ReadINIStr $4 "$1\mygo-installation.ini" "Installation" "Owner"
+    ReadINIStr $5 "$1\mygo-installation.ini" "Installation" "Directory"
+    ${If} $4 != "${OWNER}"
+    ${OrIf} $5 != $1
+      SetErrorLevel 3
+      Abort "The registered MyGo installation ownership record is invalid."
+    ${EndIf}
+    StrCpy $INSTDIR $1
+  ${EndIf}
   ${If} $1 != ""
   ${AndIf} $1 != $INSTDIR
     SetErrorLevel 3

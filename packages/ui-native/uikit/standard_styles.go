@@ -144,6 +144,10 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 	case "hotkeyRow":
 		style.Padding = [4]float32{6, 0, 6, 0}
 		style.Margin[3] = 18
+	case "hotkeyEditor":
+		style.Padding, style.RowGap = [4]float32{6, 0, 6, 0}, 6
+	case "hotkeyEditorHeader":
+		style.Height, style.ColumnGap, style.RowGap = 34, 12, 8
 	case "hotkeyCap", "hotkeyCapRecording":
 		surface()
 		style.Height, style.Radius, style.Size, style.Weight = 22, 4, 11, 600

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ContextMenuItem, ContextMenuSurface, EmojiAddTile, EmojiFavoriteTile, HotkeyBinding, HotkeyList, NumberField,
+import { ContextMenuItem, ContextMenuSurface, EmojiAddTile, EmojiFavoriteTile, HotkeyBinding, HotkeyList, HotkeyListLayout, NumberField,
   SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsRemoveButton, SettingsSectionCard, TagToolbar, TextArea, TextField } from "../src";
 import { Ellipsis, Eye, ListChecks, ListCollapse, Plus, Tag } from "lucide-react";
 
@@ -62,13 +62,13 @@ export function SettingsChoicesFixture() {
 
 export function HotkeyListFixture({ multiple }: { multiple: boolean }) {
   const [values, setValues] = useState(multiple ? ["Super+V", "Ctrl+Shift+V"] : ["Super+V"]);
-  return <div className="setting-item no-border column hotkey-list-editor">
+  return <HotkeyListLayout>
     <HotkeyBinding label="Global hotkey" value="" placeholder="+ Global hotkey" recordingLabel="Press a shortcut"
       recording={false} busy={false} disabled={false} onClick={undefined} onKeyDown={undefined}
       onMouseDown={undefined} onBlur={undefined} />
     <HotkeyList values={values} emptyLabel="Not set" removeLabel="Delete"
       onRemove={value => setValues(current => current.filter(binding => binding !== value))} />
-  </div>;
+  </HotkeyListLayout>;
 }
 
 export function EmojiFavoritesFixture() {
