@@ -18,6 +18,7 @@ type gallery struct {
 	theme, mode, fixture, state       string
 	choice, query, searchMode, filter string
 	settingsSelection                 string
+	emojiFavorites, settingEnabled    bool
 	historyList                       uikit.HistoryListState
 	historySelected                   int
 	previewImage                      uikit.PreviewImage
@@ -78,6 +79,29 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 			ProductName: "DezirClip 0.2", Feedback: "Feedback", Reset: "Reset defaults", Website: "Official website",
 			Compact: g.state == "compact",
 		})
+	case "settings-toggle":
+		kit.SettingsToggle(c, &g.settingEnabled, "Keep clipboard history")
+	case "settings-slider":
+		ui.Column(c).FillWidth().Gap(6).Children(func() {
+			ui.Text(c, fmt.Sprintf("Opacity %.0f%%", g.previewOpacity))
+			kit.Slider(c, &g.previewOpacity, 0, 100, "Opacity").FillWidth().Step(1)
+		})
+	case "hotkey-binding":
+		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "Quick Paste").Grow(1)
+			kit.HotkeyBinding(c, "Quick Paste", "Ctrl+Shift+V", "Set shortcut", g.state == "recording", false)
+		})
+	case "scroll-to-top":
+		ui.Column(c).FillWidth().Height(120).Children(func() {
+			ui.Text(c, "Clipboard history").Grow(1)
+			ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
+				kit.ScrollToTopButton(c, "Scroll to top")
+			})
+		})
+	case "emoji-tabs":
+		kit.EmojiTabs(c, "Emoji", "Favorites", g.emojiFavorites, false, func(favorites bool) { g.emojiFavorites = favorites })
+	case "emoji-grid":
+		kit.EmojiGrid(c, "Frequently used", []string{"😀", "😄", "😂", "🤣", "😊", "😍", "😘", "😎", "🤔", "🔥", "✨", "👌"}, false, nil)
 	case "app-header":
 		pinned := g.state == "pinned"
 		pin := uikit.HeaderAction{Icon: "pin", Label: "Pin", Active: pinned, Run: func() {
@@ -209,6 +233,8 @@ func run() error {
 	output := flag.String("output", "", "write a software-rendered PNG to this file")
 	inspect := flag.Bool("inspect", false, "write rendered text labels as JSON")
 	flag.Parse()
+	g.settingEnabled = g.state == "enabled"
+	g.emojiFavorites = g.state == "favorites"
 	g.historySelected = -1
 	if g.fixture == "history-list" && g.state == "selected" {
 		g.historySelected = 1

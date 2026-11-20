@@ -39,10 +39,20 @@ const cases = {
   confirm: { states: ["default"], text: "Clear history" },
   "tag-dialog": { states: ["default", "busy"], text: "Create tag" },
 };
+const additionalExamples = {
+  "settings-toggle": { states: ["enabled", "default"], text: "Keep clipboard history" },
+  "settings-slider": { states: ["default"], text: "Opacity 72%" },
+  "hotkey-binding": { states: ["default"], text: "Quick Paste" },
+  "scroll-to-top": { states: ["default"], text: "Clipboard history" },
+  "emoji-tabs": { states: ["default", "favorites"], text: "Favorites" },
+  "emoji-grid": { states: ["default"], text: "Frequently used" },
+};
+const available = { ...cases, ...additionalExamples };
 if (selectedTheme && !(selectedTheme in presets)) throw Error("Unknown theme " + selectedTheme);
 for (const fixture of selectedFixtures ?? []) {
-  if (!(fixture in cases)) throw Error("Unknown component " + fixture);
+  if (!(fixture in available)) throw Error("Unknown component " + fixture);
 }
+const fixtures = selectedFixtures ? selectedFixtures.map(name => [name, available[name]]) : Object.entries(cases);
 const server = await createServer({ root, configFile: false, server: { host: "127.0.0.1", port: 0, hmr: false, watch: null } });
 const output = await mkdtemp(join(tmpdir(), "deziro-ui-parity-"));
 const size = { width: 560, height: 420 };
@@ -109,7 +119,7 @@ try {
   const results = [];
   for (const theme of Object.keys(presets).filter(name => !selectedTheme || name === selectedTheme)) {
     for (const mode of ["light", "dark"]) {
-      for (const [fixture, { states, text }] of Object.entries(cases).filter(([name]) => !selectedFixtures || selectedFixtures.includes(name))) {
+      for (const [fixture, { states, text }] of fixtures) {
         for (const state of states) {
           const id = [theme, mode, fixture, state].join("_");
           try {

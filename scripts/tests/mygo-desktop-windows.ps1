@@ -98,13 +98,16 @@ public static class MyGoInput {
     [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
     [DllImport("user32.dll")] static extern bool GetMenuItemRect(IntPtr window, IntPtr menu, uint item, out Rect rect);
     public static IntPtr ResidentTrayExit(int process, out Rect rect) {
-        return ResidentTrayItem(process, 2, out rect);
+        return ResidentTrayItem(process, UInt32.MaxValue, out rect);
     }
     public static IntPtr ResidentTrayItem(int process, uint item, out Rect rect) {
         rect = new Rect();
         if (!ResidentTrayMenuVisible(process)) return IntPtr.Zero;
         IntPtr popup = FindWindow("#32768", null);
         IntPtr menu = SendMessage(popup, 0x1E1, IntPtr.Zero, IntPtr.Zero);
+        int count = GetMenuItemCount(menu);
+        if (count <= 0) return IntPtr.Zero;
+        if (item == UInt32.MaxValue) item = (uint)(count - 1);
         return GetMenuItemRect(IntPtr.Zero, menu, item, out rect) ? popup : IntPtr.Zero;
     }
     public static bool ResidentTrayMenuVisible(int process) {
@@ -112,7 +115,7 @@ public static class MyGoInput {
         uint owner; GetWindowThreadProcessId(popup, out owner);
         if (popup == IntPtr.Zero || owner != process || !IsWindowVisible(popup)) return false;
         IntPtr menu = SendMessage(popup, 0x1E1, IntPtr.Zero, IntPtr.Zero); // MN_GETHMENU
-        return menu != IntPtr.Zero && GetMenuItemCount(menu) == 3;
+        return menu != IntPtr.Zero && GetMenuItemCount(menu) >= 3;
     }
     public static bool OpenResidentTrayMenu(int process) { return ResidentTrayEvent(process, 0x205); }
     public static bool ClickResidentTray(int process) { return ResidentTrayEvent(process, 0x202); }

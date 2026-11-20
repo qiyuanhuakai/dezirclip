@@ -19,6 +19,13 @@
 .showcase-history-list {
   height: 320px;
 }
+.showcase-scroll-top {
+  position: relative;
+  height: 136px;
+}
+.showcase .showcase-settings {
+  padding: 0;
+}
 .showcase-image {
   width: 100%;
   height: 240px;

@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
-import { AppHeader, ConfirmDialog, FilterChips, HistoryCard, HistoryCardMeta, MatchHighlight, ProgressToast, SearchBar, SearchHistory, SettingHelp,
-  SettingsDisclosure, SettingsFooter, SettingsRail, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type SearchMode } from "../src";
+import { AppHeader, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardMeta, HotkeyBinding, MatchHighlight,
+  ProgressToast, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail,
+  SettingsSlider, SettingsToggle, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { AttachmentFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
@@ -93,6 +94,9 @@ function Showcase() {
   const [filters, setFilters] = useState(["text"]);
   const [opened, setOpened] = useState(true);
   const [toastVisible, setToastVisible] = useState(true);
+  const [enabled, setEnabled] = useState(state === "enabled");
+  const [opacity, setOpacity] = useState(72);
+  const [tab, setTab] = useState<EmojiTab>(state === "favorites" ? "favorites" : "emoji");
 
   const examples = {
     "attachment-preview": <AttachmentFixture state={state} />,
@@ -106,6 +110,20 @@ function Showcase() {
     "settings-rail": <SettingsRail t={key => key} groups={settingsGroups} activeGroup={activeSettings} onSelect={setActiveSettings} />,
     "settings-footer": <SettingsFooter t={key => footerLabels[key] ?? key} productName="DezirClip 0.2"
       compact={state === "compact"} onFeedback={() => undefined} onWebsite={() => undefined} onResetSettings={() => undefined} />,
+    "settings-toggle": <div className="setting-item"><span className="item-label">Keep clipboard history</span>
+      <SettingsToggle aria-label="Keep clipboard history" checked={enabled} onChange={event => setEnabled(event.currentTarget.checked)} />
+    </div>,
+    "settings-slider": <div className="settings-view showcase-settings"><div className="setting-item column">
+      <span className="item-label">Opacity {opacity}%</span>
+      <SettingsSlider min={0} max={100} value={opacity} aria-label="Opacity" onChange={event => setOpacity(event.currentTarget.valueAsNumber)} />
+    </div></div>,
+    "hotkey-binding": <HotkeyBinding label="Quick Paste" value="Ctrl+Shift+V" placeholder="Set shortcut" recordingLabel="Press a shortcut"
+      recording={state === "recording"} busy={false} disabled={false} onClick={undefined} onKeyDown={undefined}
+      onMouseDown={undefined} onBlur={undefined} />,
+    "scroll-to-top": <div className="showcase-scroll-top">Clipboard history<ScrollToTopButton label="Scroll to top" onClick={() => undefined} /></div>,
+    "emoji-tabs": <EmojiTabs active={tab} labels={{ emoji: "Emoji", favorites: "Favorites" }} onChange={setTab} />,
+    "emoji-grid": <EmojiGrid groups={[{ name: "Frequently used", emojis: ["😀", "😄", "😂", "🤣", "😊", "😍", "😘", "😎", "🤔", "🔥", "✨", "👌"] }]}
+      empty="No emoji" onSelect={() => undefined} />,
     "app-header": <HeaderFixture />,
     "history-card": <HistoryCard selected={state === "selected"} pinned={state === "pinned"} disableLayout>
       <HistoryCardMeta source="Editor" time="12:30"

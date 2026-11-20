@@ -107,15 +107,28 @@ func (k Kit) iconButton(c *ui.Context, name, label string, active, disabled bool
 		paint(button, style)
 	}
 	button.Children(func() {
-		if name == "top" {
-			text(c, "↑", style).PassThrough()
-		} else if image := headerIcons[name]; image != nil {
+		if image := headerIcons[name]; image != nil {
 			ui.Icon(c, image).Size(16, 16).TextColor(styleColor(style.Text)).PassThrough()
 		} else {
 			text(c, label, style)
 		}
 	})
 	return button
+}
+
+func (k Kit) ScrollToTopButton(c *ui.Context, label string) ui.Element {
+	style := k.style("headerButton")
+	style.Radius, style.CornerRadii = 16, nil
+	button := ui.ButtonBase(c).Size(32, 32).Label(label).Tooltip(label).FocusRing(true)
+	style = k.interactive(c, button, style, false)
+	return paint(button, style).Draw(func(p *ui.Painter, bounds ui.Rect) {
+		x, y := bounds.X+bounds.W/2, bounds.Y+bounds.H/2
+		ink := styleColor(style.Text)
+		var arrow ui.Path
+		arrow.MoveTo(x-5, y-1).LineTo(x, y-6).LineTo(x+5, y-1)
+		arrow.MoveTo(x, y-6).LineTo(x, y+6)
+		p.StrokePath(&arrow, 1.5, ink)
+	})
 }
 
 func (k Kit) headerSearch(c *ui.Context, options HeaderOptions) {

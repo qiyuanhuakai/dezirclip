@@ -300,7 +300,7 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 	}
 	if first > 0 && !draggingPin && n.preferences["app.show_scroll_top_button"] != "false" {
 		ui.Row(c).Padding(0, 8, 5).Justify(ui.End).Children(func() {
-			if kit.IconButton(c, "top", n.text("scroll_to_top", "Scroll to top"), false, false).Clicked() {
+			if kit.ScrollToTopButton(c, n.text("scroll_to_top", "Scroll to top")).Clicked() {
 				n.list.List.ScrollTo(0, ui.Start)
 			}
 		})

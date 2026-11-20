@@ -13,21 +13,21 @@ func (k Kit) SettingsToggle(c *ui.Context, on *bool, label string) ui.Element {
 	row := ui.CheckboxBase(c, on).Label(label).FillWidth().MinHeight(34).Gap(10).AlignItems(ui.Center).FocusRing(true)
 	row.Children(func() {
 		text(c, label, style).Grow(1).Wrap().PassThrough()
-		track := ui.Box(c).Size(36, 20).Shrink(0).PassThrough()
-		fill, offset := palette.Surface, float32(3)
+		track := ui.Box(c).Size(44, 22).Shrink(0).PassThrough()
+		fill, offset := palette.TextMuted.Alpha(.34), float32(3)
 		if *on {
-			fill, offset = palette.Accent, 19
+			fill, offset = palette.Accent, 25
 		} else if row.Hovered() {
-			fill = palette.Selection
+			fill = palette.TextMuted.Alpha(.5)
 		}
 		duration := time.Duration(k.palette().TransitionMs) * time.Millisecond
 		if duration > 0 {
 			fill = track.AnimateColor("switch-track", fill, ui.Animation{Duration: duration})
 			offset = track.Animate("switch-position", offset, duration)
 		}
-		track.Radius(10).Border(1, palette.Border).Background(fill).Children(func() {
-			ui.Box(c).Absolute().Left(offset).Top(3).Size(14, 14).Radius(7).
-				Background(palette.AccentText).Border(1, palette.Border).PassThrough()
+		track.Radius(11).Background(fill).Children(func() {
+			ui.Box(c).Absolute().Left(offset).Top(3).Size(16, 16).Radius(8).
+				Background(palette.AccentText).PassThrough()
 		})
 	})
 	return row
@@ -38,18 +38,23 @@ func (k Kit) HotkeyBinding(c *ui.Context, label, value, placeholder string, reco
 	if recording {
 		style = k.style("selectFocus")
 	}
-	field := ui.ButtonBase(c).Label(label).Height(style.Height).Gap(4).AlignItems(ui.Center).FocusRing(true).Disabled(disabled)
+	field := ui.ButtonBase(c).Label(label).Height(style.Height).Gap(6).AlignItems(ui.Center).FocusRing(true).Disabled(disabled)
+	if !recording {
+		style.Fill, style.Border, style.Outline, style.Shadows = [4]uint8{}, [4]uint8{}, nil, nil
+		style.BorderWidth, style.BorderWidths, style.Padding = 0, nil, [4]float32{}
+	}
 	paint(field, k.interactive(c, field, style, recording))
 	field.Children(func() {
 		if value == "" {
 			text(c, placeholder, style).PassThrough()
 			return
 		}
-		cap := k.style("selectSelected")
-		cap.Padding = [4]float32{1, 5, 1, 5}
+		cap := k.style("select")
+		cap.Padding = [4]float32{0, 6, 0, 6}
+		cap.Radius, cap.CornerRadii, cap.Size, cap.Weight = 4, nil, 11, 600
 		for _, key := range strings.Split(value, "+") {
-			paint(ui.Box(c).MinWidth(16).Center().PassThrough(), cap).
-				Children(func() { text(c, key, cap).SingleLine().PassThrough() })
+			paint(ui.Box(c).Height(22).MinWidth(22).Center().PassThrough(), cap).
+				Children(func() { text(c, strings.ToUpper(key), cap).SingleLine().PassThrough() })
 		}
 	})
 	return field
@@ -152,12 +157,12 @@ func (k Kit) Slider(c *ui.Context, value *float64, minimum, maximum float64, lab
 		if maximum > minimum {
 			fraction = float32(min(1, max(0, (*value-minimum)/(maximum-minimum))))
 		}
-		track := ui.Rect{X: bounds.X + 8, Y: bounds.Y + (bounds.H-4)/2, W: width, H: 4}
-		p.Fill(track, palette.Border, 2)
-		p.Fill(ui.Rect{X: track.X, Y: track.Y, W: width * fraction, H: 4}, palette.Accent, 2)
-		thumb := ui.Rect{X: track.X + width*fraction - 6, Y: track.Y - 4, W: 12, H: 12}
-		p.Fill(thumb, palette.Surface, 6)
-		p.Stroke(thumb, palette.Accent, 6, 1)
+		track := ui.Rect{X: bounds.X + 8, Y: bounds.Y + (bounds.H-8)/2, W: width, H: 8}
+		p.Fill(track, palette.Surface, 4)
+		p.Stroke(track, palette.Border, 4, 1)
+		p.Fill(ui.Rect{X: track.X, Y: track.Y, W: width * fraction, H: track.H}, palette.Accent, 4)
+		thumb := ui.Rect{X: track.X + width*fraction - 7, Y: track.Y - 3, W: 14, H: 14}
+		p.Fill(thumb, palette.Accent, 7)
 	})
 	return slider
 }

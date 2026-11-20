@@ -708,8 +708,8 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 			tray.OnClick(trayToggle)
 			tray.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 				{Label: "显示／隐藏", Click: func(*mygo.MenuItem, *mygo.Window) { trayToggle() }},
-				{Label: "快速粘贴", Click: func(*mygo.MenuItem, *mygo.Window) { panel.ShowDesktop() }},
 				{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { present("settings") }},
+				{Label: "快速粘贴", Click: func(*mygo.MenuItem, *mygo.Window) { panel.ShowDesktop() }},
 				{Label: "退出", Role: mygo.RoleQuit},
 			}))
 			return nil

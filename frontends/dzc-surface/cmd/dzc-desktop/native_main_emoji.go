@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
 //go:embed emoji-data.json
@@ -48,32 +47,25 @@ func (n *nativeMain) closeEmoji() {
 
 func (n *nativeMain) emojiView(c *ui.Context) {
 	favorites := n.preferences["app.emoji_panel_tab"] == "favorites"
-	ui.Row(c).Padding(0, 8).Gap(5).Children(func() {
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("emoji_tab"), Selected: !favorites, Disabled: n.mutating}).Clicked() && favorites {
-			n.saveSetting("app.emoji_panel_tab", "emoji")
-		}
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("emoji_favorites"), Selected: favorites, Disabled: n.mutating}).Clicked() && !favorites {
-			n.saveSetting("app.emoji_panel_tab", "favorites")
-		}
+	kit := n.mainKit()
+	ui.Column(c).FillWidth().Padding(0, 8).Children(func() {
+		kit.EmojiTabs(c, n.text("emoji_tab"), n.text("emoji_favorites"), favorites, n.mutating, func(favorites bool) {
+			tab := "emoji"
+			if favorites {
+				tab = "favorites"
+			}
+			n.saveSetting("app.emoji_panel_tab", tab)
+		})
 	})
 	if favorites {
 		n.emojiFavoritesView(c)
 		return
 	}
-	width, _ := c.Size()
-	columns := max(1, int((width-16+4)/38))
-	kit := n.mainKit()
 	ui.Scroll(c).FillWidth().MinHeight(0).Grow(1).Shrink(1).Children(func() {
 		ui.Column(c).FillWidth().Padding(8).Gap(8).Children(func() {
 			for _, group := range emojiCatalog {
-				ui.Text(c, n.emojiGroupName(group.Name)).FontWeight(600)
-				kit.TileGrid(c, len(group.Emojis), columns, 4, func(index int, cellWidth float32) {
-					emoji := group.Emojis[index]
-					button := kit.TileButton(c, emoji, cellWidth, 34, n.mutating)
-					button.Children(func() { ui.Text(c, emoji).FontSize(20).SingleLine().PassThrough() })
-					if button.Clicked() {
-						n.sendEmoji("text", emoji)
-					}
+				kit.EmojiGrid(c, n.emojiGroupName(group.Name), group.Emojis, n.mutating, func(emoji string) {
+					n.sendEmoji("text", emoji)
 				})
 			}
 		})
