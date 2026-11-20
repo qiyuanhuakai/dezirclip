@@ -30,6 +30,10 @@ type ButtonOptions struct {
 }
 
 func Button(c *ui.Context, options ButtonOptions) ui.Element {
+	return Kit{}.Button(c, options)
+}
+
+func (k Kit) Button(c *ui.Context, options ButtonOptions) ui.Element {
 	palette := c.Theme()
 	control := ui.ButtonBase(c).Label(options.Label).Height(32).PaddingX(12).
 		Radius(palette.Radius).FocusRing(true).Disabled(options.Disabled)
@@ -52,8 +56,11 @@ func Button(c *ui.Context, options ButtonOptions) ui.Element {
 	if options.Disabled {
 		text = palette.TextMuted
 	}
-	control.Background(fill).Border(1, palette.Border)
-	control.Children(func() { ui.Text(c, options.Label).TextColor(text) })
+	style := k.style("confirmCancel")
+	style.Fill, style.Text = rgba(fill), rgba(text)
+	style = k.interactive(c, control, style, options.Selected)
+	paint(control, style)
+	control.Children(func() { styledText(ui.Text(c, options.Label).PassThrough(), style) })
 	return control
 }
 
@@ -92,7 +99,8 @@ func (k Kit) Select(c *ui.Context, selected *string, label string, options []Sel
 	case trigger.Hovered():
 		style = k.style("selectHover")
 	}
-	paint(trigger.Width(style.Width).Height(style.Height).FocusRing(false), style)
+	style = k.animatePaint(trigger, style)
+	paint(trigger.Width(style.Width).MaxWidthPercent(100).Height(style.Height).FocusRing(false), style)
 	trigger.Children(func() { k.selectFace(c, name, style) })
 	if parts.Open() {
 		parts.Popup(func(panel ui.Element) {
@@ -114,7 +122,7 @@ func (k Kit) Select(c *ui.Context, selected *string, label string, options []Sel
 					} else if item.Hovered() {
 						style.Fill = k.style("selectSelected").Fill
 					}
-					paint(item.Height(style.Height), style)
+					paint(item.Height(style.Height), k.interactive(c, item, style, option.Value == *selected))
 					item.Children(func() { text(c, option.Label, style) })
 				}
 			})
@@ -238,7 +246,9 @@ func (k Kit) SettingsDisclosure(c *ui.Context, title string, open *bool, content
 		if *open {
 			arrow = chevronDown
 		}
-		row := paint(ui.ButtonBase(c).Label(title).Height(style.Height).Justify(ui.Start).Gap(8), style)
+		row := ui.ButtonBase(c).Label(title).FillWidth().Height(style.Height).Justify(ui.Start).Gap(8)
+		style = k.interactive(c, row, style, *open)
+		paint(row, style)
 		row.Children(func() {
 			chevron := k.style("disclosureChevron")
 			paint(ui.Row(c).Size(chevron.Width, chevron.Height).Center(), chevron).Children(func() {

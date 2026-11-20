@@ -2,6 +2,7 @@ package uikit
 
 import (
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
@@ -109,7 +110,38 @@ func text(c *ui.Context, value string, style theme.WidgetStyle) ui.Element {
 
 func (k Kit) button(c *ui.Context, label, widget string) ui.Element {
 	style := k.style(widget)
-	button := paint(ui.ButtonBase(c).Label(label).Height(style.Height), style)
+	button := ui.ButtonBase(c).Label(label).Height(style.Height)
+	paint(button, k.interactive(c, button, style, false))
 	button.Children(func() { text(c, label, style) })
 	return button
+}
+
+func (k Kit) interactive(c *ui.Context, control ui.Element, style theme.WidgetStyle, active bool) theme.WidgetStyle {
+	if control.Pressed() || control.Hovered() || control.FocusVisible() {
+		strength := float32(0.45)
+		if control.Pressed() {
+			strength = 0.8
+		} else if active {
+			strength = 0.25
+		}
+		fill := styleColor(style.Fill)
+		if fill.A == 0 {
+			fill = c.Theme().Surface
+		}
+		style.Fill = rgba(fill.Mix(c.Theme().Selection, strength))
+		if style.BorderWidth > 0 {
+			style.Border = rgba(styleColor(style.Border).Mix(c.Theme().Accent, strength))
+		}
+	}
+	return k.animatePaint(control, style)
+}
+
+func (k Kit) animatePaint(control ui.Element, style theme.WidgetStyle) theme.WidgetStyle {
+	if ms := k.palette().TransitionMs; ms > 0 {
+		animation := ui.Animation{Duration: time.Duration(ms) * time.Millisecond}
+		style.Fill = rgba(control.AnimateColor("deziro-fill", styleColor(style.Fill), animation))
+		style.Border = rgba(control.AnimateColor("deziro-border", styleColor(style.Border), animation))
+		style.Text = rgba(control.AnimateColor("deziro-text", styleColor(style.Text), animation))
+	}
+	return style
 }

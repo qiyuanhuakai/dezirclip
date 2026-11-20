@@ -1,3 +1,4 @@
+import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
 import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
@@ -165,11 +166,7 @@ const GeneralSettingsGroup = ({
                     <div className="item-label-group">
                         <span className="item-label">{t('autostart')}</span>
                     </div>
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            aria-label={t("autostart")}
+                    <SettingsToggle aria-label={t("autostart")}
                             checked={autoStart}
                             disabled={loginSaving}
                             onChange={async (e) => {
@@ -184,10 +181,7 @@ const GeneralSettingsGroup = ({
                                 } finally {
                                     setLoginSaving(false);
                                 }
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                     {loginError && <span role="alert">{t("common_error")} · {loginError}</span>}
                 </div>
 
@@ -195,11 +189,7 @@ const GeneralSettingsGroup = ({
                     <div className="item-label-group">
                         <span className="item-label">{t('hide_tray_icon')}</span>
                     </div>
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={hideTrayIcon}
+                    <SettingsToggle checked={hideTrayIcon}
                             aria-label={t('hide_tray_icon')}
                             disabled={traySaving}
                             onChange={async (e) => {
@@ -214,10 +204,7 @@ const GeneralSettingsGroup = ({
                                 } finally {
                                     setTraySaving(false);
                                 }
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                     {trayError && <span role="alert">{trayError}</span>}
                 </div>
 
@@ -227,11 +214,7 @@ const GeneralSettingsGroup = ({
                         label={t('edge_docking')}
                         hintKey="edge_docking"
                     />
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={edgeDocking}
+                    <SettingsToggle checked={edgeDocking}
                             aria-label={t('edge_docking')}
                             disabled={dockSaving}
                             onChange={async (e) => {
@@ -246,10 +229,7 @@ const GeneralSettingsGroup = ({
                                 } finally {
                                     setDockSaving(false);
                                 }
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                     {dockError && <span role="alert">{dockError}</span>}
                 </div>
 
@@ -257,11 +237,7 @@ const GeneralSettingsGroup = ({
                     <div className="item-label-group">
                         <span className="item-label">{t('follow_mouse')}</span>
                     </div>
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={followMouse}
+                    <SettingsToggle checked={followMouse}
                             aria-label={t('follow_mouse')}
                             disabled={followSaving}
                             onChange={async (e) => {
@@ -276,10 +252,7 @@ const GeneralSettingsGroup = ({
                                 } finally {
                                     setFollowSaving(false);
                                 }
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                     {followError && <span role="alert">{t("common_error")} · {followError}</span>}
                 </div>
 
@@ -289,11 +262,7 @@ const GeneralSettingsGroup = ({
                         label={t('disable_webview_gpu')}
                         hintKey="disable_webview_gpu"
                     />
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={disableWebviewGpu}
+                    <SettingsToggle checked={disableWebviewGpu}
                             aria-label={t('disable_webview_gpu')}
                             disabled={gpuSaving}
                             onChange={async (e) => {
@@ -308,10 +277,7 @@ const GeneralSettingsGroup = ({
                                 } finally {
                                     setGpuSaving(false);
                                 }
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                     {gpuError && <span role="alert">{t("common_error")} · {gpuError}</span>}
                 </div>
 
@@ -320,11 +286,7 @@ const GeneralSettingsGroup = ({
                         label={t('idle_destroy_enabled')}
                         hintKey="idle_destroy_enabled"
                     />
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            aria-label={t('idle_destroy_enabled')}
+                    <SettingsToggle aria-label={t('idle_destroy_enabled')}
                             checked={idleDestroyEnabled}
                             disabled={idleSaving}
                             onChange={async (e) => {
@@ -339,10 +301,7 @@ const GeneralSettingsGroup = ({
                                 } finally {
                                     setIdleSaving(false);
                                 }
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                 </div>
                 {idleError && <span role="alert">{t("common_error")} · {idleError}</span>}
                 {idleDestroyEnabled && (
@@ -383,17 +342,10 @@ const GeneralSettingsGroup = ({
                     <div className="item-label-group">
                         <span className="item-label">{t('sound_effects') || "Sound Effects"}</span>
                     </div>
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={soundEnabled}
+                    <SettingsToggle checked={soundEnabled}
                             aria-label={t('sound_effects')}
                             disabled={soundSaving}
-                            onChange={(e) => void commitSound(e.target.checked, false)}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            onChange={(e) => void commitSound(e.target.checked, false)} />
                     {soundError && <span role="alert">{t("common_error")} · {soundError}</span>}
                 </div>
                 {soundEnabled && (
@@ -422,17 +374,10 @@ const GeneralSettingsGroup = ({
                         <div className="item-label-group">
                             <span className="item-label">{t('paste_sound') || "Paste Sound"}</span>
                         </div>
-                        <label className="switch">
-                            <input
-                                className="cb"
-                                type="checkbox"
-                                checked={pasteSoundEnabled}
+                        <SettingsToggle checked={pasteSoundEnabled}
                                 aria-label={t('paste_sound')}
                                 disabled={soundSaving}
-                                onChange={(e) => void commitSound(e.target.checked, true)}
-                            />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
+                                onChange={(e) => void commitSound(e.target.checked, true)} />
                     </div>
                 )}
 
@@ -442,11 +387,7 @@ const GeneralSettingsGroup = ({
                         label={t('silent_start')}
                         hintKey="silent_start"
                     />
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={silentStart}
+                    <SettingsToggle checked={silentStart}
                             aria-label={t('silent_start')}
                             disabled={silentSaving}
                             onChange={async (e) => {
@@ -461,10 +402,7 @@ const GeneralSettingsGroup = ({
                                 } finally {
                                     setSilentSaving(false);
                                 }
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                     {silentError && <span role="alert">{silentError}</span>}
                 </div>
                 <div className="setting-item">
@@ -472,96 +410,61 @@ const GeneralSettingsGroup = ({
                         label={t('show_search_box')}
                         hintKey="show_search_box"
                     />
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={showSearchBox}
+                    <SettingsToggle checked={showSearchBox}
                             onChange={(e) => {
                                 const enabled = e.target.checked;
                                 setShowSearchBox(enabled);
                                 saveAppSetting('show_search_box', String(enabled));
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                 </div>
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('scroll_top_button')}
                         hintKey="scroll_top_button"
                     />
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={scrollTopButtonEnabled}
+                    <SettingsToggle checked={scrollTopButtonEnabled}
                             onChange={(e) => {
                                 const enabled = e.target.checked;
                                 setScrollTopButtonEnabled(enabled);
                                 saveAppSetting('show_scroll_top_button', String(enabled));
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                 </div>
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('emoji_panel_enabled') || '表情包开关'}
                         hintKey="emoji_panel_enabled"
                     />
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={emojiPanelEnabled}
+                    <SettingsToggle checked={emojiPanelEnabled}
                             onChange={(e) => {
                                 const enabled = e.target.checked;
                                 setEmojiPanelEnabled(enabled);
                                 saveAppSetting('emoji_panel_enabled', String(enabled));
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                 </div>
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('tag_manager_enabled') || '标签管理页开关'}
                         hintKey="tag_manager_enabled"
                     />
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={tagManagerEnabled}
+                    <SettingsToggle checked={tagManagerEnabled}
                             aria-label={t('tag_manager_enabled')}
                             onChange={(e) => {
                                 const enabled = e.target.checked;
                                 setTagManagerEnabled(enabled);
                                 saveAppSetting('tag_manager_enabled', String(enabled));
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                 </div>
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('arrow_key_selection')}
                         hintKey="arrow_key_selection"
                     />
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={arrowKeySelection}
+                    <SettingsToggle checked={arrowKeySelection}
                             onChange={(e) => {
                                 const enabled = e.target.checked;
                                 setArrowKeySelection(enabled);
                                 saveAppSetting('arrow_key_selection', String(enabled));
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                 </div>
 
                 <KeyboardPreviewSetting t={t} arrowKeySelection={arrowKeySelection} />

@@ -1,3 +1,4 @@
+import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { SettingHelp, SettingsLabel } from "../SettingHelp";
 import SettingsDisclosure from "../SettingsDisclosure";
@@ -43,12 +44,9 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
             </h4>
             <div className="setting-item">
                 <SettingsLabel label={t("updater_auto_check")} hintKey="updater_auto" />
-                <label className="switch">
-                    <input className="cb" type="checkbox" checked={state.autoCheck} disabled={disabled}
+                <SettingsToggle checked={state.autoCheck} disabled={disabled}
                         aria-label={t("updater_auto_check")}
                         onChange={event => void saveUpdatePreference("autoCheck", event.target.checked)} />
-                    <div className="toggle"><div className="left" /><div className="right" /></div>
-                </label>
             </div>
             <div className="setting-item update-channel-row">
                 <SettingsLabel label={t("updater_channel")} hintKey="updater_channel"

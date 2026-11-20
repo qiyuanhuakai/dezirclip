@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { invoke } from "../../../shared/lib/desktopInvoke";
-import { X } from "lucide-react";
+import { HotkeyBinding } from "@deziro/ui-react/components/HotkeyBinding";
 import { useHotkeyRecording } from "../../../shared/hooks/useHotkeyRecording";
 import { hotkeyChord } from "../utils/hotkeyChord";
 
@@ -21,7 +21,6 @@ const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkey
         onCancelled: () => setRecording(false),
         onError: error => setRecordingError(t("hotkey_register_failed") + String(error)),
     });
-    const parts = hotkey ? hotkey.split("+") : [];
     const startRecording = () => {
         if (disabled) return;
         setRecordingError(null);
@@ -49,33 +48,12 @@ const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkey
         record(newHotkey);
     }, [cancel, disabled, record, recording, setRecording]);
 
-    return <div className="setting-item setting-item--detail hotkey-recorder">
-        <div className="item-label-group"><span className="item-label">{t(labelKey)}</span></div>
-        <div className="hotkey-binding"><div
-            className={`key-group ${recording && !disabled ? "recording" : ""}`}
-            role="button"
-            aria-label={t(labelKey)}
-            aria-pressed={recording && !disabled}
-            aria-busy={recording && !nativeReady}
-            aria-disabled={disabled}
-            tabIndex={disabled ? -1 : 0}
-            onClick={event => { startRecording(); event.currentTarget.focus(); }}
-            onKeyDown={handleKeyDown}
-            onMouseDown={event => { if (recording && !disabled && event.button === 1) { event.preventDefault(); record("MouseMiddle"); } }}
-            onBlur={() => setRecording(false)}
-        >
-            {recording && !disabled ? <div className="key-cap key-cap--placeholder">{t("waiting_for_input")}</div>
-                : parts.length > 0 ? parts.map((part, index) => <div key={`${part}-${index}`} className="key-cap">{part}</div>)
-                    : <div className={`key-cap key-cap--placeholder ${placeholder ? "" : "key-cap--unset"}`}>{placeholder || t("not_set")}</div>}
-        </div>
-        {onClear && hotkey && !recording && <button type="button"
-            className="btn-icon btn-icon-scalable btn-icon-size-hotkey" disabled={disabled}
-            onClick={onClear} aria-label={`${t("delete")} ${t(labelKey)}`} title={`${t("delete")} ${hotkey}`}>
-            <X size={14} strokeWidth={2.6} />
-        </button>}
-        </div>
-        {recordingError && <p className="hotkey-recording-error" role="alert">{recordingError}</p>}
-    </div>;
+    return <HotkeyBinding label={t(labelKey)} value={hotkey} placeholder={placeholder || t("not_set")} unset={!placeholder}
+        recordingLabel={t("waiting_for_input")} recording={recording} busy={recording && !nativeReady} disabled={disabled}
+        onClear={onClear} error={recordingError} clearLabel={`${t("delete")} ${t(labelKey)}`} clearTitle={`${t("delete")} ${hotkey}`}
+        onClick={event => { startRecording(); event.currentTarget.focus(); }} onKeyDown={handleKeyDown}
+        onMouseDown={event => { if (recording && !disabled && event.button === 1) { event.preventDefault(); record("MouseMiddle"); } }}
+        onBlur={() => setRecording(false)} />;
 };
 
 export default HotkeyRecorder;

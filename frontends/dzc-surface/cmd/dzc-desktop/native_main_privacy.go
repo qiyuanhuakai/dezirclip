@@ -29,7 +29,20 @@ type nativePrivacyEditor struct {
 	key, label, hint, draft string
 }
 
-func (n *nativeMain) openPrivacyFeedback(row protocol.DesktopEntry, generation uint64) {
+type nativePrivacyFeedbackAction struct {
+	id, label, prompt string
+}
+
+func (n *nativeMain) privacyFeedbackActions() []nativePrivacyFeedbackAction {
+	return []nativePrivacyFeedbackAction{
+		{"not_sensitive", n.text("privacy_feedback_not_sensitive"), n.text("privacy_feedback_unprotect_confirm")},
+		{"exact_exception", n.text("privacy_feedback_exact_exception"), n.text("privacy_feedback_exact_confirm")},
+		{"ignore_source", n.text("privacy_feedback_ignore_source"), n.text("privacy_feedback_ignore_confirm")},
+		{"protect_source", n.text("privacy_feedback_protect_source"), n.text("privacy_feedback_protect_confirm")},
+	}
+}
+
+func (n *nativeMain) openPrivacyFeedback(row protocol.DesktopEntry, generation uint64, action nativePrivacyFeedbackAction) {
 	if !n.canOpenHistoryDialog() || generation != n.history.generation || row.Id == 0 {
 		return
 	}
@@ -41,11 +54,13 @@ func (n *nativeMain) openPrivacyFeedback(row protocol.DesktopEntry, generation u
 	dialog := &nativePrivacyDialog{
 		open: true, loading: true, cancel: cancel, source: n.privacySource(row.SourceApp),
 		params: protocol.DesktopPolicyParams{
-			Id: &id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch,
+			Id: &id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Action: &action.id,
 		},
 	}
+	dialog.prompt = strings.ReplaceAll(action.prompt, "{source}", dialog.source)
 	n.privacyDialog = dialog
 	params := dialog.params
+	params.Action = nil
 	go func() {
 		defer cancel()
 		decision, err := n.library.PolicyDecision(ctx, params)
@@ -99,16 +114,14 @@ func (n *nativeMain) privacyDialogView(c *ui.Context, kit uikit.Kit, dialog *nat
 						ui.Text(c, dialog.hint).TextColor(c.Theme().TextMuted).Wrap()
 					}
 					ui.Text(c, dialog.prompt).Wrap()
-				default:
-					n.privacyFeedbackChoices(c, dialog)
 				}
 			})
 		})
 		ui.Row(c).Gap(6).Wrap().Justify(ui.End).Children(func() {
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_cancel")}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_cancel")}).Clicked() {
 				dialog.open = false
 			}
-			if dialog.prompt != "" && uikit.Button(c, uikit.ButtonOptions{
+			if dialog.prompt != "" && !dialog.loading && !dialog.failed && n.mainKit().Button(c, uikit.ButtonOptions{
 				Label: n.text("common_confirm"), Primary: true, Disabled: n.mutating,
 			}).Clicked() {
 				n.commitPrivacyDialog(dialog)
@@ -117,25 +130,6 @@ func (n *nativeMain) privacyDialogView(c *ui.Context, kit uikit.Kit, dialog *nat
 	})
 	if !dialog.open && n.privacyDialog == dialog {
 		n.closePrivacyDialog()
-	}
-}
-
-func (n *nativeMain) privacyFeedbackChoices(c *ui.Context, dialog *nativePrivacyDialog) {
-	for _, action := range []struct {
-		id, label, prompt string
-	}{
-		{"not_sensitive", n.text("privacy_feedback_not_sensitive"), n.text("privacy_feedback_unprotect_confirm")},
-		{"exact_exception", n.text("privacy_feedback_exact_exception"), n.text("privacy_feedback_exact_confirm")},
-		{"ignore_source", n.text("privacy_feedback_ignore_source"), n.text("privacy_feedback_ignore_confirm")},
-		{"protect_source", n.text("privacy_feedback_protect_source"), n.text("privacy_feedback_protect_confirm")},
-	} {
-		if uikit.Button(c, uikit.ButtonOptions{Label: action.label}).FillWidth().Clicked() {
-			dialog.params.Action = &action.id
-			dialog.prompt = strings.ReplaceAll(action.prompt, "{source}", dialog.source)
-		}
-	}
-	if uikit.Button(c, uikit.ButtonOptions{Label: n.text("privacy_rules_manage")}).FillWidth().Clicked() {
-		n.showPrivacyRuleManager()
 	}
 }
 
@@ -209,7 +203,7 @@ func (n *nativeMain) drawPrivacyRules(c *ui.Context) {
 		ui.Text(c, n.text("privacy_rules_loading")).TextColor(c.Theme().TextMuted).Wrap()
 	case n.privacyRules.failed:
 		ui.Text(c, n.text("privacy_rules_load_failed")).TextColor(c.Theme().Danger).Wrap()
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: n.mutating}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: n.mutating}).Clicked() {
 			n.loadPrivacyRules()
 		}
 	case len(n.privacyRules.rules) == 0:
@@ -249,7 +243,7 @@ func (n *nativeMain) drawPrivacyRule(c *ui.Context, rule protocol.PolicyRuleValu
 		if rule.Kind == "exact_exception" {
 			label, prompt = n.text("privacy_rule_revoke_exception"), n.text("privacy_rule_delete_exact_confirm")
 		}
-		if uikit.Button(c, uikit.ButtonOptions{Label: label, Disabled: n.mutating || n.privacyDialog != nil}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: label, Disabled: n.mutating || n.privacyDialog != nil}).Clicked() {
 			state := n.history.state
 			n.privacyDialog = &nativePrivacyDialog{
 				open: true, prompt: strings.ReplaceAll(prompt, "{source}", source),
@@ -282,7 +276,7 @@ func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
 			{"password", n.text("privacy_kind_password")},
 		} {
 			checked := slices.Contains(selected, kind.id)
-			if ui.Checkbox(c, &checked, kind.label).Disabled(n.mutating).Changed() {
+			if kit.Checkbox(c, &checked, kind.label).Disabled(n.mutating).Changed() {
 				next := slices.DeleteFunc(slices.Clone(selected), func(id string) bool { return id == kind.id })
 				if checked {
 					next = append(next, kind.id)
@@ -295,7 +289,7 @@ func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
 		{"app.excluded_source_apps", n.text("excluded_source_apps"), n.text("excluded_source_apps_hint")},
 		{"app.privacy_protection_custom_rules", n.text("privacy_protection_custom_rules"), n.text("privacy_rules_custom_patterns_hint")},
 	} {
-		if uikit.Button(c, uikit.ButtonOptions{
+		if n.mainKit().Button(c, uikit.ButtonOptions{
 			Label: field.label, Disabled: n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating || n.privacyEditor != nil,
 		}).Clicked() {
 			n.privacyEditor = &nativePrivacyEditor{open: true, focus: true, key: field.key, label: field.label, hint: field.hint, draft: n.preferences[field.key]}
@@ -309,7 +303,7 @@ func (n *nativeMain) privacyEditorView(c *ui.Context, kit uikit.Kit, form *nativ
 		ui.Scroll(c).FillWidth().MaxHeight(max(72, height-146)).Children(func() {
 			ui.Column(c).FillWidth().Gap(6).Children(func() {
 				ui.Text(c, form.hint).TextColor(c.Theme().TextMuted).Wrap()
-				field := ui.TextArea(c, &form.draft).Label(form.label).FillWidth().Height(100).ReadOnly(n.mutating)
+				field := kit.TextArea(c, &form.draft, form.label).FillWidth().Height(100).ReadOnly(n.mutating)
 				if form.focus {
 					field.Focus()
 					form.focus = false
@@ -320,10 +314,10 @@ func (n *nativeMain) privacyEditorView(c *ui.Context, kit uikit.Kit, form *nativ
 			})
 		})
 		ui.Row(c).Gap(6).Justify(ui.End).Children(func() {
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_cancel"), Disabled: n.mutating}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_cancel"), Disabled: n.mutating}).Clicked() {
 				form.open = false
 			}
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Primary: true, Disabled: n.mutating}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Primary: true, Disabled: n.mutating}).Clicked() {
 				n.savePrivacyDraft(form)
 			}
 		})

@@ -18,6 +18,7 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/model"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
 type outgoing struct {
@@ -578,6 +579,10 @@ func (p *Panel) paste(view *model.View) {
 }
 
 func (p *Panel) dismiss(reason string) {
+	if p.local != nil && p.local.unavailable {
+		p.releaseDesktopDisplay()
+		return
+	}
 	if !p.model.Visible {
 		return
 	}
@@ -643,6 +648,8 @@ func (p *Panel) word(key string) string {
 		"paste_failed": {"Paste failed. Select again to retry.", "粘贴失败，请重新选择。", "貼上失敗，請重新選擇。"},
 		"paste_notice": {"Previous paste could not be confirmed. Check the target content before selecting again.", "上次粘贴无法确认，请先检查目标内容后重新选择。", "上次貼上無法確認，請先檢查目標內容後重新選擇。"},
 		"retry":        {"Retry", "重试", "重試"},
+		"unavailable":  {"Quick Paste could not open. Focus the target app and try again.", "暂时无法打开快速粘贴。请先切换到要输入的应用，再试一次。", "暫時無法開啟快速貼上。請先切換到要輸入的應用程式，再試一次。"},
+		"close":        {"Close", "关闭", "關閉"},
 		"hint":         {"↑ ↓ Select   Enter Paste   Esc Close", "↑ ↓ 选择   Enter 粘贴   Esc 关闭", "↑ ↓ 選擇   Enter 貼上   Esc 關閉"},
 	}
 	index := 0
@@ -676,6 +683,17 @@ func (p *Panel) view(c *ui.Context) {
 	t.Inverse.A, t.InverseText.A = 255, 255
 	t.Background = background.Alpha(0)
 	c.SetTheme(t)
+	kit := uikit.NewKit(p.mode, tokens, nil)
+	if p.local != nil && p.local.unavailable {
+		ui.Column(c).Fill().Padding(float32(tokens.Padding)).Gap(12).Center().Radius(float32(tokens.Radius)).Background(background).Children(func() {
+			ui.Text(c, p.word("unavailable")).Wrap()
+			if kit.Button(c, uikit.ButtonOptions{Label: p.word("close")}).Clicked() {
+				p.dismiss("cancel")
+			}
+		})
+		c.OnShortcut(0, ui.KeyEscape, func() { p.dismiss("cancel") })
+		return
+	}
 	if !p.model.Visible {
 		return
 	}
@@ -686,7 +704,8 @@ func (p *Panel) view(c *ui.Context) {
 	pointerMoved := over && (!p.pointerKnown || p.pointerX != x || p.pointerY != y)
 	p.pointerKnown, p.pointerX, p.pointerY = over, x, y
 	panel.Children(func() {
-		input := ui.TextInput(c.Key("query-"+p.model.Display), &p.search).Placeholder(p.word("search")).Label(p.word("search")).Height(float32(tokens.SearchHeight)).Radius(float32(tokens.SearchHeight)/2).Background(t.Surface.Alpha(.85)).Padding(6, 14).AutoFocus()
+		input := kit.TextField(c.Key("query-"+display), &p.search, p.word("search")).FillWidth().
+			Placeholder(p.word("search")).Height(float32(tokens.SearchHeight)).AutoFocus()
 		input.OnTextKey(func(key ui.TextKey) bool {
 			if key.Key == ui.KeyEnter {
 				p.diagnosticRecord(map[string]any{"stage": "enter_gate", "visible": p.model.Visible,
@@ -749,8 +768,7 @@ func (p *Panel) view(c *ui.Context) {
 			return row.Text
 		}
 		listTheme := *t
-		listTheme.Accent, listTheme.AccentText = t.Selection.Alpha(.5), t.Text
-		listTheme.SurfaceHover = t.Surface.Alpha(.2)
+		listTheme.Accent, listTheme.AccentText, listTheme.SurfaceHover = ui.Color{}, t.Text, ui.Color{}
 		c.SetTheme(&listTheme)
 		clickedRow := -1
 		list := ui.List(c.Key("entries-"+display), p.list, rows.Len(&p.model), func(i int) {
@@ -769,10 +787,7 @@ func (p *Panel) view(c *ui.Context) {
 					label = p.word("link")
 				}
 			}
-			cell := ui.Column(c).Height(float32(tokens.RowHeight)).Padding(6, 12).Gap(3).BorderWidth(0, 0, 1, 0).BorderColor(t.Border.Alpha(.35)).Children(func() {
-				ui.Text(c, label).FontWeight(tokens.RegularWeight).SingleLine().TextColor(t.Text)
-				ui.Text(c, row.SourceApp).FontSize(float32(tokens.FontSize - 2)).TextColor(t.TextMuted)
-			})
+			cell := kit.PickerRow(c, label, row.SourceApp, p.model.Selected == i)
 			if _, _, over := cell.PointerPosition(); over {
 				if p.model.CanSelect() && pointerMoved && p.model.Selected != i {
 					p.model.Selected = i
@@ -802,7 +817,7 @@ func (p *Panel) view(c *ui.Context) {
 		}
 		if p.model.Error != "" {
 			ui.Text(c, p.model.Error).TextColor(t.Danger)
-			if ui.Button(c, p.word("retry")).Clicked() {
+			if kit.Button(c, uikit.ButtonOptions{Label: p.word("retry")}).Clicked() {
 				p.query(0)
 			}
 		}

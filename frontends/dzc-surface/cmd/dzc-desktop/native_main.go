@@ -24,77 +24,81 @@ type nativeMain struct {
 	actions *History
 	preview *Preview
 
-	session          context.Context
-	stop             context.CancelFunc
-	stopRead         context.CancelFunc
-	searchTimer      *time.Timer
-	resume           uint64
-	history          nativeHistory
-	cardImages       nativeVisibleCache[nativeCardKey, ui.ImageSource]
-	ocrPreview       *nativeOCRPreview
-	ocrJob           nativeOCRJob
-	ocrEngine        *protocol.OcrEngineInfo
-	ocrEngineLoading bool
-	protectedRows    map[nativeCardKey]*nativeProtectedRow
-	cardTagColors    map[string]string
-	readingTagColors bool
-	tagColorRevision uint64
-	list             uikit.HistoryListState
-	historyScroll    ui.ScrollState
-	searchWheel      float32
-	towardsTop       time.Time
-	preferences      map[string]string
-	query, kind      string
-	theme, mode      string
-	importedThemes   []protocol.DesktopThemePackage
-	importedTheme    *nativeTheme
-	appearanceBusy   bool
-	appearanceSync   bool
-	background       nativeBackground
-	systemDark       bool
-	focusSearch      bool
-	temporarySearch  bool
-	showSettings     bool
-	showEmoji        bool
-	emoji            *nativeEmojiPanel
-	settingsSection  string
-	settingsOpen     map[string]*bool
-	resetOpen        bool
-	privacyKindsOpen bool
-	privacyRules     nativePrivacyRules
-	privacyDialog    *nativePrivacyDialog
-	privacyEditor    *nativePrivacyEditor
-	shortcut         *nativeShortcutForm
-	queueCount       nativeQueueCount
-	applications     nativeApplicationCatalog
-	profile          nativeProfileSettings
-	buildDetailsOpen bool
-	updater          nativeUpdater
-	backup           *nativeBackupDialog
-	fontChoices      *nativeFontChoices
-	readingFonts     bool
-	capturing        bool
-	reading          bool
-	private          bool
-	pinned           bool
-	failed           bool
-	mutating         bool
-	notice           string
-	keyboard         bool
-	focusList        bool
-	previewSelection int64
-	hover            nativeHoverPreview
-	tags             *nativeTagEditor
-	tagCatalog       nativeTagCatalog
-	tagSuggestions   nativeTagSuggestions
-	fileGesture      nativeFileGesture
-	pinFocus         nativePinSource
-	login            nativeLoginState
-	tagLibrary       *nativeTagLibrary
-	editor           *nativeEntryEditor
-	transform        *nativeTransformDialog
-	transformKinds   []protocol.ToolTransformKind
-	qr               *nativeQRDialog
+	session               context.Context
+	stop                  context.CancelFunc
+	stopRead              context.CancelFunc
+	searchTimer           *time.Timer
+	resume                uint64
+	history               nativeHistory
+	cardImages            nativeVisibleCache[nativeCardKey, ui.ImageSource]
+	ocrPreview            *nativeOCRPreview
+	ocrJob                nativeOCRJob
+	ocrEngine             *protocol.OcrEngineInfo
+	ocrEngineLoading      bool
+	protectedRows         map[nativeCardKey]*nativeProtectedRow
+	cardTagColors         map[string]string
+	readingTagColors      bool
+	tagColorRevision      uint64
+	list                  uikit.HistoryListState
+	historyScroll         ui.ScrollState
+	searchWheel           float32
+	towardsTop            time.Time
+	preferences           map[string]string
+	query, kind           string
+	theme, mode           string
+	importedThemes        []protocol.DesktopThemePackage
+	importedTheme         *nativeTheme
+	appearanceBusy        bool
+	appearanceSync        bool
+	background            nativeBackground
+	systemDark            bool
+	focusSearch           bool
+	temporarySearch       bool
+	showSettings          bool
+	showEmoji             bool
+	emoji                 *nativeEmojiPanel
+	settingsSection       string
+	settingsOpen          map[string]*bool
+	settingsScroll        ui.ScrollState
+	clearHistoryOpen      bool
+	menu                  uikit.ContextMenu
+	menuTransformsLoading bool
+	resetOpen             bool
+	privacyKindsOpen      bool
+	privacyRules          nativePrivacyRules
+	privacyDialog         *nativePrivacyDialog
+	privacyEditor         *nativePrivacyEditor
+	shortcut              *nativeShortcutForm
+	queueCount            nativeQueueCount
+	applications          nativeApplicationCatalog
+	profile               nativeProfileSettings
+	buildDetailsOpen      bool
+	updater               nativeUpdater
+	backup                *nativeBackupDialog
+	fontChoices           *nativeFontChoices
+	readingFonts          bool
+	capturing             bool
+	reading               bool
+	private               bool
+	pinned                bool
+	failed                bool
+	mutating              bool
+	notice                string
+	keyboard              bool
+	focusList             bool
+	previewSelection      int64
+	hover                 nativeHoverPreview
+	tags                  *nativeTagEditor
+	tagCatalog            nativeTagCatalog
+	tagSuggestions        nativeTagSuggestions
+	fileGesture           nativeFileGesture
+	pinFocus              nativePinSource
+	login                 nativeLoginState
+	tagLibrary            *nativeTagLibrary
+	editor                *nativeEntryEditor
+	transform             *nativeTransformDialog
+	transformKinds        []protocol.ToolTransformKind
+	qr                    *nativeQRDialog
 }
 
 func (n *nativeMain) stopSession() {
@@ -116,6 +120,8 @@ func (n *nativeMain) stopSession() {
 	n.capturing = false
 	n.profile.reading = false
 	n.resetOpen = false
+	n.clearHistoryOpen = false
+	n.menuTransformsLoading = false
 	n.appearanceBusy, n.appearanceSync = false, false
 	n.background.pause()
 	n.tags = nil
@@ -455,6 +461,7 @@ func searchTagName(query string) (string, bool) {
 }
 
 func (n *nativeMain) resetPreviewSelection() {
+	n.menu.Close()
 	n.clearProtectedRows()
 	n.closeOCRPreview()
 	n.keyboard = false

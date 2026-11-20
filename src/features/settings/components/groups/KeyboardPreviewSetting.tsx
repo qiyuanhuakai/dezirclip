@@ -1,3 +1,4 @@
+import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
 import { useRef, useState } from "react";
 import { usePreviewPreferences } from "../../../../shared/hooks/usePreviewPreferences";
 import { savePreviewPreference } from "../../../../shared/lib/previewPreferenceClient";
@@ -24,11 +25,8 @@ export default function KeyboardPreviewSetting({ t, arrowKeySelection }: {
     return <NativeFeatureBoundary t={t}>
         <div className="setting-item setting-item--detail">
             <SettingsLabel label={t("preview_keyboard_enabled")} hintKey="preview_keyboard_enabled" />
-            <label className="switch">
-                <input id="preview-keyboard-enabled" className="cb" type="checkbox" aria-label={t("preview_keyboard_enabled")} checked={preferences.keyboardEnabled}
+            <SettingsToggle id="preview-keyboard-enabled"  aria-label={t("preview_keyboard_enabled")} checked={preferences.keyboardEnabled}
                     disabled={!arrowKeySelection || !ready || saving} onChange={event => { void change(event.target.checked); }} />
-                <div className="toggle"><div className="left" /><div className="right" /></div>
-            </label>
         </div>
         {(failed || error) && <p className="hint" role="alert">{t("preview_preferences_failed")}</p>}
     </NativeFeatureBoundary>;

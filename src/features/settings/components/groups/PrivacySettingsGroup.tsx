@@ -1,3 +1,4 @@
+import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
@@ -83,19 +84,12 @@ export default function PrivacySettingsGroup(props: PrivacySettingsGroupProps) {
                             label={props.t('privacy_protection')}
                             hintKey="privacy_protection"
                         />
-                        <label className="switch">
-                            <input
-                                className="cb"
-                                type="checkbox"
-                                checked={props.privacyProtection}
+                        <SettingsToggle checked={props.privacyProtection}
                                 onChange={(e) => {
                                     const val = e.target.checked;
                                     props.setPrivacyProtection(val);
                                     invoke('set_privacy_protection', { enabled: val }).catch(console.error);
-                                }}
-                            />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
+                                }} />
                     </div>
 
                     <div className="setting-item column source-exclusion-setting">

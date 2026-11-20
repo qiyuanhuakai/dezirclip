@@ -34,7 +34,7 @@ func (n *nativeMain) defaultAppsSettings(c *ui.Context) {
 		ui.Text(c, n.text("searching_apps")).TextColor(c.Theme().TextMuted)
 	} else if catalog.failed {
 		ui.Text(c, n.text("native_application_lookup_failed")).TextColor(c.Theme().TextMuted).Wrap()
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: n.mutating}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: n.mutating}).Clicked() {
 			n.loadApplications()
 		}
 	}
@@ -74,7 +74,7 @@ func (n *nativeMain) applicationSetting(c *ui.Context, kind, label string) {
 	}
 	before := selected
 	ui.Text(c, label).FontWeight(600)
-	field := ui.Combobox(c, &selected, options).Label(label).FillWidth().
+	field := n.mainKit().Combo(c, &selected, label, options, n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "").FillWidth().
 		Disabled(n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "")
 	if field.Changed() && selected != before {
 		if selected == system {

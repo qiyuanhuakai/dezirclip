@@ -2,7 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { ComponentProps, RefObject, ReactNode } from "react";
 import { Reorder, useDragControls } from "framer-motion";
 import type { DragControls } from "framer-motion";
-import { ArrowUp, Clipboard } from "lucide-react";
+import { Clipboard } from "lucide-react";
+import { ScrollToTopButton } from "@deziro/ui-react/components/ScrollToTopButton";
 import { sameIdOrder } from "../../../shared/lib/idOrder";
 import { VirtualClipboardList } from "../../clipboard/components/VirtualClipboardList";
 import type { ClipboardEntry, Locale } from "../../../shared/types";
@@ -325,17 +326,7 @@ const AppMainContent = ({
               hasMore={hasMore}
               isLoading={isLoadingMore}
             />
-            {showScrollTop && (
-              <button
-                type="button"
-                className="btn-icon scroll-top-button"
-                onClick={onScrollTop}
-                aria-label={t("scroll_to_top")}
-                title={t("scroll_to_top")}
-              >
-                <ArrowUp size={16} />
-              </button>
-            )}
+            {showScrollTop && <ScrollToTopButton label={t("scroll_to_top")} onClick={onScrollTop} />}
           </div>
         )}
       </div>

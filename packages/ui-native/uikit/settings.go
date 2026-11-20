@@ -16,7 +16,9 @@ func (k Kit) SettingsRail(c *ui.Context, label, active string, sections []Settin
 			if section.ID == active {
 				style = k.style("settingsRailActive")
 			}
-			button := paint(ui.ButtonBase(c).FillWidth().Height(style.Height).Label(section.Label), style)
+			button := ui.ButtonBase(c).FillWidth().Height(style.Height).Label(section.Label)
+			style = k.interactive(c, button, style, section.ID == active)
+			paint(button, style)
 			button.Children(func() {
 				ui.Row(c).FillWidth().Children(func() { text(c, section.Label, style).SingleLine() })
 			})
@@ -75,7 +77,9 @@ func (k Kit) SettingsFooter(c *ui.Context, options SettingsFooterOptions) {
 
 func (k Kit) settingsFooterCard(c *ui.Context, label string, symbol *ui.SVG, disabled bool, run func()) {
 	style := k.style("settingsFooterCard")
-	button := paint(ui.ButtonBase(c).Height(style.Height).Label(label).Disabled(disabled), style)
+	button := ui.ButtonBase(c).Height(style.Height).Label(label).Disabled(disabled)
+	style = k.interactive(c, button, style, false)
+	paint(button, style)
 	button.Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, symbol).Size(16, 16).TextColor(styleColor(style.Text))
@@ -89,7 +93,9 @@ func (k Kit) settingsFooterCard(c *ui.Context, label string, symbol *ui.SVG, dis
 
 func (k Kit) settingsFooterLink(c *ui.Context, label string, symbol *ui.SVG, run func()) {
 	style := k.style("settingsFooterLink")
-	button := paint(ui.ButtonBase(c).Height(style.Height).Label(label), style)
+	button := ui.ButtonBase(c).Height(style.Height).Label(label)
+	style = k.interactive(c, button, style, false)
+	paint(button, style)
 	button.Children(func() {
 		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 			if symbol != nil {

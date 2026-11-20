@@ -341,6 +341,7 @@ func run() error {
 		win.OnBlur(func() {
 			preview.clear()
 			if native != nil {
+				native.menu.Close()
 				concealed := native.clearProtectedRows()
 				if native.editor != nil && native.editor.protected {
 					native.closeEntryEditor()

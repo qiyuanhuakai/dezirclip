@@ -48,6 +48,48 @@ func (n *nativeMain) closeTagLibrary() {
 	n.editQuery(false)
 }
 
+func (n *nativeMain) tagLibraryView(c *ui.Context, kit uikit.Kit) {
+	tags := n.tagLibrary
+	contents := func() {
+		n.tagLibraryControls(c, kit, tags)
+		if tags.selected == "" {
+			return
+		}
+		field := kit.TextField(c, &tags.query, n.text("tag_content_search", "Search tagged entries…")).
+			FillWidth().Placeholder(n.text("tag_content_search", "Search tagged entries…")).OnTextKey(n.searchKey)
+		if n.focusSearch {
+			field.Focus()
+			n.focusSearch = false
+		}
+		n.editQuery(field.Composing())
+		n.historyView(c, kit)
+	}
+	width, _ := c.Size()
+	if width < nativeSplitWidth {
+		contents()
+		return
+	}
+	ui.Row(c).FillWidth().Grow(1).MinHeight(0).Gap(8).Padding(0, 8, 8).AlignItems(ui.Stretch).Children(func() {
+		ui.Column(c).Width(156).Shrink(0).MinHeight(0).Gap(4).Children(func() {
+			kit.TextField(c, &tags.nameQuery, n.text("tag_search_label", "Find a tag")).
+				FillWidth().Placeholder(n.text("tag_search_label", "Find a tag…"))
+			ui.Scroll(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
+				sections := make([]uikit.SettingsSection, 0, len(n.tagCatalog.names))
+				for _, name := range n.tagCatalog.names {
+					if strings.Contains(strings.ToLower(name), strings.ToLower(strings.TrimSpace(tags.nameQuery))) {
+						sections = append(sections, uikit.SettingsSection{ID: name, Label: fmt.Sprintf("%s (%d)", name, n.tagCatalog.counts[name])})
+					}
+				}
+				kit.SettingsRail(c, n.text("tags"), tags.selected, sections, func(id string) {
+					tags.selected = id
+					n.editQuery(false)
+				})
+			})
+		})
+		ui.Column(c).Grow(1).MinWidth(0).FillHeight().MinHeight(0).Gap(5).Children(contents)
+	})
+}
+
 func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nativeTagLibrary) {
 	catalog := &n.tagCatalog
 	if !catalog.fresh && !catalog.failed {
@@ -61,8 +103,12 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 	if width < 370 {
 		actionsPerRow = 2
 	}
-	ui.Column(c).Padding(0, 8).Gap(5).Children(func() {
-		ui.TextInput(c, &tags.nameQuery).FillWidth().Label(n.text("tag_search_label", "Find a tag")).Placeholder(n.text("tag_search_label", "Find a tag…"))
+	ui.Column(c).FillWidth().Padding(0, 8).Gap(5).Children(func() {
+		wide := width >= nativeSplitWidth
+		if !wide {
+			kit.TextField(c, &tags.nameQuery, n.text("tag_search_label", "Find a tag")).
+				FillWidth().Placeholder(n.text("tag_search_label", "Find a tag…"))
+		}
 		ui.Grid(c).Columns(pickers).Width(300).MaxWidthPercent(100).Gap(5).Children(func() {
 			options := []uikit.SelectOption{{Label: n.text("native_select_tag")}}
 			search := strings.ToLower(strings.TrimSpace(tags.nameQuery))
@@ -76,7 +122,9 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 					})
 				}
 			}
-			kit.Select(c, &tags.selected, n.text("tag_name", "Tag"), options, len(options) == 1)
+			if !wide {
+				kit.Select(c, &tags.selected, n.text("tag_name", "Tag"), options, len(options) == 1)
+			}
 			kit.Select(c, &tags.sort, n.text("native_sort_tag_entries"), []uikit.SelectOption{
 				{Value: "time", Label: n.text("sort_time")}, {Value: "count", Label: n.text("sort_usage", "Most used")},
 			}, tags.selected == "")
@@ -93,7 +141,7 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 				{"add", n.text("add_item", "Add entry"), tags.selected != ""},
 			}
 			for _, action := range actions {
-				if uikit.Button(c, uikit.ButtonOptions{Label: action.label, Disabled: n.mutating || !action.enabled}).Clicked() {
+				if n.mainKit().Button(c, uikit.ButtonOptions{Label: action.label, Disabled: n.mutating || !action.enabled}).Clicked() {
 					if action.id == "add" {
 						n.addHistoryEntry(tags.selected)
 						continue
@@ -107,7 +155,7 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 			}
 		})
 		if catalog.failed {
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry", "Retry loading tags")}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry", "Retry loading tags")}).Clicked() {
 				n.loadTagCatalog()
 			}
 		} else if catalog.loading && len(catalog.names) == 0 {
@@ -152,7 +200,7 @@ func (n *nativeMain) tagLibraryDialog(c *ui.Context, kit uikit.Kit, tags *native
 		}
 		ui.Row(c).Justify(ui.End).Children(func() {
 			disabled := n.mutating || dialog.action != "remove" && strings.TrimSpace(dialog.value) == ""
-			if uikit.Button(c, uikit.ButtonOptions{Label: confirm, Disabled: disabled}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: confirm, Disabled: disabled}).Clicked() {
 				n.commitTagDialog(tags, dialog)
 			}
 		})

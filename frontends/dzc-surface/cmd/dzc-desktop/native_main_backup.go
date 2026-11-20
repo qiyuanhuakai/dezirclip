@@ -54,11 +54,11 @@ func (n *nativeMain) dataSettings(c *ui.Context) {
 	n.profileSettings(c)
 	ready := n.session != nil && n.history.state.ServiceInstanceId != "" && !n.mutating
 	ui.Row(c).Gap(6).Wrap().Children(func() {
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("data.export.title"), Disabled: !ready || n.private}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("data.export.title"), Disabled: !ready || n.private}).Clicked() {
 			n.backup = &nativeBackupDialog{open: true, format: "json"}
 			n.notice = ""
 		}
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("data.import.title"), Disabled: !ready || n.private}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("data.import.title"), Disabled: !ready || n.private}).Clicked() {
 			n.backup = &nativeBackupDialog{open: true, restoring: true, mode: "merge"}
 			n.notice = ""
 		}
@@ -83,7 +83,7 @@ func (n *nativeMain) backupView(c *ui.Context, kit uikit.Kit, form *nativeBackup
 					n.backupExportFields(c, kit, form)
 				}
 				ui.Row(c).Gap(6).Wrap().AlignItems(ui.Center).Children(func() {
-					if uikit.Button(c, uikit.ButtonOptions{Label: n.text("browse_file"), Disabled: n.mutating}).Clicked() {
+					if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("browse_file"), Disabled: n.mutating}).Clicked() {
 						n.chooseBackupFile(form, title)
 					}
 					if form.path != "" {
@@ -106,7 +106,7 @@ func (n *nativeMain) backupView(c *ui.Context, kit uikit.Kit, form *nativeBackup
 			})
 		})
 		ui.Row(c).Gap(6).Wrap().Justify(ui.End).Children(func() {
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_cancel"), Disabled: n.mutating}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_cancel"), Disabled: n.mutating}).Clicked() {
 				form.open = false
 			}
 			label := n.text("native_export_backup")
@@ -114,7 +114,7 @@ func (n *nativeMain) backupView(c *ui.Context, kit uikit.Kit, form *nativeBackup
 				label = n.text("native_import_backup")
 			}
 			disabled := n.mutating || form.path == "" || form.mode == "replace" && !form.replaceConfirmed
-			if uikit.Button(c, uikit.ButtonOptions{Label: label, Disabled: disabled}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: label, Disabled: disabled}).Clicked() {
 				n.submitBackup(form)
 			}
 		})
@@ -135,7 +135,7 @@ func (n *nativeMain) backupImportFields(c *ui.Context, kit uikit.Kit, form *nati
 		form.message = ""
 	}
 	if form.mode == "replace" {
-		ui.Checkbox(c, &form.replaceConfirmed, n.text("native_backup_replace_confirm")).Disabled(n.mutating)
+		kit.Checkbox(c, &form.replaceConfirmed, n.text("native_backup_replace_confirm")).Disabled(n.mutating)
 	}
 	if form.encrypted() {
 		n.backupPassword(c, &form.passphrase, n.text("data.import.passphrase_prompt"))
@@ -159,7 +159,7 @@ func (n *nativeMain) backupExportFields(c *ui.Context, kit uikit.Kit, form *nati
 
 func (n *nativeMain) backupPassword(c *ui.Context, value *string, label string) {
 	ui.Text(c, label).FontWeight(600)
-	ui.TextInput(c, value).Label(label).FillWidth().Password().ReadOnly(n.mutating)
+	n.mainKit().TextField(c, value, label).FillWidth().Password().ReadOnly(n.mutating)
 }
 
 func (n *nativeMain) chooseBackupFile(form *nativeBackupDialog, title string) {

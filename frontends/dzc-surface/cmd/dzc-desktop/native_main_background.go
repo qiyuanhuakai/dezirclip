@@ -176,10 +176,10 @@ func (n *nativeMain) backgroundSettings(c *ui.Context) {
 	ui.Text(c, n.text("custom_background")).FontWeight(600)
 	ui.Row(c).Gap(6).Wrap().Children(func() {
 		disabled := n.mutating || n.session == nil || n.history.state.ServiceInstanceId == ""
-		if uikit.Button(c, uikit.ButtonOptions{Label: label, Disabled: disabled}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: label, Disabled: disabled}).Clicked() {
 			n.chooseBackground(label)
 		}
-		if path != "" && uikit.Button(c, uikit.ButtonOptions{Label: n.text("clear_background"), Disabled: disabled}).Clicked() {
+		if path != "" && n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("clear_background"), Disabled: disabled}).Clicked() {
 			n.saveSetting(backgroundSetting, "")
 		}
 	})
@@ -196,13 +196,13 @@ func (n *nativeMain) chooseBackground(label string) {
 	}
 	n.mutating, n.appearanceBusy, n.notice = true, true, ""
 	window, session, language := n.window, n.session, n.language()
+	wasVisible, visibility := window.IsVisible(), n.shell.resumeSequence.Load()
 	n.shell.dock.dialogs.Add(1)
 	go func() {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 			Parent: window, Title: label,
 			Filters: []mygo.FileFilter{{Name: language.text("native_background_file_filter"), Extensions: []string{"png", "jpg", "jpeg", "webp", "gif"}}},
 		})
-		n.shell.dock.dialogs.Add(-1)
 		var notice string
 		saved := false
 		if err != nil {
@@ -226,10 +226,21 @@ func (n *nativeMain) chooseBackground(label string) {
 				}
 			}
 		}
-		n.update(session, func() {
+		mygo.RunOnMain(func() {
+			defer n.shell.dock.dialogs.Add(-1)
+			if window.IsDestroyed() || session.Err() != nil || n.session != session {
+				return
+			}
+			defer window.Invalidate()
 			n.mutating, n.appearanceBusy = false, false
-			if window.IsVisible() && !window.IsMinimized() && !window.IsFocused() {
-				window.Focus()
+			if wasVisible && visibility == n.shell.resumeSequence.Load() && !window.IsMinimized() {
+				n.shell.dock.shown = time.Now()
+				if !window.IsVisible() {
+					window.Show()
+				}
+				if !window.IsFocused() {
+					window.Focus()
+				}
 			}
 			if saved {
 				n.clearBackground()

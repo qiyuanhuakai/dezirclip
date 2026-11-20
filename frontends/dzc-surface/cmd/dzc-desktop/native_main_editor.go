@@ -120,10 +120,10 @@ func (n *nativeMain) entryEditorView(c *ui.Context, kit uikit.Kit, form *nativeE
 			})
 		})
 		ui.Row(c).Gap(6).Wrap().Justify(ui.End).Children(func() {
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_cancel"), Disabled: n.mutating}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_cancel"), Disabled: n.mutating}).Clicked() {
 				form.open = false
 			}
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: !n.canSaveEntry(form)}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: !n.canSaveEntry(form)}).Clicked() {
 				n.saveHistoryEntry(form)
 			}
 		})
@@ -140,7 +140,7 @@ func (n *nativeMain) entryEditorFields(c *ui.Context, kit uikit.Kit, form *nativ
 			{Value: "code", Label: n.text("type_code")},
 		}, n.mutating)
 	}
-	field := ui.TextArea(c, &form.content).FillWidth().Height(126).
+	field := kit.TextArea(c, &form.content, "").FillWidth().Height(126).
 		Label(n.text("native_entry_text")).Placeholder(n.text("input_content_placeholder")).ReadOnly(n.mutating)
 	if form.focus {
 		field.Focus()
@@ -151,7 +151,7 @@ func (n *nativeMain) entryEditorFields(c *ui.Context, kit uikit.Kit, form *nativ
 		if form.id != 0 {
 			label, hint = n.text("privacy_manual_edit_confirm"), n.text("privacy_manual_edit_hint")
 		}
-		ui.Checkbox(c, &form.confirmed, label).Disabled(n.mutating)
+		kit.Checkbox(c, &form.confirmed, label).Disabled(n.mutating)
 		ui.Text(c, hint).TextColor(c.Theme().TextMuted).Wrap()
 	}
 }

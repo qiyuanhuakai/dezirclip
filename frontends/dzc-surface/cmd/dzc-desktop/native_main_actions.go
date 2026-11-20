@@ -21,6 +21,25 @@ const (
 	nativeDelete    nativeRowAction = "delete"
 )
 
+func (n *nativeMain) hideWindow() {
+	if n.window != nil {
+		n.shell.hideMain(n.window)
+	}
+}
+
+func (n *nativeMain) openClearHistory() {
+	if n.session != nil && !n.mutating && !n.failed && n.history.state.ServiceInstanceId != "" {
+		n.resetPreviewSelection()
+		n.clearHistoryOpen = true
+	}
+}
+
+func (n *nativeMain) clearHistory() {
+	n.writeSetting(func(ctx context.Context, epoch uint64) error {
+		return n.library.ClearHistory(ctx, epoch)
+	})
+}
+
 func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, action nativeRowAction) {
 	if n.session == nil || n.history.generation != generation || n.mutating || n.failed {
 		return

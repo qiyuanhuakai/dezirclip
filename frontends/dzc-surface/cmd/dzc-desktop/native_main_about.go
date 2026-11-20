@@ -256,7 +256,7 @@ func (n *nativeMain) aboutBuildDetails(c *ui.Context) {
 		n.aboutValue(c, n.text("build_database_schema"), strconv.FormatUint(uint64(n.profile.schema), 10))
 	case n.profile.failed:
 		ui.Text(c, n.text("build_info_unavailable")).Wrap()
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("build_info_retry"), Disabled: n.session == nil}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("build_info_retry"), Disabled: n.session == nil}).Clicked() {
 			n.loadProfileSettings()
 		}
 	default:
@@ -275,7 +275,7 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	busy := u.cancel != nil
 	disabled := u.channel == "" || busy || n.mutating || n.session == nil || n.history.state.ServiceInstanceId == ""
 	auto := u.automatic
-	if ui.Checkbox(c, &auto, n.text("updater_auto_check")).Disabled(disabled).Changed() {
+	if kit.SettingsToggle(c, &auto, n.text("updater_auto_check")).Disabled(disabled).Changed() {
 		n.saveSetting("app.update_auto_check", strconv.FormatBool(auto))
 	}
 	channel, channelLabel := u.channel, n.text("updater_channel")
@@ -302,18 +302,18 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		}
 	}
 	ui.Row(c).Gap(6).Wrap().Children(func() {
-		if uikit.Button(c, uikit.ButtonOptions{Label: check, Disabled: disabled}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: check, Disabled: disabled}).Clicked() {
 			n.checkForUpdates(false)
 		}
 		label, target := n.text("updater_all_releases"), desktopReleasesURL
 		if available := u.result.Available; available != nil {
 			label, target = n.text("updater_open_release"), available.ReleaseURL
 			if available.Artifact != nil && u.result.installTarget != "" &&
-				uikit.Button(c, uikit.ButtonOptions{Label: n.text("updater_install"), Disabled: disabled}).Clicked() {
+				n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("updater_install"), Disabled: disabled}).Clicked() {
 				u.confirm = true
 			}
 		}
-		if uikit.Button(c, uikit.ButtonOptions{Label: label}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: label}).Clicked() {
 			if err := n.shell.OpenURL(target); err != nil {
 				u.err = errUpdateLink
 			} else if errors.Is(u.err, errUpdateLink) {

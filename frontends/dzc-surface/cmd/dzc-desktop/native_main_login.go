@@ -20,7 +20,7 @@ func (n *nativeMain) loginSettings(c *ui.Context) {
 		n.loadLogin("")
 	}
 	enabled := state.enabled
-	if ui.Checkbox(c, &enabled, n.text("autostart")).Disabled(!state.known || state.pending || n.mutating).Changed() {
+	if n.mainKit().SettingsToggle(c, &enabled, n.text("autostart")).Disabled(!state.known || state.pending || n.mutating).Changed() {
 		action := "disable-login"
 		if enabled {
 			action = "enable-login"
@@ -30,7 +30,7 @@ func (n *nativeMain) loginSettings(c *ui.Context) {
 	if state.failed {
 		ui.Row(c).Gap(6).Wrap().Children(func() {
 			ui.Text(c, n.text("native_autostart_failed")).TextColor(c.Theme().TextMuted).Wrap()
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: state.pending}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: state.pending}).Clicked() {
 				n.loadLogin("")
 			}
 		})

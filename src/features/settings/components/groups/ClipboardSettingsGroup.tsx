@@ -1,3 +1,4 @@
+import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import { useEffect, useRef, useState } from "react";
 import type { ComponentType, CSSProperties, ReactNode } from "react";
@@ -218,16 +219,9 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             label={props.t('persistent_storage')}
                             hintKey="persistent_storage"
                         />
-                        <label className="switch">
-                            <input
-                                className="cb"
-                                type="checkbox"
-                                checked={props.persistent}
+                        <SettingsToggle checked={props.persistent}
                                 aria-label={props.t('persistent_storage')}
-                                onChange={(e) => props.setPersistent(e.target.checked)}
-                            />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
+                                onChange={(e) => props.setPersistent(e.target.checked)} />
                     </div>
                     {props.persistent && (
                         <>
@@ -236,17 +230,10 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                     label={props.t('persistent_limit_enabled')}
                                     hintKey="persistent_limit_enabled"
                                 />
-                                <label className="switch">
-                                    <input
-                                        className="cb"
-                                        type="checkbox"
-                                        checked={props.persistentLimitEnabled}
+                                <SettingsToggle checked={props.persistentLimitEnabled}
                                         aria-label={props.t('persistent_limit_enabled')}
                                         disabled={limitSaving}
-                                        onChange={(e) => void saveLimit("persistent_limit_enabled", String(e.target.checked))}
-                                    />
-                                    <div className="toggle"><div className="left" /><div className="right" /></div>
-                                </label>
+                                        onChange={(e) => void saveLimit("persistent_limit_enabled", String(e.target.checked))} />
                             </div>
                             {limitError && <span role="alert">{props.t("common_error")} · {limitError}</span>}
                             {props.persistentLimitEnabled && (
@@ -294,67 +281,39 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             label={props.t('merge_duplicates')}
                             hintKey="merge_duplicates"
                         />
-                        <label className="switch">
-                            <input
-                                className="cb"
-                                type="checkbox"
-                                checked={props.deduplicate}
-                                onChange={(e) => props.setDeduplicate(e.target.checked)}
-                            />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
+                        <SettingsToggle checked={props.deduplicate}
+                                onChange={(e) => props.setDeduplicate(e.target.checked)} />
                     </div>
                     <div className="setting-item">
                         <div className="item-label-group">
                             <span className="item-label">{props.t('capture_files')}</span>
                         </div>
-                        <label className="switch">
-                            <input
-                                className="cb"
-                                type="checkbox"
-                                checked={props.captureFiles}
-                                onChange={(e) => props.setCaptureFiles(e.target.checked)}
-                            />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
+                        <SettingsToggle checked={props.captureFiles}
+                                onChange={(e) => props.setCaptureFiles(e.target.checked)} />
                     </div>
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('capture_rich_text') || '捕获富文本'}
                             hintKey="capture_rich_text"
                         />
-                        <label className="switch">
-                            <input
-                                className="cb"
-                                type="checkbox"
-                                checked={props.captureRichText}
+                        <SettingsToggle checked={props.captureRichText}
                                 onChange={(e) => {
                                     const val = e.target.checked;
                                     props.setCaptureRichText(val);
-                                }}
-                            />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
+                                }} />
                     </div>
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('rich_text_snapshot_preview') || '富文本快照预览'}
                             hintKey="rich_text_snapshot_preview"
                         />
-                        <label className="switch">
-                            <input
-                                className="cb"
-                                type="checkbox"
-                                checked={props.richTextSnapshotPreview}
+                        <SettingsToggle checked={props.richTextSnapshotPreview}
                                 aria-label={props.t('rich_text_snapshot_preview')}
                                 onChange={(e) => {
                                     const val = e.target.checked;
                                     props.setRichTextSnapshotPreview(val);
                                     props.saveAppSetting('rich_text_snapshot_preview', String(val));
-                                }}
-                            />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
+                                }} />
                     </div>
 
                     {props.richTextSnapshotPreview && (
@@ -500,38 +459,24 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         <div className="item-label-group">
                             <span className="item-label">{props.t('delete_after_paste')}</span>
                         </div>
-                        <label className="switch">
-                            <input
-                                className="cb"
-                                type="checkbox"
-                                checked={props.deleteAfterPaste}
+                        <SettingsToggle checked={props.deleteAfterPaste}
                                 onChange={(e) => {
                                     const val = e.target.checked;
                                     props.setDeleteAfterPaste(val);
                                     props.saveAppSetting('delete_after_paste', String(val));
-                                }}
-                            />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
+                                }} />
                     </div>
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('move_to_top_after_paste')}
                             hintKey="move_to_top_after_paste"
                         />
-                        <label className="switch">
-                            <input
-                                className="cb"
-                                type="checkbox"
-                                checked={props.moveToTopAfterPaste}
+                        <SettingsToggle checked={props.moveToTopAfterPaste}
                                 onChange={(e) => {
                                     const val = e.target.checked;
                                     props.setMoveToTopAfterPaste(val);
                                     props.saveAppSetting('move_to_top_after_paste', String(val));
-                                }}
-                            />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
+                                }} />
                     </div>
                     <div className="setting-item">
                         <props.LabelWithHint
@@ -551,11 +496,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             label={props.t('sequential_paste_mode')}
                             hintKey="sequential_paste_mode"
                         />
-                        <label className="switch">
-                            <input
-                                className="cb"
-                                type="checkbox"
-                                checked={props.sequentialMode}
+                        <SettingsToggle checked={props.sequentialMode}
                                 onChange={(e) => {
                                     const val = e.target.checked;
                                     props.setSequentialModeState(val);
@@ -583,10 +524,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                             props.updateSequentialHotkey("");
                                         }
                                     }
-                                }}
-                            />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
+                                }} />
                     </div>
 
                     {props.sequentialMode && props.pasteQueueCount > 0 && (
@@ -673,11 +611,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             label={props.t('use_win_v_shortcut')}
                             hintKey="use_win_v_shortcut"
                         />
-                        <label className="switch">
-                            <input
-                                className="cb"
-                                type="checkbox"
-                                checked={props.registryWinVEnabled}
+                        <SettingsToggle checked={props.registryWinVEnabled}
                                 aria-label={props.t('use_win_v_shortcut')}
                                 disabled={registryWinVChanging}
                                 onChange={async (e) => {
@@ -782,10 +716,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                     } finally {
                                         setRegistryWinVChanging(false);
                                     }
-                                }}
-                            />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
+                                }} />
                     </div>
                     </NativeFeatureBoundary>
                 </div>

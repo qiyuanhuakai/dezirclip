@@ -678,14 +678,16 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 		startupSettings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
 		restoreNativeAppearance(owner, panel, startupSettings)
 		panel.SetAppearanceRefresher(func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			if encoded, err := (&Library{owner}).Preferences(ctx); err == nil {
-				var values map[string]string
-				if json.Unmarshal(encoded, &values) == nil {
-					restoreNativeAppearance(owner, panel, values)
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				if encoded, err := (&Library{owner}).Preferences(ctx); err == nil {
+					var values map[string]string
+					if json.Unmarshal(encoded, &values) == nil {
+						mygo.RunOnMain(func() { restoreNativeAppearance(owner, panel, values) })
+					}
 				}
-			}
+			}()
 		})
 		refreshSearch(startupSettings)
 		refreshPaste(startupSettings)
@@ -706,6 +708,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 			tray.OnClick(trayToggle)
 			tray.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 				{Label: "显示／隐藏", Click: func(*mygo.MenuItem, *mygo.Window) { trayToggle() }},
+				{Label: "快速粘贴", Click: func(*mygo.MenuItem, *mygo.Window) { panel.ShowDesktop() }},
 				{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { present("settings") }},
 				{Label: "退出", Role: mygo.RoleQuit},
 			}))

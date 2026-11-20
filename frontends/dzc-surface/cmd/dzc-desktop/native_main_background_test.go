@@ -22,6 +22,7 @@ func TestNativeBackgroundLayerFollowsThemeAndAuthorizedEpoch(t *testing.T) {
 	for _, theme := range []string{"mica", "acrylic", "liquid-glass", "macos", "retro", "scifi"} {
 		t.Run(theme, func(t *testing.T) {
 			n := nativeMain{theme: theme, mode: "light", preferences: map[string]string{
+				"app.language":    "en",
 				backgroundSetting: "fixture.png", "app.custom_background_opacity": "100", "app.surface_opacity": "0",
 			}}
 			n.history.state = protocol.RuntimeState{ServiceInstanceId: "host", PrivacyEpoch: 3}
@@ -35,6 +36,10 @@ func TestNativeBackgroundLayerFollowsThemeAndAuthorizedEpoch(t *testing.T) {
 			if !supported {
 				return
 			}
+			if err := tester.Click("Settings"); err != nil || !n.showSettings {
+				t.Fatalf("the foreground settings button is inaccessible over the wallpaper: %v", err)
+			}
+			n.closeSettings()
 			n.preferences["app.custom_background_opacity"] = "50"
 			tester.Frame()
 			if alpha := sample().A; alpha < 127 || alpha > 128 {

@@ -58,6 +58,81 @@ func TestNativeMainColorMode(t *testing.T) {
 	}
 }
 
+func TestNativeMainHeaderOrderAndSettingsClose(t *testing.T) {
+	n := nativeMain{preferences: map[string]string{"app.language": "en", "app.emoji_panel_enabled": "true"}}
+	view := ui.NewTester(n.view, 700, 360)
+	labels := []string{"Keep on top", "Clear History", "Tags", "Emoji", "Settings", "Hide"}
+	x := float32(-1)
+	for _, label := range labels {
+		bounds, ok := view.Find(label)
+		if !ok || bounds.X <= x {
+			t.Fatalf("toolbar action %q is absent or out of order: %+v", label, bounds)
+		}
+		x = bounds.X
+	}
+	if view.HasText("Add Item") {
+		t.Fatal("the add-entry action replaced the clear-history action")
+	}
+	if err := view.Click("Settings"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Click("Close"); err != nil || n.showSettings {
+		t.Fatalf("settings close did not return to history: %v", err)
+	}
+}
+
+func TestNativeWideSettingsScroll(t *testing.T) {
+	n := nativeMain{showSettings: true, settingsSection: "clipboard", preferences: map[string]string{"app.language": "en"}}
+	view := ui.NewTester(n.view, 740, 310)
+	view.Scroll(400, 175, 0, 280)
+	if n.settingsScroll.Y <= 0 {
+		t.Fatalf("wide settings did not scroll inside the detail pane: %+v", n.settingsScroll)
+	}
+	if nav, ok := view.Find("Privacy"); !ok || nav.X > 170 || nav.Y < 0 {
+		t.Fatalf("settings navigation moved with the detail pane: %+v", nav)
+	}
+}
+
+func TestNativeCompactChromeAndEmojiGrid(t *testing.T) {
+	n := nativeMain{preferences: map[string]string{"app.language": "en"}}
+	n.history.rows = []protocol.DesktopEntry{{Id: 1, Preview: "Short history fixture", SourceApp: "Example Editor", ContentType: "text", Tags: []string{}}}
+	view := ui.NewTester(n.view, 360, 420)
+	if !view.HasText("EXAMPLE EDITOR") && !view.HasText("Example Editor") {
+		t.Fatal("detailed history is missing source metadata")
+	}
+	n.preferences["app.compact_mode"] = "true"
+	view.Frame()
+	if view.HasText("EXAMPLE EDITOR") || view.HasText("Example Editor") || !view.HasText("Short history fixture") {
+		t.Fatal("compact mode did not replace detailed metadata")
+	}
+	n.showEmoji = true
+	for _, width := range []int{360, 780} {
+		view.SetSize(width, 420)
+		emoji := emojiCatalog[0].Emojis
+		first, ok := view.Find(emoji[0])
+		second, ok2 := view.Find(emoji[1])
+		if !ok || !ok2 || first.X > 18 || second.X <= first.X || second.Y != first.Y || second.X+second.W >= float32(width) {
+			t.Fatalf("emoji grid is offset or overflowing at width %d: %+v %+v", width, first, second)
+		}
+	}
+}
+
+func TestNativeWideTagLibraryKeepsNavigationBesideHistory(t *testing.T) {
+	n := nativeMain{tagLibrary: &nativeTagLibrary{sort: "time"}, preferences: map[string]string{"app.language": "en"}}
+	n.tagCatalog.names, n.tagCatalog.counts, n.tagCatalog.fresh = []string{"Work"}, map[string]uint64{"Work": 3}, true
+	view := ui.NewTester(n.view, 740, 360)
+	if err := view.Click("Work (3)"); err != nil || n.tagLibrary.selected != "Work" {
+		t.Fatalf("wide tag navigation did not select the tag: %v", err)
+	}
+	n.history.rows = []protocol.DesktopEntry{{Id: 1, Preview: "Tagged entry fixture", ContentType: "text", Tags: []string{"Work"}}}
+	view.Frame()
+	rail, ok := view.Find("Work (3)")
+	entry, ok2 := view.Find("Tagged entry fixture")
+	if !ok || !ok2 || rail.X+rail.W >= entry.X || entry.Y >= 360 {
+		t.Fatalf("tag navigation and entry bounds: %+v %+v, visible texts %v", rail, entry, view.Texts())
+	}
+}
+
 func TestNativeMainUsesSavedInterfaceFont(t *testing.T) {
 	window := nativeMain{theme: "macos", mode: "dark", preferences: map[string]string{"app.font_main": " Custom UI "}}
 	var font string

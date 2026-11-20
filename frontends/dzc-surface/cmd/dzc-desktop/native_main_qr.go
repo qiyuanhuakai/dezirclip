@@ -86,10 +86,10 @@ func (n *nativeMain) qrView(c *ui.Context, kit uikit.Kit, form *nativeQRDialog) 
 			ui.Text(c, form.message).TextColor(color).Wrap()
 		}
 		ui.Row(c).Gap(6).Wrap().Justify(ui.End).Children(func() {
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_close"), Disabled: n.mutating}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_close"), Disabled: n.mutating}).Clicked() {
 				form.open = false
 			}
-			if uikit.Button(c, uikit.ButtonOptions{
+			if n.mainKit().Button(c, uikit.ButtonOptions{
 				Label: n.text("native_qr_copy_svg"), Primary: true, Disabled: form.image == nil || n.mutating,
 			}).Clicked() {
 				n.copyQR(form)

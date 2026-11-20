@@ -29,6 +29,23 @@ type HistoryListOptions struct {
 	Row          func(ui.ListRow)
 }
 
+// PickerRow renders a compact searchable result with retained list selection.
+func (k Kit) PickerRow(c *ui.Context, label, subtitle string, selected bool) ui.Element {
+	tokens := k.palette()
+	style := k.style("selectOption")
+	if selected {
+		style = k.style("selectSelected")
+	}
+	row := ui.Column(c).FillWidth().Height(float32(tokens.RowHeight)).Gap(3)
+	style.Padding = [4]float32{6, 12, 6, 12}
+	paint(row, k.interactive(c, row, style, selected))
+	row.Children(func() {
+		text(c, label, style).SingleLine()
+		text(c, subtitle, k.style("historySource")).SingleLine()
+	})
+	return row
+}
+
 // HistoryList renders a viewport of variable-height history rows. The caller
 // owns row identity, selection and reorder through the underlying ListState.
 func (k Kit) HistoryList(c *ui.Context, state *HistoryListState, options HistoryListOptions) ui.Element {

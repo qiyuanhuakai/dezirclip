@@ -70,7 +70,9 @@ func (k Kit) previewButton(c *ui.Context, label, value string, symbol *ui.SVG, a
 	if symbol == nil {
 		style = k.style("previewToolbarActual")
 	}
-	button := paint(ui.ButtonBase(c).Label(label).MinWidth(style.Width).Height(style.Height).Disabled(disabled), style)
+	button := ui.ButtonBase(c).Label(label).Tooltip(label).MinWidth(style.Width).Height(style.Height).Disabled(disabled)
+	style = k.interactive(c, button, style, active)
+	paint(button, style)
 	button.Children(func() {
 		if symbol != nil {
 			ui.Icon(c, symbol).Size(14, 14).TextColor(styleColor(style.Text))

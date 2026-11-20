@@ -43,7 +43,7 @@ func (n *nativeMain) clipboardShortcuts(c *ui.Context) {
 	for _, chord := range nativeMainChords(n.shortcutValue(mainShortcutSetting, "")) {
 		ui.Row(c).FillWidth().Gap(6).Wrap().AlignItems(ui.Center).Children(func() {
 			ui.Text(c, chord).Grow(1)
-			if uikit.Button(c, uikit.ButtonOptions{
+			if n.mainKit().Button(c, uikit.ButtonOptions{
 				Label: n.text("delete") + " " + chord, Disabled: !n.shortcutAvailable(),
 			}).Clicked() {
 				bindings := nativeMainChords(n.shortcutValue(mainShortcutSetting, ""))
@@ -52,7 +52,7 @@ func (n *nativeMain) clipboardShortcuts(c *ui.Context) {
 			}
 		})
 	}
-	if uikit.Button(c, uikit.ButtonOptions{Label: "+ " + label, Disabled: !n.shortcutAvailable()}).Clicked() {
+	if n.mainKit().Button(c, uikit.ButtonOptions{Label: "+ " + label, Disabled: !n.shortcutAvailable()}).Clicked() {
 		n.openShortcut(mainShortcutSetting, label)
 	}
 	n.shortcutSetting(c, "app.search_hotkey", n.text("search_hotkey_label"), "Alt+F")
@@ -70,22 +70,18 @@ func nativeMainChords(raw string) []string {
 
 func (n *nativeMain) shortcutSetting(c *ui.Context, key, label, fallback string) {
 	value := n.shortcutValue(key, fallback)
-	visible := value
-	if visible == "" {
-		visible = n.text("not_set")
-	}
 	disabled := !n.shortcutAvailable()
 	ui.Column(c).FillWidth().Gap(4).Children(func() {
 		ui.Text(c, label).Wrap()
 		ui.Row(c).Wrap().Gap(6).Children(func() {
-			control := uikit.Button(c, uikit.ButtonOptions{Label: visible, Disabled: disabled})
-			control.Label(label).Tooltip(n.text("hotkey_click_hint"))
+			control := n.mainKit().HotkeyBinding(c, label, value, n.text("not_set"), false, disabled).
+				Tooltip(n.text("hotkey_click_hint"))
 			if control.Clicked() {
 				n.openShortcut(key, label)
 			}
 			if value != "" {
 				clear := n.text("privacy_session_hotkey_clear")
-				if uikit.Button(c, uikit.ButtonOptions{Label: clear, Disabled: disabled}).Label(clear + " · " + label).Clicked() {
+				if n.mainKit().Button(c, uikit.ButtonOptions{Label: clear, Disabled: disabled}).Label(clear + " · " + label).Clicked() {
 					n.saveNativeShortcut(key, "")
 				}
 			}
@@ -208,14 +204,14 @@ func (n *nativeMain) drawShortcutRecorder(c *ui.Context, kit uikit.Kit, form *na
 			n.drawRecordedShortcut(c, form)
 		}
 		ui.Row(c).Gap(6).Wrap().Children(func() {
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_cancel")}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_cancel")}).Clicked() {
 				form.open = false
 			}
 			mode := n.text("native_shortcut_type")
 			if form.manual {
 				mode = n.text("native_shortcut_record")
 			}
-			if uikit.Button(c, uikit.ButtonOptions{Label: mode, Disabled: !form.listening}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: mode, Disabled: !form.listening}).Clicked() {
 				form.manual = !form.manual
 				form.focus = true
 			}
@@ -231,7 +227,7 @@ func (n *nativeMain) drawRecordedShortcut(c *ui.Context, form *nativeShortcutFor
 	if form.listening {
 		status = n.text("waiting_for_input")
 	}
-	field := uikit.Button(c, uikit.ButtonOptions{Label: status}).FillWidth()
+	field := n.mainKit().HotkeyBinding(c, status, "", status, true, false).FillWidth()
 	field.HandleInput(func(event ui.InputEvent) bool {
 		switch {
 		case event.Kind == ui.InputKeyDown && event.Key == ui.KeyEscape:
@@ -257,13 +253,13 @@ func (n *nativeMain) drawRecordedShortcut(c *ui.Context, form *nativeShortcutFor
 }
 
 func (n *nativeMain) drawTypedShortcut(c *ui.Context, form *nativeShortcutForm) {
-	field := ui.TextInput(c, &form.typed).FillWidth().Label(n.text("native_shortcut_input")).Placeholder("Ctrl+Alt+K")
+	field := n.mainKit().TextField(c, &form.typed, n.text("native_shortcut_input")).FillWidth().Placeholder("Ctrl+Alt+K")
 	if form.focus {
 		field.Focus()
 		form.focus = false
 	}
 	chord := typedShortcutChord(form.typed)
-	if uikit.Button(c, uikit.ButtonOptions{
+	if n.mainKit().Button(c, uikit.ButtonOptions{
 		Label: n.text("common_save"), Primary: true, Disabled: !form.listening || chord == "",
 	}).Clicked() || field.Submitted() {
 		n.captureNativeShortcut(form, chord)

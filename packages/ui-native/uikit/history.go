@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 )
 
 type HistoryCardOptions struct {
@@ -71,6 +72,11 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 	} else if _, ok := k.widgets["historyCardHover"]; ok && card.Hovered() {
 		style = k.style("historyCardHover")
 	}
+	if card.Hovered() && (options.Selected || style.Fill == k.style("historyCard").Fill || options.Compact) || card.Pressed() {
+		style = k.interactive(c, card, style, options.Selected)
+	} else {
+		style = k.animatePaint(card, style)
+	}
 	paint(card, style).Margin(style.Margin[:]...)
 	if len(options.Tags) > 0 {
 		names := make([]string, 0, len(options.Tags))
@@ -83,8 +89,8 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 		card.MinHeight(style.Height)
 	}
 	card.Children(func() {
-		ui.Column(c).Grow(1).Children(func() {
-			if options.Source != "" || options.Time != "" || options.Pinned || len(options.Actions) > 0 {
+		contentColumn := func() {
+			if !options.Compact && (options.Source != "" || options.Time != "" || options.Pinned || len(options.Actions) > 0) {
 				k.HistoryCardMeta(c, HistoryCardMetaOptions{
 					Source: options.Source, Time: options.Time, Pinned: options.Pinned, Actions: options.Actions, Reorder: options.Reorder,
 				})
@@ -113,7 +119,26 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 			if len(options.Tags) > 0 {
 				k.historyTags(c, options.Tags, options.TagSize)
 			}
-		})
+			if options.Compact && len(options.Actions) > 0 && (card.Hovered() || card.FocusVisible() || options.Selected) {
+				ui.Row(c).Absolute().Right(0).Top(0).Gap(4).Children(func() {
+					for _, action := range options.Actions {
+						k.historyAction(c, action)
+					}
+				})
+			}
+		}
+		if options.Compact && (options.Reorder != nil || options.Pinned) {
+			ui.Row(c).Grow(1).Gap(4).AlignItems(ui.Center).Children(func() {
+				if options.Reorder != nil {
+					k.historyReorderGrip(c, options.Reorder, k.style("historySource"), 22)
+				} else {
+					ui.Icon(c, headerIcons["pin"]).Size(10, 10).TextColor(c.Theme().TextMuted).PassThrough()
+				}
+				ui.Column(c).Grow(1).MinWidth(0).Children(contentColumn)
+			})
+		} else {
+			ui.Column(c).Grow(1).Children(contentColumn)
+		}
 	})
 	if options.Activate != nil && card.Clicked() {
 		options.Activate()
@@ -140,28 +165,7 @@ func (k Kit) HistoryCardMeta(c *ui.Context, options HistoryCardMetaOptions) {
 		source := k.style("historySource")
 		ui.Row(c).Grow(1).Gap(source.ColumnGap).AlignItems(ui.Center).Children(func() {
 			if drag := options.Reorder; drag != nil {
-				grip := ui.ButtonBase(c).Label(drag.Label).Tooltip(drag.Label).Size(16, meta.Height).
-					Center().Cursor(ui.CursorGrab).Disabled(drag.Disabled).Drag(drag.Value)
-				if drag.Focus && !drag.Disabled {
-					grip.Focus()
-				}
-				if grip.Dragging() {
-					grip.Cursor(ui.CursorGrabbing)
-					if drag.OnDrag != nil {
-						drag.OnDrag()
-					}
-				}
-				grip.Children(func() {
-					ui.Icon(c, historyGrip).Size(14, 14).Rotate(90).TextColor(styleColor(source.Text)).PassThrough()
-				})
-				if drag.OnMove != nil {
-					if grip.Shortcut(ui.Alt, ui.KeyUp) {
-						drag.OnMove(true)
-					}
-					if grip.Shortcut(ui.Alt, ui.KeyDown) {
-						drag.OnMove(false)
-					}
-				}
+				k.historyReorderGrip(c, drag, source, meta.Height)
 			} else if options.Pinned {
 				ui.Icon(c, headerIcons["pin"]).Size(10, 10).TextColor(styleColor(source.Text))
 			}
@@ -181,7 +185,12 @@ func (k Kit) HistoryCardMeta(c *ui.Context, options HistoryCardMetaOptions) {
 
 func (k Kit) historyAction(c *ui.Context, action HeaderAction) {
 	style := k.style("historyAction")
-	button := paint(ui.ButtonBase(c).Label(action.Label).Size(style.Width, style.Height).Disabled(action.Disabled), style)
+	if action.Active {
+		style.Fill, style.Border = rgba(c.Theme().Selection), rgba(c.Theme().Accent)
+	}
+	button := ui.ButtonBase(c).Label(action.Label).Tooltip(action.Label).Size(style.Width, style.Height).Disabled(action.Disabled)
+	style = k.interactive(c, button, style, action.Active)
+	paint(button, style)
 	button.Children(func() {
 		if image := headerIcons[action.Icon]; image != nil {
 			ui.Icon(c, image).Size(12, 12).TextColor(styleColor(style.Text))
@@ -191,5 +200,30 @@ func (k Kit) historyAction(c *ui.Context, action HeaderAction) {
 	})
 	if action.Run != nil && button.Clicked() {
 		action.Run()
+	}
+}
+
+func (k Kit) historyReorderGrip(c *ui.Context, drag *HistoryReorder, source theme.WidgetStyle, height float32) {
+	grip := ui.ButtonBase(c).Label(drag.Label).Tooltip(drag.Label).Size(16, height).
+		Center().Cursor(ui.CursorGrab).Disabled(drag.Disabled).Drag(drag.Value)
+	if drag.Focus && !drag.Disabled {
+		grip.Focus()
+	}
+	if grip.Dragging() {
+		grip.Cursor(ui.CursorGrabbing)
+		if drag.OnDrag != nil {
+			drag.OnDrag()
+		}
+	}
+	grip.Children(func() {
+		ui.Icon(c, historyGrip).Size(14, 14).Rotate(90).TextColor(styleColor(source.Text)).PassThrough()
+	})
+	if drag.OnMove != nil {
+		if grip.Shortcut(ui.Alt, ui.KeyUp) {
+			drag.OnMove(true)
+		}
+		if grip.Shortcut(ui.Alt, ui.KeyDown) {
+			drag.OnMove(false)
+		}
 	}
 }

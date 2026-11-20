@@ -18,3 +18,7 @@ export { AttachmentPreview } from "./components/AttachmentPreview";
 export { PreviewImage, type PreviewImageProps } from "./components/PreviewImage";
 export { VirtualClipboardList, type VirtualClipboardListHandle, type VirtualClipboardListProps } from "./components/VirtualClipboardList";
 export { HistoryCard, HistoryCardMeta, type HistoryCardProps, type HistoryCardMetaProps } from "./components/HistoryCard";
+export { EmojiGrid, EmojiTabs, type EmojiTab } from "./components/EmojiPicker";
+export { SettingsToggle, type SettingsToggleProps } from "./components/SettingsToggle";
+export { ScrollToTopButton } from "./components/ScrollToTopButton";
+export { HotkeyBinding, type HotkeyBindingProps } from "./components/HotkeyBinding";

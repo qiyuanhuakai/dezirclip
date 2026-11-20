@@ -28,7 +28,7 @@ func (h *nativeHoverPreview) owns(p *Preview) bool {
 }
 
 func (n *nativeMain) hoverPreview(row protocol.DesktopEntry, generation uint64, bounds ui.Rect) {
-	if n.session == nil || n.window == nil || n.preview == nil || n.keyboard || n.failed || n.mutating || n.hasHistoryDialog() {
+	if n.session == nil || n.window == nil || n.preview == nil || n.keyboard || n.failed || n.mutating || n.hasHistoryDialog() || n.menu.Active() {
 		return
 	}
 	h := &n.hover

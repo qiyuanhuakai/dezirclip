@@ -174,7 +174,7 @@ func (n *nativeMain) tagSuggestionsView(c *ui.Context, input ui.Element) {
 			ui.Text(c, n.text("tags")).FontSize(11).FontWeight(600)
 			switch {
 			case catalog.failed:
-				if uikit.Button(c, uikit.ButtonOptions{Label: n.text("tag_load_failed")}).FillWidth().Clicked() {
+				if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("tag_load_failed")}).FillWidth().Clicked() {
 					n.loadTagCatalog()
 					n.focusSearch = true
 				}

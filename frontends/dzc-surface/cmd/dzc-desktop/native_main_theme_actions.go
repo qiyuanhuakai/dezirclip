@@ -22,14 +22,14 @@ func (n *nativeMain) themeActions(c *ui.Context) {
 	disabled := n.mutating || n.session == nil || n.history.state.ServiceInstanceId == ""
 	full := len(n.importedThemes) >= maxImportedThemes
 	ui.Row(c).Gap(6).Wrap().Children(func() {
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("theme_import"), Disabled: disabled || full}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("theme_import"), Disabled: disabled || full}).Clicked() {
 			n.changeThemeFile(importNativeTheme, protocol.DesktopThemePackage{})
 		}
 		if selected := n.findImportedTheme(n.theme); selected != nil {
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("theme_export"), Disabled: disabled}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("theme_export"), Disabled: disabled}).Clicked() {
 				n.changeThemeFile(exportNativeTheme, *selected)
 			}
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("theme_delete", "Remove theme"), Disabled: disabled}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("theme_delete", "Remove theme"), Disabled: disabled}).Clicked() {
 				n.changeThemeFile(removeNativeTheme, *selected)
 			}
 		}

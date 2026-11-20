@@ -61,6 +61,10 @@ type desktopPresenter struct {
 	record            func(string) bool
 	refreshAppearance func()
 	placeAtCursor     func(*mygo.Window)
+	opening           bool
+	unavailable       bool
+	request           uint64
+	shown             time.Time
 }
 
 // NewDesktopPanel runs on the MyGo UI thread. The standalone Desktop owns
@@ -88,7 +92,21 @@ func (p *Panel) prepareDesktopWindow() {
 			p.dismiss("cancel")
 		}
 	})
-	p.window.OnBlur(func() { p.dismiss("blur") })
+	p.window.OnBlur(func() {
+		const settle = 150 * time.Millisecond
+		if delay := settle - time.Since(p.local.shown); delay > 0 {
+			request, window := p.local.request, p.window
+			time.AfterFunc(delay, func() {
+				mygo.RunOnMain(func() {
+					if !p.stopping && request == p.local.request && window == p.window && !window.IsFocused() {
+						p.dismiss("blur")
+					}
+				})
+			})
+		} else {
+			p.dismiss("blur")
+		}
+	})
 }
 
 func (p *Panel) preferences() (protocol.QuickPreferences, error) {
@@ -135,6 +153,8 @@ func (p *Panel) RefreshShortcut() error {
 	hotkey := pref.Hotkey
 	if !pref.Enabled {
 		hotkey = ""
+		p.local.request++
+		p.local.opening = false
 		if p.model.Visible {
 			p.dismiss("cancel")
 		}
@@ -149,7 +169,7 @@ func (p *Panel) RefreshShortcut() error {
 	if hotkey != "" {
 		if err := mygo.GlobalShortcut.Register(hotkey, func() {
 			if p.local.record == nil || !p.local.record(hotkey) {
-				p.toggleDesktop()
+				p.toggleDesktop(hotkey)
 			}
 		}); err != nil {
 			log.Printf("Quick paste shortcut unavailable: %v", err)
@@ -163,39 +183,101 @@ func (p *Panel) RefreshShortcut() error {
 	return nil
 }
 
-func (p *Panel) toggleDesktop() {
-	if p.stopping {
+func (p *Panel) ShowDesktop() {
+	p.toggleDesktop("")
+}
+
+func (p *Panel) toggleDesktop(shortcut string) {
+	if p.stopping || p.local == nil {
 		return
 	}
-	if p.model.Visible {
+	if p.model.Visible || p.local.unavailable {
 		p.dismiss("cancel")
 		return
 	}
+	if p.local.opening {
+		return
+	}
+	p.local.request++
+	request := p.local.request
+	p.local.opening = true
 	if p.local.refreshAppearance != nil {
 		p.local.refreshAppearance()
 	}
+	go p.openDesktop(request, shortcut)
+}
+
+func (p *Panel) openDesktop(request uint64, shortcut string) {
 	pref, err := p.preferences()
-	if err != nil || !pref.Enabled || pref.Hotkey != p.local.shortcut {
-		p.RefreshShortcut()
+	if err == nil && (!pref.Enabled || shortcut != "" && pref.Hotkey != shortcut) {
+		mygo.RunOnMain(func() {
+			if !p.stopping && p.local.request == request {
+				p.local.opening = false
+				_ = p.RefreshShortcut()
+			}
+		})
 		return
 	}
+	var host *client.Client
+	var ticket protocol.QuickTicket
+	if err == nil {
+		host, ticket, err = p.beginDesktopDisplay()
+	}
+	mygo.RunOnMain(func() {
+		if p.stopping || p.local.request != request {
+			if host != nil {
+				host.Close()
+			}
+			return
+		}
+		p.local.opening = false
+		if p.window.IsDestroyed() {
+			p.prepareDesktopWindow()
+		}
+		p.local.unavailable = err != nil
+		if err != nil {
+			log.Printf("Quick paste could not open: %v", err)
+		} else {
+			p.local.connection, p.local.ticket = host, ticket
+			p.model.Show(host.Hello().SessionId, ticket.Token, ticket.State)
+			p.model.ShowNotice, p.local.notice = p.local.notice, false
+		}
+		p.local.placeAtCursor(p.window)
+		p.local.shown = time.Now()
+		p.window.Invalidate()
+		p.window.Show()
+		p.window.Focus()
+		if host != nil {
+			p.watchDesktopDisplay(host, ticket)
+		}
+	})
+}
+
+func (p *Panel) beginDesktopDisplay() (*client.Client, protocol.QuickTicket, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	host, err := p.local.owner.DesktopConnection(ctx)
-	if err != nil {
-		return
-	}
-	ticket, err := host.BeginQuickPaste(ctx, host.Hello().State)
-	if err != nil {
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		host, connectErr := p.local.owner.DesktopConnection(ctx)
+		if connectErr != nil {
+			return nil, protocol.QuickTicket{}, connectErr
+		}
+		var ticket protocol.QuickTicket
+		ticket, err = host.BeginQuickPaste(ctx, host.Hello().State)
+		if err == nil {
+			return host, ticket, nil
+		}
 		host.Close()
-		return
+		var remote *client.RemoteError
+		if !errors.As(err, &remote) ||
+			(remote.Code != protocol.WireErrorCodeHistoryRevisionChanged && remote.Code != protocol.WireErrorCodePrivacyEpochChanged) {
+			break
+		}
 	}
-	p.local.connection, p.local.ticket = host, ticket
-	p.model.Show(host.Hello().SessionId, ticket.Token, ticket.State)
-	p.model.ShowNotice, p.local.notice = p.local.notice, false
-	p.local.placeAtCursor(p.window)
-	p.window.Show()
-	p.window.Focus()
+	return nil, protocol.QuickTicket{}, err
+}
+
+func (p *Panel) watchDesktopDisplay(host *client.Client, ticket protocol.QuickTicket) {
 	p.query(0)
 	displayCtx, stop := context.WithCancel(context.Background())
 	p.displayCancel = stop
@@ -244,6 +326,7 @@ func (p *Panel) releaseDesktopDisplay() {
 	connection := p.local.connection
 	p.local.connection = nil
 	p.local.ticket = protocol.QuickTicket{}
+	p.local.unavailable = false
 	p.hideLocal()
 	if connection != nil {
 		connection.Close()

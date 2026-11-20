@@ -1072,6 +1072,24 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         if (Get-DesktopProcesses @($resident.Id, $main.Id) | Where-Object Name -eq 'msedgewebview2.exe') {
             throw 'Default main window started a WebView2 process'
         }
+        $beforeDrag = [MyGoInput+Rect]::new()
+        if (![MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$beforeDrag)) { throw 'Cannot read native main bounds' }
+        $dragX = $beforeDrag.left + 60
+        $dragY = $beforeDrag.top + 24
+        if (![MyGoInput]::SetCursorPos($dragX, $dragY)) { throw 'Cannot reach native title bar' }
+        [MyGoInput]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+        try {
+            Start-Sleep -Milliseconds 100
+            $null = [MyGoInput]::SetCursorPos(($dragX - 50), ($dragY + 42))
+            Start-Sleep -Milliseconds 100
+        } finally {
+            [MyGoInput]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+        }
+        $null = Wait-Until {
+            $afterDrag = [MyGoInput+Rect]::new()
+            [MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$afterDrag) -and
+                [Math]::Abs($afterDrag.top - $beforeDrag.top) -ge 20
+        } 'Dragging the native title bar did not move the window' 5
         Click-Control $main (Get-ControlPoint $root 'Settings')
         $null = Get-ControlPoint $root 'Privacy'
         $protection = 'Protect sensitive clipboard content'
@@ -1082,7 +1100,15 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Click-Control $main (Get-ControlPoint $root 'Settings')
         $null = Get-ControlPoint $root 'Privacy'
         if (Get-SettingsCheckbox $root $protection) { throw 'Privacy expanded on reopening Settings' }
-        Write-Host 'Verified default native history and collapsed Privacy settings without WebView2'
+        Click-Control $main (Get-ControlPoint $root 'Close')
+        $null = Get-ControlPoint $root $marker
+        [Windows.Forms.SendKeys]::SendWait('^+v')
+        $panel = Get-ResidentPanel $resident ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34'))
+        $panelRoot = [Windows.Automation.AutomationElement]::FromHandle($panel)
+        $null = Get-ControlPoint $panelRoot $marker
+        [Windows.Forms.SendKeys]::SendWait('{ESC}')
+        $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } 'Quick Paste opened from the native main window but did not dismiss'
+        Write-Host 'Verified native title bar drag, history, Settings close, collapsed Privacy and Quick Paste from the main window'
         return
     }
     if ($TrayPaste) {

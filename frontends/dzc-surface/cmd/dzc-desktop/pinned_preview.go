@@ -118,7 +118,13 @@ func (p *pinnedPreview) view(c *ui.Context) {
 			return
 		}
 		ui.Text(c, a.Concealed).Wrap()
-		if ui.Button(c, a.Retry).Disabled(p.loading).Clicked() {
+		kit := uikit.Kit{}
+		if a.Palette != nil && a.Palette.Valid() {
+			kit = uikit.NewKit(a.Palette.Mode, a.Palette.Tokens, nil)
+		} else if a.Dark {
+			kit.Mode = "dark"
+		}
+		if kit.Button(c, uikit.ButtonOptions{Label: a.Retry, Disabled: p.loading}).Clicked() {
 			p.refresh(true)
 		}
 	})

@@ -136,7 +136,7 @@ func (n *nativeMain) drawOCRResult(c *ui.Context, row protocol.DesktopEntry, gen
 		ui.Scroll(c).FillWidth().MaxHeight(80).Children(func() {
 			ui.Text(c, form.text).FontSize(11).TextColor(c.Theme().TextMuted).Wrap()
 		})
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("native_ocr_copy"), Disabled: n.mutating}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("native_ocr_copy"), Disabled: n.mutating}).Clicked() {
 			n.copyOCR(row, generation)
 		}
 	}

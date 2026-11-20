@@ -71,12 +71,12 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label, resetLabel string, c
 	selected := saved
 	ui.Text(c, label).FontWeight(600)
 	ui.Row(c).Gap(6).Wrap().AlignItems(ui.Center).Children(func() {
-		field := ui.Combobox(c, &selected, choices).Label(label).Placeholder(n.text("font_default_option")).
+		field := n.mainKit().Combo(c, &selected, label, choices, n.mutating || len(choices) == 0).Placeholder(n.text("font_default_option")).
 			Grow(1).MinWidth(150).Disabled(n.mutating || len(choices) == 0)
 		if field.Changed() && selected != saved {
 			n.saveSetting(key, selected)
 		}
-		if saved != "" && uikit.Button(c, uikit.ButtonOptions{Label: resetLabel, Disabled: n.mutating}).Clicked() {
+		if saved != "" && n.mainKit().Button(c, uikit.ButtonOptions{Label: resetLabel, Disabled: n.mutating}).Clicked() {
 			n.saveSetting(key, "")
 		}
 	})
@@ -94,7 +94,7 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 	}
 	row.Children(func() {
 		ui.Text(c, label).MinWidth(100)
-		slider := ui.Slider(c, &edit.value, float64(setting.minimum), float64(setting.maximum)).
+		slider := n.mainKit().Slider(c, &edit.value, float64(setting.minimum), float64(setting.maximum), label).
 			Step(1).Label(label).Grow(1).Disabled(n.mutating)
 		edit.dirty = edit.dirty || slider.Changed()
 		value := int(edit.value)

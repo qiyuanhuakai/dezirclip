@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { EmojiGrid, EmojiTabs } from "@deziro/ui-react/components/EmojiPicker";
 import type { DragEvent } from "react";
 import { invoke } from "../../../shared/lib/desktopInvoke";
 import { copyHistorySelection } from "../../../shared/lib/copyHistorySelection";
@@ -464,45 +465,10 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
 
   return (
     <div className="emoji-panel">
-      <div className="emoji-tabs">
-        <button
-          className={`btn-icon emoji-tab ${activeTab === "emoji" ? "active" : ""}`}
-          onClick={() => handleTabChange("emoji")}
-        >
-          {t("emoji_tab") || "Emoji"}
-        </button>
-        <button
-          className={`btn-icon emoji-tab ${activeTab === "favorites" ? "active" : ""}`}
-          onClick={() => handleTabChange("favorites")}
-        >
-          {t("emoji_favorites") || "收藏"}
-        </button>
-      </div>
-
-      {activeTab === "emoji" && (
-        <div className="emoji-content">
-          {emojiGroups.map((group) => (
-            <div key={group.name} className="emoji-group">
-              <div className="emoji-group-title">{group.name}</div>
-              <div className="emoji-grid">
-                {group.emojis.map((emoji) => (
-                  <button
-                    key={`${group.name}-${emoji}`}
-                    className="emoji-btn"
-                    onClick={() => handleSend(emoji, "text")}
-                    title={emoji}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-          {emojiGroups.every(group => !group.emojis.length) && (
-            <div className="emoji-empty">{t("emoji_empty") || "暂无表情"}</div>
-          )}
-        </div>
-      )}
+      <EmojiTabs active={activeTab} labels={{ emoji: t("emoji_tab") || "Emoji", favorites: t("emoji_favorites") || "收藏" }}
+        onChange={handleTabChange} />
+      {activeTab === "emoji" && <EmojiGrid groups={emojiGroups} empty={t("emoji_empty") || "暂无表情"}
+        onSelect={emoji => handleSend(emoji, "text")} />}
 
       {activeTab === "favorites" && (
         <div

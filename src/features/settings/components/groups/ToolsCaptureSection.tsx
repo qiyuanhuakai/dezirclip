@@ -1,3 +1,4 @@
+import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
@@ -134,7 +135,7 @@ const ToolsCaptureSection = ({
             <NativeFeatureBoundary t={t}>
             <div className="setting-item">
                 <LabelWithHint label={t("screenshot_enabled")} hintKey="screenshot_enabled" />
-                <label className="switch"><input className="cb" type="checkbox" aria-label={t("screenshot_enabled")} checked={screenshotEnabled} disabled={panelSaving} onChange={(e) => { void savePanelEnabled("screenshot_enabled", e.target.checked, setScreenshotEnabled); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
+                <SettingsToggle aria-label={t("screenshot_enabled")} checked={screenshotEnabled} disabled={panelSaving} onChange={(e) => { void savePanelEnabled("screenshot_enabled", e.target.checked, setScreenshotEnabled); }} />
             </div>
             {screenshotEnabled && (
                 <>
@@ -152,7 +153,7 @@ const ToolsCaptureSection = ({
             )}
             <div className="setting-item">
                 <LabelWithHint label={t("quick_paste_enabled")} hintKey="quick_paste_enabled" />
-                <label className="switch"><input className="cb" type="checkbox" aria-label={t("quick_paste_enabled")} checked={quickPasteEnabled} disabled={panelSaving} onChange={(e) => { void savePanelEnabled("quick_paste_enabled", e.target.checked, setQuickPasteEnabled); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
+                <SettingsToggle aria-label={t("quick_paste_enabled")} checked={quickPasteEnabled} disabled={panelSaving} onChange={(e) => { void savePanelEnabled("quick_paste_enabled", e.target.checked, setQuickPasteEnabled); }} />
             </div>
             {quickPasteEnabled && <HotkeyRecorder t={t} labelKey="quick_paste_hotkey_label" hotkey={quickPasteHotkey} recording={isRecordingQuickPaste} setRecording={setIsRecordingQuickPaste} disabled={panelSaving} onHotkeyChange={value => { void savePanelHotkey("quick_paste_hotkey", value, setQuickPasteHotkey); }} />}
             {hotkeyError && <p role="alert" className="hotkey-recording-error">{hotkeyError}</p>}
@@ -160,7 +161,7 @@ const ToolsCaptureSection = ({
             </NativeFeatureBoundary>
             <div className="setting-item">
                 <LabelWithHint label={t("ocr_enabled")} hintKey="ocr_enabled" />
-                <label className="switch"><input className="cb" type="checkbox" checked={ocrEnabled} onChange={(e) => { setOcrEnabled(e.target.checked); saveAppSetting("ocr_enabled", String(e.target.checked)); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
+                <SettingsToggle checked={ocrEnabled} onChange={(e) => { setOcrEnabled(e.target.checked); saveAppSetting("ocr_enabled", String(e.target.checked)); }} />
             </div>
             <div className="setting-item">
                 <div className="item-label-group"><span className="item-label">{t("ocr_status_label")}</span></div>

@@ -48,7 +48,7 @@ func (n *nativeMain) tagEditorView(c *ui.Context, kit uikit.Kit, editor *nativeT
 					for _, name := range editor.draft {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 							ui.Text(c, name).Grow(1).SingleLine()
-							remove := uikit.Button(c, uikit.ButtonOptions{Label: n.text("native_remove"), Disabled: n.mutating})
+							remove := n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("native_remove"), Disabled: n.mutating})
 							label := strings.ReplaceAll(n.text("native_remove_named_tag"), "{tag}", name)
 							if remove.Label(label).Clicked() {
 								removed = name
@@ -78,11 +78,11 @@ func (n *nativeMain) tagEditorView(c *ui.Context, kit uikit.Kit, editor *nativeT
 			ui.Text(c, editor.message).TextColor(c.Theme().Danger).Wrap()
 		}
 		ui.Row(c).Gap(6).Justify(ui.End).Children(func() {
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("native_add_tag"), Disabled: n.mutating || strings.TrimSpace(editor.name) == ""}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("native_add_tag"), Disabled: n.mutating || strings.TrimSpace(editor.name) == ""}).Clicked() {
 				editor.addTag()
 				editor.focus = true
 			}
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: n.mutating}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: n.mutating}).Clicked() {
 				n.saveTags(editor)
 			}
 		})

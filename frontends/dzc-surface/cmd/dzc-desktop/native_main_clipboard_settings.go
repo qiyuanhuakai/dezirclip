@@ -171,13 +171,13 @@ func (n *nativeMain) sequentialSettings(c *ui.Context) {
 	switch {
 	case n.queueCount.failed:
 		ui.Text(c, n.text("sequential_paste_queue_unavailable")).TextColor(c.Theme().Danger).Wrap()
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: n.mutating}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: n.mutating}).Clicked() {
 			n.loadQueueCount()
 		}
 	case n.queueCount.known:
 		ui.Row(c).Wrap().Gap(6).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, strings.ReplaceAll(n.text("sequential_paste_queue_count"), "{count}", strconv.FormatUint(uint64(n.queueCount.count), 10)))
-			if uikit.Button(c, uikit.ButtonOptions{
+			if n.mainKit().Button(c, uikit.ButtonOptions{
 				Label: n.text("sequential_paste_clear_queue"), Disabled: n.queueCount.count == 0 || n.mutating,
 			}).Clicked() {
 				n.clearNativePasteQueue()
@@ -233,9 +233,9 @@ func (n *nativeMain) numberSetting(c *ui.Context, key, label string, fallback, m
 		draft.value, draft.saved = saved, saved
 	}
 	row.Children(func() {
-		input := ui.TextInput(c, &draft.value).Label(label).Width(112).ReadOnly(n.mutating)
+		input := n.mainKit().TextField(c, &draft.value, label).Width(112).ReadOnly(n.mutating)
 		limit, valid := nativeBoundedNumber(draft.value, minimum, maximum)
-		save := uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: n.mutating || !valid || draft.value == saved})
+		save := n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: n.mutating || !valid || draft.value == saved})
 		if save.Clicked() || input.Submitted() && valid && !n.mutating {
 			draft.value = limit
 			if limit != saved {

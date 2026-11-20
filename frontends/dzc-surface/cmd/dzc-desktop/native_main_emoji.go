@@ -49,10 +49,10 @@ func (n *nativeMain) closeEmoji() {
 func (n *nativeMain) emojiView(c *ui.Context) {
 	favorites := n.preferences["app.emoji_panel_tab"] == "favorites"
 	ui.Row(c).Padding(0, 8).Gap(5).Children(func() {
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("emoji_tab"), Selected: !favorites, Disabled: n.mutating}).Clicked() && favorites {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("emoji_tab"), Selected: !favorites, Disabled: n.mutating}).Clicked() && favorites {
 			n.saveSetting("app.emoji_panel_tab", "emoji")
 		}
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("emoji_favorites"), Selected: favorites, Disabled: n.mutating}).Clicked() && !favorites {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("emoji_favorites"), Selected: favorites, Disabled: n.mutating}).Clicked() && !favorites {
 			n.saveSetting("app.emoji_panel_tab", "favorites")
 		}
 	})
@@ -61,18 +61,18 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 		return
 	}
 	width, _ := c.Size()
-	columns := max(1, int((width-16)/43))
-	ui.Scroll(c).Grow(1).Children(func() {
+	columns := max(1, int((width-16+4)/38))
+	kit := n.mainKit()
+	ui.Scroll(c).FillWidth().MinHeight(0).Grow(1).Shrink(1).Children(func() {
 		ui.Column(c).FillWidth().Padding(8).Gap(8).Children(func() {
 			for _, group := range emojiCatalog {
 				ui.Text(c, n.emojiGroupName(group.Name)).FontWeight(600)
-				ui.Grid(c).Columns(columns).Gap(4).Children(func() {
-					for _, emoji := range group.Emojis {
-						button := n.emojiButton(c, emoji, 35)
-						button.Children(func() { ui.Text(c, emoji).FontSize(20).SingleLine() })
-						if button.Clicked() {
-							n.sendEmoji("text", emoji)
-						}
+				kit.TileGrid(c, len(group.Emojis), columns, 4, func(index int, cellWidth float32) {
+					emoji := group.Emojis[index]
+					button := kit.TileButton(c, emoji, cellWidth, 34, n.mutating)
+					button.Children(func() { ui.Text(c, emoji).FontSize(20).SingleLine().PassThrough() })
+					if button.Clicked() {
+						n.sendEmoji("text", emoji)
 					}
 				})
 			}
@@ -105,15 +105,6 @@ func (n *nativeMain) emojiGroupName(name string) string {
 	default:
 		return name
 	}
-}
-
-func (n *nativeMain) emojiButton(c *ui.Context, label string, height float32) ui.Element {
-	button := ui.ButtonBase(c).Label(label).Height(height).FillWidth().Center().
-		Radius(c.Theme().Radius).FocusRing(true).Disabled(n.mutating)
-	if button.Hovered() {
-		button.Background(c.Theme().SurfaceHover)
-	}
-	return button
 }
 
 func (n *nativeMain) sendEmoji(kind, value string) {

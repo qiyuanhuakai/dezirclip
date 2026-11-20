@@ -1,3 +1,4 @@
+import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
 import { SettingHelp } from "../SettingHelp";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import type { ComponentType, ReactNode, CSSProperties } from "react";
@@ -224,19 +225,12 @@ const AppearanceSettingsGroup = ({
                         label={t('show_app_border') || '显示应用边框'}
                         hintKey="show_app_border"
                     />
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={showAppBorder}
+                    <SettingsToggle checked={showAppBorder}
                             onChange={(e) => {
                                 const val = e.target.checked;
                                 setShowAppBorder(val);
                                 saveAppSetting('show_app_border', String(val));
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                 </div>
 
                 <div className="setting-item">
@@ -244,19 +238,12 @@ const AppearanceSettingsGroup = ({
                         label={t('compact_mode') || 'Compact Mode'}
                         hintKey="compact_mode"
                     />
-                    <label className="switch">
-                        <input
-                            className="cb"
-                            type="checkbox"
-                            checked={compactMode}
+                    <SettingsToggle checked={compactMode}
                             onChange={(e) => {
                                 const val = e.target.checked;
                                 setCompactMode(val);
                                 saveAppSetting('compact_mode', String(val));
-                            }}
-                        />
-                        <div className="toggle"><div className="left" /><div className="right" /></div>
-                    </label>
+                            }} />
                 </div>
 
                 <div className="setting-item column">

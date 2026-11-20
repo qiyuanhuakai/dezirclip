@@ -1,3 +1,4 @@
+import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
 import { SettingHelp } from "../SettingHelp";
 import { useEffect, useState } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
@@ -57,11 +58,8 @@ export function PrivacySessionSection({ t, appSettings }: {
         <label className="item-label" id="privacy-session-heading" htmlFor="privacy-session-enabled">{t("privacy_session_title")}</label>
         <SettingHelp label={t("privacy_session_title")}>{t("privacy_session_hint")}</SettingHelp>
       </div></div>
-      <label className="switch">
-        <input id="privacy-session-enabled" className="cb" type="checkbox" checked={active} disabled={disabled}
+      <SettingsToggle id="privacy-session-enabled"  checked={active} disabled={disabled}
           onChange={event => { void changeSession(event.target.checked); }} />
-        <div className="toggle"><div className="left" /><div className="right" /></div>
-      </label>
     </div>
     {active && state.snapshot?.session.expires_at_ms !== null && state.snapshot?.session.expires_at_ms !== undefined
       && <p>{t("privacy_session_until")} {new Date(state.snapshot.session.expires_at_ms).toLocaleString()}</p>}

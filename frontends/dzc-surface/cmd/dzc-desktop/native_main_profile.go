@@ -34,7 +34,7 @@ func (n *nativeMain) profileSettings(c *ui.Context) {
 	}
 	ui.Row(c).Gap(6).Wrap().Children(func() {
 		if profile.restartPending {
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: profile.moving}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: profile.moving}).Clicked() {
 				profile.moving = true
 				n.notice = n.text("processing")
 				window, language := n.window, n.language()
@@ -43,15 +43,15 @@ func (n *nativeMain) profileSettings(c *ui.Context) {
 			return
 		}
 		if profile.failed {
-			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: !ready || n.mutating}).Clicked() {
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: !ready || n.mutating}).Clicked() {
 				n.loadProfileSettings()
 			}
 		}
 		disabled := !ready || n.mutating || profile.directory == ""
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("change_app"), Disabled: disabled || n.private}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("change_app"), Disabled: disabled || n.private}).Clicked() {
 			n.chooseProfileDirectory()
 		}
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("open_folder"), Disabled: disabled}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("open_folder"), Disabled: disabled}).Clicked() {
 			n.openProfileDirectory()
 		}
 	})

@@ -15,11 +15,14 @@ type nativeSettingsPane struct {
 	draw func()
 }
 
+const nativeSplitWidth = 560
+
 func (n *nativeMain) openSettings() {
 	if n.showSettings {
 		return
 	}
 	n.resetPreviewSelection()
+	n.settingsScroll = ui.ScrollState{}
 	if n.settingsSection == "privacy" {
 		n.settingsSection = "general"
 		if general := n.settingsOpen["general"]; general != nil {
@@ -30,6 +33,12 @@ func (n *nativeMain) openSettings() {
 		*privacy = false
 	}
 	n.showSettings, n.showEmoji = true, false
+}
+
+func (n *nativeMain) closeSettings() {
+	if !n.profile.moving && !n.profile.restartPending {
+		n.showSettings = false
+	}
 }
 
 func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *int) {
@@ -47,21 +56,22 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 		n.settingsSection = "general"
 	}
 	width, _ := c.Size()
-	if width < 560 {
+	if width < nativeSplitWidth {
 		n.settingsAccordion(c, kit, panes)
 		return
 	}
-	ui.Row(c).Grow(1).Gap(10).Padding(8).Children(func() {
+	ui.Row(c).FillWidth().Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Stretch).Gap(10).Padding(8).Children(func() {
 		sections := make([]uikit.SettingsSection, 0, len(panes))
 		for _, pane := range panes {
 			sections = append(sections, pane.SettingsSection)
 		}
 		kit.SettingsRail(c, n.text("native_settings_sections"), n.settingsSection, sections, func(id string) {
 			n.settingsSection = id
+			n.settingsScroll = ui.ScrollState{}
 		})
 		for _, pane := range panes {
 			if pane.ID == n.settingsSection {
-				ui.Scroll(c).Grow(1).Children(func() {
+				ui.Scroll(c).Grow(1).MinWidth(0).FillHeight().MinHeight(0).TrackScroll(&n.settingsScroll).Children(func() {
 					ui.Column(c).FillWidth().Gap(8).Padding(4, 8, 12).Children(func() {
 						ui.Text(c, pane.Label).FontWeight(600)
 						pane.draw()
@@ -82,8 +92,8 @@ func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nat
 			n.settingsOpen[pane.ID] = &open
 		}
 	}
-	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).FillWidth().Gap(8).Padding(8).Children(func() {
+	ui.Scroll(c).FillWidth().Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Center).Children(func() {
+		ui.Column(c).FillWidth().MaxWidth(420).Gap(8).Padding(8).Children(func() {
 			for _, pane := range panes {
 				open := n.settingsOpen[pane.ID]
 				wasOpen := *open
@@ -141,7 +151,7 @@ type nativeBooleanSetting struct {
 func (n *nativeMain) booleanSettings(c *ui.Context, settings ...nativeBooleanSetting) {
 	for _, setting := range settings {
 		enabled := n.settingEnabled(setting.key, setting.initial)
-		if ui.Checkbox(c, &enabled, setting.label).Disabled(n.mutating).Changed() {
+		if n.mainKit().SettingsToggle(c, &enabled, setting.label).Disabled(n.mutating).Changed() {
 			n.saveSetting(setting.key, strconv.FormatBool(enabled))
 		}
 	}
@@ -173,11 +183,11 @@ func (n *nativeMain) generalSettings(c *ui.Context, kit uikit.Kit) {
 	)
 	const edge = "app.edge_docking"
 	dock := n.settingEnabled(edge, false)
-	if ui.Checkbox(c, &dock, n.text("edge_docking", "Edge docking")).Disabled(n.mutating || !dock && !dockingAvailable()).Changed() {
+	if n.mainKit().SettingsToggle(c, &dock, n.text("edge_docking", "Edge docking")).Disabled(n.mutating || !dock && !dockingAvailable()).Changed() {
 		n.saveSetting(edge, strconv.FormatBool(dock))
 	}
 	hideTray := n.settingEnabled("app.hide_tray_icon", false)
-	if ui.Checkbox(c, &hideTray, n.text("hide_tray_icon", "Hide tray icon")).Disabled(n.mutating).Changed() {
+	if n.mainKit().SettingsToggle(c, &hideTray, n.text("hide_tray_icon", "Hide tray icon")).Disabled(n.mutating).Changed() {
 		n.writeSetting(func(ctx context.Context, epoch uint64) error {
 			return n.shell.SetTrayVisible(ctx, !hideTray, epoch)
 		})
@@ -220,7 +230,7 @@ func (n *nativeMain) clipboardSettings(c *ui.Context, kit uikit.Kit) {
 
 func (n *nativeMain) privacySettings(c *ui.Context, kit uikit.Kit) {
 	private := n.private
-	if ui.Checkbox(c, &private, n.text("privacy_session_title", "Private session")).Disabled(n.mutating).Changed() {
+	if n.mainKit().SettingsToggle(c, &private, n.text("privacy_session_title", "Private session")).Disabled(n.mutating).Changed() {
 		n.changePrivateSession(private)
 	}
 	n.shortcutSetting(c, "app.privacy_session_hotkey", n.text("privacy_session_hotkey"), "")
@@ -306,7 +316,7 @@ func (n *nativeMain) toolsSettings(c *ui.Context) {
 				label string
 				full  bool
 			}{{n.text("capture_region_now"), false}, {n.text("capture_full_now"), true}} {
-				if uikit.Button(c, uikit.ButtonOptions{Label: option.label, Disabled: n.capturing || n.mutating}).Clicked() {
+				if n.mainKit().Button(c, uikit.ButtonOptions{Label: option.label, Disabled: n.capturing || n.mutating}).Clicked() {
 					n.captureScreenshot(option.full)
 				}
 			}
@@ -326,7 +336,7 @@ func (n *nativeMain) toolsSettings(c *ui.Context) {
 }
 
 func (n *nativeMain) panelCheckbox(c *ui.Context, id, label string, enabled bool) {
-	if ui.Checkbox(c, &enabled, label).Disabled(n.mutating || n.capturing).Changed() {
+	if n.mainKit().SettingsToggle(c, &enabled, label).Disabled(n.mutating || n.capturing).Changed() {
 		n.writeSetting(func(ctx context.Context, epoch uint64) error {
 			return n.shell.SetNativePanelEnabled(ctx, id, enabled, epoch)
 		})

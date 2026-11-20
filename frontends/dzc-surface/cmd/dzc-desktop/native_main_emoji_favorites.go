@@ -26,10 +26,10 @@ func (n *nativeMain) emojiFavoritesView(c *ui.Context) {
 		n.loadEmojiFavorites(panel)
 	}
 	ui.Row(c).Padding(0, 8).Gap(6).Children(func() {
-		if uikit.Button(c, uikit.ButtonOptions{Label: n.text("emoji_add_files", "Add images"), Disabled: n.mutating || n.private}).Clicked() {
+		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("emoji_add_files", "Add images"), Disabled: n.mutating || n.private}).Clicked() {
 			n.changeEmojiFavorites("import", nil, true)
 		}
-		if panel.loadError && uikit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry", "Retry loading favorites")}).Clicked() {
+		if panel.loadError && n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry", "Retry loading favorites")}).Clicked() {
 			n.loadEmojiFavorites(panel)
 		}
 	})
@@ -46,22 +46,23 @@ func (n *nativeMain) emojiFavoritesView(c *ui.Context) {
 	width, _ := c.Size()
 	columns := max(1, int((width-16)/80))
 	rows := (len(panel.paths) + columns - 1) / columns
+	kit := n.mainKit()
 	ui.List(c, &panel.favorites, rows).Grow(1).FillWidth().Gap(5).Label(n.text("emoji_favorites", "Favorite images")).Rows(func(row ui.ListRow) {
 		start := row.Index * columns
 		if start >= len(panel.paths) {
 			return
 		}
-		ui.Grid(row.Context).Columns(columns).Gap(5).Padding(0, 8).Children(func() {
-			for _, path := range panel.paths[start:min(len(panel.paths), start+columns)] {
-				n.emojiFavoriteCard(row.Context, panel, path)
-			}
+		ui.Box(row.Context).FillWidth().Padding(0, 8).Children(func() {
+			kit.TileGrid(row.Context, min(columns, len(panel.paths)-start), columns, 5, func(index int, cellWidth float32) {
+				n.emojiFavoriteCard(row.Context, kit, panel, panel.paths[start+index], cellWidth)
+			})
 		})
 	})
 }
 
-func (n *nativeMain) emojiFavoriteCard(c *ui.Context, panel *nativeEmojiPanel, path string) {
+func (n *nativeMain) emojiFavoriteCard(c *ui.Context, kit uikit.Kit, panel *nativeEmojiPanel, path string, width float32) {
 	name := filepath.Base(path)
-	button := n.emojiButton(c, name, 75).Tooltip(name)
+	button := kit.TileButton(c, name, width, 75, n.mutating).Tooltip(name)
 	preview, loaded := panel.thumbnails.lookup(path)
 	if !loaded {
 		n.loadEmojiThumbnail(panel, path)
@@ -76,11 +77,12 @@ func (n *nativeMain) emojiFavoriteCard(c *ui.Context, panel *nativeEmojiPanel, p
 	if button.Clicked() {
 		n.sendEmoji("image", path)
 	}
-	button.ContextMenu(func(menu *ui.Menu) {
-		if menu.Item(n.text("native_remove_favorite")).Disabled(n.mutating || n.private).Chosen() {
-			n.changeEmojiFavorites("remove", []string{path}, false)
-		}
-	})
+	if button.RightClicked() || button.Shortcut(ui.Shift, ui.KeyF10) {
+		n.menu.Open(button, func() []uikit.MenuAction {
+			return []uikit.MenuAction{{Label: n.text("native_remove_favorite"), Disabled: n.mutating || n.private,
+				Run: func() { n.changeEmojiFavorites("remove", []string{path}, false) }}}
+		})
+	}
 }
 
 func favoriteOrder(paths []string, saved string) []string {

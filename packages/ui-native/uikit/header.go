@@ -27,6 +27,7 @@ type HeaderFilter struct {
 
 type HeaderOptions struct {
 	Title       string
+	Draggable   bool
 	Back        *HeaderAction
 	Actions     []HeaderAction
 	Query       *string
@@ -42,21 +43,34 @@ type HeaderOptions struct {
 
 func (k Kit) Header(c *ui.Context, options HeaderOptions) {
 	style := k.style("header")
+	width, _ := c.Size()
+	count := len(options.Actions)
+	if options.Back != nil {
+		count++
+	}
+	limit := float32(0)
+	if count > 0 {
+		limit = max(22, (width-style.Padding[1]-style.Padding[3]-60-4*float32(count-1))/float32(count))
+	}
 	paint(ui.Column(c).Gap(style.RowGap), style).Children(func() {
 		top := k.style("headerTop")
-		paint(ui.Row(c).Height(top.Height).Gap(8).AlignItems(ui.Center), top).Children(func() {
+		paint(ui.Row(c).FillWidth().Height(top.Height).Gap(8).AlignItems(ui.Center), top).Children(func() {
 			if options.Back != nil {
-				k.headerAction(c, *options.Back)
+				k.headerAction(c, *options.Back, limit)
 			}
 			title := k.style("headerTitle")
-			ui.Row(c).Grow(1).AlignItems(ui.Center).Children(func() {
-				paint(ui.Box(c), title).Children(func() {
-					text(c, options.Title, title).MaxWidth(320).SingleLine()
+			dragArea := ui.Row(c).Grow(1).MinWidth(0).FillHeight().AlignItems(ui.Center)
+			if options.Draggable {
+				dragArea.DragWindow()
+			}
+			dragArea.Children(func() {
+				paint(ui.Box(c).PassThrough(), title).Children(func() {
+					text(c, options.Title, title).MaxWidth(320).SingleLine().PassThrough()
 				})
 			})
 			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 				for _, action := range options.Actions {
-					k.headerAction(c, action)
+					k.headerAction(c, action, limit)
 				}
 			})
 		})
@@ -66,22 +80,42 @@ func (k Kit) Header(c *ui.Context, options HeaderOptions) {
 	})
 }
 
-func (k Kit) headerAction(c *ui.Context, action HeaderAction) {
-	style := k.style("headerButton")
-	if action.Active {
-		style = k.style("headerButtonActive")
-	}
-	button := paint(ui.ButtonBase(c).Label(action.Label).Size(style.Width, style.Height).Disabled(action.Disabled), style)
-	button.Children(func() {
-		if image := headerIcons[action.Icon]; image != nil {
-			ui.Icon(c, image).Size(16, 16).TextColor(styleColor(style.Text))
-		} else {
-			text(c, action.Label, style)
-		}
-	})
-	if action.Run != nil && button.Clicked() {
+func (k Kit) headerAction(c *ui.Context, action HeaderAction, limit float32) {
+	if k.iconButton(c, action.Icon, action.Label, action.Active, action.Disabled, limit).Clicked() && action.Run != nil {
 		action.Run()
 	}
+}
+
+func (k Kit) IconButton(c *ui.Context, name, label string, active, disabled bool) ui.Element {
+	return k.iconButton(c, name, label, active, disabled, 0)
+}
+
+func (k Kit) iconButton(c *ui.Context, name, label string, active, disabled bool, limit float32) ui.Element {
+	style := k.style("headerButton")
+	if active {
+		style = k.style("headerButtonActive")
+	}
+	if limit > 0 && style.Width > limit {
+		style.Width = limit
+		style.Padding[1], style.Padding[3] = 0, 0
+	}
+	button := ui.ButtonBase(c).Label(label).Tooltip(label).Size(style.Width, style.Height).Disabled(disabled)
+	if disabled {
+		paint(button, style)
+	} else {
+		style = k.interactive(c, button, style, active)
+		paint(button, style)
+	}
+	button.Children(func() {
+		if name == "top" {
+			text(c, "↑", style).PassThrough()
+		} else if image := headerIcons[name]; image != nil {
+			ui.Icon(c, image).Size(16, 16).TextColor(styleColor(style.Text)).PassThrough()
+		} else {
+			text(c, label, style)
+		}
+	})
+	return button
 }
 
 func (k Kit) headerSearch(c *ui.Context, options HeaderOptions) {

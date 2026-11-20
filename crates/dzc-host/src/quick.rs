@@ -62,7 +62,7 @@ impl Host {
                 return Err(WireErrorCode::Busy);
             }
             let state = self.snapshot()?;
-            let target = RememberedFocus::capture(
+            let target = RememberedFocus::capture_window(
                 session
                     .peer
                     .as_ref()
