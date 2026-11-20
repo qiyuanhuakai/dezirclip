@@ -46,6 +46,7 @@ export const tw = {
         native_reveal_sensitive: "顯示敏感項目",
         native_hide_sensitive: "隱藏敏感項目",
         native_drop_failed: "無法複製拖入的檔案",
+        native_file_drag_failed: "無法拖出此檔案",
         native_setting_save_failed: "無法儲存設定。",
         native_loading_fonts: "正在載入字型…",
         native_reset_ui_font: "重設介面字型",

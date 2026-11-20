@@ -87,6 +87,7 @@ type nativeMain struct {
 	tags             *nativeTagEditor
 	tagCatalog       nativeTagCatalog
 	tagSuggestions   nativeTagSuggestions
+	fileGesture      nativeFileGesture
 	tagLibrary       *nativeTagLibrary
 	editor           *nativeEntryEditor
 	transform        *nativeTransformDialog
@@ -128,6 +129,7 @@ func (n *nativeMain) stopSession() {
 	n.tagLibrary = nil
 	n.tagCatalog = nativeTagCatalog{}
 	n.tagSuggestions = nativeTagSuggestions{}
+	n.fileGesture = nativeFileGesture{}
 	n.emoji = nil
 	n.resetPreviewSelection()
 }

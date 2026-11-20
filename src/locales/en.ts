@@ -46,6 +46,7 @@ export const en = {
         native_reveal_sensitive: "Reveal sensitive entry",
         native_hide_sensitive: "Hide sensitive entry",
         native_drop_failed: "Could not copy dropped files",
+        native_file_drag_failed: "Could not drag this file",
         native_setting_save_failed: "Could not save settings.",
         native_loading_fonts: "Loading fonts…",
         native_reset_ui_font: "Reset interface font",

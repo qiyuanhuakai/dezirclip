@@ -226,12 +226,18 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 				Tags:     n.cardTags(row.Tags),
 				Body:     n.cardBody(cell.Context, row, protected, compact, generation),
 				Activate: func() {
+					if n.fileGesture.takeClick(row.Id) {
+						return
+					}
 					n.rowAction(row, generation, nativePaste)
 					n.resetPreviewSelection()
 				},
 				Actions: actions,
 			})
 			n.entryMenu(card, row, generation)
+			if nativeFileCard(row) && (!nativeConcealed(row) || protected != nil) {
+				card.HandleInput(func(event ui.InputEvent) bool { return n.fileCardInput(event, row, generation) })
+			}
 			if card.Hovered() {
 				hovered, hoverBounds = row, card.Bounds()
 			}

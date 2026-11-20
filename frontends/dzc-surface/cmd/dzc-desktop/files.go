@@ -33,20 +33,43 @@ func (l *Library) dropFiles(ctx context.Context, params protocol.FileDropParams)
 }
 
 func (l *Library) DragFiles(ctx context.Context, params protocol.FileDragParams) error {
+	return l.dragFiles(ctx, mygo.CallerWindow(ctx), params)
+}
+
+func (l *Library) dragFiles(ctx context.Context, window *mygo.Window, params protocol.FileDragParams) error {
+	if window == nil {
+		return errors.New("WindowUnavailable")
+	}
 	if !fileDragPending.CompareAndSwap(false, true) {
 		return errors.New("FileDragBusy")
 	}
-	defer fileDragPending.Store(false)
-	window := mygo.CallerWindow(ctx)
-	if window == nil || !window.IsVisible() {
+	if !window.IsVisible() {
+		fileDragPending.Store(false)
 		return errors.New("WindowUnavailable")
 	}
 	var files protocol.FileDragResult
 	if err := l.owner.DesktopCall(ctx, protocol.MethodDesktopFilesDrag, params, "FileDragResult", &files); err != nil {
+		fileDragPending.Store(false)
 		return err
 	}
 	done := make(chan error, 1)
-	window.Update(func() { startFileDrag(window, files.Paths, func(err error) { done <- err }) })
+	// Keep self-drops blocked until the system finishes the gesture, even
+	// when the initiating renderer context is cancelled meanwhile.
+	window.Update(func() {
+		finish := func(err error) {
+			fileDragPending.Store(false)
+			done <- err
+		}
+		if err := ctx.Err(); err != nil {
+			finish(err)
+			return
+		}
+		if window.IsDestroyed() || !window.IsVisible() {
+			finish(errors.New("WindowUnavailable"))
+			return
+		}
+		startFileDrag(window, files.Paths, finish)
+	})
 	select {
 	case err := <-done:
 		return err

@@ -57,6 +57,7 @@ export const zh = {
         native_reveal_sensitive: "显示敏感条目",
         native_hide_sensitive: "隐藏敏感条目",
         native_drop_failed: "无法复制拖入的文件",
+        native_file_drag_failed: "无法拖出此文件",
         native_setting_save_failed: "无法保存设置。",
         native_loading_fonts: "正在加载字体…",
         native_reset_ui_font: "重置界面字体",

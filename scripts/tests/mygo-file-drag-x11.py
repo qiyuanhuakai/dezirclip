@@ -8,7 +8,7 @@ import subprocess
 import time
 
 
-def check(desktop, helpers):
+def check(desktop, helpers, *, native_main=False):
     import gi
     gi.require_version('Gtk', '3.0')
     gi.require_version('Atspi', '2.0')
@@ -107,7 +107,8 @@ def check(desktop, helpers):
 
     status = json.loads(subprocess.check_output([cli, 'service', 'start', '--json'], text=True))
     assert status['capture_owner'], 'File history fixture requires an active capture owner'
-    process = subprocess.Popen([desktop])
+    env = dict(os.environ, DZC_MYGO_NATIVE_MAIN='1', MYGO_GPU='0') if native_main else None
+    process = subprocess.Popen([desktop], env=env)
     try:
         main = wait(lambda: helpers['visible_main_window'](process.pid, desktop), 'Main window missing')
         x11.XMoveWindow(display, main, 350, 20)
@@ -145,7 +146,8 @@ def check(desktop, helpers):
         image = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, True, 8, 240, 160)
         image.fill(0x6699ffff)
         clipboard.set_image(image)
-        row = wait(lambda: point('Clipboard Image'), 'Captured image card missing')
+        image_label = 'Clipboard image' if native_main else 'Clipboard Image'
+        row = wait(lambda: point(image_label), 'Captured image card missing')
         gesture(row, outside)
         wait(lambda: received, 'Image card did not export a native file')
         from urllib.parse import urlparse, unquote

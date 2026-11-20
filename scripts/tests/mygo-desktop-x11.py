@@ -2154,7 +2154,8 @@ with open(sys.argv[1], 'r+') as document:
                 time.sleep(.05)
             pinned = '--pinned' in sys.argv[3:]
             if '--file-drag' in sys.argv[3:]:
-                runpy.run_path(str(Path(__file__).with_name('mygo-file-drag-x11.py')))['check'](desktop, globals())
+                runpy.run_path(str(Path(__file__).with_name('mygo-file-drag-x11.py')))['check'](
+                    desktop, globals(), native_main='--native-main' in sys.argv[3:])
             elif '--screenshots' in sys.argv[3:]:
                 runpy.run_path(str(Path(__file__).with_name('mygo-screenshot-x11.py')))['check'](
                     desktop, globals(), native_main='--native-main' in sys.argv[3:])
