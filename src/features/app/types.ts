@@ -1,3 +1,4 @@
+import type { EmojiTab } from "@deziro/ui-react/components/EmojiPicker";
 import type { Dispatch, SetStateAction } from "react";
 import type { ClipboardEntry, Locale } from "../../shared/types";
 
@@ -109,8 +110,8 @@ export interface AppState {
   setFontMono: StateSetter<string>;
   emojiPanelEnabled: boolean;
   setEmojiPanelEnabled: StateSetter<boolean>;
-  emojiPanelTab: "emoji" | "favorites";
-  setEmojiPanelTab: StateSetter<"emoji" | "favorites">;
+  emojiPanelTab: EmojiTab;
+  setEmojiPanelTab: StateSetter<EmojiTab>;
   language: Locale;
   setLanguage: StateSetter<Locale>;
   settingsLoaded: boolean;

@@ -27,6 +27,8 @@ type WidgetStyle struct {
 	ColumnGap     float32
 	RowGap        float32
 	Top           float32
+	Left          float32
+	Caption       string
 	Margin        [4]float32
 	Fill          [4]uint8
 	Text          [4]uint8

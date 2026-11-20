@@ -12,6 +12,21 @@
   gap: 6px;
 }
 
+.emoji-search {
+  position: relative;
+  flex: none;
+}
+
+.emoji-search .search-icon {
+  pointer-events: none;
+}
+
+.emoji-more {
+  align-self: center;
+  flex: none;
+  width: auto;
+}
+
 .emoji-tab{
   flex: 1;
   justify-content: center;

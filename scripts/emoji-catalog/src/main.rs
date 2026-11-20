@@ -1,0 +1,187 @@
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::BTreeMap,
+    env,
+    fs::File,
+    io::{BufWriter, Write},
+    path::Path,
+};
+use unicode_general_category::{get_general_category, GeneralCategory};
+
+#[derive(Deserialize)]
+struct AnnotationsFile {
+    annotations: AnnotationMap,
+}
+
+#[derive(Deserialize)]
+struct AnnotationMap {
+    annotations: BTreeMap<String, Annotation>,
+}
+
+#[derive(Deserialize)]
+struct Annotation {
+    default: Vec<String>,
+    tts: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct Entry {
+    value: String,
+    name: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    keywords: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct Group {
+    id: &'static str,
+    entries: Vec<Entry>,
+}
+
+#[derive(Serialize)]
+struct Catalog {
+    emoji: Vec<Group>,
+    symbols: Vec<Group>,
+}
+
+fn load_annotations(
+    path: &Path,
+) -> Result<BTreeMap<String, Annotation>, Box<dyn std::error::Error>> {
+    let input: AnnotationsFile = serde_json::from_reader(File::open(path)?)?;
+    Ok(input.annotations.annotations)
+}
+
+fn add_annotations(entry: &mut Entry, locales: &[BTreeMap<String, Annotation>]) {
+    let unqualified = entry.value.replace('\u{fe0f}', "");
+    for locale in locales {
+        if let Some(annotation) = locale
+            .get(&entry.value)
+            .or_else(|| locale.get(&unqualified))
+        {
+            for keyword in annotation.tts.iter().chain(&annotation.default) {
+                if keyword != &entry.name && !entry.keywords.contains(keyword) {
+                    entry.keywords.push(keyword.clone());
+                }
+            }
+        }
+    }
+}
+
+fn emoji_groups(locales: &[BTreeMap<String, Annotation>]) -> Vec<Group> {
+    use emojis::Group::*;
+    let groups = [
+        ("expressions", SmileysAndEmotion),
+        ("people", PeopleAndBody),
+        ("animals", AnimalsAndNature),
+        ("food", FoodAndDrink),
+        ("travel", TravelAndPlaces),
+        ("activities", Activities),
+        ("objects", Objects),
+        ("emojiSymbols", Symbols),
+        ("flags", Flags),
+    ];
+    groups
+        .into_iter()
+        .map(|(id, group)| {
+            let entries = group
+                .emojis()
+                .map(|emoji| {
+                    let mut entry = Entry {
+                        value: emoji.as_str().to_owned(),
+                        name: emoji.name().to_owned(),
+                        keywords: emoji.shortcodes().map(str::to_owned).collect(),
+                    };
+                    add_annotations(&mut entry, locales);
+                    entry
+                })
+                .collect();
+            Group { id, entries }
+        })
+        .collect()
+}
+
+fn symbol_group(character: char) -> Option<usize> {
+    use GeneralCategory::*;
+    let point = character as u32;
+    if (0x2190..=0x21ff).contains(&point)
+        || (0x27f0..=0x27ff).contains(&point)
+        || (0x2900..=0x297f).contains(&point)
+        || (0x1f800..=0x1f8ff).contains(&point)
+    {
+        return Some(0);
+    }
+    if (0x2500..=0x259f).contains(&point) {
+        return Some(2);
+    }
+    match get_general_category(character) {
+        MathSymbol => Some(1),
+        CurrencySymbol => Some(3),
+        OtherSymbol | ModifierSymbol => Some(4),
+        DashPunctuation | OpenPunctuation | ClosePunctuation | InitialPunctuation
+        | FinalPunctuation | OtherPunctuation
+            if character.is_ascii()
+                || (0x2000..=0x206f).contains(&point)
+                || (0x3000..=0x303f).contains(&point) =>
+        {
+            Some(5)
+        }
+        _ => None,
+    }
+}
+
+fn symbol_groups(locales: &[BTreeMap<String, Annotation>]) -> Vec<Group> {
+    let mut groups: Vec<_> = [
+        "arrows",
+        "math",
+        "boxDrawing",
+        "currency",
+        "otherSymbols",
+        "punctuation",
+    ]
+    .into_iter()
+    .map(|id| Group {
+        id,
+        entries: Vec::new(),
+    })
+    .collect();
+    for character in (0..=0x10ffff).filter_map(char::from_u32) {
+        let Some(group) = symbol_group(character) else {
+            continue;
+        };
+        let Some(name) = unicode_names2::name(character) else {
+            continue;
+        };
+        let value = character.to_string();
+        if emojis::get(&value).is_some_and(|emoji| emoji.as_str() == value) {
+            continue;
+        }
+        let mut entry = Entry {
+            value,
+            name: name.to_string(),
+            keywords: Vec::new(),
+        };
+        add_annotations(&mut entry, locales);
+        groups[group].entries.push(entry);
+    }
+    groups
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<_> = env::args_os().skip(1).collect();
+    if args.len() != 3 {
+        return Err("usage: dezirclip-emoji-catalog <zh annotations.json> <zh-Hant annotations.json> <output.json>".into());
+    }
+    let locales = [
+        load_annotations(Path::new(&args[0]))?,
+        load_annotations(Path::new(&args[1]))?,
+    ];
+    let catalog = Catalog {
+        emoji: emoji_groups(&locales),
+        symbols: symbol_groups(&locales),
+    };
+    let mut output = BufWriter::new(File::create(&args[2])?);
+    serde_json::to_writer(&mut output, &catalog)?;
+    output.write_all(b"\n")?;
+    output.flush()?;
+    Ok(())
+}

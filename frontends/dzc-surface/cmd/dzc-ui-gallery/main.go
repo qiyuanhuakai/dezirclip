@@ -89,8 +89,8 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 		})
 	case "hotkey-binding":
 		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "Quick Paste").Grow(1)
-			kit.HotkeyBinding(c, "Quick Paste", "Ctrl+Shift+V", "Set shortcut", g.state == "recording", false)
+			kit.SettingsLabel(c, "Quick Paste").Grow(1)
+			kit.HotkeyBinding(c, "Quick Paste", "Ctrl+Shift+V", "Press a shortcut", g.state == "recording", false)
 		})
 	case "scroll-to-top":
 		ui.Column(c).FillWidth().Height(120).Children(func() {
@@ -102,7 +102,22 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 	case "emoji-tabs":
 		kit.EmojiTabs(c, "Emoji", "Favorites", g.emojiFavorites, false, func(favorites bool) { g.emojiFavorites = favorites })
 	case "emoji-grid":
-		kit.EmojiGrid(c, "Frequently used", []string{"😀", "😄", "😂", "🤣", "😊", "😍", "😘", "😎", "🤔", "🔥", "✨", "👌"}, false, nil)
+		width, _ := c.Size()
+		padding := presets.Select(g.theme, g.mode).ShowcasePadding()
+		kit.CharacterContent(c, width-padding[1]-padding[3], func(contentWidth float32) {
+			kit.CharacterGrid(c, "Frequently used", []uikit.CharacterChoice{
+				{Value: "😀"}, {Value: "😄"}, {Value: "😂"}, {Value: "🤣"}, {Value: "😊"}, {Value: "😍"},
+				{Value: "😘"}, {Value: "😎"}, {Value: "🤔"}, {Value: "🔥"}, {Value: "✨"}, {Value: "👌"},
+			}, contentWidth, false, nil)
+		})
+	case "clipboard-search":
+		kit.ClipboardSearch(c, uikit.HeaderOptions{
+			Query: &g.query, Placeholder: "搜索剪切板...", Filter: &g.filter,
+			Filters: []uikit.HeaderFilter{
+				{ID: "text", Label: "文本"}, {ID: "image", Label: "图片"}, {ID: "file", Label: "文件"}, {ID: "url", Label: "URL"},
+				{ID: "code", Label: "代码"}, {ID: "video", Label: "视频"}, {ID: "rich_text", Label: "富文本"},
+			},
+		})
 	case "app-header":
 		pinned := g.state == "pinned"
 		pin := uikit.HeaderAction{Icon: "pin", Label: "Pin", Active: pinned, Run: func() {
@@ -191,6 +206,15 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 }
 
 func (g *gallery) prepare(tester *ui.Tester) error {
+	if g.fixture == "clipboard-search" && g.state == "selected" {
+		if err := tester.Click("图片"); err != nil {
+			return err
+		}
+		if g.filter != "image" {
+			return fmt.Errorf("image filter did not become selected")
+		}
+		return nil
+	}
 	switch g.state {
 	case "southeast", "scrolled":
 		bounds, ok := tester.Find("Input target")

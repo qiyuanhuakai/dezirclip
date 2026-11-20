@@ -17,6 +17,26 @@ const samples = [
     settingsFooterCard: [".settings-footer-card", ".settings-footer-card-label"],
     settingsFooterVersion: [".settings-footer-version"], settingsFooterLink: [".settings-footer-link"],
   }],
+  ["settings-toggle", "default", {
+    settingsLabel: [".setting-item .item-label"], settingsToggleRow: [".setting-item"],
+    settingsSwitch: [".switch"], settingsSwitchTrack: [".toggle"], settingsSwitchThumb: [".toggle", null, "::before"],
+    settingsSwitchLeft: [".toggle > .left"], settingsSwitchRight: [".toggle > .right"],
+  }],
+  ["settings-toggle", "enabled", {
+    settingsSwitchTrackOn: [".toggle"], settingsSwitchThumbOn: [".toggle", null, "::before"],
+    settingsSwitchLeftOn: [".toggle > .left"], settingsSwitchRightOn: [".toggle > .right"],
+  }],
+  ["hotkey-binding", "default", {
+    hotkeyGroup: [".key-group"], hotkeyCap: [".key-cap"],
+  }],
+  ["hotkey-binding", "recording", { hotkeyCapRecording: [".key-cap"] }],
+  ["emoji-tabs", "default", {
+    emojiTab: [".emoji-tab:not(.active)"], emojiTabActive: [".emoji-tab.active"], emojiTabs: [".emoji-tabs"],
+  }],
+  ["emoji-grid", "default", {
+    emojiContent: [".emoji-content"], emojiGroup: [".emoji-group"], emojiGroupTitle: [".emoji-group-title"],
+    emojiTile: [".emoji-btn"], emojiGrid: [".emoji-grid"],
+  }],
   ["history-card", "default", {
     historyCard: [".history-item"], historyMeta: [".item-meta"], historySource: [".item-meta-left .app-info"],
     historyTime: [".item-meta .app-info:last-child span"], historyContent: [".history-item .content-preview"],
@@ -25,10 +45,16 @@ const samples = [
   ["history-card", "selected", { historyCardSelected: [".history-item.selected"] }],
   ["app-header", "default", {
     header: ["header"], headerTop: [".header-top"], headerTitle: [".header-title"],
-    headerButton: [".header-top .btn-icon"], headerInput: [".search-input"],
-    headerSearch: [".search-container"], headerFilters: [".search-container .hide-scrollbar"],
-    headerFilter: [".search-container .hide-scrollbar .btn-icon"],
+    headerButton: [".header-top .btn-icon"],
   }],
+  ["clipboard-search", "default", {
+    headerInput: [".search-container .search-input"],
+    headerInputPlaceholder: [".search-container .search-input", null, "::placeholder"],
+    headerInputIcon: [".search-container .search-icon"],
+    headerSearch: [".search-container"], headerFilters: [".clipboard-search-types"],
+    headerFilter: [".clipboard-search-types .btn-icon"],
+  }],
+  ["clipboard-search", "selected", { headerFilterSelected: [".clipboard-search-types .btn-icon.active"] }],
   ["app-header", "pinned", { headerButtonActive: [".header-top .btn-icon.active"] }],
   ["select", "default", {
     select: [".dezirclip-select__control", ".dezirclip-select__single-value"],
@@ -129,8 +155,13 @@ function readStyles(selectors) {
     const columnGap = number(style.columnGap);
     const rowGap = number(style.rowGap);
     const top = number(style.top);
+    const left = number(style.left);
+    const translateX = pseudo && style.transform !== "none" ? new DOMMatrixReadOnly(style.transform).m41 : 0;
     const marginBottom = number(style.marginBottom);
     const bounds = element.getBoundingClientRect();
+    const switchFace = /^settingsSwitch(Left|Right)/.test(id);
+    const switchBounds = switchFace ? element.parentElement.getBoundingClientRect() : null;
+    const content = switchFace ? getComputedStyle(element, "::before").content : "";
     return [id, {
       fill: color(style.backgroundColor, tint), text: color(text.color), border: color(style["border" + borderSide + "Color"]),
       borderWidth: borderWidths[0], radius: number(style.borderTopLeftRadius),
@@ -143,11 +174,16 @@ function readStyles(selectors) {
       ...(lineHeight ? { lineHeight: Math.round(lineHeight * 1000) / 1000 } : {}),
       ...(columnGap ? { columnGap } : {}),
       ...(rowGap ? { rowGap } : {}),
-      ...(top ? { top } : {}),
+      ...(switchFace ? { top: number(bounds.top - switchBounds.top), left: number(bounds.left - switchBounds.left) } : top ? { top } : {}),
+      ...(id.startsWith("settingsSwitchThumb") ? { left: number(left + translateX) } : {}),
+      ...(id === "headerInputIcon" ? { left } : {}),
+      ...(content.startsWith('"') ? { caption: JSON.parse(content) } : {}),
       ...(marginBottom ? { marginBottom } : {}),
-      ...(id.startsWith("historyCard")
+      ...(id.startsWith("historyCard") || id.startsWith("hotkey")
         ? { margin: sides.map(side => number(style["margin" + side])) } : {}),
-      width: element.offsetWidth ?? bounds.width, height: element.offsetHeight ?? bounds.height, marginTop: number(style.marginTop),
+      width: switchFace ? number(bounds.width) : pseudo && pseudo !== "::backdrop" ? number(style.width) : element.offsetWidth ?? bounds.width,
+      height: switchFace ? number(bounds.height) : pseudo && pseudo !== "::backdrop" ? number(style.height) : element.offsetHeight ?? bounds.height,
+      marginTop: number(style.marginTop),
       padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft].map(number),
       font: text.fontFamily.split(",").map(family => family.trim().replace(/^['"]|['"]$/g, "")).join(", "),
       size: fontSize, weight: number(text.fontWeight), uppercase: text.textTransform === "uppercase",
@@ -169,6 +205,10 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
       await page.waitForFunction(() => getComputedStyle(document.querySelector(".toast-item")).opacity === "1");
     }
     await page.addStyleTag({ content: "*, *::before, *::after { transition: none !important; animation: none !important; }" });
+    if (fixture === "clipboard-search" && state === "selected") {
+      await page.getByRole("button", { name: "图片" }).click();
+      await page.mouse.move(450, 390);
+    }
     if (fixture === "select" && state !== "default" && state !== "disabled") {
       const input = page.getByRole("combobox", { name: "Color mode" });
       if (state === "hover") await input.hover();

@@ -108,9 +108,9 @@ func TestNativeCompactChromeAndEmojiGrid(t *testing.T) {
 	n.showEmoji = true
 	for _, width := range []int{360, 780} {
 		view.SetSize(width, 420)
-		emoji := emojiCatalog[0].Emojis
-		first, ok := view.Find(emoji[0])
-		second, ok2 := view.Find(emoji[1])
+		emoji := emojiCatalog().Emoji[0].Entries
+		first, ok := view.Find(emoji[0].Value)
+		second, ok2 := view.Find(emoji[1].Value)
 		if !ok || !ok2 || first.X > 18 || second.X <= first.X || second.Y != first.Y || second.X+second.W >= float32(width) {
 			t.Fatalf("emoji grid is offset or overflowing at width %d: %+v %+v", width, first, second)
 		}

@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
-import { AppHeader, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardMeta, HotkeyBinding, MatchHighlight,
+import { AppHeader, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardMeta, HotkeyBinding, MatchHighlight,
   ProgressToast, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail,
   SettingsSlider, SettingsToggle, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
@@ -26,6 +26,24 @@ const theme = isBuiltinTheme(requested) ? requested : "mica";
 const mode = params.get("mode") === "dark" ? "dark" : "light";
 const fixture = params.get("fixture") ?? "gallery";
 const state = params.get("state") ?? "default";
+
+const clipboardTypes = [
+  { id: "text", label: "文本" }, { id: "image", label: "图片" }, { id: "file", label: "文件" },
+  { id: "url", label: "URL" }, { id: "code", label: "代码" }, { id: "video", label: "视频" }, { id: "rich_text", label: "富文本" },
+];
+
+function ClipboardSearchFixture() {
+  const [search, setSearch] = useState("");
+  const [isComposing, setIsComposing] = useState(false);
+  const [showTagFilter, setShowTagFilter] = useState(false);
+  const [searchIsFocused, setSearchIsFocused] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  return <ClipboardSearch t={() => "搜索剪切板..."} search={search} setSearch={setSearch} contentTypes={clipboardTypes}
+    isComposing={isComposing} setIsComposing={setIsComposing} showTagFilter={showTagFilter} setShowTagFilter={setShowTagFilter}
+    searchIsFocused={searchIsFocused} setSearchIsFocused={setSearchIsFocused} searchInputRef={searchInputRef}
+    setEditingTagsId={() => undefined} typeFilter={typeFilter} setTypeFilter={setTypeFilter} />;
+}
 
 function HeaderFixture() {
   const [settings, setSettings] = useState(state === "settings");
@@ -125,6 +143,7 @@ function Showcase() {
     "emoji-grid": <EmojiGrid groups={[{ name: "Frequently used", emojis: ["😀", "😄", "😂", "🤣", "😊", "😍", "😘", "😎", "🤔", "🔥", "✨", "👌"] }]}
       empty="No emoji" onSelect={() => undefined} />,
     "app-header": <HeaderFixture />,
+    "clipboard-search": <ClipboardSearchFixture />,
     "history-card": <HistoryCard selected={state === "selected"} pinned={state === "pinned"} disableLayout>
       <HistoryCardMeta source="Editor" time="12:30"
         sourceIcon={state === "pinned" ? <Pin size={10} /> : undefined}

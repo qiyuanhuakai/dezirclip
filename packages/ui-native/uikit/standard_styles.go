@@ -28,6 +28,45 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.BorderWidth, style.Radius = 1, float32(palette.Radius)
 	}
 	switch widget {
+	case "settingsToggleRow":
+		style.Height, style.Padding = 34, [4]float32{6, 0, 6, 0}
+	case "settingsSwitch":
+		style.Width, style.Height = 44, 22
+	case "settingsSwitchTrack", "settingsSwitchTrackOn":
+		style.Radius, style.Fill = 11, rgba(ui.Hex(palette.Muted).Alpha(.34))
+		if widget == "settingsSwitchTrackOn" {
+			style.Fill = accent
+		}
+	case "settingsSwitchThumb", "settingsSwitchThumbOn":
+		style.Width, style.Height, style.Radius = 16, 16, 8
+		style.Top, style.Left, style.Fill = 3, 3, [4]uint8{255, 255, 255, 255}
+		if widget == "settingsSwitchThumbOn" {
+			style.Left = 25
+		}
+	case "hotkeyCap", "hotkeyCapRecording":
+		surface()
+		style.Height, style.Radius, style.Size, style.Weight = 22, 4, 11, 600
+		style.Padding, style.Uppercase = [4]float32{0, 6, 0, 6}, true
+		if widget == "hotkeyCapRecording" {
+			style.Border = accent
+		}
+	case "hotkeyGroup", "emojiTabs", "emojiGrid", "emojiGroup":
+		style.ColumnGap, style.RowGap = 6, 6
+	case "emojiContent":
+		style.Padding = [4]float32{4, 4, 4, 4}
+		style.RowGap = 12
+	case "emojiTab", "emojiTabActive":
+		surface()
+		style.Height, style.Size, style.Weight, style.LetterSpacing, style.Uppercase = 30, 11, 800, .8, true
+		if widget == "emojiTabActive" {
+			style.Fill, style.Border, style.Text = accent, accent, [4]uint8{255, 255, 255, 255}
+		}
+	case "emojiGroupTitle":
+		style.Size, style.Weight, style.LetterSpacing, style.Uppercase = 10, 800, 1, true
+		style.Border, style.BorderWidths = border, &[4]float32{0, 0, 2, 0}
+		style.Padding[2] = 4
+	case "emojiTile":
+		style.Height, style.Size, style.Radius = 32, 18, float32(palette.Radius)
 	case "select", "selectHover", "selectFocus", "selectDisabled":
 		surface()
 		style.Width, style.Height = 224, 36
@@ -77,6 +116,10 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 	case "headerInput", "searchInput":
 		surface()
 		style.Height, style.Padding = 38, [4]float32{0, 32, 0, 32}
+	case "headerInputPlaceholder":
+		style.Text = muted
+	case "headerInputIcon":
+		style.Width, style.Height, style.Left = 14, 14, 12
 	case "searchModes":
 		surface()
 		style.Width, style.Height, style.Padding = 190, 38, [4]float32{2, 2, 2, 2}
@@ -91,11 +134,11 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 	case "searchSpinner":
 		style.Width, style.Height, style.Radius = 18, 18, 9
 		style.Border, style.BorderWidth = border, 2
-	case "filter", "filterSelected", "filterAction", "headerFilter", "searchMode", "searchModeSelected",
+	case "filter", "filterSelected", "filterAction", "headerFilter", "headerFilterSelected", "searchMode", "searchModeSelected",
 		"confirmPrimary", "confirmCancel", "settingsRailItem", "settingsRailActive", "settingsFooterCard":
 		surface()
 		style.Height, style.Padding = 32, [4]float32{0, 10, 0, 10}
-		if widget == "filterSelected" || widget == "searchModeSelected" || widget == "settingsRailActive" {
+		if widget == "filterSelected" || widget == "headerFilterSelected" || widget == "searchModeSelected" || widget == "settingsRailActive" {
 			style.Fill, style.Border = selected, accent
 		}
 		if widget == "confirmPrimary" {

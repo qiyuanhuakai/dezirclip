@@ -10,6 +10,7 @@ export { SearchHistory, type SearchHistoryProps } from "./components/SearchHisto
 export { TagDialog, type TagDialogProps } from "./components/TagDialog";
 export { default as ToastContainer, type ToastItem } from "./components/ToastContainer";
 export { default as AppHeader, type AppHeaderProps, type HeaderTagFilter } from "./components/AppHeader";
+export { ClipboardSearch, type ClipboardSearchProps } from "./components/ClipboardSearch";
 export { WheelHotZone } from "./components/WheelHotZone";
 export { PreviewResizeHandles, PreviewToolbar, type PreviewResizeDirection, type PreviewToolbarProps, type PreviewZoom } from "./components/PreviewToolbar";
 export { default as SettingsRail, type SettingsRailProps } from "./components/SettingsRail";
@@ -18,7 +19,7 @@ export { AttachmentPreview } from "./components/AttachmentPreview";
 export { PreviewImage, type PreviewImageProps } from "./components/PreviewImage";
 export { VirtualClipboardList, type VirtualClipboardListHandle, type VirtualClipboardListProps } from "./components/VirtualClipboardList";
 export { HistoryCard, HistoryCardMeta, type HistoryCardProps, type HistoryCardMetaProps } from "./components/HistoryCard";
-export { EmojiGrid, EmojiTabs, type EmojiTab } from "./components/EmojiPicker";
+export { CharacterSearch, EmojiGrid, EmojiTabs, type EmojiTab } from "./components/EmojiPicker";
 export { SettingsToggle, type SettingsToggleProps } from "./components/SettingsToggle";
 export { SettingsSlider, type SettingsSliderProps } from "./components/SettingsSlider";
 export { ScrollToTopButton } from "./components/ScrollToTopButton";

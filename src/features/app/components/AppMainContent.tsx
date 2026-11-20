@@ -1,3 +1,4 @@
+import type { EmojiTab } from "@deziro/ui-react/components/EmojiPicker";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentProps, RefObject, ReactNode } from "react";
 import { Reorder, useDragControls } from "framer-motion";
@@ -39,8 +40,8 @@ interface AppMainContentProps {
   settingsPanelProps: SettingsPanelProps;
   emojiFavorites: string[];
   setEmojiFavorites: (val: string[] | ((prev: string[]) => string[])) => void;
-  emojiPanelTab: "emoji" | "favorites";
-  setEmojiPanelTab: (val: "emoji" | "favorites") => void;
+  emojiPanelTab: EmojiTab;
+  setEmojiPanelTab: (val: EmojiTab) => void;
   saveSetting: (key: string, val: string) => void;
   filteredHistory: ClipboardEntry[];
   search: string;

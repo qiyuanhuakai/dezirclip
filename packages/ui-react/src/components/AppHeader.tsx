@@ -1,11 +1,12 @@
-import { startTransition, Suspense, useEffect, useId, useRef } from "react";
-import type { KeyboardEvent, ReactNode, RefObject } from "react";
+import { startTransition, useEffect, useRef } from "react";
+import { ClipboardSearch, type ClipboardSearchProps } from "./ClipboardSearch";
+
+export type { HeaderTagFilter, TagFilterHandle } from "./ClipboardSearch";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronLeft,
   Pin,
   PinOff,
-  Search,
   Settings as SettingsIcon,
   Smile,
   Tag,
@@ -14,31 +15,13 @@ import {
 } from "lucide-react";
 
 
-export interface TagFilterHandle {
-  handleInputKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
-}
-
-export interface HeaderTagFilter {
-  ref: RefObject<TagFilterHandle | null>;
-  id: string;
-  query: string;
-  isComposing: boolean;
-  inputRef: RefObject<HTMLInputElement | null>;
-  onClose: () => void;
-  onSelect: (tag: string) => void;
-}
-
-export interface AppHeaderProps {
+export interface AppHeaderProps extends ClipboardSearchProps {
   desktopInteractions: boolean;
   pending: boolean;
   failed: boolean;
   onPinChange: (pinned: boolean) => void;
   onHide: () => void;
-  onActivate?: () => void;
   dragAttributes?: Record<string, string | boolean>;
-  renderTagFilter?: (props: HeaderTagFilter) => ReactNode;
-  contentTypes: readonly { id: string; label: string }[];
-  t: (key: string) => string;
   showSettings: boolean;
   setShowSettings: (val: boolean) => void;
   showTagManager: boolean;
@@ -50,18 +33,6 @@ export interface AppHeaderProps {
   isWindowPinned: boolean;
   clearHistory: () => void;
   showSearchBox: boolean;
-  search: string;
-  setSearch: (val: string) => void;
-  isComposing: boolean;
-  setIsComposing: (val: boolean) => void;
-  searchInputRef: RefObject<HTMLInputElement | null>;
-  showTagFilter: boolean;
-  setShowTagFilter: (val: boolean) => void;
-  searchIsFocused: boolean;
-  setSearchIsFocused: (val: boolean) => void;
-  setEditingTagsId: (val: number | null) => void;
-  typeFilter: string | null;
-  setTypeFilter: (val: string | null) => void;
 }
 
 const AppHeader = ({
@@ -108,11 +79,6 @@ const AppHeader = ({
     if (!panelOnTop) visibleBeforePanel.current = searchBoxVisible;
   }, [searchBoxVisible, panelOnTop]);
   const revealSearchBox = searchBoxVisible && !visibleBeforePanel.current;
-  const tagFilter = useRef<TagFilterHandle>(null);
-  const tagFilterId = useId();
-  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tagFilterVisible = showTagFilter && searchIsFocused;
-  useEffect(() => () => { if (blurTimer.current !== null) clearTimeout(blurTimer.current); }, []);
 
   return (
   <header {...dragAttributes}>
@@ -200,107 +166,11 @@ const AppHeader = ({
             transition={{ duration: 0.2, ease: "circOut" }}
             style={{ flexShrink: 0 }}
           >
-            <div className="search-container">
-              <div style={{ position: 'relative' }}>
-                <Search size={14} className="search-icon" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  className={`search-input ${tagFilterVisible ? 'dropdown-open' : ''}`}
-                  placeholder={t('search_placeholder')}
-                  aria-label={t('search_placeholder')}
-                  value={search}
-                  role="combobox"
-                  aria-autocomplete="list"
-                  aria-expanded={tagFilterVisible}
-                  aria-controls={tagFilterVisible ? tagFilterId : undefined}
-                  onKeyDown={event => {
-                    if (tagFilter.current) tagFilter.current.handleInputKeyDown(event);
-                    else if (!event.nativeEvent.isComposing && tagFilterVisible && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(event.key)) {
-                      event.preventDefault(); event.stopPropagation();
-                      if (event.key === 'Escape') setShowTagFilter(false);
-                    }
-                  }}
-                  onCompositionStart={() => setIsComposing(true)}
-                  onCompositionEnd={(e) => {
-                    setIsComposing(false);
-                    setSearch((e.target as HTMLInputElement).value);
-                  }}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                  }}
-                  onMouseDown={onActivate}
-                  onClick={() => { setShowTagFilter(true); setEditingTagsId(null); }}
-                  onFocus={() => {
-                    if (blurTimer.current !== null) clearTimeout(blurTimer.current);
-                    onActivate?.();
-                    setShowTagFilter(true);
-                    setSearchIsFocused(true);
-                    setEditingTagsId(null);
-                  }}
-                  onBlur={() => {
-                    setIsComposing(false);
-                    blurTimer.current = setTimeout(() => {
-                      blurTimer.current = null;
-                      if (document.activeElement?.closest('.dc-tag-filter-picker')) return;
-                      setShowTagFilter(false);
-                      setSearchIsFocused(false);
-                    }, 200);
-                  }}
-                  style={{ color: 'var(--search-input-text, var(--text-primary))' }}
-                />
-                {tagFilterVisible && (
-                  <Suspense fallback={<div className="dc-tag-filter-picker" id={tagFilterId} role="listbox" aria-label={t('tags')}><div className="dc-tag-filter-empty">{t('common_loading')}</div></div>}>
-                    {renderTagFilter?.({
-                      ref: tagFilter, id: tagFilterId, query: search, isComposing, inputRef: searchInputRef,
-                      onClose: () => {
-                        setShowTagFilter(false);
-                        if (document.activeElement !== searchInputRef.current) setSearchIsFocused(false);
-                      },
-                      onSelect: tag => { setSearch("tag:" + tag); setShowTagFilter(false); },
-                    })}
-                  </Suspense>
-                )}
-              </div>
-              <div
-                className="hide-scrollbar"
-                style={{
-                  display: 'flex',
-                  gap: '6px',
-                  padding: '8px 0 4px 0',
-                  overflowX: 'auto',
-                  overflowY: 'visible',
-                  scrollbarWidth: 'none',
-                  msOverflowStyle: 'none'
-                }}
-                onWheel={(e) => {
-                  if (e.deltaY !== 0) {
-                    e.currentTarget.scrollLeft += e.deltaY;
-                  }
-                }}
-              >
-                {contentTypes.map(({ id: type, label }) => (
-                  <button
-                    key={type}
-                    className={`btn-icon ${typeFilter === type ? 'active' : ''}`}
-                    onClick={() => setTypeFilter(typeFilter === type ? null : type)}
-                    style={{
-                      width: 'auto',
-                      padding: '4px 8px',
-                      fontSize: '11px',
-                      borderRadius: 'var(--icon-btn-radius, 4px)',
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0,
-                      opacity: typeFilter === type ? 1 : 0.7
-                    }}
-                    title={label}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-            </div>
+            <ClipboardSearch t={t} onActivate={onActivate} renderTagFilter={renderTagFilter} contentTypes={contentTypes}
+              search={search} setSearch={setSearch} isComposing={isComposing} setIsComposing={setIsComposing}
+              searchInputRef={searchInputRef} showTagFilter={showTagFilter} setShowTagFilter={setShowTagFilter}
+              searchIsFocused={searchIsFocused} setSearchIsFocused={setSearchIsFocused} setEditingTagsId={setEditingTagsId}
+              typeFilter={typeFilter} setTypeFilter={setTypeFilter} />
           </motion.div>
         )}
       </AnimatePresence>

@@ -1,3 +1,4 @@
+import type { EmojiTab } from "@deziro/ui-react/components/EmojiPicker";
 import { useCallback, useState, type SetStateAction } from "react";
 import { updateRecordingTarget, type RecordingTarget } from "../../../shared/lib/recordingTarget";
 import type { ClipboardEntry, Locale } from "../../../shared/types";
@@ -77,7 +78,7 @@ export const useAppState = (): AppState => {
   const [fontMain, setFontMain] = useState<string>("");
   const [fontMono, setFontMono] = useState<string>("");
   const [emojiPanelEnabled, setEmojiPanelEnabled] = useState(false);
-  const [emojiPanelTab, setEmojiPanelTab] = useState<"emoji" | "favorites">("emoji");
+  const [emojiPanelTab, setEmojiPanelTab] = useState<EmojiTab>("emoji");
   const [language, setLanguage] = useState<Locale>("zh");
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [isWindowPinned, setIsWindowPinned] = useState(false);

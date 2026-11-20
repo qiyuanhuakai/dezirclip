@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { EmojiGrid, EmojiTabs } from "@deziro/ui-react/components/EmojiPicker";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CharacterSearch, EmojiGrid, EmojiTabs, type EmojiTab } from "@deziro/ui-react/components/EmojiPicker";
 import type { DragEvent } from "react";
 import { invoke } from "../../../shared/lib/desktopInvoke";
 import { copyHistorySelection } from "../../../shared/lib/copyHistorySelection";
@@ -7,18 +7,16 @@ import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Plus, X } from "lucide-react";
 import { schedulePreview } from "../../../shared/lib/previewQueue";
-import emojiData from "../../../../frontends/dzc-surface/cmd/dzc-desktop/emoji-data.json";
+import { characterPageSize, searchCharacters } from "../characterCatalog";
 
 interface EmojiPanelProps {
   t: (key: string) => string;
   favorites: string[];
   setFavorites: (val: string[] | ((prev: string[]) => string[])) => void;
-  activeTab: "emoji" | "favorites";
-  setActiveTab: (val: "emoji" | "favorites") => void;
+  activeTab: EmojiTab;
+  setActiveTab: (val: EmojiTab) => void;
   saveSetting: (key: string, val: string) => void;
 }
-
-const emojiGroups = emojiData.groups;
 
 function FavoriteImage({ path, name }: { path: string; name: string }) {
   const image = useRef<HTMLImageElement>(null);
@@ -156,6 +154,17 @@ const dedupeFavoritePaths = (paths: string[]) =>
   );
 
 const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveSetting }: EmojiPanelProps) => {
+  const [query, setQuery] = useState("");
+  const [limit, setLimit] = useState(characterPageSize);
+  const matches = useMemo(() => activeTab === "favorites" ? [] : searchCharacters(activeTab, query), [activeTab, query]);
+  const count = matches.reduce((total, group) => total + group.entries.length, 0);
+  let remaining = limit;
+  const visibleGroups = matches.flatMap(group => {
+    if (remaining <= 0) return [];
+    const emojis = group.entries.slice(0, remaining);
+    remaining -= emojis.length;
+    return [{ name: t(`emoji_group_${group.id.toLowerCase()}`), emojis }];
+  });
   const [isDragging, setIsDragging] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const hasFavorites = favorites.length > 0;
@@ -300,7 +309,8 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
     }, t, "send_emoji");
   };
 
-  const handleTabChange = (tab: "emoji" | "favorites") => {
+  const handleTabChange = (tab: EmojiTab) => {
+    setLimit(characterPageSize);
     setActiveTab(tab);
     saveSetting("app.emoji_panel_tab", tab);
   };
@@ -465,10 +475,16 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
 
   return (
     <div className="emoji-panel">
-      <EmojiTabs active={activeTab} labels={{ emoji: t("emoji_tab") || "Emoji", favorites: t("emoji_favorites") || "收藏" }}
+      <EmojiTabs active={activeTab} labels={{ emoji: t("emoji_tab"), symbols: t("emoji_symbols_tab"), favorites: t("emoji_favorites") }}
         onChange={handleTabChange} />
-      {activeTab === "emoji" && <EmojiGrid groups={emojiGroups} empty={t("emoji_empty") || "暂无表情"}
-        onSelect={emoji => handleSend(emoji, "text")} />}
+      {activeTab !== "favorites" && <>
+        <CharacterSearch value={query} label={t("emoji_search")}
+          onChange={value => { setQuery(value); setLimit(characterPageSize); }} />
+        <EmojiGrid groups={visibleGroups} empty={t("emoji_search_empty")} key={`${activeTab}:${query}`}
+          onSelect={value => handleSend(value, "text")}
+          footer={count > limit && <button type="button" className="btn-icon emoji-more"
+            onClick={() => setLimit(amount => amount + characterPageSize)}>{t("emoji_more")}</button>} />
+      </>}
 
       {activeTab === "favorites" && (
         <div

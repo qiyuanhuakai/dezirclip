@@ -40,9 +40,10 @@ const cases = {
   "tag-dialog": { states: ["default", "busy"], text: "Create tag" },
 };
 const additionalExamples = {
+  "clipboard-search": { states: ["default", "selected"], text: "富文本" },
   "settings-toggle": { states: ["enabled", "default"], text: "Keep clipboard history" },
   "settings-slider": { states: ["default"], text: "Opacity 72%" },
-  "hotkey-binding": { states: ["default"], text: "Quick Paste" },
+  "hotkey-binding": { states: ["default", "recording"], text: "Quick Paste" },
   "scroll-to-top": { states: ["default"], text: "Clipboard history" },
   "emoji-tabs": { states: ["default", "favorites"], text: "Favorites" },
   "emoji-grid": { states: ["default"], text: "Frequently used" },
@@ -52,7 +53,9 @@ if (selectedTheme && !(selectedTheme in presets)) throw Error("Unknown theme " +
 for (const fixture of selectedFixtures ?? []) {
   if (!(fixture in available)) throw Error("Unknown component " + fixture);
 }
-const fixtures = selectedFixtures ? selectedFixtures.map(name => [name, available[name]]) : Object.entries(cases);
+const fixtures = selectedFixtures
+  ? selectedFixtures.map(name => [name, available[name]])
+  : Object.entries(flags.get("examples") === "all" ? available : cases);
 const server = await createServer({ root, configFile: false, server: { host: "127.0.0.1", port: 0, hmr: false, watch: null } });
 const output = await mkdtemp(join(tmpdir(), "deziro-ui-parity-"));
 const size = { width: 560, height: 420 };
@@ -130,6 +133,23 @@ try {
             errors.length = 0;
             await page.goto(url.href);
             await page.locator("main[data-fixture]").waitFor();
+            if (fixture === "clipboard-search") {
+              const search = page.locator("[data-clipboard-search]");
+              const field = search.getByRole("textbox", { name: "搜索剪切板..." });
+              const filters = await search.getByRole("button").allTextContents();
+              if (await field.count() !== 1 || filters.join(",") !== "文本,图片,文件,URL,代码,视频,富文本" ||
+                  await page.getByRole("radiogroup").count() !== 0) {
+                throw Error("Clipboard search must show one field and seven ordered content filters");
+              }
+              if (theme === "macos" && await field.evaluate(element => getComputedStyle(element).borderTopLeftRadius) !== "10px") {
+                throw Error("The macOS clipboard search must retain its rounded corners");
+              }
+              if (state === "selected") {
+                const image = search.getByRole("button", { name: "图片" });
+                await image.click();
+                if (await image.getAttribute("aria-pressed") !== "true") throw Error("Image filter did not become selected");
+              }
+            }
             await page.mouse.move(450, 390);
             const combo = page.getByRole("combobox", { name: "Color mode" });
             if (state === "hover") await combo.hover();

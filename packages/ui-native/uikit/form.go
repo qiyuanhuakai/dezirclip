@@ -9,52 +9,66 @@ import (
 
 // SettingsToggle preserves checkbox accessibility while drawing a switch.
 func (k Kit) SettingsToggle(c *ui.Context, on *bool, label string) ui.Element {
-	style, palette := k.style("select"), c.Theme()
-	row := ui.CheckboxBase(c, on).Label(label).FillWidth().MinHeight(34).Gap(10).AlignItems(ui.Center).FocusRing(true)
+	rowStyle := k.style("settingsToggleRow")
+	switchStyle := k.style("settingsSwitch")
+	suffix := ""
+	if *on {
+		suffix = "On"
+	}
+	trackStyle, thumbStyle := k.style("settingsSwitchTrack"+suffix), k.style("settingsSwitchThumb"+suffix)
+	row := paint(ui.CheckboxBase(c, on).Label(label).FillWidth().MinHeight(rowStyle.Height).
+		Gap(10).AlignItems(ui.Center).FocusRing(true), rowStyle)
 	row.Children(func() {
-		text(c, label, style).Grow(1).Wrap().PassThrough()
-		track := ui.Box(c).Size(44, 22).Shrink(0).PassThrough()
-		fill, offset := palette.TextMuted.Alpha(.34), float32(3)
-		if *on {
-			fill, offset = palette.Accent, 25
-		} else if row.Hovered() {
-			fill = palette.TextMuted.Alpha(.5)
-		}
-		duration := time.Duration(k.palette().TransitionMs) * time.Millisecond
-		if duration > 0 {
-			fill = track.AnimateColor("switch-track", fill, ui.Animation{Duration: duration})
-			offset = track.Animate("switch-position", offset, duration)
-		}
-		track.Radius(11).Background(fill).Children(func() {
-			ui.Box(c).Absolute().Left(offset).Top(3).Size(16, 16).Radius(8).
-				Background(palette.AccentText).PassThrough()
+		k.SettingsLabel(c, label).Grow(1).Wrap().PassThrough()
+		track := ui.Box(c).Size(switchStyle.Width, switchStyle.Height).Shrink(0).PassThrough()
+		paint(track, k.animatePaint(track, trackStyle)).Children(func() {
+			if thumbStyle.Width > 0 && thumbStyle.Height > 0 {
+				left := thumbStyle.Left
+				if duration := time.Duration(k.palette().TransitionMs) * time.Millisecond; duration > 0 {
+					left = track.Animate("switch-position", left, duration)
+				}
+				paint(ui.Box(c).Absolute().Left(left).Top(thumbStyle.Top).
+					Size(thumbStyle.Width, thumbStyle.Height).PassThrough(), thumbStyle)
+			}
+			for _, name := range []string{"settingsSwitchLeft", "settingsSwitchRight"} {
+				face := k.style(name + suffix)
+				if face.Width <= 0 || face.Height <= 0 {
+					continue
+				}
+				element := ui.Box(c).Absolute().Size(face.Width, face.Height).Left(face.Left).
+					Top(face.Top).Center().PassThrough()
+				paint(element, k.animatePaint(element, face)).Children(func() {
+					text(c, face.Caption, face).PassThrough()
+				})
+			}
 		})
 	})
 	return row
 }
 
+// SettingsLabel paints the visible label of a settings row.
+func (k Kit) SettingsLabel(c *ui.Context, label string) ui.Element {
+	return text(c, label, k.style("settingsLabel"))
+}
+
 func (k Kit) HotkeyBinding(c *ui.Context, label, value, placeholder string, recording, disabled bool) ui.Element {
-	style := k.style("select")
+	group := k.style("hotkeyGroup")
+	cap := k.style("hotkeyCap")
 	if recording {
-		style = k.style("selectFocus")
+		cap = k.style("hotkeyCapRecording")
+		value = ""
 	}
-	field := ui.ButtonBase(c).Label(label).Height(style.Height).Gap(6).AlignItems(ui.Center).FocusRing(true).Disabled(disabled)
-	if !recording {
-		style.Fill, style.Border, style.Outline, style.Shadows = [4]uint8{}, [4]uint8{}, nil, nil
-		style.BorderWidth, style.BorderWidths, style.Padding = 0, nil, [4]float32{}
-	}
-	paint(field, k.interactive(c, field, style, recording))
-	field.Children(func() {
-		if value == "" {
-			text(c, placeholder, style).PassThrough()
-			return
-		}
-		cap := k.style("select")
-		cap.Padding = [4]float32{0, 6, 0, 6}
-		cap.Radius, cap.CornerRadii, cap.Size, cap.Weight = 4, nil, 11, 600
-		for _, key := range strings.Split(value, "+") {
-			paint(ui.Box(c).Height(22).MinWidth(22).Center().PassThrough(), cap).
-				Children(func() { text(c, strings.ToUpper(key), cap).SingleLine().PassThrough() })
+	field := ui.ButtonBase(c).Label(label).Gap(group.ColumnGap).AlignItems(ui.Center).
+		FocusRing(true).Disabled(disabled)
+	paint(field, group).Margin(group.Margin[:]...).Children(func() {
+		for _, chord := range strings.Split(value, "+") {
+			width := cap.Size * 2.2
+			if chord == "" {
+				chord, width = placeholder, cap.Size*8
+			}
+			keycap := ui.Box(c).Height(cap.Height).MinWidth(width).Center().PassThrough()
+			paint(keycap, k.animatePaint(keycap, cap)).Margin(cap.Margin[:]...).
+				Children(func() { text(c, chord, cap).SingleLine().PassThrough() })
 		}
 	})
 	return field

@@ -1089,6 +1089,14 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Click-Control $main (Get-ControlPoint $root 'Close')
         $null = Get-ControlPoint $root $marker
         Write-Host 'Verified native history, Settings close, and collapsed Privacy'
+        Click-Control $main (Get-ControlPoint $root 'Emoji')
+        Click-Control $main (Get-ControlPoint $root 'Symbols')
+        Click-Control $main (Get-ControlPoint $root 'Search by character, name or U+ code')
+        [Windows.Forms.SendKeys]::SendWait('U{+}2A7D')
+        $null = Get-ControlPoint $root ([char]0x2a7d)
+        Click-Control $main (Get-ControlPoint $root 'Back')
+        $null = Get-ControlPoint $root $marker
+        Write-Host 'Verified Unicode code-point search in the native symbol picker'
         $beforeDrag = [MyGoInput+Rect]::new()
         if (![MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$beforeDrag)) { throw 'Cannot read native main bounds' }
         $dragX = $beforeDrag.left + 60
@@ -1546,7 +1554,10 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     }
     if ($Emoji) {
         Click-Control $main (Get-ControlPoint $root 'Stickers')
-        $marker = [char]::ConvertFromUtf32(0x1f600)
+        Click-Control $main (Get-ControlPoint $root 'Symbols')
+        Click-Control $main (Get-ControlPoint $root 'Search by character, name or U+ code')
+        [Windows.Forms.SendKeys]::SendWait('U{+}2A7D')
+        $marker = [string][char]0x2a7d
     }
     Click-Control $main (Get-ControlPoint $root $marker)
     $null = Wait-Until {
@@ -1557,9 +1568,9 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     if ($Emoji) {
         $afterPaste = & $cli service status --json | ConvertFrom-Json
         if ($LASTEXITCODE -or $afterPaste.state.service_instance_id -cne $startedService.state.service_instance_id -or !$afterPaste.capture_owner) {
-            throw 'Emoji paste did not preserve the original capture Service'
+            throw 'Symbol paste did not preserve the original capture Service'
         }
-        Write-Output 'Verified physical WebView2 emoji click pasted into the original editor using an already-running Service'
+        Write-Output 'Verified WebView2 symbol search and exact paste into the original editor using an already-running Service'
         return
     }
     if (!$LegacyCloseAfterPaste) {

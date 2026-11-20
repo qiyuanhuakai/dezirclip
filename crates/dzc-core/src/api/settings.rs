@@ -88,7 +88,7 @@ impl HistoryService {
             "app.idle_destroy_seconds" => value.bytes().all(|b| b.is_ascii_digit())
                 && value.parse::<u16>().is_ok_and(|seconds| (5..=3600).contains(&seconds)),
             "app.update_channel" => matches!(value, "stable" | "preview"),
-            "app.emoji_panel_tab" => matches!(value, "emoji" | "favorites"),
+            "app.emoji_panel_tab" => matches!(value, "emoji" | "symbols" | "favorites"),
             "app.language" => matches!(value, "zh" | "tw" | "en"),
             "app.clipboard_item_font_size" => value.parse::<u8>().is_ok_and(|v| (11..=18).contains(&v)),
             "app.rich_text_snapshot_cache_limit" => value.bytes().all(|b| b.is_ascii_digit())

@@ -1,3 +1,4 @@
+import type { EmojiTab } from "@deziro/ui-react/components/EmojiPicker";
 import { useEffect, useRef } from "react";
 import { invoke } from "../lib/desktopInvoke";
 import type { MutableRefObject } from "react";
@@ -51,7 +52,7 @@ interface UseSettingsPostInitOptions {
   setFontMono: (val: string) => void;
   setEmojiPanelEnabled: (val: boolean) => void;
   setTagManagerEnabled: (val: boolean) => void;
-  setEmojiPanelTab: (val: "emoji" | "favorites") => void;
+  setEmojiPanelTab: (val: EmojiTab) => void;
   setEmojiFavorites: (val: string[]) => void;
 }
 
@@ -138,8 +139,9 @@ export const useSettingsPostInit = ({
     if (settings["app.font_mono"] !== undefined) setFontMono(settings["app.font_mono"]);
     if (settings["app.emoji_panel_enabled"] !== undefined) setEmojiPanelEnabled(settings["app.emoji_panel_enabled"] === "true");
     if (settings["app.tag_manager_enabled"] !== undefined) setTagManagerEnabled(settings["app.tag_manager_enabled"] !== "false");
-    if (settings["app.emoji_panel_tab"] === "favorites" || settings["app.emoji_panel_tab"] === "emoji") {
-      setEmojiPanelTab(settings["app.emoji_panel_tab"] as "emoji" | "favorites");
+    const characterTab = settings["app.emoji_panel_tab"];
+    if (characterTab === "emoji" || characterTab === "symbols" || characterTab === "favorites") {
+      setEmojiPanelTab(characterTab);
     }
     if (settings["app.emoji_favorites"]) {
       try {
