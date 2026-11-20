@@ -1,4 +1,5 @@
 import { useState, type CSSProperties } from "react";
+import ThemedSelect from "../src/components/ThemedSelect";
 import { ContextMenuItem, ContextMenuSurface, EmojiAddTile, EmojiFavoriteTile, HotkeyBinding, HotkeyList, HotkeyListLayout, NumberField,
   PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField, SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsRemoveButton, SettingsSectionCard, TagPickerTrigger, TagSearchField, TagToolbar, TextArea, TextField } from "../src";
 import { Ellipsis, Eye, ListChecks, ListCollapse, Plus, Tag } from "lucide-react";
@@ -168,6 +169,25 @@ export function PrivacyRulesFixture() {
     <div className="setting-item column source-exclusion-setting">
       <span className="item-label">Excluded applications</span>
       <SourceExclusionField aria-label="Excluded applications" defaultValue={"Example Editor\nExample Browser"} readOnly />
+    </div>
+  </div>;
+}
+
+export function SearchSelectFixture() {
+  const [font, setFont] = useState("Example Sans");
+  const [app, setApp] = useState("");
+  return <div style={{ width: 385, display: "grid", gap: 12 }}>
+    <div className="setting-item column">
+      <span className="item-label">Interface font</span>
+      <ThemedSelect options={[{ value: "", label: "Default font" }, { value: "Example Sans", label: "Example Sans" },
+        { value: "Example Serif", label: "Example Serif" }]} value={font} onChange={setFont} width="100%" searchable
+        ariaLabel="Interface font" noOptionsMessage="No matching fonts" />
+    </div>
+    <div className="setting-item column">
+      <span className="item-label" style={{ textTransform: "uppercase", fontSize: "11px", opacity: 0.8 }}>Images</span>
+      <ThemedSelect options={[{ value: "", label: "System default (Example Browser)" },
+        { value: "/example/photo-viewer", label: "Photo Viewer" }, { value: "/example/archive", label: "Archive Manager" }]}
+        value={app} onChange={setApp} width="100%" searchable ariaLabel="Images" noOptionsMessage="No matching applications" />
     </div>
   </div>;
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -19,9 +18,8 @@ type nativeInstalledApplication struct {
 
 type nativeApplicationCatalog struct {
 	system                  map[string]string
-	labels                  []string
+	options                 []uikit.SelectOption
 	labelsByPath            map[string]string
-	pathsByLabel            map[string]string
 	loading, loaded, failed bool
 }
 
@@ -54,48 +52,36 @@ func (n *nativeMain) applicationSetting(c *ui.Context, kind, label string) {
 	if path := catalog.system[kind]; path != "" {
 		system += " (" + applicationFilename(path) + ")"
 	}
-	for catalog.pathsByLabel[system] != "" {
-		system += " · " + n.text("system_default")
-	}
-	options := make([]string, 0, len(catalog.labels)+2)
-	options = append(options, system)
-	options = append(options, catalog.labels...)
+	options := make([]uikit.SelectOption, 1, len(catalog.options)+2)
+	options[0] = uikit.SelectOption{Label: system}
+	options = append(options, catalog.options...)
 
 	key := "app." + kind
 	path := n.preferences[key]
-	selected := system
-	if path != "" {
-		selected = catalog.labelsByPath[path]
-		if selected == "" {
-			selected = applicationFilename(path)
-			for selected == system || catalog.pathsByLabel[selected] != "" {
-				selected += " (" + path + ")"
-			}
-			options = append(options, selected)
-		}
+	selected := path
+	if path != "" && catalog.labelsByPath[path] == "" {
+		options = append(options, uikit.SelectOption{Value: path, Label: applicationFilename(path)})
 	}
-	ui.Column(c.Key(key)).Gap(8).Children(func() {
+	ui.Column(c).AlignSelf(ui.Stretch).MinWidth(0).Gap(8).Children(func() {
 		kit := n.mainKit()
 		kit.SettingsLabel(c, strings.ToUpper(label)).FontSize(11).Opacity(0.8)
-		field, changed := kit.Combo(c, &selected, label, "", options, n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "")
-		field.FillWidth()
+		_, changed := kit.SearchSelect(c, uikit.SearchSelectOptions{
+			Label: label, Placeholder: n.text("not_configured"), NoMatches: n.text("no_matching_apps"),
+			Value: &selected, Choices: options, Disabled: n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "",
+		})
 		if path != "" {
 			ui.Text(c, applicationFilename(path)).FontSize(10).TextColor(c.Theme().TextMuted).Wrap()
 		}
 		if changed {
-			if selected == system {
-				n.saveSetting(key, "")
-			} else if choice := catalog.pathsByLabel[selected]; choice != "" {
-				n.saveSetting(key, choice)
-			}
+			n.saveSetting(key, selected)
 		}
 	})
 }
 
 func applicationFilename(path string) string {
-	name := filepath.Base(path)
-	if extension := filepath.Ext(name); strings.EqualFold(extension, ".exe") {
-		return strings.TrimSuffix(name, extension)
+	name := path[strings.LastIndexAny(path, "/\\")+1:]
+	if len(name) >= len(".exe") && strings.EqualFold(name[len(name)-len(".exe"):], ".exe") {
+		return name[:len(name)-len(".exe")]
 	}
 	return name
 }
@@ -121,7 +107,7 @@ func (n *nativeMain) loadApplications() {
 		}
 		catalog := nativeApplicationCatalog{
 			system: system, loaded: true, failed: appsError != nil || defaultsError != nil,
-			labelsByPath: make(map[string]string, len(listed)), pathsByLabel: make(map[string]string, len(listed)),
+			labelsByPath: make(map[string]string, len(listed)),
 		}
 		names := make(map[string]int, len(listed))
 		for _, app := range listed {
@@ -138,11 +124,8 @@ func (n *nativeMain) loadApplications() {
 			if names[app.Name] > 1 {
 				label += " (" + app.Path + ")"
 			}
-			for catalog.pathsByLabel[label] != "" {
-				label += " (" + app.Path + ")"
-			}
-			catalog.labels = append(catalog.labels, label)
-			catalog.labelsByPath[app.Path], catalog.pathsByLabel[label] = label, app.Path
+			catalog.options = append(catalog.options, uikit.SelectOption{Value: app.Path, Label: label})
+			catalog.labelsByPath[app.Path] = label
 		}
 		window.Update(func() { n.applications = catalog })
 	}()

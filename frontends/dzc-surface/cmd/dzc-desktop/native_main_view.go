@@ -8,9 +8,16 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
+func (n *nativeMain) currentSurfaceOpacity() int {
+	if n.surfaceOpacityDraft != nil {
+		return *n.surfaceOpacityDraft
+	}
+	return opacityPreference(n.preferences["app.surface_opacity"])
+}
+
 func (n *nativeMain) mainKit() uikit.Kit {
 	return n.preset().Kit().WithInterfaceFont(nativeInterfaceFont(n.preferences)).
-		WithSurfaceOpacity(opacityPreference(n.preferences["app.surface_opacity"]))
+		WithSurfaceOpacity(n.currentSurfaceOpacity())
 }
 
 func (n *nativeMain) view(c *ui.Context) {
@@ -20,7 +27,7 @@ func (n *nativeMain) view(c *ui.Context) {
 	var surfaceOpacity *int
 	tint := preset.SurfaceTint()
 	if tint != "" {
-		opacity := opacityPreference(n.preferences["app.surface_opacity"])
+		opacity := n.currentSurfaceOpacity()
 		surfaceOpacity = &opacity
 		palette := *c.Theme()
 		// Paint the shell only once, below the controls.

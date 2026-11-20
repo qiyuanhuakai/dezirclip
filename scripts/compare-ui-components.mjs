@@ -26,6 +26,7 @@ const cases = {
   "privacy-rules": { states: ["default"], text: "Privacy rules" },
   "tag-toolbar": { states: ["default"], text: "Work" },
   "tag-search": { states: ["default"], text: "Work" },
+  "search-select": { states: ["default", "apps-filtered", "empty"], text: "Interface font" },
   "text-fields": { states: ["default"], text: "Idle timeout" },
   "context-menu": { states: ["default", "text", "privacy"], text: "Clipboard entry" },
   "attachment-preview": { states: ["default", "compact", "media", "expanded"], text: "Notes.pdf" },
@@ -241,6 +242,19 @@ try {
 
             if (fixture === "toast") {
               await page.waitForFunction(() => getComputedStyle(document.querySelector(".toast-item")).opacity === "1");
+            }
+            if (fixture === "search-select" && state !== "default") {
+              const input = page.getByRole("combobox", { name: "Images" });
+              await input.click();
+              await input.fill(state === "empty" ? "zzzz0000" : "viewer");
+              if (state === "empty") {
+                await page.getByText("No matching applications", { exact: true }).waitFor();
+              } else {
+                await page.getByRole("option", { name: "Photo Viewer", exact: true }).waitFor();
+                if (await page.getByRole("option", { name: "Archive Manager" }).count()) {
+                  throw Error("Unmatched application was still offered");
+                }
+              }
             }
             const webImage = await page.screenshot({ path: join(output, id + "_web.png"), animations: "disabled" });
             const { stdout } = await execute(resolve(native), nativeArgs, { timeout: 10000 });

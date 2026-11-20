@@ -69,6 +69,21 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 				kit.SettingsDataAction(c, "Import data", "import", false)
 			})
 		})
+	case "search-select":
+		ui.Column(c).Width(385).Gap(12).Children(func() {
+			ui.Column(c).FillWidth().Gap(6).Padding(6, 0).Children(func() {
+				kit.SettingsLabel(c, "Interface font")
+				font := "Example Sans"
+				kit.SearchSelect(c, uikit.SearchSelectOptions{Label: "Interface font", NoMatches: "No matching fonts", Value: &font,
+					Choices: []uikit.SelectOption{{Label: "Default font"}, {Value: "Example Sans", Label: "Example Sans"}, {Value: "Example Serif", Label: "Example Serif"}}})
+			})
+			ui.Column(c).FillWidth().Gap(6).Padding(6, 0).Children(func() {
+				kit.SettingsLabel(c, "IMAGES").FontSize(11).Opacity(0.8)
+				kit.SearchSelect(c, uikit.SearchSelectOptions{Label: "Images", NoMatches: "No matching applications", Value: &g.choice,
+					Choices: []uikit.SelectOption{{Label: "System default (Example Browser)"}, {Value: "/example/photo-viewer", Label: "Photo Viewer"},
+						{Value: "/example/archive", Label: "Archive Manager"}}})
+			})
+		})
 	case "tag-search":
 		ui.Column(c).Width(380).Gap(8).Children(func() {
 			rail, picker, contents := "", "", "Release notes"

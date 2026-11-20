@@ -289,6 +289,23 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 		}
 		return nil
 	}
+	if g.fixture == "search-select" && g.state != "default" {
+		if err := tester.Click("Images"); err != nil {
+			return err
+		}
+		if g.state == "empty" {
+			tester.Type("zzzz0000")
+			if _, found := tester.Find("No matching applications"); !found {
+				return fmt.Errorf("no-results notice did not appear")
+			}
+		} else {
+			tester.Type("viewer")
+			if _, found := tester.Find("Photo Viewer"); !found {
+				return fmt.Errorf("filtered application did not appear")
+			}
+		}
+		return nil
+	}
 	switch g.state {
 	case "compact", "compact-hover", "compact-active-hover", "compact-action-hover":
 		if g.fixture != "history-card" {
@@ -360,6 +377,9 @@ func run() error {
 	output := flag.String("output", "", "write a software-rendered PNG to this file")
 	inspect := flag.Bool("inspect", false, "write rendered text labels as JSON")
 	flag.Parse()
+	if g.fixture == "search-select" {
+		g.choice = ""
+	}
 	g.groupOpen = g.state == "expanded"
 	g.colorChoice, g.channelChoice = "light", "preview"
 	g.bindings = []string{"Super+V"}

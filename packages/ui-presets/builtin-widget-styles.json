@@ -2972,6 +2972,38 @@
         "uppercase": false,
         "opacity": 1
       },
+      "selectSearchQuery": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 7,
+        "height": 14,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectOptionFocused": {
+        "fill": [55, 55, 55, 255],
+        "text": [255, 255, 255, 255],
+        "border": [255, 255, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 381,
+        "height": 30,
+        "marginTop": 0,
+        "padding": [8, 12, 8, 12],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "filter": {
         "fill": [0, 0, 0, 0],
         "text": [55, 55, 55, 255],
@@ -6900,6 +6932,38 @@
         "uppercase": false,
         "opacity": 1
       },
+      "selectSearchQuery": {
+        "fill": [0, 0, 0, 0],
+        "text": [234, 234, 234, 255],
+        "border": [234, 234, 234, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 7,
+        "height": 14,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectOptionFocused": {
+        "fill": [55, 55, 55, 255],
+        "text": [255, 255, 255, 255],
+        "border": [255, 255, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 381,
+        "height": 30,
+        "marginTop": 0,
+        "padding": [8, 12, 8, 12],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "filter": {
         "fill": [0, 0, 0, 0],
         "text": [237, 237, 237, 255],
@@ -10698,6 +10762,38 @@
         "borderWidth": 0,
         "radius": 0,
         "width": 158,
+        "height": 32,
+        "marginTop": 0,
+        "padding": [8, 12, 8, 12],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectSearchQuery": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 3,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectOptionFocused": {
+        "fill": [55, 55, 55, 255],
+        "text": [255, 255, 255, 255],
+        "border": [255, 255, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 383,
         "height": 32,
         "marginTop": 0,
         "padding": [8, 12, 8, 12],
@@ -14515,6 +14611,38 @@
         "uppercase": false,
         "opacity": 1
       },
+      "selectSearchQuery": {
+        "fill": [0, 0, 0, 0],
+        "text": [234, 234, 234, 255],
+        "border": [234, 234, 234, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 3,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectOptionFocused": {
+        "fill": [55, 55, 55, 255],
+        "text": [255, 255, 255, 255],
+        "border": [255, 255, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 383,
+        "height": 32,
+        "marginTop": 0,
+        "padding": [8, 12, 8, 12],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "filter": {
         "fill": [0, 0, 0, 0],
         "text": [246, 247, 251, 255],
@@ -18284,6 +18412,38 @@
         "borderWidth": 0,
         "radius": 0,
         "width": 158,
+        "height": 32,
+        "marginTop": 0,
+        "padding": [8, 12, 8, 12],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectSearchQuery": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 3,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectOptionFocused": {
+        "fill": [55, 55, 55, 255],
+        "text": [255, 255, 255, 255],
+        "border": [255, 255, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 383,
         "height": 32,
         "marginTop": 0,
         "padding": [8, 12, 8, 12],
@@ -22101,6 +22261,38 @@
         "uppercase": false,
         "opacity": 1
       },
+      "selectSearchQuery": {
+        "fill": [0, 0, 0, 0],
+        "text": [234, 234, 234, 255],
+        "border": [234, 234, 234, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 3,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectOptionFocused": {
+        "fill": [55, 55, 55, 255],
+        "text": [255, 255, 255, 255],
+        "border": [255, 255, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 383,
+        "height": 32,
+        "marginTop": 0,
+        "padding": [8, 12, 8, 12],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "filter": {
         "fill": [0, 0, 0, 0],
         "text": [246, 247, 251, 255],
@@ -23049,7 +23241,11 @@
             "color": [20, 39, 59, 13],
             "values": [0, 2, 10, 0]
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 196]
+        }
       },
       "settingsGroupHeader": {
         "fill": [255, 255, 255, 115],
@@ -23077,7 +23273,11 @@
             "values": [0, 1, 0, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 177]
+        }
       },
       "settingsGroupChevron": {
         "fill": [0, 0, 0, 0],
@@ -23120,7 +23320,11 @@
             "color": [20, 39, 59, 13],
             "values": [0, 2, 10, 0]
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 196]
+        }
       },
       "settingsGroupHeaderOpen": {
         "fill": [0, 0, 0, 0],
@@ -24740,7 +24944,11 @@
             "values": [0, 1, 0, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 177]
+        }
       },
       "settingsRailActive": {
         "fill": [182, 218, 255, 137],
@@ -24768,7 +24976,11 @@
             "values": [0, 1, 0, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [12, 131, 255, 41],
+          "full": [202, 229, 255, 189]
+        }
       },
       "settingsFooterCard": {
         "fill": [255, 255, 255, 128],
@@ -24795,7 +25007,11 @@
             "color": [20, 39, 59, 13],
             "values": [0, 2, 10, 0]
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 196]
+        }
       },
       "settingsFooterVersion": {
         "fill": [0, 0, 0, 0],
@@ -26321,7 +26537,11 @@
             "values": [0, 1, 2, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 216]
+        }
       },
       "selectIndicator": {
         "fill": [0, 0, 0, 0],
@@ -26365,7 +26585,11 @@
             "values": [0, 1, 2, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 216]
+        }
       },
       "selectFocus": {
         "fill": [255, 255, 255, 140],
@@ -26387,7 +26611,11 @@
             "color": [12, 131, 255, 41],
             "values": [0, 0, 0, 3]
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 216]
+        }
       },
       "selectDisabled": {
         "fill": [255, 255, 255, 140],
@@ -26415,7 +26643,11 @@
             "values": [0, 1, 2, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 216]
+        }
       },
       "selectMenu": {
         "fill": [255, 255, 255, 158],
@@ -26507,6 +26739,39 @@
         "radius": 6,
         "marginBottom": 1,
         "width": 150,
+        "height": 32,
+        "marginTop": 1,
+        "padding": [8, 12, 8, 12],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectSearchQuery": {
+        "fill": [0, 0, 0, 0],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 3,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 500,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectOptionFocused": {
+        "fill": [10, 128, 255, 26],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 6,
+        "marginBottom": 1,
+        "width": 375,
         "height": 32,
         "marginTop": 1,
         "padding": [8, 12, 8, 12],
@@ -27671,7 +27936,11 @@
             "color": [0, 0, 0, 46],
             "values": [0, 2, 10, 0]
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [30, 33, 42, 255]
+        }
       },
       "settingsGroupHeader": {
         "fill": [36, 38, 48, 128],
@@ -27699,7 +27968,11 @@
             "values": [0, 1, 0, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [35, 38, 48, 196]
+        }
       },
       "settingsGroupChevron": {
         "fill": [0, 0, 0, 0],
@@ -27742,7 +28015,11 @@
             "color": [0, 0, 0, 46],
             "values": [0, 2, 10, 0]
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [30, 33, 42, 255]
+        }
       },
       "settingsGroupHeaderOpen": {
         "fill": [0, 0, 0, 0],
@@ -29362,7 +29639,11 @@
             "values": [0, 1, 0, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [35, 38, 48, 196]
+        }
       },
       "settingsRailActive": {
         "fill": [28, 64, 105, 148],
@@ -29390,7 +29671,11 @@
             "values": [0, 1, 0, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [12, 131, 255, 41],
+          "full": [30, 57, 90, 205]
+        }
       },
       "settingsFooterCard": {
         "fill": [29, 33, 42, 199],
@@ -29417,7 +29702,11 @@
             "color": [0, 0, 0, 46],
             "values": [0, 2, 10, 0]
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [30, 33, 42, 255]
+        }
       },
       "settingsFooterVersion": {
         "fill": [0, 0, 0, 0],
@@ -30943,7 +31232,11 @@
             "values": [0, 1, 2, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [45, 48, 58, 255]
+        }
       },
       "selectIndicator": {
         "fill": [0, 0, 0, 0],
@@ -30987,7 +31280,11 @@
             "values": [0, 1, 2, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [45, 48, 58, 255]
+        }
       },
       "selectFocus": {
         "fill": [44, 49, 58, 184],
@@ -31009,7 +31306,11 @@
             "color": [10, 130, 255, 51],
             "values": [0, 0, 0, 3]
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [45, 48, 58, 255]
+        }
       },
       "selectDisabled": {
         "fill": [44, 49, 58, 184],
@@ -31037,7 +31338,11 @@
             "values": [0, 1, 2, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [45, 48, 58, 255]
+        }
       },
       "selectMenu": {
         "fill": [38, 41, 52, 209],
@@ -31129,6 +31434,39 @@
         "radius": 6,
         "marginBottom": 1,
         "width": 150,
+        "height": 32,
+        "marginTop": 1,
+        "padding": [8, 12, 8, 12],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectSearchQuery": {
+        "fill": [0, 0, 0, 0],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 3,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 500,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectOptionFocused": {
+        "fill": [11, 133, 255, 46],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 6,
+        "marginBottom": 1,
+        "width": 375,
         "height": 32,
         "marginTop": 1,
         "padding": [8, 12, 8, 12],
@@ -35143,6 +35481,38 @@
         "uppercase": false,
         "opacity": 1
       },
+      "selectSearchQuery": {
+        "fill": [0, 0, 0, 0],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 3,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectOptionFocused": {
+        "fill": [8, 132, 255, 31],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 383,
+        "height": 32,
+        "marginTop": 0,
+        "padding": [8, 12, 8, 12],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "filter": {
         "fill": [0, 0, 0, 0],
         "text": [29, 29, 31, 255],
@@ -38869,6 +39239,38 @@
         "borderWidth": 0,
         "radius": 0,
         "width": 158,
+        "height": 32,
+        "marginTop": 0,
+        "padding": [8, 12, 8, 12],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectSearchQuery": {
+        "fill": [0, 0, 0, 0],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 3,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectOptionFocused": {
+        "fill": [255, 255, 255, 20],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 383,
         "height": 32,
         "marginTop": 0,
         "padding": [8, 12, 8, 12],
@@ -42730,6 +43132,38 @@
         "uppercase": false,
         "opacity": 1
       },
+      "selectSearchQuery": {
+        "fill": [0, 0, 0, 0],
+        "text": [11, 41, 71, 255],
+        "border": [11, 41, 71, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 3,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectOptionFocused": {
+        "fill": [42, 234, 184, 36],
+        "text": [11, 41, 71, 255],
+        "border": [11, 41, 71, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 383,
+        "height": 32,
+        "marginTop": 0,
+        "padding": [8, 12, 8, 12],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "filter": {
         "fill": [0, 0, 0, 0],
         "text": [10, 39, 70, 255],
@@ -46575,6 +47009,38 @@
         "borderWidth": 0,
         "radius": 0,
         "width": 158,
+        "height": 32,
+        "marginTop": 0,
+        "padding": [8, 12, 8, 12],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectSearchQuery": {
+        "fill": [0, 0, 0, 0],
+        "text": [220, 251, 255, 255],
+        "border": [220, 251, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 3,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "selectOptionFocused": {
+        "fill": [22, 62, 89, 228],
+        "text": [220, 251, 255, 255],
+        "border": [220, 251, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 383,
         "height": 32,
         "marginTop": 0,
         "padding": [8, 12, 8, 12],

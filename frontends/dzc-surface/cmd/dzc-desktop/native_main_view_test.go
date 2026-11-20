@@ -249,6 +249,61 @@ func TestNativeMainShellOpacity(t *testing.T) {
 	}
 }
 
+func TestNativeApplicationSelectsFitTheirSettingsColumns(t *testing.T) {
+	window := nativeMain{
+		showSettings: true, settingsSection: "applications",
+		preferences: map[string]string{"app.language": "en"},
+		applications: nativeApplicationCatalog{
+			loaded: true, system: map[string]string{"text": "/example/Example Editor", "rich_text": "/example/Example Writer"},
+		},
+	}
+	view := ui.NewTester(window.view, 800, 620)
+	editor, editorOK := view.Find(window.text("system_default") + " (Example Editor)")
+	writer, writerOK := view.Find(window.text("system_default") + " (Example Writer)")
+	if !editorOK || !writerOK || editor.X+editor.W > writer.X || editor.Y != writer.Y {
+		t.Fatalf("default applications do not fit their own columns: editor=%+v writer=%+v, visible %v", editor, writer, view.Texts())
+	}
+}
+
+func TestNativeSurfaceOpacityDragUpdatesThemedControls(t *testing.T) {
+	window := nativeMain{theme: "liquid-glass", mode: "light", showSettings: true,
+		preferences: map[string]string{"app.surface_opacity": "20", "app.language": "en"}}
+	view := ui.NewTester(func(c *ui.Context) {
+		kit := window.mainKit()
+		kit.Apply(c)
+		palette := *c.Theme()
+		palette.Background = ui.Color{}
+		c.SetTheme(&palette)
+		window.drawSurfaceOpacity(c, window.currentSurfaceOpacity())
+		kit.SettingsDataAction(c, "Material sample", "", false)
+	}, 320, 180)
+	label, found := view.Find("Surface opacity")
+	if !found {
+		t.Fatal("surface opacity slider is missing")
+	}
+	sample, found := view.Find("Material sample")
+	if !found {
+		t.Fatal("sample settings material is missing")
+	}
+	sampleX, sampleY := int(sample.X+5), int(sample.Y+sample.H/2)
+	before := view.Image().RGBAAt(sampleX, sampleY).A
+	y := label.Y + label.H + 8
+	view.Press(246, y)
+	view.Move(272, y)
+	view.Advance(250 * time.Millisecond)
+	if live := window.currentSurfaceOpacity(); live <= 20 || window.preferences["app.surface_opacity"] != "20" {
+		t.Fatalf("drag has live opacity %d and stored value %s", live, window.preferences["app.surface_opacity"])
+	}
+	if got := view.Image().RGBAAt(sampleX, sampleY).A; got <= before {
+		t.Fatalf("settings material alpha did not increase during drag: %d to %d", before, got)
+	}
+	view.Release(272, y)
+	window.closeSettings()
+	if window.surfaceOpacityDraft != nil {
+		t.Fatal("closing settings retained a temporary opacity")
+	}
+}
+
 func TestNativePreviewOpacityKeepsIndependentSetting(t *testing.T) {
 	window := nativeMain{theme: "mica", mode: "dark", preferences: map[string]string{"app.surface_opacity": "20"}}
 	if got := window.previewAppearance().theme().Background.A; got != 51 {

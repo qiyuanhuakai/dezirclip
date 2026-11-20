@@ -77,7 +77,9 @@ type nativeMain struct {
 	buildDetailsOpen      bool
 	updater               nativeUpdater
 	backup                *nativeBackupDialog
+	surfaceOpacityDraft   *int
 	fontChoices           *nativeFontChoices
+	fontsFailed           bool
 	readingFonts          bool
 	capturing             bool
 	reading               bool
@@ -125,6 +127,7 @@ func (n *nativeMain) stopSession() {
 	n.clearHistoryOpen = false
 	n.menuTransformsLoading = false
 	n.appearanceBusy, n.appearanceSync = false, false
+	n.surfaceOpacityDraft = nil
 	n.background.pause()
 	n.tags = nil
 	n.closeEntryEditor()

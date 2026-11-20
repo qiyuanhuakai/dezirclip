@@ -35,6 +35,7 @@ func (n *nativeMain) openSettings() {
 func (n *nativeMain) closeSettings() {
 	if !n.profile.moving && !n.profile.restartPending {
 		n.showSettings = false
+		n.surfaceOpacityDraft = nil
 	}
 }
 
@@ -65,6 +66,9 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 		ui.Scroll(c).Shrink(0).FillHeight().MinHeight(0).Children(func() {
 			kit.SettingsRail(c, n.text("native_settings_sections"), n.settingsSection, sections, func(id string) {
 				n.settingsSection = id
+				if id != "appearance" {
+					n.surfaceOpacityDraft = nil
+				}
 				n.settingsScroll = ui.ScrollState{}
 			})
 		})
@@ -100,6 +104,8 @@ func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nat
 				kit.SettingsSectionCard(c, pane.Label, open, pane.draw)
 				if *open && !wasOpen {
 					n.settingsSection = pane.ID
+				} else if !*open && wasOpen && pane.ID == "appearance" {
+					n.surfaceOpacityDraft = nil
 				}
 			}
 			n.settingsFooter(c, kit, false)
@@ -292,8 +298,22 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpa
 	previewOpacity := opacityPreference(n.preferences["app.preview_opacity"], n.preferences["app.surface_opacity"])
 	n.rangeSetting(c, nativePreviewOpacity, n.text("preview_opacity"), previewOpacity)
 	if surfaceOpacity != nil {
-		*surfaceOpacity = n.rangeSetting(c, nativeSurfaceOpacity, n.text("surface_opacity", "Surface opacity"), *surfaceOpacity)
+		*surfaceOpacity = n.drawSurfaceOpacity(c, *surfaceOpacity)
 	}
+}
+
+func (n *nativeMain) drawSurfaceOpacity(c *ui.Context, displayed int) int {
+	saved := opacityPreference(n.preferences["app.surface_opacity"])
+	live := n.rangeSetting(c, nativeSurfaceOpacity, n.text("surface_opacity", "Surface opacity"), saved)
+	if live != displayed {
+		c.Invalidate()
+	}
+	if live == saved {
+		n.surfaceOpacityDraft = nil
+	} else {
+		n.surfaceOpacityDraft = &live
+	}
+	return live
 }
 
 func (n *nativeMain) settingChoices(c *ui.Context, kit uikit.Kit, key, label, fallback string, options []uikit.SelectOption) {

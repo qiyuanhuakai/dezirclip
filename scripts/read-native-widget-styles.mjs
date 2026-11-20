@@ -165,6 +165,10 @@ const samples = [
     selectSelected: [".dezirclip-select__option--is-selected"],
     selectOptionDisabled: [".dezirclip-select__option--is-disabled"],
   }],
+  ["search-select", "apps-filtered", {
+    selectSearchQuery: [".dezirclip-select__input"],
+    selectOptionFocused: [".dezirclip-select__option--is-focused"],
+  }],
   ["filters", "default", {
     filter: [".filter-chip:nth-child(3)"],
     filterSelected: [".filter-chip--active"],
@@ -345,6 +349,13 @@ function readStyles(sample) {
   if (!sample.materialOpacity) return styles;
   const root = document.documentElement.style;
   const originalOpacity = root.getPropertyValue("--surface-opacity");
+  // Read the real endpoints even when a theme declares a more specific
+  // important transition on the control than the gallery can switch off.
+  const targets = [...new Set(Object.values(selectors).map(([selector]) => document.querySelector(selector)))];
+  const transitions = targets.map(element => [
+    element, element.style.getPropertyValue("transition"), element.style.getPropertyPriority("transition"),
+  ]);
+  for (const [element] of transitions) element.style.setProperty("transition", "none", "important");
   const colorsAt = opacity => {
     root.setProperty("--surface-opacity", opacity);
     return Object.entries(selectors).map(([id, [selector, , pseudo]]) => {
@@ -368,6 +379,10 @@ function readStyles(sample) {
   } finally {
     if (originalOpacity) root.setProperty("--surface-opacity", originalOpacity);
     else root.removeProperty("--surface-opacity");
+    for (const [element, value, priority] of transitions) {
+      if (value) element.style.setProperty("transition", value, priority);
+      else element.style.removeProperty("transition");
+    }
   }
   return styles;
 }
@@ -409,6 +424,12 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
     if (fixture === "clipboard-search" && state === "selected") {
       await page.getByRole("button", { name: "图片" }).click();
       await page.mouse.move(450, 390);
+    }
+    if (fixture === "search-select") {
+      const input = page.getByRole("combobox", { name: "Images" });
+      await input.click();
+      await input.fill("viewer");
+      await page.getByRole("option", { name: "Photo Viewer", exact: true }).waitFor();
     }
     if (fixture === "select" && state !== "default" && state !== "disabled") {
       const input = page.getByRole("combobox", { name: "Color mode" });

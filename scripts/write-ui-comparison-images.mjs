@@ -28,6 +28,8 @@ const figures = [
   ["privacy-rules", "default", 390],
   ["tag-toolbar", "default", 85],
   ["tag-search", "default", 180],
+  ["search-select", "apps-filtered", 218],
+  ["search-select", "empty", 218, 0, "search-select-empty"],
   ["app-header", "pinned", 185],
   ["history-list", "selected", 245],
   ["history-card", "selected", 110],

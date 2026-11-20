@@ -1,10 +1,12 @@
 package main
 
 import (
-	"slices"
+	"context"
 	"strconv"
+	"time"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
 type nativeFontChoices struct {
@@ -36,8 +38,17 @@ func (n *nativeMain) typographySettings(c *ui.Context) {
 	n.rangeSetting(c, nativeTagSize, n.text("clipboard_tag_font_size", "Tag font size"), nativeTagSize.value(n.preferences))
 
 	if n.fontChoices == nil {
-		n.findFonts()
-		ui.Text(c, n.text("native_loading_fonts")).TextColor(c.Theme().TextMuted)
+		if n.fontsFailed {
+			ui.Row(c).ColumnSpan(-1).Gap(8).Wrap().Children(func() {
+				ui.Text(c, n.text("common_error")).TextColor(c.Theme().TextMuted)
+				if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry")}).Clicked() {
+					n.findFonts()
+				}
+			})
+		} else {
+			n.findFonts()
+			ui.Text(c, n.text("native_loading_fonts")).TextColor(c.Theme().TextMuted)
+		}
 		return
 	}
 	n.fontSetting(c, "app.font_main", n.text("font_main", "Interface font"), n.fontChoices.main)
@@ -46,22 +57,28 @@ func (n *nativeMain) typographySettings(c *ui.Context) {
 
 func (n *nativeMain) findFonts() {
 	window := n.window
-	if window == nil || n.readingFonts {
+	if window == nil || n.library == nil || n.readingFonts {
 		return
 	}
-	n.readingFonts = true
+	n.readingFonts, n.fontsFailed = true, false
 	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		fonts, err := n.library.SystemFonts(ctx)
 		var choices nativeFontChoices
-		for _, family := range ui.FontFamilies() {
-			if family.Monospaced {
-				choices.mono = append(choices.mono, family.Name)
+		for _, font := range fonts {
+			if font.IsMono {
+				choices.mono = append(choices.mono, font.Family)
 			} else {
-				choices.main = append(choices.main, family.Name)
+				choices.main = append(choices.main, font.Family)
 			}
 		}
 		// The available families belong to the renderer, independent of the clipboard session.
 		window.Update(func() {
-			n.fontChoices, n.readingFonts = &choices, false
+			n.readingFonts, n.fontsFailed = false, err != nil
+			if err == nil {
+				n.fontChoices = &choices
+			}
 		})
 	}()
 }
@@ -69,21 +86,24 @@ func (n *nativeMain) findFonts() {
 func (n *nativeMain) fontSetting(c *ui.Context, key, label string, choices []string) {
 	kit := n.mainKit()
 	system := n.text("font_default_option")
-	options := append([]string{system}, choices...)
+	options := make([]uikit.SelectOption, 1, len(choices)+2)
+	options[0] = uikit.SelectOption{Label: system}
 	selected := n.preferences[key]
-	if selected == "" {
-		selected = system
-	} else if !slices.Contains(options, selected) {
-		options = append(options, selected)
+	found := selected == ""
+	for _, family := range choices {
+		options = append(options, uikit.SelectOption{Value: family, Label: family})
+		found = found || family == selected
 	}
-	ui.Column(c.Key(key)).Gap(8).Children(func() {
+	if !found {
+		options = append(options, uikit.SelectOption{Value: selected, Label: selected})
+	}
+	ui.Column(c).AlignSelf(ui.Stretch).MinWidth(0).Gap(8).Children(func() {
 		kit.SettingsLabel(c, label)
-		field, changed := kit.Combo(c, &selected, label, system, options, n.mutating)
-		field.FillWidth()
+		_, changed := kit.SearchSelect(c, uikit.SearchSelectOptions{
+			Label: label, Placeholder: system, NoMatches: n.text("no_matching_fonts"),
+			Value: &selected, Choices: options, Disabled: n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "",
+		})
 		if changed {
-			if selected == system {
-				selected = ""
-			}
 			n.saveSetting(key, selected)
 		}
 	})
@@ -113,9 +133,24 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 		if edit.dirty && !slider.Pressed() && !n.mutating {
 			edit.dirty = false
 			if value != saved {
-				n.saveSetting(setting.key, strconv.Itoa(value))
+				if setting == nativeSurfaceOpacity {
+					n.saveSurfaceOpacity(value)
+				} else {
+					n.saveSetting(setting.key, strconv.Itoa(value))
+				}
 			}
 		}
 	})
 	return int(edit.value)
+}
+
+func (n *nativeMain) saveSurfaceOpacity(value int) {
+	const preference = "app.surface_opacity"
+	saved := strconv.Itoa(value)
+	n.writeSettingWithEffect(func(ctx context.Context, epoch uint64) error {
+		return n.library.SetSetting(ctx, preference, saved, epoch)
+	}, func() {
+		n.preferences[preference] = saved
+		n.surfaceOpacityDraft = nil
+	})
 }

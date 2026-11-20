@@ -114,6 +114,11 @@ const ThemedSelect = ({
             cursor: "pointer",
             fontSize: "12px"
           }),
+          input: (base) => ({
+            ...base,
+            color: "var(--select-single-value-color)",
+            caretColor: "var(--accent-color)"
+          }),
           singleValue: (base) => ({
             ...base,
             color: "var(--select-single-value-color)",
