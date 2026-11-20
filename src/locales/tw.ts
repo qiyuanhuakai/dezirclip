@@ -317,7 +317,7 @@ export const tw = {
         emoji_panel: "表情包",
         emoji_tab: "Emoji",
         emoji_symbols_tab: "符號",
-        emoji_search: "依字元、名稱或 U+ 編碼搜尋",
+        emoji_search: "依名稱或含義搜尋",
         emoji_search_empty: "找不到相符的字元",
         emoji_more: "顯示更多",
         emoji_group_expressions: "表情與情緒",

@@ -296,8 +296,8 @@ function Test-SymbolPaste($main, $root, $edit, $form, $cli, [string]$serviceInst
     }
     Click-Control $main (Get-ControlPoint $root $panelLabel)
     Click-Control $main (Get-ControlPoint $root 'Symbols')
-    Click-Control $main (Get-ControlPoint $root 'Search by character, name or U+ code')
-    [Windows.Forms.SendKeys]::SendWait('U{+}2A7D')
+    Click-Control $main (Get-ControlPoint $root 'Search by name or meaning')
+    [Windows.Forms.SendKeys]::SendWait('slnted equal')
     $symbol = [string][char]0x2a7d
     Click-Control $main (Get-ControlPoint $root $symbol ([Windows.Automation.ControlType]::Button) -RequireEnabled)
     $null = Wait-Until {
@@ -309,7 +309,7 @@ function Test-SymbolPaste($main, $root, $edit, $form, $cli, [string]$serviceInst
     if ($LASTEXITCODE -or $afterPaste.state.service_instance_id -cne $serviceInstance -or !$afterPaste.capture_owner) {
         throw 'Symbol paste did not preserve the original capture Service'
     }
-    Write-Host "Verified $renderer symbol search and exact paste into the original editor using an already-running Service"
+    Write-Host "Verified $renderer fuzzy symbol search and exact paste into the original editor using an already-running Service"
 }
 
 function Click-Control($main, $point) {

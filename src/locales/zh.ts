@@ -321,7 +321,7 @@ export const zh = {
         emoji_panel: "表情包",
         emoji_tab: "Emoji",
         emoji_symbols_tab: "符号",
-        emoji_search: "按字符、名称或 U+ 编码搜索",
+        emoji_search: "按名称或含义搜索",
         emoji_search_empty: "未找到匹配字符",
         emoji_more: "显示更多",
         emoji_group_expressions: "表情与情绪",

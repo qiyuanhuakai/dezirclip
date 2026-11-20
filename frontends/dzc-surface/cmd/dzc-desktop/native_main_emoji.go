@@ -2,100 +2,11 @@ package main
 
 import (
 	"context"
-	_ "embed"
-	"encoding/json"
-	"fmt"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
-
-//go:embed emoji-data.json
-var emojiCatalogJSON []byte
-
-const characterPageSize = 160
-
-type characterCatalog struct {
-	Emoji   []characterGroup
-	Symbols []characterGroup
-}
-
-type characterGroup struct {
-	ID      string
-	Entries []catalogCharacter
-	choices []uikit.CharacterChoice
-}
-
-type catalogCharacter struct {
-	uikit.CharacterChoice
-	Keywords []string
-	search   string
-}
-
-var characterNormalizer = strings.NewReplacer("\ufe0e", "", "\ufe0f", "")
-
-func normalizeCharacterSearch(text string) string {
-	return characterNormalizer.Replace(strings.ToLower(text))
-}
-
-var emojiCatalog = sync.OnceValue(func() characterCatalog {
-	var catalog characterCatalog
-	if err := json.Unmarshal(emojiCatalogJSON, &catalog); err != nil {
-		panic(err)
-	}
-	for _, groups := range [][]characterGroup{catalog.Emoji, catalog.Symbols} {
-		for groupIndex := range groups {
-			group := &groups[groupIndex]
-			group.choices = make([]uikit.CharacterChoice, len(group.Entries))
-			for i := range group.Entries {
-				entry := &group.Entries[i]
-				words := append([]string{entry.Value, entry.Name}, entry.Keywords...)
-				for _, value := range entry.Value {
-					words = append(words, fmt.Sprintf("u+%04x", value))
-				}
-				entry.search = normalizeCharacterSearch(strings.Join(words, " "))
-				group.choices[i] = entry.CharacterChoice
-			}
-		}
-	}
-	return catalog
-})
-
-func searchCharacters(tab, query string) []characterGroup {
-	catalog := emojiCatalog()
-	groups := catalog.Emoji
-	if tab == "symbols" {
-		groups = catalog.Symbols
-	}
-	terms := strings.Fields(strings.Trim(normalizeCharacterSearch(strings.TrimSpace(query)), ":"))
-	if len(terms) == 0 {
-		return groups
-	}
-	var result []characterGroup
-	for _, group := range groups {
-		filtered := characterGroup{ID: group.ID}
-		for _, entry := range group.Entries {
-			matches := true
-			for _, term := range terms {
-				if !strings.Contains(entry.search, term) {
-					matches = false
-					break
-				}
-			}
-			if matches {
-				filtered.Entries = append(filtered.Entries, entry)
-				filtered.choices = append(filtered.choices, entry.CharacterChoice)
-			}
-		}
-		if len(filtered.Entries) != 0 {
-			result = append(result, filtered)
-		}
-	}
-	return result
-}
 
 type nativeEmojiPanel struct {
 	paths                []string

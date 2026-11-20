@@ -317,7 +317,7 @@ export const en = {
         emoji_panel: "Stickers",
         emoji_tab: "Emoji",
         emoji_symbols_tab: "Symbols",
-        emoji_search: "Search by character, name or U+ code",
+        emoji_search: "Search by name or meaning",
         emoji_search_empty: "No matching characters",
         emoji_more: "Show more",
         emoji_group_expressions: "Smileys & Emotion",
