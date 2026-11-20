@@ -257,14 +257,26 @@ func TestNativeMainShellOpacity(t *testing.T) {
 		customizable := name == "mica" || name == "acrylic" || name == "liquid-glass"
 		for _, mode := range []string{"light", "dark"} {
 			t.Run(name+"/"+mode, func(t *testing.T) {
-				window := nativeMain{theme: name, mode: mode, preferences: map[string]string{"app.surface_opacity": "20", "app.language": "en"}}
+				window := nativeMain{theme: name, mode: mode, preferences: map[string]string{"app.language": "en"}}
 				tester := ui.NewTester(window.view, 360, 400)
-				want := uint8(255)
-				if customizable {
-					want = 51
-				}
-				if got := tester.Image().RGBAAt(340, 380).A; got != want {
-					t.Fatalf("shell alpha = %d, want %d", got, want)
+				for _, percent := range []int{0, 20, 65, 85, 100} {
+					window.preferences["app.surface_opacity"] = strconv.Itoa(percent)
+					tester.Frame()
+					want := 255
+					if customizable {
+						want = (percent*255 + 50) / 100
+					}
+					if name == "liquid-glass" {
+						light := map[int]int{0: 0, 20: 95, 65: 228, 85: 252, 100: 255}
+						dark := map[int]int{0: 0, 20: 100, 65: 235, 85: 255, 100: 255}
+						want = light[percent]
+						if mode == "dark" {
+							want = dark[percent]
+						}
+					}
+					if got := int(tester.Image().RGBAAt(340, 380).A); got < want-1 || got > want+1 {
+						t.Fatalf("at %d%% painted panel alpha = %d, want %d", percent, got, want)
+					}
 				}
 				window.showSettings, window.settingsSection = true, "appearance"
 				opened := true

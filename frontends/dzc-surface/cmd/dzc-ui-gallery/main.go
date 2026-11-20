@@ -41,6 +41,10 @@ type gallery struct {
 
 func (g *gallery) view(c *ui.Context) {
 	preset := presets.Select(g.theme, g.mode)
+	if g.fixture == "surface-opacity" {
+		g.opacityFixture(c, preset)
+		return
+	}
 	kit := preset.Kit()
 	kit.Apply(c)
 	padding := preset.ShowcasePadding()
@@ -245,6 +249,9 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 }
 
 func (g *gallery) prepare(tester *ui.Tester) error {
+	if g.fixture == "surface-opacity" {
+		return tester.Click("Color mode")
+	}
 	if g.fixture == "emoji-favorites" {
 		if err := tester.RightClick("Example image"); err != nil {
 			return err
@@ -383,6 +390,9 @@ func run() error {
 		g.choice = ""
 	}
 	g.groupOpen = g.state == "expanded"
+	if g.fixture == "surface-opacity" {
+		g.groupOpen, g.choice = true, "system"
+	}
 	g.colorChoice, g.channelChoice = "light", "preview"
 	g.bindings = []string{"Super+V"}
 	if g.state == "multiple" || g.state == "win-v" {

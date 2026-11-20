@@ -128,18 +128,19 @@ func (n *nativeMain) view(c *ui.Context) {
 			if !n.showSettings || !about {
 				n.drawBackgroundUpdate(c, kit)
 			}
-			if n.showSettings {
-				n.settingsView(c, kit, surfaceOpacity)
-			} else if n.showEmoji {
-				n.emojiView(c)
-			} else {
-				if n.tagLibrary != nil {
+			kit.WindowContent(c, func() {
+				switch {
+				case n.showSettings:
+					n.settingsView(c, kit, surfaceOpacity)
+				case n.showEmoji:
+					n.emojiView(c)
+				case n.tagLibrary != nil:
 					n.tagLibraryView(c, kit, &queryFocused)
-				} else {
+				default:
 					n.editQuery(queryComposing)
 					n.historyView(c, kit, width)
 				}
-			}
+			})
 			if n.notice != "" {
 				ui.Text(c, n.notice).Padding(4, 8).TextColor(c.Theme().TextMuted)
 			}
@@ -153,7 +154,7 @@ func (n *nativeMain) view(c *ui.Context) {
 			}
 		})
 		if surfaceOpacity != nil {
-			main.Background(ui.Hex(tint).Alpha(float32(*surfaceOpacity) / 100))
+			main.Background(preset.WindowBackground(*surfaceOpacity))
 		}
 	})
 	if n.menu.Active() {

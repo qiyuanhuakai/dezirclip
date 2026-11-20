@@ -12,6 +12,19 @@
 .showcase section {
   min-width: 0;
 }
+/* A neutral backdrop isolates opacity from changes in saturation. */
+html:root.showcase-opacity-background {
+  background-color: #6c6c6c !important;
+}
+.showcase.main-content[data-fixture="surface-opacity"] {
+  background: var(--bg-content);
+}
+.showcase-opacity-columns {
+  display: grid;
+  grid-template-columns: 246px 1fr;
+  gap: 16px;
+  align-items: start;
+}
 .showcase-fields {
   display: grid;
   gap: 8px;

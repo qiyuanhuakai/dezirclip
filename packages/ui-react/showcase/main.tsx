@@ -3,7 +3,7 @@ import "../src/styles/components/privacy.css";
 import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import { AppHeader, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HotkeyBinding, MatchHighlight,
-  ProgressToast, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail,
+  ProgressToast, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail, SettingsSectionCard,
   SettingsSlider, SettingsToggle, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
@@ -238,11 +238,34 @@ function Showcase() {
   </main>;
 }
 
+function SurfaceOpacityFixture() {
+  return <main className="showcase main-content" data-fixture="surface-opacity">
+    <div className="showcase-opacity-columns">
+      <SettingsSectionCard title="Appearance" collapsed={false} onToggle={() => undefined}>
+        <span className="item-label">Color theme</span>
+        <ThemedSelect ariaLabel="Color mode" options={options} value="system" onChange={() => undefined} searchable />
+      </SettingsSectionCard>
+      <HistoryCard disableLayout>
+        <HistoryCardMeta source="Editor" time="12:30" actions={<>
+          <HistoryCardAction title="Pin"><Pin size={12} /></HistoryCardAction>
+          <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
+          <HistoryCardAction title="Delete"><X size={12} /></HistoryCardAction>
+        </>} />
+        <HistoryCardContent>Clipboard entry</HistoryCardContent>
+      </HistoryCard>
+    </div>
+  </main>;
+}
+
 async function start() {
   for (const element of [document.documentElement, document.body]) element.classList.add("theme-" + theme, mode + "-mode");
   await loadBuiltinTheme(theme);
+  if (fixture === "surface-opacity") {
+    document.documentElement.classList.add("showcase-opacity-background");
+    document.documentElement.style.setProperty("--surface-opacity", String(Math.min(100, Math.max(0, Number(state))) / 100));
+  }
   document.body.dataset.appearance = JSON.stringify({ Mode: mode, Tokens: nativeUiPalette() });
-  createRoot(document.getElementById("root")!).render(<Showcase />);
+  createRoot(document.getElementById("root")!).render(fixture === "surface-opacity" ? <SurfaceOpacityFixture /> : <Showcase />);
 }
 
 void start();

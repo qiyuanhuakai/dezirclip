@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
@@ -64,6 +65,14 @@ func (p Preset) Tokens() theme.Tokens {
 
 // SurfaceTint returns the outer window color for presets with adjustable shell opacity.
 func (p Preset) SurfaceTint() string { return p.colors.SurfaceTint }
+
+// WindowBackground resolves the shell tint at the given setting. Solid themes keep their background.
+func (p Preset) WindowBackground(percent int) ui.Color {
+	if tint := p.SurfaceTint(); tint != "" {
+		return ui.Hex(tint).Alpha(float32(min(100, max(0, percent))) / 100)
+	}
+	return ui.Hex(p.colors.Background)
+}
 
 // ShowcasePadding reproduces the Web fixture's viewport in the native gallery.
 func (p Preset) ShowcasePadding() [4]float32 { return p.widgets["gallery"].Padding }

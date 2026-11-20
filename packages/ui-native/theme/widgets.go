@@ -21,6 +21,13 @@ type Gradient struct {
 type ColorRange struct {
 	Clear [4]uint8
 	Full  [4]uint8
+	Stops []ColorStop
+}
+
+// ColorStop stores a material color at a position on the surface-opacity slider.
+type ColorStop struct {
+	Percent int
+	RGBA    [4]uint8
 }
 
 type WidgetStyle struct {

@@ -1,4 +1,5 @@
 const samples = [
+  ["surface-opacity", "65", { windowContent: [".main-content"] }],
   ["settings-section-card", "default", {
     settingsGroup: [".settings-group"], settingsGroupHeader: [".group-header", ".group-header h3"],
     settingsGroupChevron: [".group-header svg"],
@@ -295,14 +296,19 @@ function prepareSliderSamples() {
 function readStyles(sample) {
   const selectors = sample.selectors ?? sample;
   const drawing = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+  const colorCache = new Map();
   const color = (...values) => {
+    const key = values.join("\n");
+    if (colorCache.has(key)) return colorCache.get(key);
     drawing.clearRect(0, 0, 1, 1);
     for (const value of values) {
       if (!CSS.supports("color", value)) continue;
       drawing.fillStyle = value;
       drawing.fillRect(0, 0, 1, 1);
     }
-    return [...drawing.getImageData(0, 0, 1, 1).data];
+    const rgba = [...drawing.getImageData(0, 0, 1, 1).data];
+    colorCache.set(key, rgba);
+    return rgba;
   };
   const number = value => Math.round((Number.parseFloat(value) || 0) * 100) / 100;
   const styles = Object.fromEntries(Object.entries(selectors).map(([id, [selector, label, pseudo]]) => {
@@ -409,35 +415,73 @@ function readStyles(sample) {
   if (!sample.materialOpacity) return styles;
   const root = document.documentElement.style;
   const originalOpacity = root.getPropertyValue("--surface-opacity");
-  // Read the real endpoints even when a theme declares a more specific
-  // important transition on the control than the gallery can switch off.
+  const opacityPriority = root.getPropertyPriority("--surface-opacity");
+  // Sample finalized colors even for controls with theme-specific transitions.
   const targets = [...new Set(Object.values(selectors).map(([selector]) => document.querySelector(selector)))];
   const transitions = targets.map(element => [
     element, element.style.getPropertyValue("transition"), element.style.getPropertyPriority("transition"),
   ]);
   for (const [element] of transitions) element.style.setProperty("transition", "none", "important");
-  const colorsAt = opacity => {
-    root.setProperty("--surface-opacity", opacity);
-    return Object.entries(selectors).map(([id, [selector, , pseudo]]) => {
-      const css = getComputedStyle(document.querySelector(selector), pseudo);
-      const border = ["Top", "Right", "Bottom", "Left"].find(side => number(css["border" + side + "Width"]) > 0) ?? "Top";
-      const tint = css.backgroundImage.match(/^linear-gradient\((rgba?\([^)]*\)), \1\)(?:, none)*$/)?.[1];
-      return [id, color(css.backgroundColor, id === "settingsRangeTrack" ? "" : tint), color(css["border" + border + "Color"])];
-    });
-  };
+  const materials = Object.entries(selectors).map(([id, [selector, , pseudo]]) => {
+    const element = document.querySelector(selector);
+    const css = getComputedStyle(element, pseudo);
+    const border = ["Top", "Right", "Bottom", "Left"].find(side => number(css["border" + side + "Width"]) > 0) ?? "Top";
+    return { id, css, border, fills: [], borders: [] };
+  });
+  function materialRange(colors) {
+    const equalColor = (a, b) => a.every((channel, i) => channel === b[i]);
+    if (colors.every(rgba => equalColor(rgba, colors[0]))) return undefined;
+    const stops = [];
+    // Compare premultiplied colors so round-off in nearly clear RGB values
+    // does not create extra stops. Preserve alpha separately for composition.
+    const distance = (a, b) => Math.max(Math.abs(a[3] - b[3]), ...a.slice(0, 3).map((_, i) =>
+      Math.abs(a[i] * a[3] - b[i] * b[3]) / 255));
+    function append(first, last) {
+      const from = colors[first], to = colors[last];
+      let farthest = 1, middle = -1;
+      for (let index = first + 1; index < last; index++) {
+        const progress = (index - first) / (last - first);
+        const predicted = from.map((value, channel) => {
+          const a = channel < 3 && from[3] === 0 ? to[channel] : value;
+          const b = channel < 3 && to[3] === 0 ? from[channel] : to[channel];
+          return Math.round(a + (b - a) * progress);
+        });
+        const deviation = distance(colors[index], predicted);
+        if (deviation > farthest) {
+          farthest = deviation;
+          middle = index;
+        }
+      }
+      if (middle >= 0) {
+        append(first, middle);
+        append(middle, last);
+      } else {
+        stops.push({ percent: last, rgba: to });
+      }
+    }
+    stops.push({ percent: 0, rgba: colors[0] });
+    append(0, 65);
+    append(65, 100);
+    return { clear: colors[0], full: colors[100], stops };
+  }
   try {
-    const clear = colorsAt("0");
-    const full = colorsAt("1");
-    clear.forEach(([id, fill, border], index) => {
-      if (!fill.every((channel, position) => channel === full[index][1][position])) {
-        styles[id].fillRange = { clear: fill, full: full[index][1] };
+    // The setting has 101 integer positions. Capture pieces that saturate
+    // between the default and 100%, as well as layers with a fixed floor.
+    for (let percent = 0; percent <= 100; percent++) {
+      root.setProperty("--surface-opacity", String(percent / 100), "important");
+      for (const { id, css, border, fills, borders } of materials) {
+        const tint = css.backgroundImage.match(/^linear-gradient\((rgba?\([^)]*\)), \1\)(?:, none)*$/)?.[1];
+        fills.push(color(css.backgroundColor, id === "settingsRangeTrack" ? "" : tint));
+        borders.push(color(css["border" + border + "Color"]));
       }
-      if (!border.every((channel, position) => channel === full[index][2][position])) {
-        styles[id].borderRange = { clear: border, full: full[index][2] };
-      }
-    });
+    }
+    for (const { id, fills, borders } of materials) {
+      const fill = materialRange(fills), border = materialRange(borders);
+      if (fill) styles[id].fillRange = fill;
+      if (border) styles[id].borderRange = border;
+    }
   } finally {
-    if (originalOpacity) root.setProperty("--surface-opacity", originalOpacity);
+    if (originalOpacity) root.setProperty("--surface-opacity", originalOpacity, opacityPriority);
     else root.removeProperty("--surface-opacity");
     for (const [element, value, priority] of transitions) {
       if (value) element.style.setProperty("transition", value, priority);

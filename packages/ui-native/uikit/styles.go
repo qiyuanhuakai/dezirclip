@@ -1,6 +1,7 @@
 package uikit
 
 import (
+	"sort"
 	"strings"
 	"time"
 
@@ -90,23 +91,38 @@ func materialColor(current [4]uint8, values *theme.ColorRange, percent int) [4]u
 	if values == nil {
 		return current
 	}
+	if stops := values.Stops; len(stops) != 0 {
+		end := sort.Search(len(stops), func(i int) bool { return stops[i].Percent >= percent })
+		if end == len(stops) {
+			return stops[end-1].RGBA
+		}
+		if end == 0 || stops[end].Percent == percent {
+			return stops[end].RGBA
+		}
+		from, to := stops[end-1], stops[end]
+		return interpolateMaterial(from.RGBA, to.RGBA, float32(percent-from.Percent)/float32(to.Percent-from.Percent))
+	}
 	from, to := values.Clear, current
 	progress := float32(percent) / 65
 	if percent > 65 {
 		from, to = current, values.Full
 		progress = float32(percent-65) / 35
 	}
+	return interpolateMaterial(from, to, progress)
+}
+
+func interpolateMaterial(from, to [4]uint8, progress float32) (color [4]uint8) {
 	if from[3] == 0 {
 		from[0], from[1], from[2] = to[0], to[1], to[2]
 	}
 	if to[3] == 0 {
 		to[0], to[1], to[2] = from[0], from[1], from[2]
 	}
-	for i := range current {
+	for i := range color {
 		a, b := float32(from[i]), float32(to[i])
-		current[i] = uint8(a + (b-a)*progress + 0.5)
+		color[i] = uint8(a + (b-a)*progress + 0.5)
 	}
-	return current
+	return color
 }
 
 func styleColor(rgba [4]uint8) ui.Color {

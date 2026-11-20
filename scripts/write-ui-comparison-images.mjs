@@ -13,6 +13,8 @@ if (!artifacts) throw Error("Pass results=<directory written by compare-ui-compo
 // Each published figure shows one component using the same tested theme and
 // state, trimmed to keep its visible controls legible in the README.
 const figures = [
+  ["surface-opacity", "20", 312, 0, "surface-opacity-20"],
+  ["surface-opacity", "85", 312, 0, "surface-opacity-85"],
   ["history-card", "compact-hover", 90, 0, "history-card-compact-actions"],
   ["context-menu", "text", 215],
   ["text-fields", "default", 275],

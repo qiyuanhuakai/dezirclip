@@ -17,6 +17,7 @@ const selectedTheme = flags.get("theme");
 const selectedFixtures = flags.get("fixture")?.split(",");
 const presets = JSON.parse(await readFile(resolve(root, "packages/ui-presets/builtin-presets.json"), "utf8"));
 const cases = {
+  "surface-opacity": { states: ["0", "20", "65", "85", "100"], text: "Appearance" },
   "settings-section-card": { states: ["default", "expanded", "wide"], text: "General settings" },
   "settings-choices": { states: ["default"], text: "Update channel" },
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
@@ -154,6 +155,10 @@ try {
             await page.mouse.move(450, 390);
             await page.goto(url.href);
             await page.locator("main[data-fixture]").waitFor();
+            if (fixture === "surface-opacity") {
+              await page.getByRole("combobox", { name: "Color mode" }).click();
+              await page.getByRole("option", { name: "Light", exact: true }).waitFor();
+            }
             if (fixture === "clipboard-search") {
               const search = page.locator("[data-clipboard-search]");
               const field = search.getByRole("textbox", { name: "搜索剪切板..." });
@@ -296,7 +301,8 @@ try {
             const sameText = marker === "Clipboard history"
               ? ["Clipboard", "history"].every(word => comparable(webText, word) && comparable(nativeText, word))
               : comparable(webText, marker) && comparable(nativeText, marker);
-            const extra = state === "popup" ? "Light" : state === "expanded" && fixture === "disclosure" ? "Preview channel"
+            const extra = state === "popup" || fixture === "surface-opacity" ? "Light"
+              : state === "expanded" && fixture === "disclosure" ? "Preview channel"
               : fixture === "context-menu" && state !== "default" ? state === "text" ? "Uppercase" : "Ignore this source"
               : fixture === "settings-update" ? {
                 default: "42%", "unknown-size": "2.5 MiB", installing: "Official update signature verified",

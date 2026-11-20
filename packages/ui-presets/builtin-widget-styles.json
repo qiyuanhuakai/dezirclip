@@ -1,6 +1,24 @@
 {
   "retro": {
     "light": {
+      "windowContent": {
+        "fill": [220, 220, 220, 255],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 14,
+        "rowGap": 14,
+        "width": 556,
+        "height": 420,
+        "marginTop": 0,
+        "padding": [20, 20, 20, 20],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsGroup": {
         "fill": [243, 243, 243, 255],
         "text": [55, 55, 55, 255],
@@ -4682,6 +4700,24 @@
       }
     },
     "dark": {
+      "windowContent": {
+        "fill": [24, 24, 24, 255],
+        "text": [237, 237, 237, 255],
+        "border": [237, 237, 237, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 14,
+        "rowGap": 14,
+        "width": 556,
+        "height": 420,
+        "marginTop": 0,
+        "padding": [20, 20, 20, 20],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsGroup": {
         "fill": [44, 44, 44, 255],
         "text": [237, 237, 237, 255],
@@ -9372,6 +9408,24 @@
   },
   "mica": {
     "light": {
+      "windowContent": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 14,
+        "rowGap": 14,
+        "width": 560,
+        "height": 420,
+        "marginTop": 0,
+        "padding": [20, 20, 20, 20],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsGroup": {
         "fill": [255, 255, 255, 64],
         "text": [55, 55, 55, 255],
@@ -13903,6 +13957,24 @@
       }
     },
     "dark": {
+      "windowContent": {
+        "fill": [0, 0, 0, 0],
+        "text": [246, 247, 251, 255],
+        "border": [246, 247, 251, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 14,
+        "rowGap": 14,
+        "width": 560,
+        "height": 420,
+        "marginTop": 0,
+        "padding": [20, 20, 20, 20],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsGroup": {
         "fill": [0, 0, 0, 0],
         "text": [246, 247, 251, 255],
@@ -18479,6 +18551,24 @@
   },
   "acrylic": {
     "light": {
+      "windowContent": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 14,
+        "rowGap": 14,
+        "width": 560,
+        "height": 420,
+        "marginTop": 0,
+        "padding": [20, 20, 20, 20],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsGroup": {
         "fill": [255, 255, 255, 46],
         "text": [55, 55, 55, 255],
@@ -23010,6 +23100,24 @@
       }
     },
     "dark": {
+      "windowContent": {
+        "fill": [0, 0, 0, 0],
+        "text": [246, 247, 251, 255],
+        "border": [246, 247, 251, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 14,
+        "rowGap": 14,
+        "width": 560,
+        "height": 420,
+        "marginTop": 0,
+        "padding": [20, 20, 20, 20],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsGroup": {
         "fill": [0, 0, 0, 0],
         "text": [246, 247, 251, 255],
@@ -27586,6 +27694,50 @@
   },
   "liquid-glass": {
     "light": {
+      "windowContent": {
+        "fill": [255, 255, 255, 179],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 14,
+        "rowGap": 14,
+        "width": 558,
+        "height": 420,
+        "marginTop": 0,
+        "padding": [20, 20, 20, 20],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 179]
+            },
+            {
+              "percent": 91,
+              "rgba": [255, 255, 255, 250]
+            },
+            {
+              "percent": 93,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
+        }
+      },
       "settingsGroup": {
         "fill": [255, 255, 255, 128],
         "text": [29, 29, 31, 255],
@@ -27614,7 +27766,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 196]
+          "full": [255, 255, 255, 196],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 128]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 196]
+            }
+          ]
         }
       },
       "settingsGroupHeader": {
@@ -27646,7 +27812,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 177]
+          "full": [255, 255, 255, 177],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 115]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 177]
+            }
+          ]
         }
       },
       "settingsGroupChevron": {
@@ -27693,7 +27873,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 196]
+          "full": [255, 255, 255, 196],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 128]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 196]
+            }
+          ]
         }
       },
       "settingsGroupHeaderOpen": {
@@ -27788,7 +27982,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "settingsChoiceCardActive": {
@@ -28033,7 +28245,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 110]
+          "full": [255, 255, 255, 110],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 71]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 110]
+            }
+          ]
         }
       },
       "settingsDataAction": {
@@ -28067,7 +28293,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "settingsDataLabel": {
@@ -28267,7 +28511,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "backupRadio": {
@@ -28326,7 +28588,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "backupPathRow": {
@@ -28376,7 +28656,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "backupActions": {
@@ -28420,7 +28718,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "backupSubmit": {
@@ -28462,7 +28778,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "backupPreviewRow": {
@@ -28521,7 +28855,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "backupChoiceHover": {
@@ -28543,7 +28895,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "backupCancelHover": {
@@ -28569,7 +28939,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "backupSubmitHover": {
@@ -28764,7 +29152,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "settingsRemove": {
@@ -28798,7 +29204,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "settingsRemoveIcon": {
@@ -28832,7 +29256,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "privacyRulesHeading": {
@@ -28899,7 +29341,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "privacyRuleCancel": {
@@ -28933,7 +29393,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "privacyRuleCard": {
@@ -29031,7 +29509,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "tagToolbar": {
@@ -29081,7 +29573,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "tagToolbarButtonActive": {
@@ -29147,7 +29657,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "tagSearchInput": {
@@ -29179,7 +29707,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "tagSearchInputPlaceholder": {
@@ -29246,7 +29788,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "tagSearchClearIcon": {
@@ -29294,7 +29854,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "tagRailSearchInputPlaceholder": {
@@ -29360,7 +29934,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "tagPickerSearchInputPlaceholder": {
@@ -29414,7 +30002,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "numberField": {
@@ -29446,7 +30052,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "textFieldFocus": {
@@ -29472,7 +30092,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "numberFieldFocus": {
@@ -29498,7 +30136,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "contextMenu": {
@@ -29535,7 +30187,21 @@
         ],
         "fillRange": {
           "clear": [255, 255, 255, 158],
-          "full": [255, 255, 255, 203]
+          "full": [255, 255, 255, 203],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [255, 255, 255, 158]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 187]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 203]
+            }
+          ]
         }
       },
       "contextSubmenu": {
@@ -29572,7 +30238,21 @@
         ],
         "fillRange": {
           "clear": [255, 255, 255, 158],
-          "full": [255, 255, 255, 203]
+          "full": [255, 255, 255, 203],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [255, 255, 255, 158]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 187]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 203]
+            }
+          ]
         }
       },
       "contextMenuItem": {
@@ -29928,7 +30608,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "previewToolbarActive": {
@@ -29992,7 +30690,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "settingsRail": {
@@ -30042,7 +30758,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 177]
+          "full": [255, 255, 255, 177],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 115]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 177]
+            }
+          ]
         }
       },
       "settingsRailActive": {
@@ -30074,7 +30804,145 @@
         ],
         "fillRange": {
           "clear": [12, 131, 255, 41],
-          "full": [202, 229, 255, 189]
+          "full": [202, 229, 255, 189],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [12, 131, 255, 41]
+            },
+            {
+              "percent": 8,
+              "rgba": [67, 159, 255, 53]
+            },
+            {
+              "percent": 14,
+              "rgba": [95, 173, 255, 62]
+            },
+            {
+              "percent": 15,
+              "rgba": [93, 174, 255, 63]
+            },
+            {
+              "percent": 18,
+              "rgba": [109, 180, 255, 68]
+            },
+            {
+              "percent": 36,
+              "rgba": [150, 201, 255, 95]
+            },
+            {
+              "percent": 37,
+              "rgba": [150, 201, 255, 95]
+            },
+            {
+              "percent": 39,
+              "rgba": [155, 203, 255, 99]
+            },
+            {
+              "percent": 45,
+              "rgba": [162, 207, 255, 107]
+            },
+            {
+              "percent": 47,
+              "rgba": [165, 209, 255, 111]
+            },
+            {
+              "percent": 51,
+              "rgba": [169, 211, 255, 116]
+            },
+            {
+              "percent": 53,
+              "rgba": [172, 212, 255, 120]
+            },
+            {
+              "percent": 55,
+              "rgba": [173, 213, 255, 122]
+            },
+            {
+              "percent": 57,
+              "rgba": [174, 215, 255, 126]
+            },
+            {
+              "percent": 58,
+              "rgba": [176, 215, 255, 126]
+            },
+            {
+              "percent": 61,
+              "rgba": [180, 216, 255, 132]
+            },
+            {
+              "percent": 62,
+              "rgba": [180, 216, 255, 132]
+            },
+            {
+              "percent": 63,
+              "rgba": [181, 219, 255, 134]
+            },
+            {
+              "percent": 64,
+              "rgba": [182, 218, 255, 136]
+            },
+            {
+              "percent": 65,
+              "rgba": [182, 218, 255, 137]
+            },
+            {
+              "percent": 68,
+              "rgba": [183, 221, 255, 142]
+            },
+            {
+              "percent": 69,
+              "rgba": [185, 219, 255, 143]
+            },
+            {
+              "percent": 70,
+              "rgba": [186, 220, 255, 145]
+            },
+            {
+              "percent": 71,
+              "rgba": [185, 222, 255, 146]
+            },
+            {
+              "percent": 72,
+              "rgba": [187, 220, 255, 147]
+            },
+            {
+              "percent": 78,
+              "rgba": [192, 223, 255, 157]
+            },
+            {
+              "percent": 80,
+              "rgba": [192, 223, 255, 159]
+            },
+            {
+              "percent": 82,
+              "rgba": [194, 224, 255, 163]
+            },
+            {
+              "percent": 86,
+              "rgba": [196, 225, 255, 168]
+            },
+            {
+              "percent": 87,
+              "rgba": [197, 227, 255, 170]
+            },
+            {
+              "percent": 91,
+              "rgba": [198, 226, 255, 176]
+            },
+            {
+              "percent": 92,
+              "rgba": [197, 228, 255, 177]
+            },
+            {
+              "percent": 94,
+              "rgba": [200, 227, 255, 180]
+            },
+            {
+              "percent": 100,
+              "rgba": [202, 229, 255, 189]
+            }
+          ]
         }
       },
       "settingsFooterCard": {
@@ -30105,7 +30973,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 196]
+          "full": [255, 255, 255, 196],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 128]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 196]
+            }
+          ]
         }
       },
       "settingsFooterVersion": {
@@ -30174,7 +31056,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "scrollToTopHover": {
@@ -30319,7 +31219,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 199]
+            },
+            {
+              "percent": 83,
+              "rgba": [255, 255, 255, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "settingsSwitchRight": {
@@ -30342,7 +31260,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 199]
+            },
+            {
+              "percent": 83,
+              "rgba": [255, 255, 255, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "settingsSwitchTrackOn": {
@@ -30415,7 +31351,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 199]
+            },
+            {
+              "percent": 83,
+              "rgba": [255, 255, 255, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "settingsSwitchRightOn": {
@@ -30438,7 +31392,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 199]
+            },
+            {
+              "percent": 83,
+              "rgba": [255, 255, 255, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "settingsRangeFocus": {
@@ -30646,7 +31618,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "characterInputPlaceholder": {
@@ -30713,7 +31699,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "emojiTabActive": {
@@ -30889,7 +31893,21 @@
         ],
         "fillRange": {
           "clear": [255, 255, 255, 128],
-          "full": [255, 255, 255, 171]
+          "full": [255, 255, 255, 171],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [255, 255, 255, 128]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 156]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 171]
+            }
+          ]
         }
       },
       "historyMeta": {
@@ -31146,7 +32164,21 @@
         ],
         "fillRange": {
           "clear": [255, 255, 255, 128],
-          "full": [255, 255, 255, 171]
+          "full": [255, 255, 255, 171],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [255, 255, 255, 128]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 156]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 171]
+            }
+          ]
         }
       },
       "historyContentCompact": {
@@ -31384,7 +32416,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 157]
+          "full": [255, 255, 255, 157],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 102]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 157]
+            }
+          ]
         }
       },
       "headerTop": {
@@ -31448,7 +32494,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "headerInput": {
@@ -31480,7 +32544,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "headerInputPlaceholder": {
@@ -31580,7 +32658,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "headerFilterSelected": {
@@ -31676,7 +32772,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "selectIndicator": {
@@ -31724,7 +32834,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "selectFocus": {
@@ -31750,7 +32874,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "selectDisabled": {
@@ -31782,7 +32920,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "selectMenu": {
@@ -31814,7 +32966,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 243]
+          "full": [255, 255, 255, 243],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 158]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 243]
+            }
+          ]
         }
       },
       "selectMenuList": {
@@ -32039,7 +33205,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "searchIcon": {
@@ -32272,7 +33456,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 157]
+          "full": [255, 255, 255, 157],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 102]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 157]
+            }
+          ]
         }
       },
       "historyItem": {
@@ -32372,7 +33570,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "disclosureContent": {
@@ -32441,7 +33657,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "progress": {
@@ -32477,7 +33711,21 @@
         ],
         "fillRange": {
           "clear": [255, 255, 255, 158],
-          "full": [255, 255, 255, 197]
+          "full": [255, 255, 255, 197],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [255, 255, 255, 158]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 183]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 197]
+            }
+          ]
         }
       },
       "progressMessage": {
@@ -32577,7 +33825,21 @@
         ],
         "fillRange": {
           "clear": [255, 255, 255, 158],
-          "full": [255, 255, 255, 197]
+          "full": [255, 255, 255, 197],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [255, 255, 255, 158]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 183]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 197]
+            }
+          ]
         }
       },
       "progressClose": {
@@ -32630,7 +33892,21 @@
         ],
         "fillRange": {
           "clear": [255, 255, 255, 158],
-          "full": [255, 255, 255, 197]
+          "full": [255, 255, 255, 197],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [255, 255, 255, 158]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 183]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 197]
+            }
+          ]
         }
       },
       "progressStatus": {
@@ -32682,7 +33958,21 @@
         ],
         "fillRange": {
           "clear": [255, 255, 255, 158],
-          "full": [255, 255, 255, 197]
+          "full": [255, 255, 255, 197],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [255, 255, 255, 158]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 183]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 197]
+            }
+          ]
         }
       },
       "confirm": {
@@ -32727,7 +34017,21 @@
         ],
         "fillRange": {
           "clear": [255, 255, 255, 128],
-          "full": [255, 255, 255, 183]
+          "full": [255, 255, 255, 183],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [255, 255, 255, 128]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 163]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 183]
+            }
+          ]
         }
       },
       "confirmBackdrop": {
@@ -32879,7 +34183,21 @@
         ],
         "fillRange": {
           "clear": [255, 255, 255, 128],
-          "full": [255, 255, 255, 183]
+          "full": [255, 255, 255, 183],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [255, 255, 255, 128]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 163]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 183]
+            }
+          ]
         }
       },
       "tagBackdrop": {
@@ -32943,7 +34261,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 255]
+          "full": [255, 255, 255, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 217]
+            },
+            {
+              "percent": 77,
+              "rgba": [255, 255, 255, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 255]
+            }
+          ]
         }
       },
       "tagHeading": {
@@ -33039,7 +34375,21 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [255, 255, 255, 216]
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
         }
       },
       "gallery": {
@@ -33047,6 +34397,78 @@
       }
     },
     "dark": {
+      "windowContent": {
+        "fill": [26, 28, 38, 199],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 14,
+        "rowGap": 14,
+        "width": 558,
+        "height": 420,
+        "marginTop": 0,
+        "padding": [20, 20, 20, 20],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [25, 28, 38, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 41,
+              "rgba": [24, 29, 39, 125]
+            },
+            {
+              "percent": 43,
+              "rgba": [25, 27, 39, 132]
+            },
+            {
+              "percent": 45,
+              "rgba": [26, 28, 39, 138]
+            },
+            {
+              "percent": 48,
+              "rgba": [24, 28, 38, 147]
+            },
+            {
+              "percent": 49,
+              "rgba": [26, 27, 37, 150]
+            },
+            {
+              "percent": 54,
+              "rgba": [25, 28, 39, 165]
+            },
+            {
+              "percent": 58,
+              "rgba": [24, 27, 37, 177]
+            },
+            {
+              "percent": 61,
+              "rgba": [25, 29, 38, 187]
+            },
+            {
+              "percent": 65,
+              "rgba": [26, 28, 38, 199]
+            },
+            {
+              "percent": 83,
+              "rgba": [25, 28, 38, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [25, 28, 38, 255]
+            }
+          ]
+        }
+      },
       "settingsGroup": {
         "fill": [29, 33, 42, 199],
         "text": [245, 245, 247, 255],
@@ -33075,7 +34497,61 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [30, 33, 42, 255]
+          "full": [30, 33, 42, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 40,
+              "rgba": [29, 33, 42, 122]
+            },
+            {
+              "percent": 46,
+              "rgba": [31, 33, 42, 141]
+            },
+            {
+              "percent": 48,
+              "rgba": [29, 33, 42, 147]
+            },
+            {
+              "percent": 49,
+              "rgba": [31, 32, 42, 150]
+            },
+            {
+              "percent": 52,
+              "rgba": [30, 34, 42, 159]
+            },
+            {
+              "percent": 54,
+              "rgba": [29, 32, 42, 165]
+            },
+            {
+              "percent": 57,
+              "rgba": [29, 34, 42, 174]
+            },
+            {
+              "percent": 59,
+              "rgba": [30, 32, 42, 181]
+            },
+            {
+              "percent": 65,
+              "rgba": [29, 33, 42, 199]
+            },
+            {
+              "percent": 71,
+              "rgba": [31, 33, 42, 217]
+            },
+            {
+              "percent": 83,
+              "rgba": [30, 33, 42, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [30, 33, 42, 255]
+            }
+          ]
         }
       },
       "settingsGroupHeader": {
@@ -33107,7 +34583,57 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [35, 38, 48, 196]
+          "full": [35, 38, 48, 196],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [36, 38, 48, 128]
+            },
+            {
+              "percent": 69,
+              "rgba": [36, 38, 47, 135]
+            },
+            {
+              "percent": 72,
+              "rgba": [34, 38, 49, 141]
+            },
+            {
+              "percent": 73,
+              "rgba": [36, 37, 48, 143]
+            },
+            {
+              "percent": 74,
+              "rgba": [35, 39, 47, 145]
+            },
+            {
+              "percent": 75,
+              "rgba": [35, 38, 49, 147]
+            },
+            {
+              "percent": 77,
+              "rgba": [35, 39, 47, 151]
+            },
+            {
+              "percent": 80,
+              "rgba": [36, 37, 49, 157]
+            },
+            {
+              "percent": 85,
+              "rgba": [35, 38, 47, 167]
+            },
+            {
+              "percent": 88,
+              "rgba": [35, 38, 49, 173]
+            },
+            {
+              "percent": 100,
+              "rgba": [35, 38, 48, 196]
+            }
+          ]
         }
       },
       "settingsGroupChevron": {
@@ -33154,7 +34680,61 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [30, 33, 42, 255]
+          "full": [30, 33, 42, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 40,
+              "rgba": [29, 33, 42, 122]
+            },
+            {
+              "percent": 46,
+              "rgba": [31, 33, 42, 141]
+            },
+            {
+              "percent": 48,
+              "rgba": [29, 33, 42, 147]
+            },
+            {
+              "percent": 49,
+              "rgba": [31, 32, 42, 150]
+            },
+            {
+              "percent": 52,
+              "rgba": [30, 34, 42, 159]
+            },
+            {
+              "percent": 54,
+              "rgba": [29, 32, 42, 165]
+            },
+            {
+              "percent": 57,
+              "rgba": [29, 34, 42, 174]
+            },
+            {
+              "percent": 59,
+              "rgba": [30, 32, 42, 181]
+            },
+            {
+              "percent": 65,
+              "rgba": [29, 33, 42, 199]
+            },
+            {
+              "percent": 71,
+              "rgba": [31, 33, 42, 217]
+            },
+            {
+              "percent": 83,
+              "rgba": [30, 33, 42, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [30, 33, 42, 255]
+            }
+          ]
         }
       },
       "settingsGroupHeaderOpen": {
@@ -33249,7 +34829,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "settingsChoiceCardActive": {
@@ -33494,7 +35092,57 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [25, 28, 38, 255]
+          "full": [25, 28, 38, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 41,
+              "rgba": [24, 29, 39, 125]
+            },
+            {
+              "percent": 43,
+              "rgba": [25, 27, 39, 132]
+            },
+            {
+              "percent": 45,
+              "rgba": [26, 28, 39, 138]
+            },
+            {
+              "percent": 48,
+              "rgba": [24, 28, 38, 147]
+            },
+            {
+              "percent": 49,
+              "rgba": [26, 27, 37, 150]
+            },
+            {
+              "percent": 54,
+              "rgba": [25, 28, 39, 165]
+            },
+            {
+              "percent": 58,
+              "rgba": [24, 27, 37, 177]
+            },
+            {
+              "percent": 61,
+              "rgba": [25, 29, 38, 187]
+            },
+            {
+              "percent": 65,
+              "rgba": [26, 28, 38, 199]
+            },
+            {
+              "percent": 83,
+              "rgba": [25, 28, 38, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [25, 28, 38, 255]
+            }
+          ]
         }
       },
       "settingsDataAction": {
@@ -33528,7 +35176,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "settingsDataLabel": {
@@ -33728,7 +35394,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [45, 48, 58, 250]
+            },
+            {
+              "percent": 67,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "backupRadio": {
@@ -33787,7 +35471,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [45, 48, 58, 250]
+            },
+            {
+              "percent": 67,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "backupPathRow": {
@@ -33837,7 +35539,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "backupActions": {
@@ -33881,7 +35601,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "backupSubmit": {
@@ -33923,7 +35661,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [45, 48, 58, 250]
+            },
+            {
+              "percent": 67,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "backupPreviewRow": {
@@ -33982,7 +35738,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [45, 48, 58, 250]
+            },
+            {
+              "percent": 67,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "backupChoiceHover": {
@@ -34004,7 +35778,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "backupCancelHover": {
@@ -34030,7 +35822,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [45, 48, 58, 250]
+            },
+            {
+              "percent": 67,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "backupSubmitHover": {
@@ -34225,7 +36035,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "settingsRemove": {
@@ -34259,7 +36087,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "settingsRemoveIcon": {
@@ -34293,7 +36139,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "privacyRulesHeading": {
@@ -34360,7 +36224,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "privacyRuleCancel": {
@@ -34394,7 +36276,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "privacyRuleCard": {
@@ -34492,7 +36392,57 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 32,
+              "rgba": [44, 49, 58, 110]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 48, 58, 128]
+            },
+            {
+              "percent": 45,
+              "rgba": [44, 48, 58, 155]
+            },
+            {
+              "percent": 47,
+              "rgba": [46, 47, 58, 162]
+            },
+            {
+              "percent": 50,
+              "rgba": [46, 49, 57, 173]
+            },
+            {
+              "percent": 53,
+              "rgba": [45, 47, 59, 183]
+            },
+            {
+              "percent": 59,
+              "rgba": [45, 47, 57, 204]
+            },
+            {
+              "percent": 65,
+              "rgba": [46, 48, 58, 224]
+            },
+            {
+              "percent": 68,
+              "rgba": [44, 48, 58, 235]
+            },
+            {
+              "percent": 74,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "tagToolbar": {
@@ -34542,7 +36492,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "tagToolbarButtonActive": {
@@ -34608,7 +36576,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "tagSearchInput": {
@@ -34640,7 +36626,57 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 32,
+              "rgba": [44, 49, 58, 110]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 48, 58, 128]
+            },
+            {
+              "percent": 45,
+              "rgba": [44, 48, 58, 155]
+            },
+            {
+              "percent": 47,
+              "rgba": [46, 47, 58, 162]
+            },
+            {
+              "percent": 50,
+              "rgba": [46, 49, 57, 173]
+            },
+            {
+              "percent": 53,
+              "rgba": [45, 47, 59, 183]
+            },
+            {
+              "percent": 59,
+              "rgba": [45, 47, 57, 204]
+            },
+            {
+              "percent": 65,
+              "rgba": [46, 48, 58, 224]
+            },
+            {
+              "percent": 68,
+              "rgba": [44, 48, 58, 235]
+            },
+            {
+              "percent": 74,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "tagSearchInputPlaceholder": {
@@ -34707,7 +36743,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "tagSearchClearIcon": {
@@ -34755,7 +36809,57 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 32,
+              "rgba": [44, 49, 58, 110]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 48, 58, 128]
+            },
+            {
+              "percent": 45,
+              "rgba": [44, 48, 58, 155]
+            },
+            {
+              "percent": 47,
+              "rgba": [46, 47, 58, 162]
+            },
+            {
+              "percent": 50,
+              "rgba": [46, 49, 57, 173]
+            },
+            {
+              "percent": 53,
+              "rgba": [45, 47, 59, 183]
+            },
+            {
+              "percent": 59,
+              "rgba": [45, 47, 57, 204]
+            },
+            {
+              "percent": 65,
+              "rgba": [46, 48, 58, 224]
+            },
+            {
+              "percent": 68,
+              "rgba": [44, 48, 58, 235]
+            },
+            {
+              "percent": 74,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "tagRailSearchInputPlaceholder": {
@@ -34821,7 +36925,57 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 32,
+              "rgba": [44, 49, 58, 110]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 48, 58, 128]
+            },
+            {
+              "percent": 45,
+              "rgba": [44, 48, 58, 155]
+            },
+            {
+              "percent": 47,
+              "rgba": [46, 47, 58, 162]
+            },
+            {
+              "percent": 50,
+              "rgba": [46, 49, 57, 173]
+            },
+            {
+              "percent": 53,
+              "rgba": [45, 47, 59, 183]
+            },
+            {
+              "percent": 59,
+              "rgba": [45, 47, 57, 204]
+            },
+            {
+              "percent": 65,
+              "rgba": [46, 48, 58, 224]
+            },
+            {
+              "percent": 68,
+              "rgba": [44, 48, 58, 235]
+            },
+            {
+              "percent": 74,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "tagPickerSearchInputPlaceholder": {
@@ -34875,7 +37029,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [45, 48, 58, 250]
+            },
+            {
+              "percent": 67,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "numberField": {
@@ -34907,7 +37079,57 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 32,
+              "rgba": [44, 49, 58, 110]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 48, 58, 128]
+            },
+            {
+              "percent": 45,
+              "rgba": [44, 48, 58, 155]
+            },
+            {
+              "percent": 47,
+              "rgba": [46, 47, 58, 162]
+            },
+            {
+              "percent": 50,
+              "rgba": [46, 49, 57, 173]
+            },
+            {
+              "percent": 53,
+              "rgba": [45, 47, 59, 183]
+            },
+            {
+              "percent": 59,
+              "rgba": [45, 47, 57, 204]
+            },
+            {
+              "percent": 65,
+              "rgba": [46, 48, 58, 224]
+            },
+            {
+              "percent": 68,
+              "rgba": [44, 48, 58, 235]
+            },
+            {
+              "percent": 74,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "textFieldFocus": {
@@ -34933,7 +37155,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [45, 48, 58, 250]
+            },
+            {
+              "percent": 67,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "numberFieldFocus": {
@@ -34959,7 +37199,57 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 32,
+              "rgba": [44, 49, 58, 110]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 48, 58, 128]
+            },
+            {
+              "percent": 45,
+              "rgba": [44, 48, 58, 155]
+            },
+            {
+              "percent": 47,
+              "rgba": [46, 47, 58, 162]
+            },
+            {
+              "percent": 50,
+              "rgba": [46, 49, 57, 173]
+            },
+            {
+              "percent": 53,
+              "rgba": [45, 47, 59, 183]
+            },
+            {
+              "percent": 59,
+              "rgba": [45, 47, 57, 204]
+            },
+            {
+              "percent": 65,
+              "rgba": [46, 48, 58, 224]
+            },
+            {
+              "percent": 68,
+              "rgba": [44, 48, 58, 235]
+            },
+            {
+              "percent": 74,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "contextMenu": {
@@ -34996,7 +37286,25 @@
         ],
         "fillRange": {
           "clear": [28, 30, 40, 184],
-          "full": [27, 30, 39, 214]
+          "full": [27, 30, 39, 214],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [28, 30, 40, 184]
+            },
+            {
+              "percent": 62,
+              "rgba": [26, 30, 40, 203]
+            },
+            {
+              "percent": 65,
+              "rgba": [28, 30, 40, 203]
+            },
+            {
+              "percent": 100,
+              "rgba": [27, 30, 39, 214]
+            }
+          ]
         }
       },
       "contextSubmenu": {
@@ -35033,7 +37341,25 @@
         ],
         "fillRange": {
           "clear": [28, 30, 40, 184],
-          "full": [27, 30, 39, 214]
+          "full": [27, 30, 39, 214],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [28, 30, 40, 184]
+            },
+            {
+              "percent": 62,
+              "rgba": [26, 30, 40, 203]
+            },
+            {
+              "percent": 65,
+              "rgba": [28, 30, 40, 203]
+            },
+            {
+              "percent": 100,
+              "rgba": [27, 30, 39, 214]
+            }
+          ]
         }
       },
       "contextMenuItem": {
@@ -35389,7 +37715,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "previewToolbarActive": {
@@ -35453,7 +37797,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "settingsRail": {
@@ -35503,7 +37865,57 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [35, 38, 48, 196]
+          "full": [35, 38, 48, 196],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [36, 38, 48, 128]
+            },
+            {
+              "percent": 69,
+              "rgba": [36, 38, 47, 135]
+            },
+            {
+              "percent": 72,
+              "rgba": [34, 38, 49, 141]
+            },
+            {
+              "percent": 73,
+              "rgba": [36, 37, 48, 143]
+            },
+            {
+              "percent": 74,
+              "rgba": [35, 39, 47, 145]
+            },
+            {
+              "percent": 75,
+              "rgba": [35, 38, 49, 147]
+            },
+            {
+              "percent": 77,
+              "rgba": [35, 39, 47, 151]
+            },
+            {
+              "percent": 80,
+              "rgba": [36, 37, 49, 157]
+            },
+            {
+              "percent": 85,
+              "rgba": [35, 38, 47, 167]
+            },
+            {
+              "percent": 88,
+              "rgba": [35, 38, 49, 173]
+            },
+            {
+              "percent": 100,
+              "rgba": [35, 38, 48, 196]
+            }
+          ]
         }
       },
       "settingsRailActive": {
@@ -35535,7 +37947,129 @@
         ],
         "fillRange": {
           "clear": [12, 131, 255, 41],
-          "full": [30, 57, 90, 205]
+          "full": [30, 57, 90, 205],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [12, 131, 255, 41]
+            },
+            {
+              "percent": 8,
+              "rgba": [14, 109, 203, 54]
+            },
+            {
+              "percent": 15,
+              "rgba": [20, 98, 177, 65]
+            },
+            {
+              "percent": 28,
+              "rgba": [23, 82, 144, 87]
+            },
+            {
+              "percent": 30,
+              "rgba": [23, 79, 142, 90]
+            },
+            {
+              "percent": 34,
+              "rgba": [24, 79, 134, 97]
+            },
+            {
+              "percent": 43,
+              "rgba": [25, 71, 124, 111]
+            },
+            {
+              "percent": 54,
+              "rgba": [27, 69, 114, 130]
+            },
+            {
+              "percent": 57,
+              "rgba": [26, 66, 111, 135]
+            },
+            {
+              "percent": 58,
+              "rgba": [28, 65, 110, 137]
+            },
+            {
+              "percent": 60,
+              "rgba": [27, 66, 107, 140]
+            },
+            {
+              "percent": 61,
+              "rgba": [29, 65, 108, 142]
+            },
+            {
+              "percent": 63,
+              "rgba": [28, 63, 106, 145]
+            },
+            {
+              "percent": 65,
+              "rgba": [28, 64, 105, 148]
+            },
+            {
+              "percent": 66,
+              "rgba": [27, 63, 104, 149]
+            },
+            {
+              "percent": 67,
+              "rgba": [29, 62, 105, 151]
+            },
+            {
+              "percent": 70,
+              "rgba": [28, 64, 101, 156]
+            },
+            {
+              "percent": 71,
+              "rgba": [29, 61, 102, 158]
+            },
+            {
+              "percent": 74,
+              "rgba": [30, 63, 100, 163]
+            },
+            {
+              "percent": 75,
+              "rgba": [30, 61, 100, 164]
+            },
+            {
+              "percent": 79,
+              "rgba": [28, 60, 97, 171]
+            },
+            {
+              "percent": 83,
+              "rgba": [29, 60, 96, 178]
+            },
+            {
+              "percent": 84,
+              "rgba": [28, 58, 95, 179]
+            },
+            {
+              "percent": 86,
+              "rgba": [29, 59, 93, 183]
+            },
+            {
+              "percent": 89,
+              "rgba": [30, 58, 94, 188]
+            },
+            {
+              "percent": 91,
+              "rgba": [29, 57, 92, 191]
+            },
+            {
+              "percent": 92,
+              "rgba": [31, 58, 92, 192]
+            },
+            {
+              "percent": 96,
+              "rgba": [29, 56, 91, 199]
+            },
+            {
+              "percent": 97,
+              "rgba": [31, 57, 91, 200]
+            },
+            {
+              "percent": 100,
+              "rgba": [30, 57, 90, 205]
+            }
+          ]
         }
       },
       "settingsFooterCard": {
@@ -35566,7 +38100,61 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [30, 33, 42, 255]
+          "full": [30, 33, 42, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 40,
+              "rgba": [29, 33, 42, 122]
+            },
+            {
+              "percent": 46,
+              "rgba": [31, 33, 42, 141]
+            },
+            {
+              "percent": 48,
+              "rgba": [29, 33, 42, 147]
+            },
+            {
+              "percent": 49,
+              "rgba": [31, 32, 42, 150]
+            },
+            {
+              "percent": 52,
+              "rgba": [30, 34, 42, 159]
+            },
+            {
+              "percent": 54,
+              "rgba": [29, 32, 42, 165]
+            },
+            {
+              "percent": 57,
+              "rgba": [29, 34, 42, 174]
+            },
+            {
+              "percent": 59,
+              "rgba": [30, 32, 42, 181]
+            },
+            {
+              "percent": 65,
+              "rgba": [29, 33, 42, 199]
+            },
+            {
+              "percent": 71,
+              "rgba": [31, 33, 42, 217]
+            },
+            {
+              "percent": 83,
+              "rgba": [30, 33, 42, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [30, 33, 42, 255]
+            }
+          ]
         }
       },
       "settingsFooterVersion": {
@@ -35635,7 +38223,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "scrollToTopHover": {
@@ -35780,7 +38386,29 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [30, 33, 42, 255]
+          "full": [30, 33, 42, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [30, 33, 42, 224]
+            },
+            {
+              "percent": 66,
+              "rgba": [30, 34, 42, 228]
+            },
+            {
+              "percent": 74,
+              "rgba": [30, 33, 42, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [30, 33, 42, 255]
+            }
+          ]
         }
       },
       "settingsSwitchRight": {
@@ -35803,7 +38431,29 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [30, 33, 42, 255]
+          "full": [30, 33, 42, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [30, 33, 42, 224]
+            },
+            {
+              "percent": 66,
+              "rgba": [30, 34, 42, 228]
+            },
+            {
+              "percent": 74,
+              "rgba": [30, 33, 42, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [30, 33, 42, 255]
+            }
+          ]
         }
       },
       "settingsSwitchTrackOn": {
@@ -35876,7 +38526,29 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [30, 33, 42, 255]
+          "full": [30, 33, 42, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [30, 33, 42, 224]
+            },
+            {
+              "percent": 66,
+              "rgba": [30, 34, 42, 228]
+            },
+            {
+              "percent": 74,
+              "rgba": [30, 33, 42, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [30, 33, 42, 255]
+            }
+          ]
         }
       },
       "settingsSwitchRightOn": {
@@ -35899,7 +38571,29 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [30, 33, 42, 255]
+          "full": [30, 33, 42, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [30, 33, 42, 224]
+            },
+            {
+              "percent": 66,
+              "rgba": [30, 34, 42, 228]
+            },
+            {
+              "percent": 74,
+              "rgba": [30, 33, 42, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [30, 33, 42, 255]
+            }
+          ]
         }
       },
       "settingsRangeFocus": {
@@ -36107,7 +38801,57 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 32,
+              "rgba": [44, 49, 58, 110]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 48, 58, 128]
+            },
+            {
+              "percent": 45,
+              "rgba": [44, 48, 58, 155]
+            },
+            {
+              "percent": 47,
+              "rgba": [46, 47, 58, 162]
+            },
+            {
+              "percent": 50,
+              "rgba": [46, 49, 57, 173]
+            },
+            {
+              "percent": 53,
+              "rgba": [45, 47, 59, 183]
+            },
+            {
+              "percent": 59,
+              "rgba": [45, 47, 57, 204]
+            },
+            {
+              "percent": 65,
+              "rgba": [46, 48, 58, 224]
+            },
+            {
+              "percent": 68,
+              "rgba": [44, 48, 58, 235]
+            },
+            {
+              "percent": 74,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "characterInputPlaceholder": {
@@ -36174,7 +38918,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "emojiTabActive": {
@@ -36350,7 +39112,49 @@
         ],
         "fillRange": {
           "clear": [30, 33, 42, 168],
-          "full": [30, 33, 42, 194]
+          "full": [30, 33, 42, 194],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [30, 33, 42, 168]
+            },
+            {
+              "percent": 19,
+              "rgba": [29, 32, 41, 173]
+            },
+            {
+              "percent": 22,
+              "rgba": [29, 32, 43, 173]
+            },
+            {
+              "percent": 27,
+              "rgba": [29, 34, 42, 175]
+            },
+            {
+              "percent": 28,
+              "rgba": [31, 34, 42, 175]
+            },
+            {
+              "percent": 42,
+              "rgba": [30, 33, 41, 179]
+            },
+            {
+              "percent": 43,
+              "rgba": [30, 33, 43, 179]
+            },
+            {
+              "percent": 65,
+              "rgba": [30, 33, 41, 185]
+            },
+            {
+              "percent": 66,
+              "rgba": [30, 33, 43, 185]
+            },
+            {
+              "percent": 100,
+              "rgba": [30, 33, 42, 194]
+            }
+          ]
         }
       },
       "historyMeta": {
@@ -36607,7 +39411,49 @@
         ],
         "fillRange": {
           "clear": [30, 33, 42, 168],
-          "full": [30, 33, 42, 194]
+          "full": [30, 33, 42, 194],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [30, 33, 42, 168]
+            },
+            {
+              "percent": 19,
+              "rgba": [29, 32, 41, 173]
+            },
+            {
+              "percent": 22,
+              "rgba": [29, 32, 43, 173]
+            },
+            {
+              "percent": 27,
+              "rgba": [29, 34, 42, 175]
+            },
+            {
+              "percent": 28,
+              "rgba": [31, 34, 42, 175]
+            },
+            {
+              "percent": 42,
+              "rgba": [30, 33, 41, 179]
+            },
+            {
+              "percent": 43,
+              "rgba": [30, 33, 43, 179]
+            },
+            {
+              "percent": 65,
+              "rgba": [30, 33, 41, 185]
+            },
+            {
+              "percent": 66,
+              "rgba": [30, 33, 43, 185]
+            },
+            {
+              "percent": 100,
+              "rgba": [30, 33, 42, 194]
+            }
+          ]
         }
       },
       "historyContentCompact": {
@@ -36845,7 +39691,69 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [30, 33, 42, 243]
+          "full": [30, 33, 42, 243],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 52,
+              "rgba": [30, 32, 42, 126]
+            },
+            {
+              "percent": 53,
+              "rgba": [30, 34, 42, 129]
+            },
+            {
+              "percent": 55,
+              "rgba": [30, 32, 42, 134]
+            },
+            {
+              "percent": 59,
+              "rgba": [30, 34, 42, 144]
+            },
+            {
+              "percent": 64,
+              "rgba": [29, 33, 42, 156]
+            },
+            {
+              "percent": 65,
+              "rgba": [31, 32, 42, 158]
+            },
+            {
+              "percent": 75,
+              "rgba": [29, 34, 42, 182]
+            },
+            {
+              "percent": 79,
+              "rgba": [31, 33, 42, 192]
+            },
+            {
+              "percent": 82,
+              "rgba": [29, 33, 42, 199]
+            },
+            {
+              "percent": 86,
+              "rgba": [31, 33, 41, 209]
+            },
+            {
+              "percent": 95,
+              "rgba": [30, 33, 42, 231]
+            },
+            {
+              "percent": 96,
+              "rgba": [31, 33, 42, 234]
+            },
+            {
+              "percent": 98,
+              "rgba": [30, 33, 42, 238]
+            },
+            {
+              "percent": 100,
+              "rgba": [30, 33, 42, 243]
+            }
+          ]
         }
       },
       "headerTop": {
@@ -36909,7 +39817,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "headerInput": {
@@ -36941,7 +39867,57 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 32,
+              "rgba": [44, 49, 58, 110]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 48, 58, 128]
+            },
+            {
+              "percent": 45,
+              "rgba": [44, 48, 58, 155]
+            },
+            {
+              "percent": 47,
+              "rgba": [46, 47, 58, 162]
+            },
+            {
+              "percent": 50,
+              "rgba": [46, 49, 57, 173]
+            },
+            {
+              "percent": 53,
+              "rgba": [45, 47, 59, 183]
+            },
+            {
+              "percent": 59,
+              "rgba": [45, 47, 57, 204]
+            },
+            {
+              "percent": 65,
+              "rgba": [46, 48, 58, 224]
+            },
+            {
+              "percent": 68,
+              "rgba": [44, 48, 58, 235]
+            },
+            {
+              "percent": 74,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "headerInputPlaceholder": {
@@ -37041,7 +40017,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "headerFilterSelected": {
@@ -37137,7 +40131,49 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 49, 58, 105]
+            },
+            {
+              "percent": 44,
+              "rgba": [45, 47, 58, 124]
+            },
+            {
+              "percent": 48,
+              "rgba": [45, 49, 58, 136]
+            },
+            {
+              "percent": 61,
+              "rgba": [44, 47, 58, 172]
+            },
+            {
+              "percent": 65,
+              "rgba": [44, 49, 58, 184]
+            },
+            {
+              "percent": 76,
+              "rgba": [45, 47, 58, 215]
+            },
+            {
+              "percent": 80,
+              "rgba": [45, 49, 58, 226]
+            },
+            {
+              "percent": 90,
+              "rgba": [45, 48, 58, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "selectIndicator": {
@@ -37185,7 +40221,49 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 49, 58, 105]
+            },
+            {
+              "percent": 44,
+              "rgba": [45, 47, 58, 124]
+            },
+            {
+              "percent": 48,
+              "rgba": [45, 49, 58, 136]
+            },
+            {
+              "percent": 61,
+              "rgba": [44, 47, 58, 172]
+            },
+            {
+              "percent": 65,
+              "rgba": [44, 49, 58, 184]
+            },
+            {
+              "percent": 76,
+              "rgba": [45, 47, 58, 215]
+            },
+            {
+              "percent": 80,
+              "rgba": [45, 49, 58, 226]
+            },
+            {
+              "percent": 90,
+              "rgba": [45, 48, 58, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "selectFocus": {
@@ -37211,7 +40289,49 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 49, 58, 105]
+            },
+            {
+              "percent": 44,
+              "rgba": [45, 47, 58, 124]
+            },
+            {
+              "percent": 48,
+              "rgba": [45, 49, 58, 136]
+            },
+            {
+              "percent": 61,
+              "rgba": [44, 47, 58, 172]
+            },
+            {
+              "percent": 65,
+              "rgba": [44, 49, 58, 184]
+            },
+            {
+              "percent": 76,
+              "rgba": [45, 47, 58, 215]
+            },
+            {
+              "percent": 80,
+              "rgba": [45, 49, 58, 226]
+            },
+            {
+              "percent": 90,
+              "rgba": [45, 48, 58, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "selectDisabled": {
@@ -37243,7 +40363,49 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 49, 58, 105]
+            },
+            {
+              "percent": 44,
+              "rgba": [45, 47, 58, 124]
+            },
+            {
+              "percent": 48,
+              "rgba": [45, 49, 58, 136]
+            },
+            {
+              "percent": 61,
+              "rgba": [44, 47, 58, 172]
+            },
+            {
+              "percent": 65,
+              "rgba": [44, 49, 58, 184]
+            },
+            {
+              "percent": 76,
+              "rgba": [45, 47, 58, 215]
+            },
+            {
+              "percent": 80,
+              "rgba": [45, 49, 58, 226]
+            },
+            {
+              "percent": 90,
+              "rgba": [45, 48, 58, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "selectMenu": {
@@ -37275,7 +40437,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [38, 41, 52, 255]
+          "full": [38, 41, 52, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [38, 41, 52, 209]
+            },
+            {
+              "percent": 79,
+              "rgba": [38, 41, 52, 254]
+            },
+            {
+              "percent": 100,
+              "rgba": [38, 41, 52, 255]
+            }
+          ]
         }
       },
       "selectMenuList": {
@@ -37500,7 +40680,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [45, 48, 58, 250]
+            },
+            {
+              "percent": 67,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "searchIcon": {
@@ -37733,7 +40931,69 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [28, 31, 40, 243]
+          "full": [28, 31, 40, 243],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 54,
+              "rgba": [27, 31, 41, 131]
+            },
+            {
+              "percent": 55,
+              "rgba": [29, 30, 40, 134]
+            },
+            {
+              "percent": 56,
+              "rgba": [28, 32, 39, 136]
+            },
+            {
+              "percent": 59,
+              "rgba": [28, 32, 41, 144]
+            },
+            {
+              "percent": 62,
+              "rgba": [29, 30, 41, 151]
+            },
+            {
+              "percent": 63,
+              "rgba": [28, 32, 40, 153]
+            },
+            {
+              "percent": 65,
+              "rgba": [27, 31, 40, 158]
+            },
+            {
+              "percent": 66,
+              "rgba": [29, 32, 40, 161]
+            },
+            {
+              "percent": 69,
+              "rgba": [27, 30, 39, 168]
+            },
+            {
+              "percent": 70,
+              "rgba": [29, 32, 41, 170]
+            },
+            {
+              "percent": 73,
+              "rgba": [29, 32, 40, 178]
+            },
+            {
+              "percent": 76,
+              "rgba": [28, 30, 40, 185]
+            },
+            {
+              "percent": 84,
+              "rgba": [27, 31, 40, 204]
+            },
+            {
+              "percent": 100,
+              "rgba": [28, 31, 40, 243]
+            }
+          ]
         }
       },
       "historyItem": {
@@ -37833,7 +41093,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "disclosureContent": {
@@ -37902,7 +41180,25 @@
         "opacity": 1,
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "progress": {
@@ -37938,7 +41234,41 @@
         ],
         "fillRange": {
           "clear": [35, 37, 49, 184],
-          "full": [35, 37, 48, 214]
+          "full": [35, 37, 48, 214],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [35, 37, 49, 184]
+            },
+            {
+              "percent": 23,
+              "rgba": [33, 37, 48, 191]
+            },
+            {
+              "percent": 26,
+              "rgba": [35, 37, 48, 192]
+            },
+            {
+              "percent": 64,
+              "rgba": [34, 36, 48, 203]
+            },
+            {
+              "percent": 65,
+              "rgba": [34, 38, 48, 203]
+            },
+            {
+              "percent": 84,
+              "rgba": [34, 37, 48, 209]
+            },
+            {
+              "percent": 85,
+              "rgba": [34, 36, 49, 210]
+            },
+            {
+              "percent": 100,
+              "rgba": [35, 37, 48, 214]
+            }
+          ]
         }
       },
       "progressMessage": {
@@ -38038,7 +41368,41 @@
         ],
         "fillRange": {
           "clear": [35, 37, 49, 184],
-          "full": [35, 37, 48, 214]
+          "full": [35, 37, 48, 214],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [35, 37, 49, 184]
+            },
+            {
+              "percent": 23,
+              "rgba": [33, 37, 48, 191]
+            },
+            {
+              "percent": 26,
+              "rgba": [35, 37, 48, 192]
+            },
+            {
+              "percent": 64,
+              "rgba": [34, 36, 48, 203]
+            },
+            {
+              "percent": 65,
+              "rgba": [34, 38, 48, 203]
+            },
+            {
+              "percent": 84,
+              "rgba": [34, 37, 48, 209]
+            },
+            {
+              "percent": 85,
+              "rgba": [34, 36, 49, 210]
+            },
+            {
+              "percent": 100,
+              "rgba": [35, 37, 48, 214]
+            }
+          ]
         }
       },
       "progressClose": {
@@ -38091,7 +41455,41 @@
         ],
         "fillRange": {
           "clear": [35, 37, 49, 184],
-          "full": [35, 37, 48, 214]
+          "full": [35, 37, 48, 214],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [35, 37, 49, 184]
+            },
+            {
+              "percent": 23,
+              "rgba": [33, 37, 48, 191]
+            },
+            {
+              "percent": 26,
+              "rgba": [35, 37, 48, 192]
+            },
+            {
+              "percent": 64,
+              "rgba": [34, 36, 48, 203]
+            },
+            {
+              "percent": 65,
+              "rgba": [34, 38, 48, 203]
+            },
+            {
+              "percent": 84,
+              "rgba": [34, 37, 48, 209]
+            },
+            {
+              "percent": 85,
+              "rgba": [34, 36, 49, 210]
+            },
+            {
+              "percent": 100,
+              "rgba": [35, 37, 48, 214]
+            }
+          ]
         }
       },
       "progressStatus": {
@@ -38143,7 +41541,41 @@
         ],
         "fillRange": {
           "clear": [35, 37, 49, 184],
-          "full": [35, 37, 48, 214]
+          "full": [35, 37, 48, 214],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [35, 37, 49, 184]
+            },
+            {
+              "percent": 23,
+              "rgba": [33, 37, 48, 191]
+            },
+            {
+              "percent": 26,
+              "rgba": [35, 37, 48, 192]
+            },
+            {
+              "percent": 64,
+              "rgba": [34, 36, 48, 203]
+            },
+            {
+              "percent": 65,
+              "rgba": [34, 38, 48, 203]
+            },
+            {
+              "percent": 84,
+              "rgba": [34, 37, 48, 209]
+            },
+            {
+              "percent": 85,
+              "rgba": [34, 36, 49, 210]
+            },
+            {
+              "percent": 100,
+              "rgba": [35, 37, 48, 214]
+            }
+          ]
         }
       },
       "confirm": {
@@ -38188,7 +41620,93 @@
         ],
         "fillRange": {
           "clear": [38, 41, 52, 107],
-          "full": [37, 40, 51, 184]
+          "full": [37, 40, 51, 184],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [38, 41, 52, 107]
+            },
+            {
+              "percent": 18,
+              "rgba": [38, 40, 51, 120]
+            },
+            {
+              "percent": 25,
+              "rgba": [36, 38, 53, 126]
+            },
+            {
+              "percent": 29,
+              "rgba": [38, 40, 51, 129]
+            },
+            {
+              "percent": 30,
+              "rgba": [37, 39, 51, 130]
+            },
+            {
+              "percent": 31,
+              "rgba": [37, 41, 51, 130]
+            },
+            {
+              "percent": 33,
+              "rgba": [39, 41, 52, 132]
+            },
+            {
+              "percent": 38,
+              "rgba": [37, 39, 51, 136]
+            },
+            {
+              "percent": 43,
+              "rgba": [36, 40, 51, 140]
+            },
+            {
+              "percent": 46,
+              "rgba": [38, 40, 50, 142]
+            },
+            {
+              "percent": 50,
+              "rgba": [37, 40, 53, 145]
+            },
+            {
+              "percent": 52,
+              "rgba": [36, 40, 52, 147]
+            },
+            {
+              "percent": 53,
+              "rgba": [38, 40, 52, 148]
+            },
+            {
+              "percent": 58,
+              "rgba": [37, 39, 52, 151]
+            },
+            {
+              "percent": 65,
+              "rgba": [37, 41, 52, 157]
+            },
+            {
+              "percent": 74,
+              "rgba": [37, 40, 51, 164]
+            },
+            {
+              "percent": 76,
+              "rgba": [37, 40, 53, 165]
+            },
+            {
+              "percent": 80,
+              "rgba": [38, 39, 51, 169]
+            },
+            {
+              "percent": 88,
+              "rgba": [36, 41, 51, 175]
+            },
+            {
+              "percent": 89,
+              "rgba": [38, 41, 51, 176]
+            },
+            {
+              "percent": 100,
+              "rgba": [37, 40, 51, 184]
+            }
+          ]
         }
       },
       "confirmBackdrop": {
@@ -38340,7 +41858,93 @@
         ],
         "fillRange": {
           "clear": [38, 41, 52, 107],
-          "full": [37, 40, 51, 184]
+          "full": [37, 40, 51, 184],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [38, 41, 52, 107]
+            },
+            {
+              "percent": 18,
+              "rgba": [38, 40, 51, 120]
+            },
+            {
+              "percent": 25,
+              "rgba": [36, 38, 53, 126]
+            },
+            {
+              "percent": 29,
+              "rgba": [38, 40, 51, 129]
+            },
+            {
+              "percent": 30,
+              "rgba": [37, 39, 51, 130]
+            },
+            {
+              "percent": 31,
+              "rgba": [37, 41, 51, 130]
+            },
+            {
+              "percent": 33,
+              "rgba": [39, 41, 52, 132]
+            },
+            {
+              "percent": 38,
+              "rgba": [37, 39, 51, 136]
+            },
+            {
+              "percent": 43,
+              "rgba": [36, 40, 51, 140]
+            },
+            {
+              "percent": 46,
+              "rgba": [38, 40, 50, 142]
+            },
+            {
+              "percent": 50,
+              "rgba": [37, 40, 53, 145]
+            },
+            {
+              "percent": 52,
+              "rgba": [36, 40, 52, 147]
+            },
+            {
+              "percent": 53,
+              "rgba": [38, 40, 52, 148]
+            },
+            {
+              "percent": 58,
+              "rgba": [37, 39, 52, 151]
+            },
+            {
+              "percent": 65,
+              "rgba": [37, 41, 52, 157]
+            },
+            {
+              "percent": 74,
+              "rgba": [37, 40, 51, 164]
+            },
+            {
+              "percent": 76,
+              "rgba": [37, 40, 53, 165]
+            },
+            {
+              "percent": 80,
+              "rgba": [38, 39, 51, 169]
+            },
+            {
+              "percent": 88,
+              "rgba": [36, 41, 51, 175]
+            },
+            {
+              "percent": 89,
+              "rgba": [38, 41, 51, 176]
+            },
+            {
+              "percent": 100,
+              "rgba": [37, 40, 51, 184]
+            }
+          ]
         }
       },
       "tagBackdrop": {
@@ -38404,7 +42008,25 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [40, 43, 54, 255]
+          "full": [40, 43, 54, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [40, 43, 54, 235]
+            },
+            {
+              "percent": 71,
+              "rgba": [40, 43, 54, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [40, 43, 54, 255]
+            }
+          ]
         }
       },
       "tagHeading": {
@@ -38500,7 +42122,57 @@
         ],
         "fillRange": {
           "clear": [0, 0, 0, 0],
-          "full": [45, 48, 58, 255]
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 32,
+              "rgba": [44, 49, 58, 110]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 48, 58, 128]
+            },
+            {
+              "percent": 45,
+              "rgba": [44, 48, 58, 155]
+            },
+            {
+              "percent": 47,
+              "rgba": [46, 47, 58, 162]
+            },
+            {
+              "percent": 50,
+              "rgba": [46, 49, 57, 173]
+            },
+            {
+              "percent": 53,
+              "rgba": [45, 47, 59, 183]
+            },
+            {
+              "percent": 59,
+              "rgba": [45, 47, 57, 204]
+            },
+            {
+              "percent": 65,
+              "rgba": [46, 48, 58, 224]
+            },
+            {
+              "percent": 68,
+              "rgba": [44, 48, 58, 235]
+            },
+            {
+              "percent": 74,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
         }
       },
       "gallery": {
@@ -38510,6 +42182,24 @@
   },
   "macos": {
     "light": {
+      "windowContent": {
+        "fill": [245, 246, 248, 255],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 14,
+        "rowGap": 14,
+        "width": 558,
+        "height": 420,
+        "marginTop": 0,
+        "padding": [20, 20, 20, 20],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsGroup": {
         "fill": [255, 255, 255, 158],
         "text": [29, 29, 31, 255],
@@ -43063,6 +46753,24 @@
       }
     },
     "dark": {
+      "windowContent": {
+        "fill": [27, 28, 32, 255],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 14,
+        "rowGap": 14,
+        "width": 558,
+        "height": 420,
+        "marginTop": 0,
+        "padding": [20, 20, 20, 20],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsGroup": {
         "fill": [48, 50, 58, 153],
         "text": [245, 245, 247, 255],
@@ -47554,6 +51262,24 @@
   },
   "scifi": {
     "light": {
+      "windowContent": {
+        "fill": [245, 250, 255, 255],
+        "text": [10, 39, 70, 255],
+        "border": [10, 39, 70, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 14,
+        "rowGap": 14,
+        "width": 558,
+        "height": 420,
+        "marginTop": 0,
+        "padding": [20, 20, 20, 20],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsGroup": {
         "fill": [237, 248, 255, 188],
         "text": [10, 39, 70, 255],
@@ -52155,6 +55881,24 @@
       }
     },
     "dark": {
+      "windowContent": {
+        "fill": [8, 14, 30, 255],
+        "text": [220, 251, 255, 255],
+        "border": [220, 251, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 14,
+        "rowGap": 14,
+        "width": 558,
+        "height": 420,
+        "marginTop": 0,
+        "padding": [20, 20, 20, 20],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsGroup": {
         "fill": [14, 24, 50, 198],
         "text": [220, 251, 255, 255],
