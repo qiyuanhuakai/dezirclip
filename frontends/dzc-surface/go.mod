@@ -9,6 +9,7 @@ require (
 	github.com/qiyuanhuakai/dezirclip/clients/go v0.0.0
 	github.com/qiyuanhuakai/dezirclip/packages/ui-native v0.0.0
 	github.com/qiyuanhuakai/dezirclip/packages/ui-presets v0.0.0
+	golang.org/x/crypto v0.57.0
 	golang.org/x/sys v0.49.0
 )
 

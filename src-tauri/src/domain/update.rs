@@ -15,6 +15,16 @@ pub fn expected_asset_name(os: &str, arch: &str, version: &Version) -> Option<St
     Some(format!("DezirClip_{version}_{suffix}"))
 }
 
+fn expected_mygo_asset(os: &str, arch: &str, version: &Version) -> Option<String> {
+    Some(match (os, arch) {
+        ("windows", "x86_64") => format!("DezirClip-v{version}-windows-x64-MyGo-setup.exe"),
+        ("windows", "aarch64") => format!("DezirClip-v{version}-windows-arm64-MyGo-setup.exe"),
+        ("linux", "x86_64") => format!("DezirClip-MyGo_{version}_amd64.AppImage"),
+        ("linux", "aarch64") => format!("DezirClip-MyGo_{version}_aarch64.AppImage"),
+        _ => return None,
+    })
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum UpdateChannel {
@@ -98,6 +108,8 @@ pub struct AvailableUpdate {
     pub version: String,
     pub notes: Option<String>,
     pub release_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<ManualAsset>,
 }
 
 #[derive(Serialize)]
@@ -132,6 +144,8 @@ pub fn validate_signature_metadata(version: &Version, expected: &str, encoded: &
 pub struct ManualIndexes {
     channel: UpdateChannel,
     indexes: Vec<Option<ManualManifest>>,
+    #[serde(default)]
+    mygo: bool,
 }
 
 #[derive(Deserialize)]
@@ -139,10 +153,11 @@ struct ManualManifest {
     version: String,
     notes: Option<String>,
     platforms: std::collections::HashMap<String, ManualAsset>,
+    mygo_platforms: Option<std::collections::HashMap<String, ManualAsset>>,
 }
 
-#[derive(Deserialize)]
-struct ManualAsset { url: String, signature: String }
+#[derive(Clone, Deserialize, Serialize)]
+pub struct ManualAsset { url: String, signature: String }
 
 /// Evaluate the two fixed channel indexes for a manual desktop distribution.
 /// The desktop downloads metadata. This policy never opens URLs or installs an artifact.
@@ -161,9 +176,14 @@ pub fn check_manual_indexes(input: ManualIndexes, current: &Version, os: &str, a
         let version = Version::parse(manifest.version.strip_prefix('v').unwrap_or(&manifest.version))
             .map_err(|_| "update_invalid_manifest")?;
         if channel == UpdateChannel::Stable && !version.pre.is_empty() { return Err("update_invalid_stable_manifest".into()); }
+        let platforms = if input.mygo {
+            let Some(platforms) = manifest.mygo_platforms else { unpublished_channels.push(channel); continue };
+            platforms
+        } else { manifest.platforms };
         if channel.accepts(current, &version) {
-            let asset = manifest.platforms.get(&platform).ok_or("update_invalid_manifest")?;
-            let expected = expected_asset_name(os, arch, &version).ok_or("update_unsupported_platform")?;
+            let asset = platforms.get(&platform).ok_or("update_invalid_manifest")?;
+            let expected = if input.mygo { expected_mygo_asset(os, arch, &version) }
+                else { expected_asset_name(os, arch, &version) }.ok_or("update_unsupported_platform")?;
             let prefix = format!("{RELEASES_URL}/download/v{version}/");
             let file = asset.url.strip_prefix(&prefix).ok_or("update_untrusted_download")?;
             if urlencoding::decode(file).map_err(|_| "update_untrusted_download")? != expected {
@@ -172,7 +192,8 @@ pub fn check_manual_indexes(input: ManualIndexes, current: &Version, os: &str, a
             validate_signature_metadata(&version, &expected, &asset.signature)?;
             if candidate.as_ref().is_none_or(|(previous, _)| version.cmp_precedence(previous).is_gt()) {
                 candidate = Some((version.clone(), AvailableUpdate { id: version.to_string(), version: version.to_string(),
-                    notes: manifest.notes, release_url: format!("{RELEASES_URL}/tag/v{version}") }));
+                    notes: manifest.notes, release_url: format!("{RELEASES_URL}/tag/v{version}"),
+                    artifact: input.mygo.then(|| asset.clone()) }));
             }
         }
         versions.push(version);
@@ -213,6 +234,34 @@ mod tests {
         assert_eq!(evaluate(serde_json::json!([wrong,null])).err().unwrap(),"update_signature_version_mismatch");
         wrong["platforms"]["windows-x86_64"]["url"] = "https://example.invalid/file".into();
         assert_eq!(evaluate(serde_json::json!([wrong,null])).err().unwrap(),"update_untrusted_download");
+    }
+
+    #[test]
+    fn mygo_selects_only_its_signed_architecture_and_ignores_old_tauri_only_indexes() {
+        let current = Version::parse("1.0.0").unwrap();
+        let evaluate = |value| {
+            let input = serde_json::from_value(serde_json::json!({
+                "channel": "stable", "mygo": true, "indexes": [value],
+            })).unwrap();
+            check_manual_indexes(input, &current, "windows", "aarch64")
+        };
+        let make_asset = |name: &str| serde_json::json!({
+            "url": format!("{RELEASES_URL}/download/v2.0.0/{name}"),
+            "signature": base64::engine::general_purpose::STANDARD.encode(
+                format!("trusted comment: file:{name}\tversion:2.0.0")),
+        });
+        let tauri = make_asset("DezirClip_2.0.0_arm64-setup.exe");
+        let mut manifest = serde_json::json!({
+            "version": "2.0.0", "platforms": {"windows-aarch64": tauri},
+        });
+        assert_eq!(evaluate(manifest.clone()).unwrap().status, UpdateCheckStatus::Unpublished);
+        manifest["mygo_platforms"] = serde_json::json!({
+            "windows-aarch64": make_asset("DezirClip-v2.0.0-windows-arm64-MyGo-setup.exe")
+        });
+        let selected = evaluate(manifest.clone()).unwrap().available.unwrap().artifact.unwrap();
+        assert!(selected.url.ends_with("windows-arm64-MyGo-setup.exe"));
+        manifest["mygo_platforms"]["windows-aarch64"] = tauri;
+        assert_eq!(evaluate(manifest).err().unwrap(), "update_untrusted_download");
     }
 
     #[test]

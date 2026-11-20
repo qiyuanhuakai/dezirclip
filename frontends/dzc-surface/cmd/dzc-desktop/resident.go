@@ -74,6 +74,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 	relaunchCommand := "show"
 	var mainChild *exec.Cmd
 	var mainDone <-chan struct{}
+	var update *mygoInstallRequest
 	mygo.App.WhenReady(func() {
 		mygo.App.OnWindowAllClosed(func() {})
 		mainVisible := false
@@ -290,6 +291,30 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 									return
 								}
 								switch request.Operation {
+								case "install-update":
+									if request.Update == nil || pasteBusy || closing || relaunch {
+										reply(fmt.Errorf("update_busy"))
+										break
+									}
+									if target, _ := mygoUpdateTarget(); target == "" {
+										reply(fmt.Errorf("update_installation_unsupported"))
+										break
+									}
+									migrating = true
+									go func() {
+										err := request.Update.validate()
+										mygo.RunOnMain(func() {
+											migrating = false
+											if commands != input {
+												return
+											}
+											reply(err)
+											if err == nil {
+												update = request.Update
+												mygo.App.Quit()
+											}
+										})
+									}()
 								case "restart-admin":
 									if pasteBusy {
 										reply(fmt.Errorf("PasteBusy"))
@@ -770,5 +795,11 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	log.Print("Desktop main process stopped; stopping authenticated Service")
-	return owner.StopDesktopService(ctx)
+	if err := owner.StopDesktopService(ctx); err != nil {
+		return err
+	}
+	if update != nil {
+		return installMyGoUpdate(*update)
+	}
+	return nil
 }

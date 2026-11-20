@@ -7,11 +7,6 @@ on:
         description: Artifact namespace within the caller run
         type: string
         default: flatpak
-      version:
-        description: Release tag, empty to build and verify without publishing
-        required: false
-        type: string
-        default: ''
 
 env:
   DZC_BUILD_REVISION: ${{ github.sha }}
@@ -80,10 +75,6 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Set release version
-        if: inputs.version != ''
-        run: pnpm run release:set-version '${{ inputs.version }}'
-
       - name: Resolve Flatpak artifact name
         run: |
           release_version="$(node -p "require('./package.json').version")"
@@ -109,12 +100,6 @@ jobs:
 
       - name: Export verified Flatpak bundle
         run: flatpak build-bundle flatpak/repo "${FLATPAK_BUNDLE}" io.github.qiyuanhuakai.dezirclip
-
-      - name: Upload Flatpak bundle to release
-        if: inputs.version != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload '${{ inputs.version }}' "${FLATPAK_BUNDLE}" --clobber
 
       - name: Upload verified Flatpak artifact
         uses: actions/upload-artifact@v4

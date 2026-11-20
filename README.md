@@ -4,6 +4,8 @@ Windows 和 Linux X11 上的本地剪贴板工作台：保存、搜索、恢复�
 
 本项目派生自 [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard)，保留本地桌面能力，移除 macOS 与云同步等网络功能，并加入 Linux X11 支持、自定义 CSS 主题和 WebView 内存管理。当前迭代重点是内容保真、捕获可靠性和 CLI 生态。
 
+桌面发行同时提供 Tauri 和 MyGo Native。Windows x64 / ARM64 提供 NSIS 安装包和便携 ZIP，Linux x64 / ARM64 提供 AppImage、deb 和 rpm。MyGo 下载文件名含 `MyGo`。应用内更新保持当前桌面版本和安装方式。旧 Flatpak 可在对应历史版本中下载。
+
 [下载发布版本](https://github.com/qiyuanhuakai/dezirclip/releases) · [CLI 文档](./docs/cli.md) · [终端与 MCP 集成](./integrations/README.md) · [Linux 安装指南](./docs/LINUX_INSTALL.md) · [English](#english)
 
 ## 安装
@@ -198,7 +200,9 @@ Desktop and standalone packages include `skills/dzc-cli/` and `skills/dezirclip-
 
 DezirClip is a local clipboard workspace for Windows and Linux X11, forked from [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard). This fork removes macOS and cloud/network features, adds X11 support, custom CSS themes and WebView memory controls, and provides a shared Rust storage core for the GUI and `dzc` CLI. Full Wayland desktop support remains deferred.
 
-Download desktop installers or standalone CLI archives from [Releases](https://github.com/qiyuanhuakai/dezirclip/releases). Standalone archives are named `dzc-VERSION-{windows,linux}-{x86_64,aarch64}` with `.zip` on Windows or `.tar.gz` on Linux; each includes the real CLI, license, matching `integrations/`, and Agent Skill. Check the accompanying `.sha256` and binary-bound `COMPATIBILITY.json`. Since `v0.1.21-beta.1`, x86_64 and aarch64 Linux standalone builds compile and link natively in AlmaLinux 8 for glibc 2.28+, with actual archives verified in AlmaLinux 8, Ubuntu 22.04 and Debian 12. System D-Bus/GCC runtime libraries are still required. These are GNU/glibc builds, not musl or native Alpine packages. Published `v0.1.20` / `v0.1.20-alpha.3` Linux CLI assets retain their glibc 2.35+ requirement; alpha.1/alpha.2 retain glibc 2.39+. Keep CLI and adapters on matching versions.
+Download Tauri or MyGo Native for Windows x64 / ARM64 (NSIS or portable ZIP) and Linux x64 / ARM64 (AppImage, deb or rpm) from [Releases](https://github.com/qiyuanhuakai/dezirclip/releases). MyGo packages have `MyGo` in their filenames. Each desktop updates within its own package type. Flatpak downloads are available on historical release pages.
+
+Standalone archives are named `dzc-VERSION-{windows,linux}-{x86_64,aarch64}` with `.zip` on Windows or `.tar.gz` on Linux. Each includes the CLI, license, matching `integrations/`, and Agent Skill. Check the accompanying `.sha256` and binary-bound `COMPATIBILITY.json`. Since `v0.1.21-beta.1`, x86_64 and aarch64 Linux standalone builds compile and link natively in AlmaLinux 8 for glibc 2.28+, with actual archives verified in AlmaLinux 8, Ubuntu 22.04 and Debian 12. System D-Bus/GCC runtime libraries are still required. Published `v0.1.20` / `v0.1.20-alpha.3` Linux CLI assets retain their glibc 2.35+ requirement. Alpha.1/alpha.2 retain glibc 2.39+. Keep CLI and adapters on matching versions.
 
 The glibc 2.28 baseline applies only to the standalone CLI. Linux desktop packages remain built on Ubuntu 24.04 and require X11, WebKitGTK 4.1 and their desktop runtime libraries. A direct local Cargo build does not automatically inherit the standalone release baseline.
 

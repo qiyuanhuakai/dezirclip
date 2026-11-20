@@ -16,26 +16,18 @@ import { nativeWriterTimeoutMs, waitForNativeProcess } from "./native-process-de
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 
-test("nested acceptance and release artifacts have disjoint namespaces", () => {
+test("standalone acceptance and release artifacts have disjoint namespaces", () => {
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
-  const names = [];
-  for (const [file, acceptanceJob, publishJob, platforms] of [
-    ["standalone-cli", "standalone-cli", "build-standalone-cli", ["windows-x86_64", "windows-aarch64", "linux-x86_64", "linux-aarch64"]],
-    ["flatpak", "flatpak", "publish-flatpak", ["linux-x86_64", "linux-aarch64"]],
-  ]) {
-    const child = readFileSync(join(root, `.github/workflows/${file}.yml`), "utf8");
-    assert.match(child, /name: \$\{\{ inputs\.artifact-prefix \}\}-\$\{\{ matrix\.name \}\}/);
-    for (const [workflow, job] of [[ci, acceptanceJob], [release, publishJob]]) {
-      const caller = releaseJob(workflow, job);
-      assert(caller.includes(`uses: ./.github/workflows/${file}.yml`));
-      const prefix = caller.match(/artifact-prefix: ([a-z-]+)/)?.[1];
-      assert(prefix, `${job} supplies an explicit artifact namespace`);
-      names.push(...platforms.map(platform => `${prefix}-${platform}`));
-    }
-  }
-  assert.equal(names.length, 12);
-  assert.equal(new Set(names).size, names.length, "nested calls must not overwrite another job's artifacts");
+  const child = readFileSync(join(root, ".github/workflows/standalone-cli.yml"), "utf8");
+  assert.match(child, /name: \$\{\{ inputs\.artifact-prefix \}\}-\$\{\{ matrix\.name \}\}/);
+  const prefixes = [[ci, "standalone-cli"], [release, "build-standalone-cli"]].map(([workflow, job]) => {
+    const caller = releaseJob(workflow, job);
+    assert(caller.includes("uses: ./.github/workflows/standalone-cli.yml"));
+    return caller.match(/artifact-prefix: ([a-z-]+)/)?.[1];
+  });
+  assert(prefixes.every(Boolean));
+  assert.notEqual(prefixes[0], prefixes[1]);
   assert.match(releaseJob(release, "publish-standalone-cli"), /pattern: release-cli-\*/);
 });
 
@@ -217,35 +209,35 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.equal(pkg.scripts["tauri:bundle:rpm"], "node scripts/bundle-rpm.mjs");
   assert.deepEqual(config.bundle.targets, ["nsis", "deb", "appimage"]);
   const workflow = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
-  const rpmStep = workflow.split("- name: Bundle and upload RPM with pre-release package ordering")[1]?.split("\n  publish-flatpak:")[0];
+  const rpmStep = workflow.split("- name: Bundle and upload RPM with pre-release package ordering")[1]?.split("- name: Build and package MyGo Native")[0];
   assert(rpmStep);
   assert.match(rpmStep, /if: runner\.os == 'Linux'/);
   assert.match(rpmStep, /node scripts\/bundle-rpm\.mjs --receipt/);
   assert.match(rpmStep, /needs\.create-release\.outputs\.release_id/);
   assert.match(rpmStep, /--jq '\.draft'\)" = true/);
   assert.match(rpmStep, /gh release upload "\$GITHUB_REF_NAME" "\$rpm_path" --clobber/);
+  assert.match(rpmStep, /--reuse-sidecars/);
   const { identities, upgrades } = assertReleaseSourceRouting(workflow);
-  assert(identities, "publication requires the actual final-package identity workflow");
-  assert.match(identities, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, windows-x64-mygo\]/);
-  assert.match(identities, /github\.event_name == 'workflow_dispatch' \|\| \(needs\.publish-tauri\.result == 'success' && needs\.publish-standalone-cli\.result == 'success' && needs\.publish-flatpak\.result == 'success' && needs\.windows-x64-mygo\.result == 'success'\)/);
+  assert.match(identities, /needs: create-release/);
+  assert.match(identities, /inputs\.mode == 'resume-existing-alpha2'/);
   assert.match(identities, /uses: \.\/\.github\/workflows\/release-identities\.yml/);
   assert.match(identities, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
-  assert(upgrades, "publication requires actual final signed NSIS installation and upgrade acceptance");
-  assert.match(upgrades, /needs: \[create-release, publish-tauri\]/);
+  assert.match(upgrades, /needs: create-release/);
+  assert.match(upgrades, /inputs\.mode == 'resume-existing-alpha2'/);
   assert.match(upgrades, /uses: \.\/\.github\/workflows\/release-windows-upgrade\.yml/);
   assert.match(upgrades, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
   const promotion = releaseJob(workflow, "verify-publish-and-promote");
-  const mygo = releaseJob(workflow, "windows-x64-mygo");
-  assert.match(mygo, /python scripts\/stage-mygo-windows\.py --revision "\$env:GITHUB_SHA" --tag "\$env:GITHUB_REF_NAME"/);
-  assert.match(mygo, /DezirClip-\$env:GITHUB_REF_NAME-windows-x64-MyGo-setup\.exe/);
-  assert.match(mygo, /python scripts\/build-mygo-installer\.py/);
-  assert.match(mygo, /python scripts\/tests\/mygo-installer-windows\.py/);
-  assert.match(mygo, /!\$release\.isDraft.*\$release\.databaseId -ne \$env:DZC_RELEASE_ID/);
-  assert.match(mygo, /gh release upload "\$env:GITHUB_REF_NAME" \$archive/);
-  assert.match(promotion, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade, windows-x64-mygo, full-validation\]/);
-  assert.match(promotion, /needs\.full-validation\.result == 'success'/);
-  assert.match(releaseJob(workflow, 'full-validation'), /uses: \.\/\.github\/workflows\/ci\.yml/);
-  assert.match(releaseJob(workflow, 'full-validation'), /full_validation: true/);
+  const desktop = releaseJob(workflow, "publish-desktop");
+  for (const target of ["linux-x86_64", "linux-aarch64", "windows-x86_64", "windows-aarch64"]) {
+    assert(desktop.includes(`- name: ${target}`));
+  }
+  assert.match(desktop, /python scripts\/bundle-mygo\.py --target "\$PLATFORM" --sidecars "\$sidecars"/);
+  assert.match(desktop, /--revision "\$GITHUB_SHA" --tag "\$GITHUB_REF_NAME" --smoke/);
+  assert.match(desktop, /python scripts\/bundle-mygo\.py --portable/);
+  assert.match(desktop, /scripts\/package-portable\.ps1/);
+  assert.match(promotion, /needs: \[create-release, publish-desktop, publish-standalone-cli\]/);
+  assert.match(promotion, /updater-release\.mjs publish-dual/);
+  assert.doesNotMatch(workflow, /publish-flatpak|uses: \.\/\.github\/workflows\/ci\.yml/);
 });
 
 test("release source routing rejects loss of the tag fallback, fixed recovery identity or independent tooling", () => {

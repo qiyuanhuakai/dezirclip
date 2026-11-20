@@ -12,6 +12,7 @@ import (
 
 // The resident owns the tray and native selector. Only its original WebView child has these pipes.
 type residentRequest struct {
+	Update     *mygoInstallRequest `json:"update,omitempty"`
 	Appearance *theme.Appearance  `json:"appearance,omitempty"`
 	Preview    *pinPreviewRequest `json:"preview,omitempty"`
 	ID         uint64             `json:"request_id"`

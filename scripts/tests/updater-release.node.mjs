@@ -4,7 +4,7 @@ import { existsSync, readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync
 import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, publishAndSync, syncPublished, resumeVerifiedDraft, promote as promoteFile, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
+import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, publishAndSync, publishDual, syncPublished, resumeVerifiedDraft, promote as promoteFile, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
 
 const gateNames = ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'];
 const gateReport = (receipt, kind) => ({ schema_version: 1, kind, status: 'passed',
@@ -107,8 +107,12 @@ function publisherFixture(options = {}) {
     bytes.set(value.id, Buffer.from(data));
     return value;
   };
-  for (const suffix of ['x64-setup.exe', 'arm64-setup.exe', 'amd64.AppImage', 'aarch64.AppImage']) {
-    const name = `DezirClip_${version}_${suffix}`;
+  const suffixes = ['x64-setup.exe', 'arm64-setup.exe', 'amd64.AppImage', 'aarch64.AppImage'];
+  const signedNames = suffixes.map(suffix => `DezirClip_${version}_${suffix}`);
+  if (options.dual) signedNames.push(
+    ...['x64', 'arm64'].map(arch => `DezirClip-v${version}-windows-${arch}-MyGo-setup.exe`),
+    ...['amd64', 'aarch64'].map(arch => `DezirClip-MyGo_${version}_${arch}.AppImage`));
+  for (const name of signedNames) {
     const payload = Buffer.from('Synthetic ' + name);
     const signed = sign(null, createHash('blake2b512').update(payload).digest(), keyPair.privateKey);
     const comment = `timestamp:1\tfile:${name}\tversion:${version}`;
@@ -121,19 +125,31 @@ function publisherFixture(options = {}) {
     const name = `dzc-${version}-${platform}.${platform.startsWith('windows') ? 'zip' : 'tar.gz'}`;
     state.product.assets.push(asset(name, Buffer.from('archive')), asset(`${name}.sha256`, Buffer.from('checksum')));
   }
-  for (const arch of ['x86_64', 'aarch64']) {
+  for (const arch of options.dual ? [] : ['x86_64', 'aarch64']) {
     state.product.assets.push(asset(`DezirClip-${version}-linux-${arch}.flatpak`, Buffer.from('flatpak')));
   }
   if (options.sync) {
     const hasMyGo = compareVersions(version, '0.2.0-alpha.9') >= 0;
-    if (hasMyGo) state.product.assets.push(asset(`DezirClip-v${version}-windows-x64-MyGo${version === '0.2.0-alpha.9' ? '.zip' : '-setup.exe'}`, Buffer.from('standalone MyGo package')));
+    if (hasMyGo && !options.dual) state.product.assets.push(asset(`DezirClip-v${version}-windows-x64-MyGo${version === '0.2.0-alpha.9' ? '.zip' : '-setup.exe'}`, Buffer.from('standalone MyGo package')));
     for (const arch of ['amd64', 'arm64']) {
       const name = `DezirClip_${version}_${arch}.deb`;
       state.product.assets.push(asset(name, Buffer.from('deb')), asset(`${name}.sig`, Buffer.from('signature')));
+      if (options.dual) state.product.assets.push(asset(`DezirClip-MyGo_${version}_${arch}.deb`, Buffer.from('deb')),
+        asset(`DezirClip-MyGo_${version}_${arch}.deb.sig`, Buffer.from('signature')));
     }
     const parsed = parseVersion(version);
     for (const arch of ['x86_64', 'aarch64']) {
-      state.product.assets.push(asset(`DezirClip-${parsed.numbers.join('.')}-${parsed.pre.length ? `0.${parsed.pre.join('.')}` : '1'}.${arch}.rpm`, Buffer.from('rpm')));
+      const suffix = `${parsed.numbers.join('.')}-${parsed.pre.length ? `0.${parsed.pre.join('.')}` : '1'}.${arch}.rpm`;
+      state.product.assets.push(asset(`DezirClip-${suffix}`, Buffer.from('rpm')));
+      if (options.dual) state.product.assets.push(asset(`DezirClip-MyGo-${suffix}`, Buffer.from('rpm')));
+    }
+    if (options.dual) {
+      for (const arch of ['x64', 'arm64']) {
+        for (const desktop of ['Tauri', 'MyGo']) {
+          const name = `DezirClip-v${version}-windows-${arch}-${desktop}-portable.zip`;
+          state.product.assets.push(asset(name, Buffer.from('zip')), asset(`${name}.sha256`, Buffer.from('checksum')));
+        }
+      }
     }
     state.workflow = { id: 303481695, path: '.github/workflows/release.yml', state: 'active' };
     state.run = { id: 7001, run_attempt: 1, workflow_id: state.workflow.id, path: state.workflow.path,
@@ -163,9 +179,13 @@ function publisherFixture(options = {}) {
       options.oldPublisher ? 'Verify signed artifacts and publish before public acceptance'
         : 'Verify signed artifacts, publish and synchronize update channel',
     ];
-    state.jobs = names.map((name, index) => ({ id: 8000 + index, name, run_id: 7001, run_attempt: 1,
-      head_sha: 'a'.repeat(40), status: options.running && index === names.length - 1 ? 'in_progress' : 'completed',
-      conclusion: options.running && index === names.length - 1 ? null : 'success', started_at: '2026-10-21T00:00:00Z' }));
+    const jobs = options.dual ? names.filter(name => name === 'Create GitHub release' || name === 'Publish verified standalone archives' ||
+      name.startsWith('Tauri release') || name.startsWith('Build compatible standalone CLI') ||
+      name.startsWith('Verify signed artifacts,')).map(name => name.replace(/^Tauri release/, 'Dual desktop release')) : names;
+    state.jobs = jobs.map((name, index) => ({ id: 8000 + index, name, run_id: 7001, run_attempt: 1,
+      head_sha: 'a'.repeat(40), status: options.running && index === jobs.length - 1 ? 'in_progress' : 'completed',
+      conclusion: options.running && index === jobs.length - 1 ? null : 'success',
+      started_at: '2026-10-21T00:00:00Z', completed_at: '2026-10-21T01:00:00Z' }));
   }
   if (options.tampered) bytes.get(state.product.assets[0].id)[0] ^= 1;
   if (options.channel) {
@@ -206,6 +226,11 @@ function publisherFixture(options = {}) {
           { total_count: state.jobs.length, jobs: jobs.slice(4) }]);
       }
       if (path === `git/ref/tags/${tag}`) return json({ object: { type: 'commit', sha: 'a'.repeat(40) } });
+      if (options.dual && /^releases\/(10|20)\/assets\?per_page=100$/.test(path)) {
+        assert.deepEqual(args.slice(2), ['--paginate', '--slurp']);
+        const release = path.startsWith('releases/10') ? state.product : state.channel;
+        return json([release.assets.slice(0, 30), release.assets.slice(30)]);
+      }
       if (path === 'releases/10' || path === 'releases/20') {
         const release = path === 'releases/10' ? state.product : state.channel;
         assert.ok(release);
@@ -289,6 +314,34 @@ function publisherFixture(options = {}) {
       return found ? JSON.parse(bytes.get(found.id)) : null;
     } };
 }
+
+test('one atomic channel index carries both verified desktop variants without Flatpak', () => {
+  const version = '0.2.0-beta.4';
+  const { state, config, transport, active } = publisherFixture({ version, sync: true, dual: true, running: true });
+  const receipt = publishDual('publish-dual', version, config, 7001, 1, () => {}, transport);
+  const manifest = active('preview.json');
+  assert.equal(state.product.assets.length, 44);
+  assert.equal(receipt.signed_assets.length, 16);
+  assert.equal(receipt.status, 'synchronized');
+  assert.equal(Object.keys(manifest.mygo_platforms).length, 4);
+  assert.match(manifest.platforms['linux-aarch64'].url, /DezirClip_.*_aarch64\.AppImage$/);
+  assert.match(manifest.mygo_platforms['linux-aarch64'].url, /DezirClip-MyGo_.*_aarch64\.AppImage$/);
+  assert.match(manifest.mygo_platforms['windows-aarch64'].url, /windows-arm64-MyGo-setup\.exe$/);
+});
+
+test('missing MyGo targets, wrong signatures and incomplete desktop jobs block release and channel writes', () => {
+  const version = '0.2.0-beta.4';
+  for (const modify of [
+    state => state.product.assets.pop(),
+    state => { state.jobs.find(job => job.name === 'Dual desktop release (linux-aarch64)').conclusion = 'failure'; },
+    state => { state.product.assets.find(asset => asset.name.endsWith('windows-arm64-MyGo-setup.exe.sig')).digest = `sha256:${'0'.repeat(64)}`; },
+  ]) {
+    const { state, config, transport } = publisherFixture({ version, sync: true, dual: true, running: true });
+    modify(state);
+    assert.throws(() => publishDual('publish-dual', version, config, 7001, 1, () => {}, transport));
+    assert.deepEqual(state.mutations, []);
+  }
+});
 
 function withSynchronization(options, body) {
   const fixture = publisherFixture({ sync: true, ...options });

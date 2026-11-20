@@ -10,6 +10,7 @@ SetCompressor /SOLID lzma
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "x64.nsh"
+!include "FileFunc.nsh"
 !define KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\DezirClip-MyGo"
 !define OWNER "DezirClip-MyGo-installation-v1"
 !define MUI_ABORTWARNING
@@ -28,14 +29,23 @@ Function ${PREFIX}.onInit
   SetShellVarContext current
   SetRegView 64
   StrCpy $INSTDIR "$LOCALAPPDATA\Programs\${INSTALL_FOLDER}"
+  !ifdef MYGO_ARM64
+  ${IfNot} ${IsNativeARM64}
+    SetErrorLevel 1
+    Abort "This installer requires Windows on ARM64."
+  ${EndIf}
+  !else
   ${IfNot} ${RunningX64}
     SetErrorLevel 1
     Abort "This installer requires 64-bit Windows."
   ${EndIf}
+  !endif
 FunctionEnd
 !macroend
 !insertmacro Init ""
 !insertmacro Init "un"
+
+Var UpdateParent
 
 !macro Unlocked FILE
   ${If} ${FileExists} "$INSTDIR\${FILE}"
@@ -49,6 +59,20 @@ FunctionEnd
 !macroend
 
 Section "Install"
+  ${GetParameters} $6
+  ClearErrors
+  ${GetOptions} $6 "/UPDATEPARENT=" $UpdateParent
+  ${IfNot} ${Errors}
+    System::Call 'kernel32::OpenProcess(i 0x00100000, i 0, i $UpdateParent) p.r7'
+    ${If} $7 P<> 0
+      System::Call 'kernel32::WaitForSingleObject(p r7, i 60000) i.r6'
+      System::Call 'kernel32::CloseHandle(p r7)'
+      ${If} $6 != 0
+        SetErrorLevel 8
+        Abort "Close DezirClip MyGo before continuing the update."
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
   ReadRegStr $1 HKCU "${KEY}" "InstallLocation"
   ${If} $1 != ""
   ${AndIf} $1 != $INSTDIR
@@ -112,6 +136,9 @@ empty:
   WriteRegStr HKCU "${KEY}" "QuietUninstallString" '$\"$INSTDIR\uninstall.exe$\" /S'
   WriteRegDWORD HKCU "${KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${KEY}" "NoRepair" 1
+  ${If} $UpdateParent != ""
+    Exec '"$INSTDIR\dzc-desktop.exe" --show'
+  ${EndIf}
   SetErrorLevel 0
 SectionEnd
 

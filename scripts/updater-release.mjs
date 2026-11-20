@@ -15,6 +15,12 @@ const expectedPlatforms = {
   'linux-x86_64': 'amd64.AppImage',
   'linux-aarch64': 'aarch64.AppImage',
 };
+const mygoAsset = (version, platform) => ({
+  'windows-x86_64': `DezirClip-v${version}-windows-x64-MyGo-setup.exe`,
+  'windows-aarch64': `DezirClip-v${version}-windows-arm64-MyGo-setup.exe`,
+  'linux-x86_64': `DezirClip-MyGo_${version}_amd64.AppImage`,
+  'linux-aarch64': `DezirClip-MyGo_${version}_aarch64.AppImage`,
+})[platform];
 
 export function parseVersion(input) {
   const value = input.replace(/^v/, '');
@@ -105,11 +111,9 @@ export function preflight(config, pkg) {
   }
 }
 
-export function makeManifest(version, assets, readAsset, publicKey, notes = '') {
+export function makeManifest(version, assets, readAsset, publicKey, notes = '', dual = false) {
   const parsed = parseVersion(version);
-  const platforms = {};
-  for (const [platform, suffix] of Object.entries(expectedPlatforms)) {
-    const name = `DezirClip_${parsed.value}_${suffix}`;
+  function signedAsset(name) {
     for (const required of [name, `${name}.sig`]) {
       if (assets.filter(asset => asset.name === required && asset.size > 0).length !== 1) {
         throw new Error(`Missing or duplicate release asset: ${required}`);
@@ -121,12 +125,17 @@ export function makeManifest(version, assets, readAsset, publicKey, notes = '') 
       throw new Error(`Release asset size differs: ${name}`);
     }
     verifyTauriSignature(data, signature, publicKey, parsed.value, name);
-    platforms[platform] = {
+    return {
       url: `https://github.com/${repository}/releases/download/v${parsed.value}/${encodeURIComponent(name)}`,
       signature,
     };
   }
-  return { version: parsed.value, notes, platforms };
+  const platforms = Object.fromEntries(Object.entries(expectedPlatforms)
+    .map(([platform, suffix]) => [platform, signedAsset(`DezirClip_${parsed.value}_${suffix}`)]));
+  const manifest = { version: parsed.value, notes, platforms };
+  if (dual) manifest.mygo_platforms = Object.fromEntries(Object.keys(expectedPlatforms)
+    .map(platform => [platform, signedAsset(mygoAsset(parsed.value, platform))]));
+  return manifest;
 }
 
 export function promotionChannel(version) { return parseVersion(version).pre.length ? 'preview' : 'stable'; }
@@ -195,7 +204,7 @@ function gh(args, binary = false) {
   return execFileSync('gh', args, { encoding: binary ? undefined : 'utf8',
     maxBuffer: 1024 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
 }
-function githubClient(transport) {
+function githubClient(transport, paginateAssets = false) {
   const api = path => JSON.parse(transport(['api', `repos/${repository}/${path}`]));
   function releaseByTag(tag, optional = false) {
     // The by-tag endpoint only returns published releases. Authenticated, fully
@@ -214,6 +223,14 @@ function githubClient(transport) {
     const release = api(`releases/${matches[0].id}`);
     if (release.id !== matches[0].id || release.tag_name !== tag) {
       throw new Error('GitHub release identity changed during lookup');
+    }
+    if (paginateAssets) {
+      const assetPages = JSON.parse(transport(['api',
+        `repos/${repository}/releases/${release.id}/assets?per_page=100`, '--paginate', '--slurp']));
+      if (!Array.isArray(assetPages) || !assetPages.length || assetPages.some(page => !Array.isArray(page))) {
+        throw new Error('GitHub release asset listing is incomplete');
+      }
+      release.assets = assetPages.flat();
     }
     return release;
   }
@@ -264,8 +281,19 @@ const nativeReleaseJobs = [
   ...['LegacyToAlpha2', 'PublishedAlphaToAlpha2', 'PublishedAlpha2ToRelease']
     .map(scenario => `Verify actual signed Windows upgrades / Final published upgrade (${scenario})`),
 ];
+const dualDesktopJobs = Object.keys(expectedPlatforms).map(platform => `Dual desktop release (${platform})`);
+const dualReleaseJobs = ['Create GitHub release', 'Publish verified standalone archives',
+  ...dualDesktopJobs, ...Object.keys(expectedPlatforms).map(platform => `Build compatible standalone CLI / Standalone (${platform})`)];
+const optionalReleaseJobs = [
+  'Synchronize an already published update channel', 'Supplement published MyGo installer',
+  'Resume verified publication or synchronize update channel', 'Publish the fixed historical recovery',
+  'Resume dual-desktop publication or synchronize its channel',
+  'Collect actual final package identities', 'Verify actual signed Windows upgrades',
+  'Full source acceptance / Published Windows memory comparison', 'Full source acceptance / native-file-drag',
+  'Full source acceptance / Optional Windows Surface comparison or crash diagnostics',
+];
 
-function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = false) {
+function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = false, dual = false) {
   if (!/^[1-9]\d*$/.test(String(runId)) || !Number.isSafeInteger(Number(runId))
       || !/^[1-9]\d*$/.test(String(runAttempt)) || !Number.isSafeInteger(Number(runAttempt))) {
     throw new Error('Synchronization requires an exact Release run and attempt');
@@ -301,36 +329,33 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
     throw new Error('Release attempt jobs have missing or conflicting identities');
   }
   const publishers = jobs.filter(job => publisherJobs.includes(job.name));
-  if (publishers.length !== 1 || (requiresMyGo(tag) && jobs.filter(job => job.name === mygoJob).length !== 1)
-      || (requiresFullSourceAcceptance(tag) && fullSourceJobs.some(name => !jobs.some(job => job.name === name && job.conclusion === 'success')))
+  if (publishers.length !== 1 || (!dual && requiresMyGo(tag) && jobs.filter(job => job.name === mygoJob).length !== 1)
+      || (!dual && requiresFullSourceAcceptance(tag) && fullSourceJobs.some(name => !jobs.some(job => job.name === name && job.conclusion === 'success')))
       || jobs.some(job => !(job.status === 'completed' && job.conclusion === 'success')
-      && !(['Synchronize an already published update channel', 'Supplement published MyGo installer',
-        'Resume verified publication or synchronize update channel',
-        'Full source acceptance / Published Windows memory comparison',
-        'Full source acceptance / native-file-drag',
-        'Full source acceptance / Optional Windows Surface comparison or crash diagnostics'].includes(job.name)
+      && !(optionalReleaseJobs.includes(job.name)
         && job.status === 'completed' && job.conclusion === 'skipped')
       && !(repair && job === publishers[0] && job.status === 'completed' && job.conclusion === 'failure')
       && !(job === publishers[0] && job.status === 'in_progress' && job.conclusion === null))
       || (run.status === 'completed' && publishers[0].status !== 'completed')
       || (run.conclusion === 'failure' && publishers[0].conclusion !== 'failure')
       || (run.conclusion === 'success' && publishers[0].conclusion !== 'success')
-      || [...releaseGateJobs, ...nativeReleaseJobs].some(name => !jobs.some(job => job.name === name))) {
+      || (dual ? dualReleaseJobs : [...releaseGateJobs, ...nativeReleaseJobs])
+        .some(name => !jobs.some(job => job.name === name && job.status === 'completed' && job.conclusion === 'success'))) {
     throw new Error('Release native identity/upgrade gates or another job have not succeeded');
   }
-  const identities = Object.keys(expectedPlatforms).map(platform => jobs.find(job =>
-    job.name === `Collect actual final package identities / Release identities (${platform})`));
-  const times = identities.map(job => Date.parse(job.started_at));
-  if (identities.some(job => typeof job.started_at !== 'string') || times.some(time => !Number.isFinite(time))) {
-    throw new Error('Native release identity start times are missing');
+  const identities = dual ? jobs.filter(job => dualReleaseJobs.includes(job.name)) : Object.keys(expectedPlatforms)
+    .map(platform => jobs.find(job => job.name === `Collect actual final package identities / Release identities (${platform})`));
+  const times = identities.map(job => Date.parse(dual ? job.completed_at : job.started_at));
+  if (times.some(time => !Number.isFinite(time))) {
+    throw new Error('Native release identity times are missing');
   }
   return { run_id: Number(runId), run_attempt: Number(runAttempt), workflow_id: workflow.id,
-    status: run.status, conclusion: run.conclusion, asset_cutoff: Math.min(...times),
+    status: run.status, conclusion: run.conclusion, asset_cutoff: dual ? Math.max(...times) : Math.min(...times),
     jobs: jobs.map(job => ({ id: job.id, name: job.name, status: job.status, conclusion: job.conclusion,
       started_at: job.started_at })).sort((a, b) => a.id - b.id) };
 }
 
-function verifiedReleaseAssets(release, version, cutoff) {
+function verifiedReleaseAssets(release, version, cutoff, dual = false) {
   const parsed = parseVersion(version), value = parsed.value;
   if (parsed.pre.length && !/^(alpha|beta|rc)\.(0|[1-9]\d*)$/.test(parsed.pre.join('.'))) {
     throw new Error('Unsupported RPM release version');
@@ -341,13 +366,26 @@ function verifiedReleaseAssets(release, version, cutoff) {
   const deb = ['amd64', 'arm64'].map(arch => `DezirClip_${value}_${arch}.deb`);
   const names = [...updater.flatMap(name => [name, `${name}.sig`]), ...cli.flatMap(name => [name, `${name}.sha256`]),
     ...deb.flatMap(name => [name, `${name}.sig`]),
-    ...['x86_64', 'aarch64'].map(arch => `DezirClip-${rpmVersion}-${rpmRelease}.${arch}.rpm`),
-    ...['x86_64', 'aarch64'].map(arch => `DezirClip-${value}-linux-${arch}.flatpak`)];
+    ...['x86_64', 'aarch64'].map(arch => `DezirClip-${rpmVersion}-${rpmRelease}.${arch}.rpm`)];
+  if (dual) {
+    const signedMyGo = [...Object.keys(expectedPlatforms).map(platform => mygoAsset(value, platform)),
+      ...['amd64', 'arm64'].map(arch => `DezirClip-MyGo_${value}_${arch}.deb`)];
+    names.push(...signedMyGo.flatMap(name => [name, `${name}.sig`]),
+      ...['x86_64', 'aarch64'].map(arch => `DezirClip-MyGo-${rpmVersion}-${rpmRelease}.${arch}.rpm`));
+    for (const arch of ['x64', 'arm64']) {
+      for (const desktop of ['Tauri', 'MyGo']) {
+        const archive = `DezirClip-v${value}-windows-${arch}-${desktop}-portable.zip`;
+        names.push(archive, `${archive}.sha256`);
+      }
+    }
+  } else {
+    names.push(...['x86_64', 'aarch64'].map(arch => `DezirClip-${value}-linux-${arch}.flatpak`));
+    if (requiresMyGo(value)) names.push(`DezirClip-v${value}-windows-x64-MyGo${value === '0.2.0-alpha.9' ? '.zip' : '-setup.exe'}`);
+  }
   let assets = release.assets;
-  if (requiresMyGo(value)) names.push(`DezirClip-v${value}-windows-x64-MyGo${value === '0.2.0-alpha.9' ? '.zip' : '-setup.exe'}`);
   // alpha.9's original gate predates its separately tested installer supplement.
   // That attachment is outside the signed updater set and original time cutoff.
-  if (value === '0.2.0-alpha.9' && !release.draft && Array.isArray(assets)) {
+  if (!dual && value === '0.2.0-alpha.9' && !release.draft && Array.isArray(assets)) {
     const supplements = assets.filter(asset => asset.name === `DezirClip-v${value}-windows-x64-MyGo-setup.exe`);
     if (supplements.length > 1 || supplements.some(asset => !Number.isSafeInteger(asset.id) || asset.id <= 0
         || !Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.state !== 'uploaded'
@@ -370,14 +408,17 @@ function verifiedReleaseAssets(release, version, cutoff) {
 }
 
 function sameManifest(value, expected) {
-  return value && JSON.stringify(Object.keys(value).sort()) === JSON.stringify(Object.keys(expected).sort())
-    && value.version === expected.version && value.notes === expected.notes && value.platforms
-    && JSON.stringify(Object.keys(value.platforms).sort()) === JSON.stringify(Object.keys(expected.platforms).sort())
-    && Object.entries(expected.platforms).every(([platform, item]) => {
-      const actual = value.platforms[platform];
+  const matches = (actualSet, expectedSet) => actualSet
+    && JSON.stringify(Object.keys(actualSet).sort()) === JSON.stringify(Object.keys(expectedSet).sort())
+    && Object.entries(expectedSet).every(([platform, item]) => {
+      const actual = actualSet[platform];
       return actual && Object.keys(actual).sort().join(',') === 'signature,url'
         && actual.url === item.url && actual.signature === item.signature;
     });
+  return value && JSON.stringify(Object.keys(value).sort()) === JSON.stringify(Object.keys(expected).sort())
+    && value.version === expected.version && value.notes === expected.notes
+    && matches(value.platforms, expected.platforms)
+    && (!expected.mygo_platforms || matches(value.mygo_platforms, expected.mygo_platforms));
 }
 
 function channelWriteIdentity(release) {
@@ -403,7 +444,8 @@ function verifiedUpgradeGate(evidence, receipt) {
 }
 
 function publication(mode, version, config, log, transport, bundle) {
-  const client = githubClient(transport);
+  const dual = bundle?.dual === true;
+  const client = githubClient(transport, dual);
   const parsed = parseVersion(version);
   const tag = `v${parsed.value}`;
   const channel = promotionChannel(parsed.value);
@@ -415,8 +457,8 @@ function publication(mode, version, config, log, transport, bundle) {
   const resumeDraft = mode === 'resume-verified-draft';
   const synchronize = mode === 'publish-and-sync' || mode === 'sync-published' || resumeDraft;
   const repair = mode === 'sync-published' || resumeDraft;
-  const run = synchronize ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, repair) : null;
-  const releaseAssets = synchronize ? verifiedReleaseAssets(release, parsed.value, run.asset_cutoff) : null;
+  const run = synchronize ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, repair, dual) : null;
+  const releaseAssets = synchronize ? verifiedReleaseAssets(release, parsed.value, run.asset_cutoff, dual) : null;
   if (synchronize && typeof release.draft !== 'boolean') throw new Error('Release draft state is missing');
   if (mode === 'sync-published' && (release.draft !== false || run.status !== 'completed')) {
     throw new Error('Published-channel synchronization requires a public release and completed eligible original run');
@@ -436,12 +478,12 @@ function publication(mode, version, config, log, transport, bundle) {
     signedAssets.push({ name, id: asset.id, size: asset.size, updated_at: asset.updated_at,
       sha256: createHash('sha256').update(bytes).digest('hex') });
     return bytes;
-  }, config.plugins.updater.pubkey, release.body ?? '');
+  }, config.plugins.updater.pubkey, release.body ?? '', dual);
   const receipt = { schema_version: 1, version: parsed.value, source_revision: commit,
     release_id: release.id, signed_assets: signedAssets };
-  if (synchronize) verifiedUpgradeGate(bundle.upgradeEvidence, receipt);
+  if (synchronize && !dual) verifiedUpgradeGate(bundle.upgradeEvidence, receipt);
   const syncReceipt = synchronize ? { ...receipt, workflow: run,
-    windows_upgrade_gate_sha256: bundle.upgradeEvidence.sha256 } : null;
+    ...(dual ? {} : { windows_upgrade_gate_sha256: bundle.upgradeEvidence.sha256 }) } : null;
   if (mode === 'promote') {
     const acceptance = bundle?.acceptance;
     if (acceptance?.status !== 'passed' || acceptance.schema_version !== 1
@@ -471,7 +513,7 @@ function publication(mode, version, config, log, transport, bundle) {
   }
   // Check asset identity again before making the verified release public.
   const currentRun = synchronize
-    ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, repair) : null;
+    ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, repair, dual) : null;
   const latest = client.releaseByTag(tag);
   if (latest.id !== release.id || client.releaseCommit(tag) !== commit) throw new Error('Release source changed during verification');
   for (const asset of release.assets) {
@@ -482,11 +524,11 @@ function publication(mode, version, config, log, transport, bundle) {
   }
   if (synchronize) {
     if (latest.tag_name !== tag || latest.prerelease !== release.prerelease || latest.body !== release.body
-        || verifiedReleaseAssets(latest, parsed.value, run.asset_cutoff) !== releaseAssets
+        || verifiedReleaseAssets(latest, parsed.value, run.asset_cutoff, dual) !== releaseAssets
         || JSON.stringify(currentRun) !== JSON.stringify(run)) {
       throw new Error('Release workflow gates or asset identities changed before publication');
     }
-    if (readEvidenceJson(bundle.upgradePath).sha256 !== bundle.upgradeEvidence.sha256) {
+    if (!dual && readEvidenceJson(bundle.upgradePath).sha256 !== bundle.upgradeEvidence.sha256) {
       throw new Error('Windows upgrade gate changed before publication');
     }
     const freshChannels = client.releaseByTag(channelTag, true);
@@ -502,7 +544,7 @@ function publication(mode, version, config, log, transport, bundle) {
   if (published.draft) throw new Error('Release has not been published');
   if (synchronize && (published.draft !== false || published.id !== release.id || published.tag_name !== tag
       || published.prerelease !== release.prerelease || published.body !== release.body
-      || client.releaseCommit(tag) !== commit || verifiedReleaseAssets(published, parsed.value, run.asset_cutoff) !== releaseAssets)) {
+      || client.releaseCommit(tag) !== commit || verifiedReleaseAssets(published, parsed.value, run.asset_cutoff, dual) !== releaseAssets)) {
     throw new Error('Published release readback differs from the verified release');
   }
   if (mode === 'publish-only') {
@@ -568,7 +610,7 @@ function publication(mode, version, config, log, transport, bundle) {
       if (readback.draft || active.length !== 1
           || !client.downloadAsset(active[0]).equals(contents)) throw new Error('Active updater channel readback differs');
     }
-    log(`Published ${tag}; advanced ${channel}.json after verifying all four signed updater artifacts.`);
+    log(`Published ${tag}; advanced ${channel}.json after verifying all ${dual ? 'eight' : 'four'} signed updater artifacts.`);
     if (synchronize) return { ...syncReceipt, status: 'synchronized', channel, channel_version: parsed.value };
   } finally {
     if (resolve(staging).startsWith(resolve(tmpdir()) + (process.platform === 'win32' ? '\\' : '/'))
@@ -601,6 +643,17 @@ export function resumeVerifiedDraft(version, config, runId, runAttempt, upgradeP
   return publication('resume-verified-draft', version, config, log, transport, synchronizationBundle(runId, runAttempt, upgradePath));
 }
 
+const dualActions = {
+  'publish-dual': 'publish-and-sync',
+  'sync-dual-channel': 'sync-published',
+  'resume-dual-draft': 'resume-verified-draft',
+};
+
+export function publishDual(mode, version, config, runId, runAttempt, log = console.log, transport = gh) {
+  if (!Object.hasOwn(dualActions, mode)) throw new Error('Unknown dual desktop publication mode');
+  return publication(dualActions[mode], version, config, log, transport, { dual: true, runId, runAttempt });
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const config = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'));
   const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
@@ -611,6 +664,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     if (!process.env.TAURI_SIGNING_PRIVATE_KEY) throw new Error('Release signing secret is not configured');
     console.log('Updater signing configuration is ready.');
   } else if (mode === 'publish-only') publishOnly(version, config);
+  else if (Object.hasOwn(dualActions, mode) && acceptancePath && runAttempt && !upgradePath) {
+    console.log(JSON.stringify(publishDual(mode, version, config, acceptancePath, runAttempt, console.error)));
+  }
   else if (['publish-and-sync', 'sync-published', 'resume-verified-draft'].includes(mode) && acceptancePath && runAttempt && upgradePath) {
     const synchronize = mode === 'resume-verified-draft' ? resumeVerifiedDraft
       : mode === 'sync-published' ? syncPublished : publishAndSync;
@@ -618,5 +674,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   }
   else if (mode === 'promote' && acceptancePath) {
     promote(version, config, acceptancePath);
-  } else throw new Error('Usage: node scripts/updater-release.mjs preflight|publish-only vVERSION; promote vVERSION ACCEPTANCE.json; publish-and-sync|sync-published|resume-verified-draft vVERSION RUN_ID ATTEMPT WINDOWS_UPGRADE.json');
+  } else throw new Error('Usage: node scripts/updater-release.mjs preflight|publish-only vVERSION; promote vVERSION ACCEPTANCE.json; publish-dual|sync-dual-channel|resume-dual-draft vVERSION RUN_ID ATTEMPT; publish-and-sync|sync-published|resume-verified-draft vVERSION RUN_ID ATTEMPT WINDOWS_UPGRADE.json');
 }

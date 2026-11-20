@@ -10,8 +10,8 @@ on:
         description: Synchronize a channel, resume a verified draft, or recover original alpha.2 assets
         required: true
         type: choice
-        default: sync-published-channel
-        options: [sync-published-channel, resume-verified-draft, resume-existing-alpha2, publish-mygo-installer]
+        default: sync-dual-channel
+        options: [sync-published-channel, resume-verified-draft, sync-dual-channel, resume-dual-draft, resume-existing-alpha2, publish-mygo-installer]
       tag:
         description: Original version tag for channel synchronization or verified draft recovery
         required: false
@@ -39,13 +39,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  full-validation:
-    name: Full source acceptance
-    if: github.event_name == 'push'
-    uses: ./.github/workflows/ci.yml
-    with:
-      full_validation: true
-
   create-release:
     name: Create GitHub release
     if: github.event_name == 'push' || inputs.mode == 'resume-existing-alpha2'
@@ -217,82 +210,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: gh release upload "${GITHUB_REF_NAME}" artifacts/dzc/* --clobber
 
-  windows-x64-mygo:
-    name: Windows x64 MyGo test download
-    if: github.event_name == 'push'
-    needs: create-release
-    runs-on: windows-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.0.9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: . -> target
-      - run: pnpm install --frozen-lockfile
-
-      - name: Set up Go for the Windows x64 MyGo test package
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.27.3'
-          cache-dependency-path: |
-            clients/go/go.sum
-            frontends/dzc-surface/go.sum
-
-      - name: Build and verify standalone Windows x64 MyGo desktop
-        shell: pwsh
-        run: |
-          pnpm run build:mygo:web
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          pnpm run desktop:mygo:build --target x86_64-pc-windows-msvc
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo build --locked --release --no-default-features --features native-screen --bin dzc --bin dzc-service
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/stage-mygo-windows.py --revision "$env:GITHUB_SHA" --tag "$env:GITHUB_REF_NAME" --output "$env:RUNNER_TEMP/mygo-test-package"
-
-      - name: Upload independent Windows x64 MyGo test package
-        uses: actions/upload-artifact@v4
-        with:
-          name: DezirClip-${{ github.ref_name }}-windows-x64-MyGo
-          path: ${{ runner.temp }}/mygo-test-package/
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Build and exercise the Windows x64 MyGo installer
-        shell: pwsh
-        run: |
-          choco install nsis --no-progress -y
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-test-package" --version $version --output "$env:RUNNER_TEMP/DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo-setup.exe"
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/tests/mygo-installer-windows.py --stage "$env:RUNNER_TEMP/mygo-test-package" --installer "$env:RUNNER_TEMP/DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo-setup.exe" --follow-pointer
-
-      - name: Attach the verified Windows x64 MyGo installer to the release
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DZC_RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
-        run: |
-          $archive = Join-Path $env:RUNNER_TEMP "DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo-setup.exe"
-          $release = gh release view "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" --json databaseId,isDraft,tagName | ConvertFrom-Json
-          if ($LASTEXITCODE -or !$release.isDraft -or [string]$release.databaseId -ne $env:DZC_RELEASE_ID -or $release.tagName -cne $env:GITHUB_REF_NAME) {
-            throw 'Expected the original draft release for this tag'
-          }
-          gh release upload "$env:GITHUB_REF_NAME" $archive --repo "$env:GITHUB_REPOSITORY"
-
-  publish-tauri:
-    name: Tauri release (${{ matrix.name }})
+  publish-desktop:
+    name: Dual desktop release (${{ matrix.name }})
     if: github.event_name == 'push'
     needs: create-release
     runs-on: ${{ matrix.platform }}
@@ -305,25 +224,25 @@ jobs:
             args: ''
             rust_target: ''
             msvc_arch: ''
-            can_run_dzc: true
+            mygo_target: x86_64-unknown-linux-gnu
           - name: linux-aarch64
             platform: ubuntu-24.04-arm
             args: ''
             rust_target: ''
             msvc_arch: ''
-            can_run_dzc: true
+            mygo_target: aarch64-unknown-linux-gnu
           - name: windows-x86_64
             platform: windows-latest
             args: ''
             rust_target: ''
             msvc_arch: ''
-            can_run_dzc: true
+            mygo_target: x86_64-pc-windows-msvc
           - name: windows-aarch64
             platform: windows-latest
             args: --target aarch64-pc-windows-msvc
             rust_target: aarch64-pc-windows-msvc
             msvc_arch: amd64_arm64
-            can_run_dzc: false
+            mygo_target: aarch64-pc-windows-msvc
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -348,7 +267,8 @@ jobs:
             libxrandr-dev \
             libxtst-dev \
             libdbus-1-dev \
-            xdg-utils
+            xdg-utils \
+            squashfs-tools
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -377,10 +297,12 @@ jobs:
         with:
           arch: ${{ matrix.msvc_arch }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-go@v6
         with:
-          node-version: 22
+          go-version: '1.27.3'
+          cache-dependency-path: |
+            clients/go/go.sum
+            frontends/dzc-surface/go.sum
 
       - name: Cache Rust artifacts
         uses: swatinem/rust-cache@v2
@@ -389,9 +311,6 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Set release version
-        run: pnpm run release:set-version ${{ github.ref_name }}
 
       - name: Publish Tauri bundles
         uses: tauri-apps/tauri-action@v0
@@ -416,26 +335,81 @@ jobs:
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
-          node scripts/bundle-rpm.mjs --receipt "$RUNNER_TEMP/rpm-bundle.json"
+          node scripts/bundle-rpm.mjs --receipt "$RUNNER_TEMP/rpm-bundle.json" --reuse-sidecars
           rpm_path="$(node -e 'const fs=require("node:fs"); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).artifact);' "$RUNNER_TEMP/rpm-bundle.json")"
           test -s "$rpm_path"
           test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/${{ needs.create-release.outputs.release_id }}" --jq '.draft')" = true
           gh release upload "$GITHUB_REF_NAME" "$rpm_path" --clobber
 
-  publish-flatpak:
-    name: Verified Flatpak release
-    if: github.event_name == 'push'
-    needs: create-release
-    uses: ./.github/workflows/flatpak.yml
-    with:
-      artifact-prefix: release-flatpak
-      version: ${{ github.ref_name }}
-    secrets: inherit
+      - name: Build and package MyGo Native with the same release sidecars
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          MYGO_TARGET: ${{ matrix.mygo_target }}
+          PLATFORM: ${{ matrix.name }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          set -euo pipefail
+          pnpm run desktop:mygo:build --target "$MYGO_TARGET"
+          cargo_target="$(cargo metadata --format-version 1 --no-deps --locked | node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(0)).target_directory)')"
+          sidecars="$cargo_target/${RUST_TARGET:+$RUST_TARGET/}release"
+          python scripts/bundle-mygo.py --target "$PLATFORM" --sidecars "$sidecars" \
+            --native "artifacts/dzc-desktop/$MYGO_TARGET" --output "$RUNNER_TEMP/mygo-release" \
+            --revision "$GITHUB_SHA" --tag "$GITHUB_REF_NAME" --smoke
+
+      - name: Attach MyGo packages to the original draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.draft')" = true
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/mygo-release/"* --clobber
+
+      - name: Package both Windows portable desktops
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          MYGO_TARGET: ${{ matrix.mygo_target }}
+          PLATFORM: ${{ matrix.name }}
+          TAURI_ENV_TARGET_TRIPLE: ${{ matrix.mygo_target }}
+        run: |
+          set -euo pipefail
+          pnpm exec tauri build --ci --no-bundle --features portable --target "$MYGO_TARGET" \
+            --config '{"build":{"beforeBuildCommand":null}}'
+          pnpm run tauri:prepare-sidecars --portable --release --phase portable
+          cargo_target="$(cargo metadata --format-version 1 --no-deps --locked | node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(0)).target_directory)')"
+          sidecars="$cargo_target/$MYGO_TARGET/release"
+          python scripts/bundle-mygo.py --portable --target "$PLATFORM" --sidecars "$sidecars" \
+            --native "artifacts/dzc-desktop/$MYGO_TARGET" --output "$RUNNER_TEMP/portable-release" \
+            --revision "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable.ps1 \
+            -TargetDirectory "$sidecars" -OutputDirectory "$RUNNER_TEMP/portable-release"
+          arch=x64
+          if [[ "$PLATFORM" == windows-aarch64 ]]; then arch=arm64; fi
+          cd "$RUNNER_TEMP/portable-release"
+          mv dezirclip-portable.zip "DezirClip-$GITHUB_REF_NAME-windows-$arch-Tauri-portable.zip"
+          for archive in *.zip; do sha256sum "$archive" > "$archive.sha256"; done
+
+      - name: Attach Windows portable packages and checksums
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.draft')" = true
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/portable-release/"*.zip* --clobber
 
   collect-release-identities:
     name: Collect actual final package identities
-    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, windows-x64-mygo]
-    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success' && needs.windows-x64-mygo.result == 'success')) }}
+    needs: create-release
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'resume-existing-alpha2'
     permissions:
       contents: write
       actions: read
@@ -448,8 +422,8 @@ jobs:
 
   verify-final-windows-upgrade:
     name: Verify actual signed Windows upgrades
-    needs: [create-release, publish-tauri]
-    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.publish-tauri.result == 'success') }}
+    needs: create-release
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'resume-existing-alpha2'
     permissions:
       contents: write
     uses: ./.github/workflows/release-windows-upgrade.yml
@@ -461,68 +435,72 @@ jobs:
 
   verify-publish-and-promote:
     name: Verify signed artifacts, publish and synchronize update channel
-    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade, windows-x64-mygo, full-validation]
-    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && needs.collect-release-identities.result == 'success' && needs.verify-final-windows-upgrade.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success' && needs.windows-x64-mygo.result == 'success' && needs.full-validation.result == 'success')) }}
+    if: github.event_name == 'push'
+    needs: [create-release, publish-desktop, publish-standalone-cli]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
       actions: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.create-release.outputs.tooling_source }}
-          fetch-depth: 0
           persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Verify both desktops and activate the update channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node scripts/updater-release.mjs publish-dual "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" | tee "$RUNNER_TEMP/updater-channel-sync.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: updater-channel-sync-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/updater-channel-sync.json
+          if-no-files-found: error
 
-      - name: Locate the successful Windows upgrade aggregate artifact
-        if: github.event_name == 'push'
-        id: upgrade-artifact
+  publish-historical-recovery:
+    name: Publish the fixed historical recovery
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'resume-existing-alpha2'
+    needs: [create-release, collect-release-identities, verify-final-windows-upgrade]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Publish the fixed historical recovery
         env:
           GH_TOKEN: ${{ github.token }}
           DZC_RELEASE_TAG: ${{ needs.create-release.outputs.tag }}
-        run: node scripts/release-upgrade-artifact.mjs "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$DZC_RELEASE_TAG" "$RUNNER_TEMP/updater-upgrade-artifact.json"
-
-      - name: Download the exact final Windows upgrade gate
-        if: github.event_name == 'push'
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: ${{ steps.upgrade-artifact.outputs.artifact_id }}
-          merge-multiple: true
-          path: ${{ runner.temp }}/updater-release-gates
-
-      - name: Verify, publish and synchronize the signed updater channel
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          DZC_RELEASE_TAG: ${{ needs.create-release.outputs.tag }}
-        run: |
-          set -euo pipefail
-          node scripts/updater-release.mjs publish-and-sync "$DZC_RELEASE_TAG" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$RUNNER_TEMP/updater-release-gates/windows-upgrade.json" | tee "$RUNNER_TEMP/updater-channel-sync.json"
-
-      - name: Publish the fixed historical recovery without changing its channel policy
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'resume-existing-alpha2'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          DZC_RELEASE_TAG: ${{ needs.create-release.outputs.tag }}
         run: node scripts/updater-release.mjs publish-only "$DZC_RELEASE_TAG"
 
-      - name: Retain the synchronized channel receipt
-        if: always() && github.event_name == 'push'
-        uses: actions/upload-artifact@v4
+  recover-dual-release:
+    name: Resume dual-desktop publication or synchronize its channel
+    if: github.event_name == 'workflow_dispatch' && (inputs.mode == 'sync-dual-channel' || inputs.mode == 'resume-dual-draft')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - run: test "$GITHUB_REF" = refs/heads/master
+      - uses: actions/checkout@v4
         with:
-          name: updater-channel-sync-attempt-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/updater-channel-sync.json
-            ${{ runner.temp }}/updater-upgrade-artifact.json
-          if-no-files-found: error
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify the original dual-desktop jobs and synchronize
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MODE: ${{ inputs.mode }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_RUN: ${{ inputs.release-run-id }}
+          RELEASE_ATTEMPT: ${{ inputs.release-run-attempt }}
+        run: node scripts/updater-release.mjs "$RELEASE_MODE" "$RELEASE_TAG" "$RELEASE_RUN" "$RELEASE_ATTEMPT"
 
   sync-published-channel:
     name: Resume verified publication or synchronize update channel

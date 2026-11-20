@@ -12,12 +12,12 @@ def nsis_string(value):
     return str(value).replace('$', '$$').replace('"', '$\\"')
 
 
-def build(stage, output, version, unicode_path_fixture=False):
-    extra = []
+def build(stage, output, version, unicode_path_fixture=False, arm64=False):
+    extra = ['/DMYGO_ARM64'] if arm64 else []
     if unicode_path_fixture:
         if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
             raise RuntimeError('Unicode installation fixture requires a disposable GitHub runner')
-        extra = ['/DINSTALL_FOLDER=DezirClip-MyGo-测试-Ω']
+        extra += ['/DINSTALL_FOLDER=DezirClip-MyGo-测试-Ω']
     if not re.fullmatch(r"\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?", version):
         raise ValueError("Invalid version")
     stage = stage.resolve(strict=True)
@@ -64,5 +64,6 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--version', required=True)
     parser.add_argument('--unicode-path-fixture', action='store_true')
+    parser.add_argument('--arm64', action='store_true')
     args = parser.parse_args()
-    build(args.stage, args.output, args.version, args.unicode_path_fixture)
+    build(args.stage, args.output, args.version, args.unicode_path_fixture, args.arm64)

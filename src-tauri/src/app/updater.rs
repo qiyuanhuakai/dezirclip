@@ -105,6 +105,7 @@ pub async fn check_for_update(
             release_url: format!("{RELEASES_URL}/tag/v{}", update.version),
             version: update.version.clone(),
             notes: update.body.clone(),
+            artifact: None,
         };
         *pending = Some(PendingUpdate { id, update });
         Some(result)

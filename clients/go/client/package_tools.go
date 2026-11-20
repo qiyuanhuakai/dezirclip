@@ -29,7 +29,8 @@ func EvaluateUpdate(ctx context.Context, channel string, indexes []json.RawMessa
 	if err := encoder.Encode(struct {
 		Channel string            `json:"channel"`
 		Indexes []json.RawMessage `json:"indexes"`
-	}{channel, indexes}); err != nil {
+		MyGo    bool              `json:"mygo"`
+	}{channel, indexes, true}); err != nil {
 		return nil, errors.New("update_invalid_manifest")
 	}
 	return packageTool(ctx, "evaluate-update", input.Bytes())

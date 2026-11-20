@@ -104,9 +104,9 @@ sudo dnf install ./dezirclip_VERSION_ARCH.rpm
 
 openSUSE 使用其包管理器安装 rpm。AppImage 运行依赖还取决于发行版的 FUSE 配置；若挂载失败，先按发行版说明排查，或使用 deb/rpm。`dzc` 随应用安装，位置随打包形式变化；在设置中查看 CLI 路径后加入 `PATH`，详见 [CLI 文档](./cli.md)。
 
-### Flatpak
+### 历史 Flatpak
 
-新构建的 Flatpak 内置 `xdotool`、Tesseract 5.5.3、Leptonica 和 `eng` / `chi_sim` / `osd` 模型，不需要宿主机安装 OCR 或粘贴工具。已发布的 alpha.1/alpha.2 附件没有这些工具；此变化适用于新 CI 制品和后续发布。
+Flatpak 可从旧版发布页安装。常规发布提供 Tauri 和 MyGo Native 的 AppImage、deb 与 rpm。后期历史 Flatpak 已内置 OCR 与粘贴依赖，alpha.1/alpha.2 需要另外处理这些工具。
 
 ```bash
 flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
@@ -116,7 +116,7 @@ flatpak run io.github.qiyuanhuakai.dezirclip
 
 自动粘贴仍需要 X11 会话、正确的窗口焦点和支持相应快捷键的目标应用。内置工具不会授予 Wayland 输入模拟权限，也不代表完整 Wayland 支持。OCR 在沙箱内本地执行，默认使用英文和简体中文；可用 `DEZIRCLIP_OCR_LANG` 选择已安装的语言。
 
-源码构建与验证：安装 `org.gnome.Platform//50`、`org.gnome.Sdk//50`、`flatpak-builder`、Xvfb 和 X11 开发库后，运行 `pnpm run tauri:build`、`pnpm run flatpak:prepare`、`pnpm run flatpak:build`，再运行 `python3 scripts/verify-flatpak.py flatpak/build`。验证使用最终 Platform 运行时识别中英文固定图片，并向隔离的 X11 窗口发送 Ctrl+V、检查剪贴板文本往返；不安装应用、不接触用户桌面的焦点或剪贴板。CI 和发布复用同一构建及验证流程。
+如需从源码复现旧包，安装 `org.gnome.Platform//50`、`org.gnome.Sdk//50`、`flatpak-builder`、Xvfb 和 X11 开发库后，运行 `pnpm run tauri:build`、`pnpm run flatpak:prepare`、`pnpm run flatpak:build`，再运行 `python3 scripts/verify-flatpak.py flatpak/build`。验证在隔离的 X11 会话中运行 OCR 和粘贴检查。
 
 Xvfb 验证仅启动一次，准备期限仍为 15 秒；其标准错误直接保留在 CI 日志中，另记录原进程 PID、退出状态、单调耗时和最多 32 字节的 displayfd 原数据。只有完整的十进制显示号加换行且原进程仍运行才进入粘贴检查。Xvfb 与合成接收窗口均只清理原 `Popen` 对象：终止后最多等待 10 秒，必要时强杀并再等 10 秒；强杀或清理异常使验收失败，已有首个错误保持并输出清理诊断。这些诊断未证明此前 ARM64 启动失败的根因。[Python subprocess 文档](https://docs.python.org/3/library/subprocess.html)说明未消费的管道可阻塞子进程，`Popen.wait` 超时也不会自动清理子进程。
 

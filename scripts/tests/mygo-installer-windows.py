@@ -13,7 +13,8 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def verify(installer, stage, unicode_path_fixture=False, pointer_margin=16, follow_pointer=False, legacy_close_after_paste=False):
+def verify(installer, stage, unicode_path_fixture=False, pointer_margin=16, follow_pointer=False,
+           legacy_close_after_paste=False, native_main=False):
     if os.environ.get('GITHUB_ACTIONS') != 'true' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
         raise RuntimeError('Installer execution requires a disposable GitHub-hosted runner')
     folder = 'DezirClip-MyGo-测试-Ω' if unicode_path_fixture else 'DezirClip-MyGo'
@@ -48,6 +49,7 @@ def verify(installer, stage, unicode_path_fixture=False, pointer_margin=16, foll
                     str(Path(__file__).with_name('mygo-desktop-windows.ps1')),
                     '-Desktop', str(root / 'dzc-desktop.exe'), '-ExpectedPointerMargin', str(pointer_margin)]
                    + (['-QuickPasteFollowPointer'] if follow_pointer else [])
+                   + (['-NativeMain'] if native_main else [])
                    + (['-LegacyCloseAfterPaste'] if legacy_close_after_paste else []), check=True, timeout=240)
     preserved = root / 'user-preserved.txt'
     preserved.write_text('Keep user data', encoding='utf-8')

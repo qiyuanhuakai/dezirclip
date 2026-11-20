@@ -78,8 +78,11 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
   const goEnv = { ...env, ...targets[target], CGO_ENABLED: '0', GOTOOLCHAIN: 'local', GOWORK: 'off', GOFLAGS: '' };
   const patch = prepareMyGoPatch({ run, go, moduleRoot, outputRoot: outDir, env: goEnv });
   const values = { Version: version, SourceRevision: revision, SourceState: sourceState, BuildID: expected.build_id, Target: target, ToolkitPatch: MYGO_PATCH_ID };
+  const releaseUpdater = component === 'mygo-desktop'
+    ? [`-X main.nativeUpdaterPublicKey=${JSON.parse(readFileSync(join(root, 'src-tauri/tauri.conf.json'), 'utf8')).plugins.updater.pubkey}`]
+    : [];
   const ldflags = ['-s', '-w', ...(targets[target].GOOS === 'windows' ? ['-H=windowsgui'] : []),
-    ...Object.entries(values).flatMap(([name, value]) => ['-X', `${identityPackage}.${name}=${value}`])].join(' ');
+    ...releaseUpdater, ...Object.entries(values).flatMap(([name, value]) => ['-X', `${identityPackage}.${name}=${value}`])].join(' ');
   const goArgs = ['build', '-mod=readonly', `-modfile=${patch.modfile}`, '-trimpath', '-buildvcs=false', '-ldflags', ldflags, '-o', temporary, './cmd/' + binaryName];
   const compile = () => {
     if (component !== 'mygo-desktop' || targets[target].GOOS !== 'windows') return run(go, goArgs, { cwd: moduleRoot, env: goEnv, stdio: 'inherit' });

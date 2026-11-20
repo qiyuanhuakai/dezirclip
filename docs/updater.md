@@ -10,7 +10,7 @@
 
 桌面更新使用官方 Tauri 2 Updater。v0.2 的首批原位更新制品仅包含 Windows NSIS 和 Linux AppImage，支持 x86_64 与 aarch64。`dzc-core`、独立 CLI、MCP 和捕获服务不因此联网，也不增加后台进程。P1-A 提供后端与发布门槛，P1-C 在“设置 → 关于 → 软件更新”接入自动检查偏好、通道、手动检查及确认安装界面。
 
-MyGo 的 Windows x64 版使用同一设置页和两个固定的 GitHub 通道索引。仅 MyGo 桌面进程请求索引，随包 Rust CLI 离线比较版本并校验候选安装包的签名元数据。发现新版后，从对应版本的发布页下载 `windows-x64-MyGo-setup.exe`，退出应用后手动运行安装程序；这不会触发 Tauri 安装器来替换 MyGo 桌面入口。
+四个平台同时提供 Tauri 与 MyGo Native。两个桌面共用 Stable 和 Preview 索引以及签名公钥，并使用各自的制品映射。Tauri 使用 `platforms`，MyGo Native 使用 `mygo_platforms`。MyGo 在本机用 Rust CLI 比较版本和筛选架构，安装前由 Go 核对完整制品、版本和文件名的签名。只有用户确认后才安装并重启。已经安装的旧版 MyGo 可先从发布页手动覆盖安装一次。
 
 ## 组件构建身份与 Host 生命周期
 
@@ -18,7 +18,7 @@ MyGo 的 Windows x64 版使用同一设置页和两个固定的 GitHub 通道索
 
 已知源码的 ID 为 `<version>@<40位revision>`，因此同一 Git 修订生成的 alpha.0 与 alpha.1 调试安装 fixture 也有不同 ID。各架构属于同一发布构建集，但架构本身仍单独报告。`source_state=verified_checkout` 表示已确认修订且已跟踪源码干净；修改中的源码为 `modified_checkout`，ID 仅用于辨认，不能据此确认兼容。无法确认 Git 来源的本地归档为 `unknown`，修订和 ID 均为 null。`same_verified_build_set` 只确认双方已验证的相同版本/修订、协议与 schema；它不是未来 IPC 所需的身份认证、角色和能力握手。
 
-生产 Actions 对 Desktop、sidecar、独立 CLI 和 Flatpak 使用同一个显式 `DZC_BUILD_REVISION=github.sha`；构建脚本验证完整格式、实际 checkout HEAD 与 Actions SHA 一致。脚本观察当前 HEAD、index、packed refs、当前分支引用与已跟踪输入变化，不扫描 `.harness` 或签名目录。AlmaLinux CLI 容器保留只读 `/source` 原 checkout，并逐个核对复制后的实际 Rust/Cargo 构建输入和编译嵌入资源；无关 QA 脚本无需进入容器。来源不符会阻止构建。
+生产 Actions 对 两种 Desktop、sidecar 和独立 CLI 使用同一个显式 `DZC_BUILD_REVISION=github.sha`；构建脚本验证完整格式、实际 checkout HEAD 与 Actions SHA 一致。脚本观察当前 HEAD、index、packed refs、当前分支引用与已跟踪输入变化，不扫描 `.harness` 或签名目录。AlmaLinux CLI 容器保留只读 `/source` 原 checkout，并逐个核对复制后的实际 Rust/Cargo 构建输入和编译嵌入资源；无关 QA 脚本无需进入容器。来源不符会阻止构建。
 
 原生可执行 sidecar 的准备 proof 记录真实 `build-info` 查询结果；交叉编译 ARM64 只记录声明的构建集和 `cross_target_not_executed`，不声称运行验证。Windows 原生安装验收继续要求 GUI/CLI 完整哈希和 NSIS 单标记证明，并额外通过实际 GUI 查询及安装后 CLI 查询确认同版本、同 build_id、同协议和 schema。尚未运行的新包须等待隔离 CI 验收，不能把这些接口的编译结果当作安装通过。
 
@@ -91,18 +91,15 @@ Stable 只读取 stable.json，排除全部预发布。Preview 分别读取两�
 
 使用 CLI 2.12.3 生成带 authenticated `version:` trusted comment 的官方签名，Updater 2.14 设置 `requireSignedVersion: true`。签名覆盖制品及版本；普通 SHA-256 文件只能用于传输校验，不能替代签名。没有版本的旧签名、元数据伪造版本配旧包、制品正文或签名被篡改时均拒绝安装。
 
-2026-11-02 按用户要求，将正常版本发布与对应自动更新通道同步。原先“公开后等待四份人工验收报告再推进通道”的规则保留为历史及显式 `promote` 入口，不再阻塞正常发行。新的同步入口使用实际 Release 门禁及其原始升级汇总，不将尚未执行的 AppImage 更新、正式性能或 MyGo Phase6 检查标成通过。
+常规发布由 tag 触发，按以下步骤运行。
 
-现有 Release 工作流按以下顺序运行：
+1. 核对同步版本及签名配置，创建 GitHub 草稿。
+2. 四个平台并行打包。每个平台的 Tauri 与 MyGo 共用同一组发布版 Rust 辅助程序。Windows 两份便携 ZIP 共用该平台的便携辅助程序。独立 CLI 保留四个平台的兼容构建。
+3. 同一平台任务直接检查制品架构、构建身份和 MyGo 安装包。Linux 启动提取后的 deb 与 AppImage 检查入口。Windows x64 用独立桌面会话执行 MyGo 的安装、覆盖升级和卸载。开发检查由 PR CI 执行，历史安装和故障回归可用 CI 的全量验收模式运行。
+4. `publish-dual` 核对原 tag 推送、精确 run/attempt、构建任务和资产清单，重新下载八份 NSIS/AppImage 与配套签名，校验 SHA-256、签名、版本和文件名。通过后公开草稿，并写入包含两种桌面的单份通道索引。
+5. 预发布推进 `preview.json`，正式版推进 `stable.json`。先上传版本索引并回读，再激活。等版本必须内容一致，较新通道继续生效。deb、rpm 和便携 ZIP 通过原安装方式更新。
 
-1. 检查公钥、Secrets、固定 endpoint 与版本签名配置，并运行发布逻辑回归。
-2. 创建 draft release；四平台桌面包、四平台独立 CLI 和 Flatpak 均上传至 draft。
-3. 完成四平台最终包的十四份制品、三十四个 Desktop/CLI/Service 角色身份门禁，以及三个真实 Windows 签名升级场景和两个汇总任务。
-4. `publish-and-sync` 查询本仓库原始 tag push 的 Release 运行及指定 attempt 的全部任务，核对工作流、tag、源码和门禁结果。当前发布任务可以尚在执行，其余发行任务必须成功；独立的手动补同步任务在 tag 发布中按设计跳过。读取同一次运行封存的 Windows 升级汇总，绑定版本、源码、release ID 和八个安装包/签名的资产身份及 SHA-256。
-5. 重新下载四个 NSIS/AppImage 制品及其 `.sig`，验证长度、Ed25519/BLAKE2b 签名、签名版本及文件名，并与原汇总中的八项资产逐一匹配；写入前复核来源、运行及资产未变化。公开版本 release，确认其已公开。
-6. 在同一发布任务内推进对应索引：预发布只写 `preview.json`，正式版只写 `stable.json`。索引先以版本名上传并回读核对，再重命名为活动索引并再次回读；旧活动索引保留为 `*-previous-<asset-id>.json`。较新通道不会回退；相同版本须与本次完整索引内容一致才算已同步。通道失败会令发行任务失败，不能以安装包已公开冒充发布流程全部成功。
-
-已公开版本补同步无需重建安装包或移动 tag。在 Actions 的 **Release** 工作流选择 **Run workflow**，分支使用 `master`，`mode` 选择 `sync-published-channel`，填写版本 `tag`、原始 Release 的 `release-run-id` 与 `release-run-attempt`。该入口下载原运行的升级汇总，并执行 `sync-published`；它要求原运行已结束且版本已公开。原运行可以完整成功，或仅最后的发布/通道同步任务失败；构建、原生验收和汇总任务仍须全部成功，不接受取消或其他任务失败。它与正常发布使用相同串行锁和验签/防回退逻辑，能够恢复“安装包已公开、索引写入失败”的情况。alpha.6 对应 `v0.2.0-alpha.6`、`41393472118`、`1`。本次补同步只修改通道资产，不替换任何已发布安装包。
+双桌面版若只在最后一步失败，从 `master` 手动运行 Release。草稿选择 `resume-dual-draft`，已公开版选择 `sync-dual-channel`。填写原版 tag、run ID 和 attempt。恢复沿用原始制品、签名和构建结果。旧版可沿用 `resume-verified-draft` 和 `sync-published-channel`，这两个入口仍依赖其原始 Windows 升级汇总。
 
 旧 `node scripts/updater-release.mjs promote v<version> ACCEPTANCE.json` 仍要求四份真实 `public_assets`、`appimage_updates`、`windows_upgrade`、`performance` 报告及验收清单。其版本、来源提交、release ID 和八项签名资产必须匹配。每个 `gates` 仍使用 `{ "file": "报告名.json", "sha256": "报告原始字节的64位小写哈希" }`，不接受只有哈希字符串的声明；此兼容入口不自动生成验收结论。
 
@@ -112,13 +109,11 @@ Stable 只读取 stable.json，排除全部预发布。Preview 分别读取两�
 
 整个 release 工作流共用串行锁，配置 `queue: max` 保留排队任务且禁止取消正在运行的发布，避免补同步挤掉排队发行，或 Stable/Preview 互相覆盖。版本比较仍拒绝旧版本回退。签名缺失、缺包、验签失败及构建失败均保持 draft，不推进通道。已公开且有完整已验签制品的旧版本允许保留发布，但不覆盖较新通道。队列配置遵循 [GitHub Actions 并发规则](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
 
-Flatpak 构建用 deb 暂存根目录时显式关闭 updater artifact 生成；Flatpak 走包管理方式，不获取桌面更新签名私钥。正式桌面发布任务的 deb/rpm 可能额外产生签名，但它们不进入应用内更新索引。
+旧 Flatpak 留在对应历史发布页。常规发布提供两种桌面的 NSIS、AppImage、deb、rpm 和适用于 Windows 的便携 ZIP。
 
 GitHub Release 资产重命名不提供事务：替换活动索引时可能短暂出现 404。脚本先保留旧资产，重命名失败会检查操作是否其实成功，并尝试恢复旧名称；断网或 GitHub 故障可能需要维护者恢复活动资产名。这影响索引可用性，不绕过客户端签名/版本检查。首次通道 release 也先建 draft，索引上传核验后才公开。遗留 draft channel release 会中止自动操作，维护者应检查后恢复，不自动猜测未完成状态。
 
-`publish-only` 保留原语义：只公开经过验签的版本，不推进通道；仅固定 alpha.2 的历史恢复继续使用此路径。正常发布改用 `publish-and-sync`，已公开版本采用 `sync-published-channel` 补同步。资产或来源发生变化时拒绝复用原验收，不重建已公开的同 tag。旧四报告的字段仍见 [alpha.2 发布验收](specs/v0.2-alpha2-release.md)。
-
-若原 tag 发布的全部构建、来源绑定和安装升级验收成功，仅最终发布任务失败，可在修复工具的 PR 合并 `master` 后，通过既有 Release workflow 的 `resume-verified-draft` 模式续发。必须指定原 `tag`、`release-run-id` 和 `release-run-attempt`。入口只接受仍为草稿的版本及已结束、仅 publisher 失败的原始 push run；重新核对原提交、全部必要任务、原安装升级报告、资产 ID/摘要/时间和签名，再公开并同步通道。它不移动标签、不重建或替换任何资产；已公开的版本仍使用 `sync-published-channel`。可选的已发布版本内存对比任务仅在明确 `skipped` 时不阻止发布，失败或取消仍阻止发布。
+固定 alpha.2 仍使用 `publish-only` 和原始发布身份，历史恢复保留其验收规则。
 
 ## 验证命令与边界
 

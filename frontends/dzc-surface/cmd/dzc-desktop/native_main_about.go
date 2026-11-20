@@ -22,6 +22,7 @@ import (
 type nativeUpdater struct {
 	channel              string
 	automatic, notesOpen bool
+	confirm, installing  bool
 	timer                *time.Timer
 	cancel               context.CancelFunc
 	generation           uint64
@@ -32,8 +33,12 @@ type nativeUpdater struct {
 
 type nativeUpdateResult struct {
 	Channel, CurrentVersion, ChannelVersion, Status string
-	Available                                       *struct{ Version, Notes, ReleaseURL string }
-	UnpublishedChannels                             []string
+	Available                                       *struct {
+		Version, Notes, ReleaseURL string
+		Artifact                   *mygoArtifact
+	}
+	UnpublishedChannels           []string
+	installTarget, installSupport string
 }
 
 var (
@@ -61,6 +66,7 @@ func (n *nativeMain) configureUpdater(saved string, automatic bool) {
 	n.stopUpdater()
 	if channel != u.channel {
 		u.result, u.err, u.checked, u.notesOpen = nativeUpdateResult{}, nil, time.Time{}, false
+		u.result.installTarget, u.result.installSupport = mygoUpdateTarget()
 	}
 	u.channel, u.automatic = channel, automatic
 	if automatic {
@@ -78,6 +84,7 @@ func (n *nativeMain) configureUpdater(saved string, automatic bool) {
 func (n *nativeMain) stopUpdater() {
 	u := &n.updater
 	u.generation++
+	u.confirm, u.installing = false, false
 	if u.timer != nil {
 		u.timer.Stop()
 		u.timer = nil
@@ -130,8 +137,36 @@ func (n *nativeMain) fetchUpdate(ctx context.Context, channel string, automatic 
 	raw, err := n.shell.CheckForUpdate(ctx, channel)
 	if err == nil {
 		result, err = parseNativeUpdate(raw, channel)
+		result.installTarget, result.installSupport = mygoUpdateTarget()
 	}
 	return result, true, err
+}
+
+func (n *nativeMain) installUpdate() {
+	u := &n.updater
+	available := u.result.Available
+	if u.cancel != nil || available == nil || available.Artifact == nil || u.result.installTarget == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
+	u.cancel, u.installing = cancel, true
+	u.err = nil
+	generation, target := u.generation, u.result.installTarget
+	go func() {
+		defer cancel()
+		version, artifact := available.Version, *available.Artifact
+		path, err := downloadMyGoUpdate(ctx, artifact, version, target)
+		if err == nil {
+			request := mygoInstallRequest{Path: path, Version: version, Signature: artifact.Signature}
+			err = n.shell.resident.send(ctx, residentRequest{Operation: "install-update", Update: &request}, 30*time.Second)
+		}
+		n.window.Update(func() {
+			if n.window.IsDestroyed() || u.generation != generation {
+				return
+			}
+			u.cancel, u.installing, u.err = nil, false, err
+		})
+	}()
 }
 
 // Record external requests before they run so a restarted main window preserves the interval.
@@ -262,6 +297,9 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	check := n.text("updater_check_now")
 	if busy {
 		check = n.text("updater_checking")
+		if u.installing {
+			check = n.text("updater_downloading")
+		}
 	}
 	ui.Row(c).Gap(6).Wrap().Children(func() {
 		if uikit.Button(c, uikit.ButtonOptions{Label: check, Disabled: disabled}).Clicked() {
@@ -270,6 +308,10 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		label, target := n.text("updater_all_releases"), desktopReleasesURL
 		if available := u.result.Available; available != nil {
 			label, target = n.text("updater_open_release"), available.ReleaseURL
+			if available.Artifact != nil && u.result.installTarget != "" &&
+				uikit.Button(c, uikit.ButtonOptions{Label: n.text("updater_install"), Disabled: disabled}).Clicked() {
+				u.confirm = true
+			}
 		}
 		if uikit.Button(c, uikit.ButtonOptions{Label: label}).Clicked() {
 			if err := n.shell.OpenURL(target); err != nil {
@@ -279,7 +321,22 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 			}
 		}
 	})
-	ui.Text(c, n.text("updater_support_portable")).Wrap()
+	if u.result.installSupport != "" {
+		support := n.text("updater_support_unavailable")
+		switch u.result.installSupport {
+		case "updater_support_nsis":
+			support = n.text("updater_support_nsis")
+		case "updater_support_appimage":
+			support = n.text("updater_support_appimage")
+		case "updater_support_readonly":
+			support = n.text("updater_support_readonly")
+		case "updater_support_package":
+			support = n.text("updater_support_package")
+		case "updater_support_portable":
+			support = n.text("updater_support_portable")
+		}
+		ui.Text(c, support).Wrap()
+	}
 	status := n.text("updater_not_checked")
 	switch u.result.Status {
 	case "current":
@@ -316,6 +373,10 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 
 func (n *nativeMain) updateError(err error) string {
 	switch err.Error() {
+	case "update_download_or_signature_failed":
+		return n.text("updater_error_download_verify")
+	case "update_busy":
+		return n.text("updater_error_busy")
 	case errUpdateSchedule.Error():
 		return n.text("updater_error_storage")
 	case errUpdateLink.Error():
