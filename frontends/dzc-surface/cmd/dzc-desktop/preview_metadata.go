@@ -11,8 +11,12 @@ import (
 )
 
 func previewSourceImage(source string) ui.ImageSource {
+	return decodePreviewSource(source, 384*1024)
+}
+
+func decodePreviewSource(source string, maxEncoded int) ui.ImageSource {
 	header, encoded, ok := strings.Cut(source, ",")
-	if !ok || !strings.HasPrefix(header, "data:image/") || !strings.HasSuffix(header, ";base64") || len(encoded) > 384*1024 {
+	if !ok || !strings.HasPrefix(header, "data:image/") || !strings.HasSuffix(header, ";base64") || len(encoded) > maxEncoded {
 		return nil
 	}
 	raw, err := base64.StdEncoding.DecodeString(encoded)

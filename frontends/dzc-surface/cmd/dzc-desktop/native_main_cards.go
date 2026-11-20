@@ -47,90 +47,103 @@ func visibleCardSummary(row protocol.DesktopEntry, language nativeLanguage) stri
 	return row.Content
 }
 
-func (n *nativeMain) cardBody(c *ui.Context, row protocol.DesktopEntry, protected *nativeProtectedBody, compact bool, generation uint64) func() {
-	if nativeConcealed(row) {
-		if protected != nil {
-			if row.ContentType == "image" {
-				return func() { n.imageCardBody(c, row, protected, compact, generation) }
-			}
-			if len(protected.attachments) != 0 {
-				return func() { uikit.HistoryAttachments(c, protected.attachments, compact) }
-			}
-		}
-		return nil
-	}
-	switch row.ContentType {
-	case "image":
-		return func() { n.imageCardBody(c, row, nil, compact, generation) }
-	case "file", "files", "video":
-		attachments := uikit.ParsePreviewAttachments("", visibleCardSummary(row, n.language()))
-		if len(attachments) != 0 {
-			return func() { uikit.HistoryAttachments(c, attachments, compact) }
-		}
-	}
-	return nil
+type nativeCardMedia struct {
+	image       ui.ImageSource
+	attachments []uikit.PreviewAttachment
 }
 
-func (n *nativeMain) imageCardBody(c *ui.Context, row protocol.DesktopEntry, protected *nativeProtectedBody, compact bool, generation uint64) {
-	ui.Column(c).FillWidth().Gap(4).Children(func() {
-		if protected != nil {
-			n.drawHistoryImage(c, protected.image, true, compact)
-		} else {
-			n.historyImage(c, row, compact)
+const (
+	historyImageDimension    = 384
+	historyImageEncodedLimit = 1024 * 1024
+)
+
+func (n *nativeMain) cardBody(c *ui.Context, kit uikit.Kit, row protocol.DesktopEntry, protected *nativeProtectedBody, compact bool, textSize float32, generation uint64) func(float32) {
+	if nativeConcealed(row) && protected == nil {
+		return nil
+	}
+	if row.ContentType != "image" && !nativeFileCard(row) {
+		return nil
+	}
+	return func(width float32) {
+		if row.ContentType == "image" {
+			n.imageCardBody(c, kit, row, protected, width, compact, generation)
+			return
 		}
+		var files []uikit.PreviewAttachment
+		if protected != nil {
+			files = protected.attachments
+		} else if row.HtmlContent != nil && *row.HtmlContent != "" {
+			files = uikit.ParsePreviewAttachments(*row.HtmlContent, visibleCardSummary(row, n.language()))
+		} else {
+			preview, _ := n.mediaForCard(row)
+			files = preview.attachments
+		}
+		if len(files) == 0 {
+			files = uikit.ParsePreviewAttachments("", visibleCardSummary(row, n.language()))
+		}
+		if len(files) == 0 {
+			return
+		}
+		kit.AttachmentGallery(c, files, uikit.AttachmentGalleryOptions{
+			Label: n.text("type_file"), Width: width, TextSize: textSize,
+			Compact: compact, Video: row.ContentType == "video",
+		})
+	}
+}
+
+func (n *nativeMain) imageCardBody(c *ui.Context, kit uikit.Kit, row protocol.DesktopEntry, protected *nativeProtectedBody, width float32, compact bool, generation uint64) {
+	ui.Column(c).FillWidth().Gap(4).Children(func() {
+		options := uikit.HistoryImageOptions{Width: width, Compact: compact, Label: n.text("native_image_thumbnail")}
+		if row.IsExternal && !row.FilePreviewExists {
+			options.Missing = n.text("image_deleted")
+		} else {
+			var loaded bool
+			if protected != nil {
+				options.Source, loaded = protected.image, true
+			} else {
+				preview, ready := n.mediaForCard(row)
+				options.Source, loaded = preview.image, ready
+			}
+			if options.Source == nil && loaded {
+				options.Unavailable = n.text("clipboard_image_preview_unavailable")
+			}
+		}
+		kit.HistoryImage(c, options)
 		n.drawCardOCR(c, row, protected, generation)
 	})
 }
 
-func (n *nativeMain) historyImage(c *ui.Context, row protocol.DesktopEntry, compact bool) {
+func (n *nativeMain) mediaForCard(row protocol.DesktopEntry) (nativeCardMedia, bool) {
 	key := nativeCardKey{row.Id, row.Timestamp}
-	preview, loaded := n.cardImages.lookup(key)
-	if !loaded {
-		n.loadCardImage(key)
-	}
-	n.drawHistoryImage(c, preview, loaded, compact)
-}
-
-func (n *nativeMain) drawHistoryImage(c *ui.Context, preview ui.ImageSource, loaded, compact bool) {
-	width, height := float32(178), float32(100)
-	if compact {
-		width, height = 78, 44
-	}
-	if image, ok := preview.(*ui.Bitmap); ok {
-		w, h := image.Size()
-		width = min(width, max(height*.45, height*float32(w)/float32(max(h, 1))))
-	}
-	box := ui.Box(c).Width(width).MaxWidthPercent(100).Height(height).
-		Border(1, c.Theme().Border).Radius(min(4, c.Theme().Radius)).Center()
-	box.Children(func() {
-		switch {
-		case preview != nil:
-			ui.Image(c, preview).Fill().Fit(ui.Contain).Label(n.text("native_image_thumbnail"))
-		case loaded:
-			ui.Text(c, n.text("clipboard_image_preview_unavailable")).FontSize(11).TextColor(c.Theme().TextMuted).Wrap()
-		}
-	})
-}
-
-func (n *nativeMain) loadCardImage(key nativeCardKey) {
-	if n.session == nil || !n.cardImages.begin(key) {
-		return
+	preview, loaded := n.cardMedia.lookup(key)
+	if loaded || n.session == nil || n.library == nil || n.history.state.ServiceInstanceId == "" ||
+		row.Id == 0 || !n.cardMedia.begin(key) {
+		return preview, loaded
 	}
 	session, state := n.session, n.history.state
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 4*time.Second)
 		defer cancel()
-		size := uint32(192)
-		omitText := true
-		row, err := n.library.Entry(ctx, protocol.DesktopEntryParams{
-			Id: key.id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, ThumbnailDimension: &size, OmitOcrText: &omitText,
-		})
-		var preview ui.ImageSource
-		if err == nil && row.Timestamp == key.timestamp && row.ContentType == "image" && !nativeConcealed(row.DesktopEntry) {
-			preview = previewSourceImage(row.Content)
+		size := uint32(480)
+		if row.ContentType == "image" {
+			size = historyImageDimension
 		}
-		n.update(session, func() { n.cardImages.finish(key, preview) })
+		omitText := true
+		result, err := n.library.Entry(ctx, protocol.DesktopEntryParams{
+			Id: key.id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch,
+			ThumbnailDimension: &size, OmitOcrText: &omitText,
+		})
+		if err == nil && result.Id == key.id && result.Timestamp == key.timestamp &&
+			result.ContentType == row.ContentType && !nativeConcealed(result.DesktopEntry) {
+			if row.ContentType == "image" {
+				preview.image = decodePreviewSource(result.Content, historyImageEncodedLimit)
+			} else if result.HtmlContent != nil {
+				preview.attachments = uikit.ParsePreviewAttachments(*result.HtmlContent, result.Preview)
+			}
+		}
+		n.update(session, func() { n.cardMedia.finish(key, preview) })
 	}()
+	return nativeCardMedia{}, false
 }
 
 func (n *nativeMain) cardTags(labels []string) []uikit.HistoryTag {

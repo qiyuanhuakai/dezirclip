@@ -1,4 +1,4 @@
-import { HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta } from "@deziro/ui-react/components/HistoryCard";
+import { HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryImagePreview } from "@deziro/ui-react/components/HistoryCard";
 import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
 import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
 import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
@@ -16,7 +16,6 @@ import {
     X,
     FileText,
     Plus,
-    ImageOff,
     GripVertical,
     Edit2
 } from "lucide-react";
@@ -1041,35 +1040,13 @@ const ClipboardItem = ({
                 {isSensitiveHidden ? t("privacy_sensitive_hidden")
                     : ["file", "files", "video"].includes(item.content_type) ? <AttachmentPreview compact={compactMode} fileLabel={t("type_file")} html={displayHtml} names={displayPreview || item.content} video={item.content_type === "video"} />
                     : item.content_type === "image" ? (
-                    <div style={{ position: 'relative' }}>
-                        {item.is_external && item.file_preview_exists === false ? (
-                            <div className="image-preview error-placeholder" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', height: '100px', fontSize: '12px' }}>
-                                <ImageOff size={24} style={{ marginBottom: '8px', opacity: 0.5 }} />
-                                <span>{t('image_deleted') || 'Image Deleted'}</span>
-                            </div>
-                        ) : imagePreview.pending ? (
-                            <div className="image-preview image-preview-pending" aria-hidden="true" />
-                        ) : imagePreview.src && !imageFailed ? (
-                            <img
-                                key={imageGeneration}
-                                src={imagePreview.src}
-                                alt={t('image_preview')}
-                                className="image-preview"
-                                loading="lazy"
-                                style={isSensitiveHidden ? { filter: 'blur(8px)' } : {}}
-                                onError={() => {
-                                    if (imagePreview.src) setImageFailure({ source: imagePreview.src, generation: imageGeneration });
-                                }}
-                            />
-                        ) : <div className="image-preview image-preview-unavailable" role="status">
-                            <ImageOff size={20} /><span>{t("clipboard_image_preview_unavailable")}</span>
-                        </div>}
-                        {isSensitiveHidden && (
-                            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontWeight: 'bold', opacity: 0.5, fontSize: '10px' }}>
-                                SENSITIVE
-                            </div>
-                        )}
-                    </div>
+                    <HistoryImagePreview key={imageGeneration} alt={t("image_preview")}
+                        missing={item.is_external && item.file_preview_exists === false ? t("image_deleted") || "Image Deleted" : undefined}
+                        pending={imagePreview.pending} source={imageFailed ? null : imagePreview.src}
+                        unavailable={t("clipboard_image_preview_unavailable")}
+                        onError={() => {
+                            if (imagePreview.src) setImageFailure({ source: imagePreview.src, generation: imageGeneration });
+                        }} />
                 ) : item.content_type === "rich_text" && displayHtml && !isSensitiveHidden ? (
                     richTextPreviewSrc ? (
                         <img

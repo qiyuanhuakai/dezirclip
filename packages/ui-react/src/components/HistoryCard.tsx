@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ComponentPropsWithoutRef, ReactNode, Ref } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
+import { ImageOff } from "lucide-react";
 
 export interface HistoryCardProps extends HTMLMotionProps<"div"> {
   selected?: boolean;
@@ -25,6 +26,19 @@ export function HistoryCardContent({ rich, concealed, className = "", children, 
     .filter(Boolean).join(" ");
   return <div {...props} className={classes}>
     {concealed ? <div className="privacy-hidden-content">{children}</div> : children}
+  </div>;
+}
+
+export function HistoryImagePreview({ source, missing, pending, unavailable, alt, ...props }: {
+  source?: string | null; missing?: string; pending?: boolean; unavailable?: string; alt: string;
+} & Pick<ComponentPropsWithoutRef<"img">, "draggable" | "onError">) {
+  if (missing) return <div className="image-preview error-placeholder history-image-missing" role="status">
+    <ImageOff size={24} /><span>{missing}</span>
+  </div>;
+  if (pending) return <div className="image-preview image-preview-pending" aria-hidden="true" />;
+  if (source) return <img className="image-preview" src={source} alt={alt} loading="lazy" {...props} />;
+  return <div className="image-preview image-preview-unavailable" role="status">
+    <ImageOff size={20} /><span>{unavailable}</span>
   </div>;
 }
 

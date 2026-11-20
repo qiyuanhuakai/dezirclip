@@ -11,7 +11,40 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
+
+func TestNativeHistoryUsesResponsiveAttachmentGallery(t *testing.T) {
+	window := nativeMain{theme: "macos", mode: "light", preferences: map[string]string{"app.language": "en"}}
+	window.history.rows = []protocol.DesktopEntry{
+		{Id: 1, Timestamp: 1, SourceApp: "Fixture", ContentType: "files", Preview: "Test attachment group", Tags: []string{}},
+	}
+	bitmap := ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 160, 96)))
+	window.cardMedia.finish(nativeCardKey{1, 1}, nativeCardMedia{attachments: []uikit.PreviewAttachment{
+		{Name: "First.png", Bitmap: bitmap}, {Name: "Second.png", Bitmap: bitmap},
+		{Name: "Notes.pdf"}, {Name: "Archive.zip"}, {Name: "Planning.xlsx"},
+	}})
+	tester := ui.NewTester(window.view, 350, 420)
+	for _, label := range []string{"First.png", "Second.png", "Notes.pdf", "…"} {
+		if bounds, ok := tester.Find(label); !ok || bounds.H <= 0 {
+			t.Errorf("wide gallery is missing %s", label)
+		}
+	}
+	tester.SetSize(240, 420)
+	if _, ok := tester.Find("Second.png"); ok {
+		t.Fatal("the narrow history card kept a second ordinary-mode thumbnail")
+	}
+	window.preferences["app.compact_mode"] = "true"
+	tester.Frame()
+	if _, ok := tester.Find("Second.png"); !ok {
+		t.Fatal("the compact gallery did not use the narrower thumbnail columns")
+	}
+	window.history.rows[0].Tags = nil
+	tester.Frame()
+	if _, ok := tester.Find("First.png"); ok {
+		t.Fatal("the protected history card displayed a cached attachment")
+	}
+}
 
 func TestNativeMainDrawsSavedCustomPalette(t *testing.T) {
 	catalog, err := json.Marshal([]protocol.DesktopThemePackage{{

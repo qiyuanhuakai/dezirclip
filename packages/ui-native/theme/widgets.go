@@ -31,6 +31,8 @@ type WidgetStyle struct {
 	LetterSpacing float32
 	LineHeight    float32
 	MinHeightEm   float32
+	MinWidth      float32
+	MinHeight     float32
 	MaxHeight     float32
 	MaxLines      int
 	ColumnGap     float32

@@ -137,7 +137,7 @@ func (n *nativeMain) view(c *ui.Context) {
 					n.tagLibraryView(c, kit, &queryFocused)
 				} else {
 					n.editQuery(queryComposing)
-					n.historyView(c, kit)
+					n.historyView(c, kit, width)
 				}
 			}
 			if n.notice != "" {
@@ -208,16 +208,19 @@ func (n *nativeMain) view(c *ui.Context) {
 	}
 }
 
-func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
+func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit, width float32) {
 	if n.private {
 		ui.Text(c, n.text("privacy_session_title", "Private session")).TextColor(c.Theme().TextMuted).Padding(4, 8)
 	}
 	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
-		n.historyRows(c, kit)
+		if n.preferences["app.show_app_border"] != "false" {
+			width -= 2
+		}
+		n.historyRows(c, kit, width)
 	})
 }
 
-func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit) {
+func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 	generation := n.history.generation
 	compact := n.preferences["app.compact_mode"] == "true"
 	itemSize, tagSize := nativeItemSize.value(n.preferences), nativeTagSize.value(n.preferences)
@@ -313,7 +316,8 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit) {
 				TextSize:  float32(itemSize),
 				TagSize:   float32(tagSize),
 				Tags:      n.cardTags(row.Tags),
-				Body:      n.cardBody(cell.Context, row, protected, compact, generation),
+				Width:     width,
+				Media:     n.cardBody(cell.Context, kit, row, protected, compact, float32(itemSize), generation),
 				Reorder:   n.pinReorderGrip(row, cell.Index, generation, reorderPins, func() { draggingPin = true }),
 				Activate: func() {
 					if n.fileGesture.takeClick(row.Id) {

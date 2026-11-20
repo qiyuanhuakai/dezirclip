@@ -130,7 +130,7 @@ func (n *nativeMain) toggleProtectedRow(row protocol.DesktopEntry, generation ui
 			Id: key.id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Reveal: true,
 		}
 		if row.ContentType == "image" {
-			size := uint32(192)
+			size := uint32(historyImageDimension)
 			omitText := true
 			params.ThumbnailDimension = &size
 			params.OmitOcrText = &omitText
@@ -172,7 +172,7 @@ func newProtectedBody(row protocol.DesktopEntry, language nativeLanguage) *nativ
 	body := &nativeProtectedBody{summary: summary}
 	switch row.ContentType {
 	case "image":
-		body.image = previewSourceImage(row.Content)
+		body.image = decodePreviewSource(row.Content, historyImageEncodedLimit)
 		if row.OcrStatus != nil {
 			body.ocrStatus = *row.OcrStatus
 		}

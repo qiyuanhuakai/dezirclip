@@ -2,7 +2,6 @@ package uikit
 
 import (
 	"fmt"
-	"math"
 	"slices"
 
 	"github.com/egoist/mygo/ui"
@@ -11,6 +10,7 @@ import (
 type AttachmentGalleryOptions struct {
 	Label    string
 	Width    float32
+	TextSize float32
 	Compact  bool
 	Expanded bool
 	Video    bool
@@ -77,6 +77,9 @@ func layoutAttachmentGallery(files []PreviewAttachment, width float32, compact, 
 // AttachmentGallery displays compact history thumbnails or the expanded file list.
 // Width is the space available to the gallery in DIPs, after parent padding.
 func (k Kit) AttachmentGallery(c *ui.Context, files []PreviewAttachment, options AttachmentGalleryOptions) {
+	if options.Width <= 0 {
+		options.Width, _ = c.Size()
+	}
 	if !options.Expanded {
 		firstVideo := slices.ContainsFunc(files, func(file PreviewAttachment) bool {
 			return file.Bitmap != nil && (options.Video || attachmentIconKind(file.Name) == "video")
@@ -91,12 +94,20 @@ func (k Kit) AttachmentGallery(c *ui.Context, files []PreviewAttachment, options
 		}
 	}
 	layout := layoutAttachmentGallery(files, options.Width, options.Compact, options.Expanded)
-	labelStyle := k.style("attachmentName")
+	nameWidget := "attachmentName"
+	if options.Compact && !options.Expanded {
+		nameWidget += "Compact"
+	}
+	labelStyle := k.style(nameWidget)
 	if options.Expanded {
 		labelStyle.Size = 12
+	} else if options.TextSize > 0 {
+		labelStyle.Size = options.TextSize
+	}
+	if labelStyle.LineHeight > 0 {
+		labelStyle.Height = max(16, labelStyle.Size*labelStyle.LineHeight)
 	}
 	iconStyle := k.style("attachmentIcon")
-	mediaStyle := k.style("attachmentImage")
 	cellWidth := (max(1, options.Width) - float32(layout.columns-1)*6) / float32(layout.columns)
 	ui.Column(c).FillWidth().Gap(4).Label(fmt.Sprintf("%s × %d", options.Label, len(files))).Children(func() {
 		drawGrid := func(items []PreviewAttachment, thumbnails, showOverflow bool, lastSpan int) {
@@ -104,15 +115,12 @@ func (k Kit) AttachmentGallery(c *ui.Context, files []PreviewAttachment, options
 			if showOverflow {
 				count++
 			}
-			grid := ui.Grid(c).FillWidth().Columns(layout.columns)
+			grid := ui.Grid(c).FillWidth().Columns(layout.columns).GapX(6).AlignItems(ui.Start)
 			grid.Children(func() {
 				for index := 0; index < count; index++ {
 					cell := ui.Column(c).MinWidth(0).Gap(4)
 					if index == len(items)-1 {
 						cell.ColumnSpan(lastSpan)
-					}
-					if index%layout.columns != 0 {
-						cell.Margin(0, 0, 0, 6)
 					}
 					cell.Children(func() {
 						if index == len(items) {
@@ -121,25 +129,18 @@ func (k Kit) AttachmentGallery(c *ui.Context, files []PreviewAttachment, options
 						}
 						file := items[index]
 						if thumbnails && file.Bitmap != nil {
-							width, height := file.Bitmap.Size()
-							limit := float32(100)
-							if options.Compact {
-								limit = 44
-							}
 							if options.Expanded {
 								ui.Image(c, file.Bitmap).FillWidth().Height(160).Fit(ui.Contain).Radius(4)
-							} else if width > 0 && height > 0 {
-								scale := min(1, cellWidth/float32(width), limit/float32(height))
-								paint(ui.Image(c, file.Bitmap).Size(float32(math.Round(float64(float32(width)*scale))),
-									float32(math.Round(float64(float32(height)*scale)))).Fit(ui.Contain), mediaStyle)
+							} else {
+								k.HistoryImage(c, HistoryImageOptions{Source: file.Bitmap, Width: cellWidth, Compact: options.Compact, Label: file.Name})
 							}
 							if !options.Expanded {
 								return
 							}
 						}
-						ui.Row(c).FillWidth().Height(max(16, labelStyle.Height)).AlignItems(ui.Center).Gap(5).Tooltip(file.Name).Children(func() {
+						ui.Row(c).FillWidth().Height(labelStyle.Height).AlignItems(ui.Center).Gap(5).Tooltip(file.Name).Children(func() {
 							symbol := attachmentSymbols[attachmentIconKind(file.Name)]
-							ui.Icon(c, symbol).Size(16, 16).TextColor(styleColor(iconStyle.Text))
+							ui.Icon(c, symbol).Size(16, 16).Shrink(0).TextColor(styleColor(iconStyle.Text))
 							text(c, file.Name, labelStyle).Grow(1).SingleLine()
 						})
 					})

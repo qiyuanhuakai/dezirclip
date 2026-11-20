@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { AttachmentPreview, HistoryCard, PreviewImage, PreviewResizeHandles, PreviewToolbar, WheelHotZone,
+import { Pin, Tag, X } from "lucide-react";
+import { AttachmentPreview, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryImagePreview, PreviewImage, PreviewResizeHandles, PreviewToolbar, WheelHotZone,
   type PreviewZoom } from "../src";
 
 const filenameList = ["Project.png", "Screenshot.png", "Notes.pdf", "Planning.xlsx", "Desktop.zip", "Summary.txt", "Log.txt"];
-function sampleImage(): string {
+function sampleImage(width = 160, height = 96): string {
   const canvas = document.createElement("canvas");
-  canvas.width = 160;
-  canvas.height = 96;
+  canvas.width = width;
+  canvas.height = height;
   const context = canvas.getContext("2d")!;
+  context.scale(width / 160, height / 96);
   context.fillStyle = "#21365a";
   context.fillRect(0, 0, 160, 96);
   context.fillStyle = "#64a1b1";
@@ -44,16 +46,41 @@ export function PreviewImageFixture({ state }: { state: string }) {
 }
 
 export function AttachmentFixture({ state }: { state: string }) {
-  const compact = state === "compact";
+  const compact = state.startsWith("compact");
   const expanded = state === "expanded";
-  const markup = state === "media" || expanded ? filenameList.map((name, index) =>
+  const markup = state.includes("media") || expanded ? filenameList.map((name, index) =>
     `<figure>${index < 2 ? `<img src="${picture}" alt="${name}">` : ""}<figcaption>${name}</figcaption></figure>`).join("") : null;
-  return <HistoryCard compact={compact} disableLayout>
-    <div className="content-preview">
+  return <div style={{ width: state.includes("narrow") ? 220 : 480 }}><HistoryCard compact={compact} disableLayout data-attachment-card>
+    <HistoryCardContent>
       <AttachmentPreview names={filenameList.join("\n")} html={markup}
         fileLabel="Attachments" expanded={expanded} compact={compact} />
-    </div>
-  </HistoryCard>;
+    </HistoryCardContent>
+  </HistoryCard></div>;
+}
+
+const historyPictures = [sampleImage(32, 24), picture, sampleImage(72, 230)];
+const historyPictureLabels = ["Small image", "Landscape image", "Portrait image"];
+
+export function HistoryImageFixture({ state }: { state: string }) {
+  const compact = state.startsWith("compact");
+  const pending = state.endsWith("pending");
+  const missing = state.endsWith("missing");
+  const unavailable = state.endsWith("unavailable");
+  return <div style={{ width: 220, display: "flex", flexDirection: "column", gap: 4 }}>
+    {historyPictures.slice(0, pending || missing || unavailable ? 1 : undefined).map((src, index) =>
+      <HistoryCard key={src} compact={compact} disableLayout data-media-measure={historyPictureLabels[index]}>
+        <HistoryCardMeta source="Editor" time="12:30" actions={<>
+          <HistoryCardAction title="Pin"><Pin size={12} /></HistoryCardAction>
+          <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
+          <HistoryCardAction title="Delete"><X size={12} /></HistoryCardAction>
+        </>} />
+        <HistoryCardContent>
+          <HistoryImagePreview alt={historyPictureLabels[index]} pending={pending}
+            missing={missing ? "Image deleted" : undefined} unavailable={unavailable ? "Preview unavailable" : undefined}
+            source={missing || unavailable ? undefined : src} />
+        </HistoryCardContent>
+      </HistoryCard>)}
+  </div>;
 }
 
 export function ResizeFixture() {

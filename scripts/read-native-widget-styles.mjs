@@ -98,8 +98,16 @@ const samples = [
   }],
   ["attachment-preview", "media", {
     attachmentName: [".attachment-tile figcaption"], attachmentIcon: [".attachment-tile figcaption svg"],
-    attachmentImage: [".attachment-tile > .image-preview"],
   }],
+  ["attachment-preview", "compact", { attachmentNameCompact: [".attachment-tile figcaption"] }],
+  ["history-image", "default", { attachmentImage: [".image-preview"] }],
+  ["history-image", "compact", { attachmentImageCompact: [".image-preview"] }],
+  ["history-image", "pending", { attachmentImagePending: [".image-preview-pending"] }],
+  ["history-image", "compact-pending", { attachmentImageCompactPending: [".image-preview-pending"] }],
+  ["history-image", "unavailable", { attachmentImageUnavailable: [".image-preview-unavailable"] }],
+  ["history-image", "compact-unavailable", { attachmentImageCompactUnavailable: [".image-preview-unavailable"] }],
+  ["history-image", "missing", { attachmentImageMissing: [".history-image-missing"] }],
+  ["history-image", "compact-missing", { attachmentImageCompactMissing: [".history-image-missing"] }],
   ["preview-toolbar", "default", {
     previewToolbar: [".preview-toolbar"], previewToolbarTitle: [".preview-toolbar-drag span"],
     previewToolbarButton: [".preview-toolbar-actions .preview-toolbar-button"],
@@ -365,6 +373,9 @@ function readStyles(sample) {
       ...(gradient ? { gradient: { angle: Number(gradient[1]), from: color(gradient[2]), to: color(gradient[3]) } } : {}),
       ...(letterSpacing ? { letterSpacing } : {}),
       ...(lineHeight ? { lineHeight: Math.round(lineHeight * 1000) / 1000 } : {}),
+      ...(id.startsWith("attachmentImage") ? {
+        minWidth: number(style.minWidth), minHeight: number(style.minHeight), maxHeight: number(style.maxHeight),
+      } : {}),
       ...(historyContent ? {
         minHeightEm: Math.round(number(style.minHeight) / fontSize * 1000) / 1000,
         maxLines: number(style.webkitLineClamp),

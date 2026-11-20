@@ -89,6 +89,8 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 		kit.ContextMenu(c, &g.contextMenu, "Close menu")
 	case "attachment-preview":
 		g.attachmentGallery(c, kit)
+	case "history-image":
+		g.historyImages(c, kit)
 	case "preview-toolbar":
 		g.previewToolbar(c, kit)
 	case "preview-image":
@@ -432,6 +434,8 @@ func run() error {
 					Texts []string
 					Cards map[string]ui.Rect
 				}{tester.Texts(), cards}
+			} else if g.fixture == "history-image" || g.fixture == "attachment-preview" {
+				result = inspectMediaCards(g.fixture, tester)
 			}
 			if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
 				return err

@@ -31,7 +31,8 @@ const cases = {
   "search-select": { states: ["default", "apps-filtered", "empty"], text: "Interface font" },
   "text-fields": { states: ["default"], text: "Idle timeout" },
   "context-menu": { states: ["default", "text", "privacy"], text: "Clipboard entry" },
-  "attachment-preview": { states: ["default", "compact", "media", "expanded"], text: "Notes.pdf" },
+  "attachment-preview": { states: ["default", "compact", "media", "expanded", "narrow", "narrow-media", "compact-media"], text: "" },
+  "history-image": { states: ["default", "compact", "pending", "compact-pending", "missing", "compact-missing", "unavailable", "compact-unavailable"], text: "" },
   "preview-toolbar": { states: ["default", "pinned"], text: "Content preview" },
   "preview-image": { states: ["default", "zoomed"], text: "Image preview" },
   "preview-resize-handles": { states: ["default", "southeast"], text: "Resize preview" },
@@ -362,6 +363,33 @@ try {
               if (state === "custom") {
                 const family = ["mica", "acrylic"].includes(theme) ? "Georgia" : "Courier New";
                 if (!measurements[0].font.includes(family)) throw Error("Unexpected theme font source: " + measurements[0].font);
+              }
+            }
+            if (fixture === "attachment-preview") {
+              const gallery = page.locator(".attachment-gallery");
+              const names = await gallery.locator("figcaption > span, .attachment-name > span, img[alt]").evaluateAll(elements =>
+                [...new Set(elements.map(element => element.getAttribute("alt") ?? element.textContent))]);
+              const expected = ["Project.png", "Screenshot.png", "Notes.pdf", "Planning.xlsx", "Desktop.zip", "Summary.txt", "Log.txt"];
+              const nativeNames = expected.filter(name => (Array.isArray(inspection) ? inspection : inspection.Texts).includes(name));
+              if (expected.filter(name => names.includes(name)).join(",") !== nativeNames.join(",")
+                  || Boolean(await gallery.locator(".attachment-ellipsis").count()) !== comparable(nativeText, "…")) {
+                throw Error(`Attachment names differ for ${state}: WebView ${names.join(", ")}, Native ${nativeNames.join(", ")}`);
+              }
+              const webCard = await page.locator("[data-attachment-card]").boundingBox();
+              const nativeCard = inspection.Cards["Attachment card"];
+              if (!webCard || Math.abs(nativeCard.W - webCard.width) > 2 || Math.abs(nativeCard.H - webCard.height) > 2) {
+                throw Error(`Attachment card ${state}: WebView ${webCard?.width}×${webCard?.height}, Native ${nativeCard.W}×${nativeCard.H}`);
+              }
+            }
+            if (fixture === "history-image") {
+              const measurements = await page.locator("[data-media-measure]").evaluateAll(cards => cards.map(card => ({
+                name: card.dataset.mediaMeasure, width: card.getBoundingClientRect().width, height: card.getBoundingClientRect().height,
+              })));
+              for (const image of measurements) {
+                const counterpart = inspection.Cards[image.name];
+                if (!counterpart || Math.abs(counterpart.W - image.width) > 2 || Math.abs(counterpart.H - image.height) > 2) {
+                  throw Error(`Image ${image.name}: WebView ${image.width}×${image.height}, Native ${counterpart?.W}×${counterpart?.H}`);
+                }
               }
             }
             const ratio = pixels.inkNative / pixels.inkWeb;

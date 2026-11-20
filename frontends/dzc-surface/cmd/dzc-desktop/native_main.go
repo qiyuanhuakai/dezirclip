@@ -32,7 +32,7 @@ type nativeMain struct {
 	searchTimer           *time.Timer
 	resume                uint64
 	history               nativeHistory
-	cardImages            nativeVisibleCache[nativeCardKey, ui.ImageSource]
+	cardMedia             nativeVisibleCache[nativeCardKey, nativeCardMedia]
 	ocrPreview            *nativeOCRPreview
 	ocrJob                nativeOCRJob
 	ocrEngine             *protocol.OcrEngineInfo
@@ -114,7 +114,7 @@ func (n *nativeMain) stopSession() {
 	n.stopRead = nil
 	n.cancelSearchTimer()
 	n.history.reset(protocol.RuntimeState{}, nativeHistoryFilter{})
-	n.cardImages = nativeVisibleCache[nativeCardKey, ui.ImageSource]{}
+	n.cardMedia = nativeVisibleCache[nativeCardKey, nativeCardMedia]{}
 	n.ocrJob, n.ocrEngine, n.ocrEngineLoading = nativeOCRJob{}, nil, false
 	n.cardTagColors, n.readingTagColors = nil, false
 	n.reading, n.failed, n.mutating, n.private = false, false, n.profile.moving || n.profile.restartPending || n.winV.changing, false

@@ -24,9 +24,12 @@ type HistoryCardOptions struct {
 	TextRows  int
 	TagSize   float32
 	Body      func()
-	Leading   func()
-	Activate  func()
-	Reorder   *HistoryReorder
+	// Media draws using the width remaining after the card's margins, frame and leading controls.
+	Media    func(contentWidth float32)
+	Width    float32
+	Leading  func()
+	Activate func()
+	Reorder  *HistoryReorder
 }
 
 // HistoryReorder enables a local drag grip and Alt+arrow movement for a pinned card.
@@ -105,6 +108,22 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 			}
 			if options.Body != nil {
 				options.Body()
+			} else if options.Media != nil {
+				width := options.Width
+				if width <= 0 {
+					width, _ = c.Size()
+				}
+				width -= style.Margin[1] + style.Margin[3] + style.Padding[1] + style.Padding[3]
+				width -= horizontalBorders(style)
+				switch {
+				case options.Leading != nil:
+					width -= 28
+				case options.Compact && options.Reorder != nil:
+					width -= 20
+				case options.Compact && options.Pinned:
+					width -= 14
+				}
+				options.Media(max(1, width))
 			} else {
 				k.historyCardText(c, options)
 			}

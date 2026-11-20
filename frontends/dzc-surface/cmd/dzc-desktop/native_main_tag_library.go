@@ -54,6 +54,12 @@ func (n *nativeMain) closeTagLibrary() {
 
 func (n *nativeMain) tagLibraryView(c *ui.Context, kit uikit.Kit, queryFocused *bool) {
 	tags := n.tagLibrary
+	const gap, padding = 8, 8
+	width, _ := c.Size()
+	historyWidth := width
+	if width >= nativeSplitWidth {
+		historyWidth -= nativeTagRailWidth(tags.railCollapsed) + gap + 2*padding
+	}
 	contents := func() {
 		n.tagLibraryControls(c, kit, tags, queryFocused)
 		field := kit.TagSearch(c, uikit.TagSearchOptions{
@@ -70,24 +76,29 @@ func (n *nativeMain) tagLibraryView(c *ui.Context, kit uikit.Kit, queryFocused *
 		*queryFocused = *queryFocused || field.Focused()
 		n.editQuery(field.Composing())
 		n.tagBatchToolbar(c, kit, tags)
-		n.historyView(c, kit)
+		n.historyView(c, kit, historyWidth)
 	}
-	width, _ := c.Size()
 	if width < nativeSplitWidth {
 		ui.Column(c).FillWidth().Grow(1).MinHeight(0).Gap(5).Children(contents)
 		return
 	}
-	ui.Row(c).FillWidth().Grow(1).MinHeight(0).Gap(8).Padding(0, 8, 8).AlignItems(ui.Stretch).Children(func() {
+	ui.Row(c).FillWidth().Grow(1).MinHeight(0).Gap(gap).Padding(0, padding, padding).AlignItems(ui.Stretch).Children(func() {
 		n.tagLibraryRail(c, kit, tags, queryFocused)
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().MinHeight(0).Gap(5).Children(contents)
 	})
 }
 
+func nativeTagRailWidth(collapsed bool) float32 {
+	if collapsed {
+		return 42
+	}
+	return 150
+}
+
 func (n *nativeMain) tagLibraryRail(c *ui.Context, kit uikit.Kit, tags *nativeTagLibrary, queryFocused *bool) {
-	width := float32(150)
+	width := nativeTagRailWidth(tags.railCollapsed)
 	icon, toggle := "back", n.text("tag_collapse_navigation")
 	if tags.railCollapsed {
-		width = 42
 		icon, toggle = "forward", n.text("tag_expand_navigation")
 	}
 	ui.Column(c).Width(width).Shrink(0).MinHeight(0).Gap(4).Children(func() {

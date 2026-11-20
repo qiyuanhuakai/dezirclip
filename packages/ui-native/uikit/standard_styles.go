@@ -452,10 +452,34 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.Width, style.Height = 14, 14
 	case "attachmentName":
 		style.Height = 19
+		style.Size, style.LineHeight = 13, 1.35
+	case "attachmentNameCompact":
+		style.Height = 17
+		style.Size, style.LineHeight = 13, 1.3
 	case "attachmentIcon":
 		style.Text = muted
-	case "attachmentImage":
+	case "attachmentImage", "attachmentImageCompact":
 		style.Border, style.BorderWidth, style.Radius = border, 1, 4
+		style.MaxHeight = 100
+		if widget == "attachmentImageCompact" {
+			style.MinWidth, style.MaxHeight = 44, 44
+		}
+	case "attachmentImagePending", "attachmentImageCompactPending":
+		style = DefaultWidgetStyle(strings.TrimSuffix(widget, "Pending"), palette)
+		style.Width, style.Height = 178, 100
+		if widget == "attachmentImageCompactPending" {
+			style.Width, style.Height = 78, 44
+		}
+	case "attachmentImageUnavailable", "attachmentImageCompactUnavailable":
+		style = DefaultWidgetStyle(strings.TrimSuffix(widget, "Unavailable"), palette)
+		style.MinHeight, style.Size, style.ColumnGap = 64, 11, 6
+		style.Text, style.Padding = muted, [4]float32{6, 6, 6, 6}
+		if widget == "attachmentImageCompactUnavailable" {
+			style.MinHeight = 44
+		}
+	case "attachmentImageMissing", "attachmentImageCompactMissing":
+		style = DefaultWidgetStyle(strings.TrimSuffix(widget, "Missing"), palette)
+		style.Height, style.Size, style.RowGap, style.Fill, style.Text = style.MaxHeight, 12, 8, panel, muted
 	case "previewToolbar":
 		style.Padding, style.Border = [4]float32{4, 8, 4, 8}, border
 		style.BorderWidths = &[4]float32{0, 0, 1, 0}

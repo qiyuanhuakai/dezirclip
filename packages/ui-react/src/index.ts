@@ -18,7 +18,7 @@ export { default as SettingsFooter, type SettingsFooterProps } from "./component
 export { AttachmentPreview } from "./components/AttachmentPreview";
 export { PreviewImage, type PreviewImageProps } from "./components/PreviewImage";
 export { VirtualClipboardList, type VirtualClipboardListHandle, type VirtualClipboardListProps } from "./components/VirtualClipboardList";
-export { HistoryCard, HistoryCardContent, HistoryCardMeta, HistoryCardActions, HistoryCardAction, type HistoryCardProps, type HistoryCardMetaProps, type HistoryCardActionProps } from "./components/HistoryCard";
+export { HistoryCard, HistoryCardContent, HistoryImagePreview, HistoryCardMeta, HistoryCardActions, HistoryCardAction, type HistoryCardProps, type HistoryCardMetaProps, type HistoryCardActionProps } from "./components/HistoryCard";
 export { ContextMenuSurface, ContextMenuItem, type ContextMenuSurfaceProps, type ContextMenuItemProps } from "./components/ContextMenu";
 export { TextField, NumberField, TextArea } from "./components/TextField";
 export { SettingsChoices, type SettingsChoice } from "./components/SettingsChoices";
