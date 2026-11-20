@@ -13,7 +13,7 @@ func TestNativeTagBatchIncludesUnloadedMatchesAndPreservesExclusions(t *testing.
 	tags := &nativeTagLibrary{selected: "Work", query: "needle", sort: "time"}
 	n := nativeMain{
 		session: context.Background(), tagLibrary: tags,
-		preferences: map[string]string{"app.language": "en"},
+		preferences: map[string]string{"app.language": "en", "app.arrow_key_selection": "true"},
 	}
 	n.tagCatalog.names, n.tagCatalog.counts, n.tagCatalog.fresh = []string{"Work"}, map[string]uint64{"Work": 185}, true
 	n.history.reset(protocol.RuntimeState{ServiceInstanceId: "host-a", PrivacyEpoch: 4, HistoryRevision: 6}, n.historyFilter())
@@ -39,6 +39,16 @@ func TestNativeTagBatchIncludesUnloadedMatchesAndPreservesExclusions(t *testing.
 	click("Select entry: A tagged row")
 	if tags.batch.selection.includes(9) || !tags.batch.selection.includes(11) {
 		t.Fatal("toggling the row checkbox did not create its exclusion")
+	}
+	n.history.selected, n.keyboard = 1, true
+	view.Frame()
+	view.Key(0, ui.KeyEnter)
+	if tags.batch.selection.includes(11) {
+		t.Fatal("Enter did not toggle the selected row while managing")
+	}
+	view.Key(0, ui.KeyEnter)
+	if !tags.batch.selection.includes(11) {
+		t.Fatal("Enter did not restore the selected row")
 	}
 	click("Delete")
 	dialog := tags.batch.pending

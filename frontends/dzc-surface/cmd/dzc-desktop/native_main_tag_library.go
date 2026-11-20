@@ -49,7 +49,7 @@ func (n *nativeMain) closeTagLibrary() {
 	n.editQuery(false)
 }
 
-func (n *nativeMain) tagLibraryView(c *ui.Context, kit uikit.Kit) {
+func (n *nativeMain) tagLibraryView(c *ui.Context, kit uikit.Kit, queryFocused *bool) {
 	tags := n.tagLibrary
 	contents := func() {
 		n.tagLibraryControls(c, kit, tags)
@@ -62,6 +62,7 @@ func (n *nativeMain) tagLibraryView(c *ui.Context, kit uikit.Kit) {
 			field.Focus()
 			n.focusSearch = false
 		}
+		*queryFocused = field.Focused()
 		n.editQuery(field.Composing())
 		n.tagBatchToolbar(c, kit, tags)
 		n.historyView(c, kit)

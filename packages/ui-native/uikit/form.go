@@ -51,6 +51,17 @@ func (k Kit) SettingsLabel(c *ui.Context, label string) ui.Element {
 	return text(c, label, k.style("settingsLabel"))
 }
 
+func (k Kit) HotkeyRow(c *ui.Context, label string, controls func()) {
+	style := k.style("hotkeyRow")
+	ui.Column(c).FillWidth().Padding(style.Margin[:]...).Children(func() {
+		row := ui.Row(c).FillWidth().Wrap().Gap(max(6, style.ColumnGap)).AlignItems(ui.Center)
+		paint(row, style).Children(func() {
+			k.SettingsLabel(c, label).Grow(1).MinWidth(100).Wrap()
+			controls()
+		})
+	})
+}
+
 func (k Kit) HotkeyBinding(c *ui.Context, label, value, placeholder string, recording, disabled bool) ui.Element {
 	group := k.style("hotkeyGroup")
 	cap := k.style("hotkeyCap")

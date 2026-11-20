@@ -72,9 +72,8 @@ func (n *nativeMain) shortcutSetting(c *ui.Context, key, label, fallback string)
 	value := n.shortcutValue(key, fallback)
 	disabled := !n.shortcutAvailable()
 	kit := n.mainKit()
-	ui.Column(c).FillWidth().Gap(4).Children(func() {
-		kit.SettingsLabel(c, label).Wrap()
-		ui.Row(c).Wrap().Gap(6).Children(func() {
+	kit.HotkeyRow(c, label, func() {
+		ui.Row(c).Wrap().Gap(6).AlignItems(ui.Center).Children(func() {
 			control := kit.HotkeyBinding(c, label, value, n.text("not_set"), false, disabled).
 				Tooltip(n.text("hotkey_click_hint"))
 			if control.Clicked() {
@@ -82,7 +81,7 @@ func (n *nativeMain) shortcutSetting(c *ui.Context, key, label, fallback string)
 			}
 			if value != "" {
 				clear := n.text("privacy_session_hotkey_clear")
-				if kit.Button(c, uikit.ButtonOptions{Label: clear, Disabled: disabled}).Label(clear + " · " + label).Clicked() {
+				if kit.IconButton(c, "hide", clear+" · "+label, false, disabled).Clicked() {
 					n.saveNativeShortcut(key, "")
 				}
 			}

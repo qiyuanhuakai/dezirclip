@@ -88,16 +88,13 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 			kit.Slider(c, &g.previewOpacity, 0, 100, "Opacity").FillWidth().Step(1)
 		})
 	case "hotkey-binding":
-		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-			kit.SettingsLabel(c, "Quick Paste").Grow(1)
+		kit.HotkeyRow(c, "Quick Paste", func() {
 			kit.HotkeyBinding(c, "Quick Paste", "Ctrl+Shift+V", "Press a shortcut", g.state == "recording", false)
 		})
 	case "scroll-to-top":
-		ui.Column(c).FillWidth().Height(120).Children(func() {
-			ui.Text(c, "Clipboard history").Grow(1)
-			ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
-				kit.ScrollToTopButton(c, "Scroll to top")
-			})
+		ui.Column(c).FillWidth().Height(136).Children(func() {
+			ui.Text(c, "Clipboard history").FontSize(16)
+			kit.ScrollToTopButton(c, "Scroll to top").Absolute().Right(16).Bottom(16)
 		})
 	case "emoji-tabs":
 		kit.EmojiTabs(c, "Emoji", "Favorites", g.emojiFavorites, false, func(favorites bool) { g.emojiFavorites = favorites })
@@ -244,9 +241,13 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 			return tester.Click("Setting help: Software updates")
 		}
 	case "hover":
-		bounds, ok := tester.Find("System")
+		label := "System"
+		if g.fixture == "scroll-to-top" {
+			label = "Scroll to top"
+		}
+		bounds, ok := tester.Find(label)
 		if !ok {
-			return fmt.Errorf("select trigger is absent")
+			return fmt.Errorf("hover target %q is absent", label)
 		}
 		tester.Move(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
 	case "focus":

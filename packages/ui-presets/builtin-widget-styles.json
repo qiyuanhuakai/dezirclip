@@ -295,6 +295,52 @@
         "uppercase": false,
         "opacity": 0.7
       },
+      "scrollToTop": {
+        "fill": [224, 224, 224, 255],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 2,
+        "radius": 999,
+        "top": 84,
+        "width": 36,
+        "height": 36,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [55, 55, 55, 255],
+            "values": [2, 2, 0, 0]
+          }
+        ]
+      },
+      "scrollToTopHover": {
+        "fill": [255, 255, 255, 255],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 2,
+        "radius": 999,
+        "top": 84,
+        "width": 36,
+        "height": 36,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [55, 55, 55, 255],
+            "values": [3, 3, 0, 0]
+          }
+        ]
+      },
       "settingsLabel": {
         "fill": [0, 0, 0, 0],
         "text": [55, 55, 55, 255],
@@ -616,6 +662,24 @@
         "height": 0,
         "marginTop": 0,
         "padding": [0, 0, 0, 0],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "hotkeyRow": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [0, 0, 0, 13],
+        "borderWidth": 0,
+        "radius": 0,
+        "borderWidths": [0, 0, 2, 0],
+        "margin": [0, 0, 0, 18],
+        "width": 498,
+        "height": 50,
+        "marginTop": 0,
+        "padding": [6, 0, 6, 0],
         "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
         "size": 16,
         "weight": 400,
@@ -2634,6 +2698,52 @@
         "uppercase": false,
         "opacity": 0.7
       },
+      "scrollToTop": {
+        "fill": [56, 56, 56, 255],
+        "text": [237, 237, 237, 255],
+        "border": [0, 0, 0, 255],
+        "borderWidth": 2,
+        "radius": 999,
+        "top": 84,
+        "width": 36,
+        "height": 36,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 255],
+            "values": [2, 2, 0, 0]
+          }
+        ]
+      },
+      "scrollToTopHover": {
+        "fill": [32, 32, 32, 255],
+        "text": [237, 237, 237, 255],
+        "border": [0, 0, 0, 255],
+        "borderWidth": 2,
+        "radius": 999,
+        "top": 84,
+        "width": 36,
+        "height": 36,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 255],
+            "values": [3, 3, 0, 0]
+          }
+        ]
+      },
       "settingsLabel": {
         "fill": [0, 0, 0, 0],
         "text": [237, 237, 237, 255],
@@ -2955,6 +3065,24 @@
         "height": 0,
         "marginTop": 0,
         "padding": [0, 0, 0, 0],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "hotkeyRow": {
+        "fill": [0, 0, 0, 0],
+        "text": [237, 237, 237, 255],
+        "border": [0, 0, 0, 13],
+        "borderWidth": 0,
+        "radius": 0,
+        "borderWidths": [0, 0, 2, 0],
+        "margin": [0, 0, 0, 18],
+        "width": 498,
+        "height": 50,
+        "marginTop": 0,
+        "padding": [6, 0, 6, 0],
         "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
         "size": 16,
         "weight": 400,
@@ -4971,6 +5099,52 @@
         "uppercase": false,
         "opacity": 0.7
       },
+      "scrollToTop": {
+        "fill": [255, 255, 255, 102],
+        "text": [55, 55, 55, 255],
+        "border": [130, 130, 130, 51],
+        "borderWidth": 1,
+        "radius": 999,
+        "top": 86,
+        "width": 34,
+        "height": 34,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 13],
+            "values": [0, 1, 2, 0]
+          }
+        ]
+      },
+      "scrollToTopHover": {
+        "fill": [255, 255, 255, 179],
+        "text": [55, 55, 55, 255],
+        "border": [128, 128, 128, 102],
+        "borderWidth": 1,
+        "radius": 999,
+        "top": 86,
+        "width": 34,
+        "height": 34,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 13],
+            "values": [0, 1, 2, 0]
+          }
+        ]
+      },
       "settingsLabel": {
         "fill": [0, 0, 0, 0],
         "text": [55, 55, 55, 255],
@@ -5236,6 +5410,24 @@
         "height": 0,
         "marginTop": 0,
         "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "hotkeyRow": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [0, 0, 0, 13],
+        "borderWidth": 0,
+        "radius": 0,
+        "borderWidths": [0, 0, 2, 0],
+        "margin": [0, 0, 0, 18],
+        "width": 502,
+        "height": 48,
+        "marginTop": 0,
+        "padding": [6, 0, 6, 0],
         "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
         "size": 16,
         "weight": 400,
@@ -7220,6 +7412,52 @@
         "uppercase": false,
         "opacity": 0.7
       },
+      "scrollToTop": {
+        "fill": [255, 255, 255, 13],
+        "text": [232, 232, 232, 255],
+        "border": [255, 255, 255, 31],
+        "borderWidth": 1,
+        "radius": 999,
+        "top": 86,
+        "width": 34,
+        "height": 34,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 13],
+            "values": [0, 1, 2, 0]
+          }
+        ]
+      },
+      "scrollToTopHover": {
+        "fill": [255, 255, 255, 31],
+        "text": [232, 232, 232, 255],
+        "border": [255, 255, 255, 51],
+        "borderWidth": 1,
+        "radius": 999,
+        "top": 86,
+        "width": 34,
+        "height": 34,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 13],
+            "values": [0, 1, 2, 0]
+          }
+        ]
+      },
       "settingsLabel": {
         "fill": [0, 0, 0, 0],
         "text": [246, 247, 251, 255],
@@ -7485,6 +7723,24 @@
         "height": 0,
         "marginTop": 0,
         "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "hotkeyRow": {
+        "fill": [0, 0, 0, 0],
+        "text": [246, 247, 251, 255],
+        "border": [255, 255, 255, 13],
+        "borderWidth": 0,
+        "radius": 0,
+        "borderWidths": [0, 0, 2, 0],
+        "margin": [0, 0, 0, 18],
+        "width": 502,
+        "height": 48,
+        "marginTop": 0,
+        "padding": [6, 0, 6, 0],
         "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
         "size": 16,
         "weight": 400,
@@ -9469,6 +9725,52 @@
         "uppercase": false,
         "opacity": 0.7
       },
+      "scrollToTop": {
+        "fill": [255, 255, 255, 82],
+        "text": [55, 55, 55, 255],
+        "border": [130, 130, 130, 51],
+        "borderWidth": 1,
+        "radius": 999,
+        "top": 86,
+        "width": 34,
+        "height": 34,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 13],
+            "values": [0, 1, 2, 0]
+          }
+        ]
+      },
+      "scrollToTopHover": {
+        "fill": [255, 255, 255, 158],
+        "text": [55, 55, 55, 255],
+        "border": [128, 128, 128, 102],
+        "borderWidth": 1,
+        "radius": 999,
+        "top": 86,
+        "width": 34,
+        "height": 34,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 13],
+            "values": [0, 1, 2, 0]
+          }
+        ]
+      },
       "settingsLabel": {
         "fill": [0, 0, 0, 0],
         "text": [55, 55, 55, 255],
@@ -9734,6 +10036,24 @@
         "height": 0,
         "marginTop": 0,
         "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "hotkeyRow": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [0, 0, 0, 13],
+        "borderWidth": 0,
+        "radius": 0,
+        "borderWidths": [0, 0, 2, 0],
+        "margin": [0, 0, 0, 18],
+        "width": 502,
+        "height": 48,
+        "marginTop": 0,
+        "padding": [6, 0, 6, 0],
         "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
         "size": 16,
         "weight": 400,
@@ -11718,6 +12038,52 @@
         "uppercase": false,
         "opacity": 0.7
       },
+      "scrollToTop": {
+        "fill": [255, 255, 255, 10],
+        "text": [232, 232, 232, 255],
+        "border": [255, 255, 255, 31],
+        "borderWidth": 1,
+        "radius": 999,
+        "top": 86,
+        "width": 34,
+        "height": 34,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 13],
+            "values": [0, 1, 2, 0]
+          }
+        ]
+      },
+      "scrollToTopHover": {
+        "fill": [255, 255, 255, 26],
+        "text": [232, 232, 232, 255],
+        "border": [255, 255, 255, 51],
+        "borderWidth": 1,
+        "radius": 999,
+        "top": 86,
+        "width": 34,
+        "height": 34,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 13],
+            "values": [0, 1, 2, 0]
+          }
+        ]
+      },
       "settingsLabel": {
         "fill": [0, 0, 0, 0],
         "text": [246, 247, 251, 255],
@@ -11983,6 +12349,24 @@
         "height": 0,
         "marginTop": 0,
         "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "hotkeyRow": {
+        "fill": [0, 0, 0, 0],
+        "text": [246, 247, 251, 255],
+        "border": [255, 255, 255, 13],
+        "borderWidth": 0,
+        "radius": 0,
+        "borderWidths": [0, 0, 2, 0],
+        "margin": [0, 0, 0, 18],
+        "width": 502,
+        "height": 48,
+        "marginTop": 0,
+        "padding": [6, 0, 6, 0],
         "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
         "size": 16,
         "weight": 400,
@@ -14025,6 +14409,64 @@
         "uppercase": false,
         "opacity": 0.7
       },
+      "scrollToTop": {
+        "fill": [255, 255, 255, 217],
+        "text": [29, 29, 31, 255],
+        "border": [58, 58, 66, 31],
+        "borderWidth": 2,
+        "radius": 999,
+        "top": 84,
+        "width": 36,
+        "height": 36,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 8],
+            "values": [0, -1, 0, 0],
+            "inset": true
+          },
+          {
+            "color": [255, 255, 255, 128],
+            "values": [0, 1, 0, 0],
+            "inset": true
+          }
+        ]
+      },
+      "scrollToTopHover": {
+        "fill": [0, 0, 0, 10],
+        "text": [29, 29, 31, 255],
+        "border": [61, 61, 67, 46],
+        "borderWidth": 2,
+        "radius": 999,
+        "top": 84,
+        "width": 36,
+        "height": 36,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 8],
+            "values": [0, -1, 0, 0],
+            "inset": true
+          },
+          {
+            "color": [255, 255, 255, 128],
+            "values": [0, 1, 0, 0],
+            "inset": true
+          }
+        ]
+      },
       "settingsLabel": {
         "fill": [0, 0, 0, 0],
         "text": [29, 29, 31, 255],
@@ -14318,6 +14760,24 @@
         "height": 0,
         "marginTop": 0,
         "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "hotkeyRow": {
+        "fill": [0, 0, 0, 0],
+        "text": [29, 29, 31, 255],
+        "border": [0, 0, 0, 13],
+        "borderWidth": 0,
+        "radius": 0,
+        "borderWidths": [0, 0, 2, 0],
+        "margin": [0, 0, 0, 18],
+        "width": 500,
+        "height": 42,
+        "marginTop": 0,
+        "padding": [6, 0, 6, 0],
         "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
         "size": 16,
         "weight": 400,
@@ -16680,6 +17140,64 @@
         "uppercase": false,
         "opacity": 0.7
       },
+      "scrollToTop": {
+        "fill": [40, 43, 54, 235],
+        "text": [245, 245, 247, 255],
+        "border": [255, 255, 255, 20],
+        "borderWidth": 2,
+        "radius": 999,
+        "top": 84,
+        "width": 36,
+        "height": 36,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 38],
+            "values": [0, -1, 0, 0],
+            "inset": true
+          },
+          {
+            "color": [255, 255, 255, 20],
+            "values": [0, 1, 0, 0],
+            "inset": true
+          }
+        ]
+      },
+      "scrollToTopHover": {
+        "fill": [255, 255, 255, 15],
+        "text": [245, 245, 247, 255],
+        "border": [255, 255, 255, 36],
+        "borderWidth": 2,
+        "radius": 999,
+        "top": 84,
+        "width": 36,
+        "height": 36,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 38],
+            "values": [0, -1, 0, 0],
+            "inset": true
+          },
+          {
+            "color": [255, 255, 255, 20],
+            "values": [0, 1, 0, 0],
+            "inset": true
+          }
+        ]
+      },
       "settingsLabel": {
         "fill": [0, 0, 0, 0],
         "text": [245, 245, 247, 255],
@@ -16973,6 +17491,24 @@
         "height": 0,
         "marginTop": 0,
         "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "hotkeyRow": {
+        "fill": [0, 0, 0, 0],
+        "text": [245, 245, 247, 255],
+        "border": [0, 0, 0, 13],
+        "borderWidth": 0,
+        "radius": 0,
+        "borderWidths": [0, 0, 2, 0],
+        "margin": [0, 0, 0, 18],
+        "width": 500,
+        "height": 42,
+        "marginTop": 0,
+        "padding": [6, 0, 6, 0],
         "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
         "size": 16,
         "weight": 400,
@@ -19270,6 +19806,40 @@
         "uppercase": false,
         "opacity": 0.7
       },
+      "scrollToTop": {
+        "fill": [255, 255, 255, 179],
+        "text": [29, 29, 31, 255],
+        "border": [59, 59, 67, 61],
+        "borderWidth": 2,
+        "radius": 999,
+        "top": 84,
+        "width": 36,
+        "height": 36,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "scrollToTopHover": {
+        "fill": [13, 128, 255, 20],
+        "text": [29, 29, 31, 255],
+        "border": [8, 134, 255, 61],
+        "borderWidth": 2,
+        "radius": 999,
+        "top": 84,
+        "width": 36,
+        "height": 36,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsLabel": {
         "fill": [0, 0, 0, 0],
         "text": [29, 29, 31, 255],
@@ -19571,6 +20141,24 @@
         "height": 0,
         "marginTop": 0,
         "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "hotkeyRow": {
+        "fill": [0, 0, 0, 0],
+        "text": [29, 29, 31, 255],
+        "border": [0, 0, 0, 13],
+        "borderWidth": 0,
+        "radius": 0,
+        "borderWidths": [0, 0, 2, 0],
+        "margin": [0, 0, 0, 18],
+        "width": 500,
+        "height": 42,
+        "marginTop": 0,
+        "padding": [6, 0, 6, 0],
         "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
         "size": 16,
         "weight": 400,
@@ -21552,6 +22140,40 @@
         "uppercase": false,
         "opacity": 0.7
       },
+      "scrollToTop": {
+        "fill": [61, 64, 73, 184],
+        "text": [245, 245, 247, 255],
+        "border": [255, 255, 255, 36],
+        "borderWidth": 2,
+        "radius": 999,
+        "top": 84,
+        "width": 36,
+        "height": 36,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "scrollToTopHover": {
+        "fill": [86, 89, 99, 230],
+        "text": [245, 245, 247, 255],
+        "border": [112, 191, 255, 128],
+        "borderWidth": 2,
+        "radius": 999,
+        "top": 84,
+        "width": 36,
+        "height": 36,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsLabel": {
         "fill": [0, 0, 0, 0],
         "text": [245, 245, 247, 255],
@@ -21845,6 +22467,24 @@
         "height": 0,
         "marginTop": 0,
         "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "hotkeyRow": {
+        "fill": [0, 0, 0, 0],
+        "text": [245, 245, 247, 255],
+        "border": [0, 0, 0, 13],
+        "borderWidth": 0,
+        "radius": 0,
+        "borderWidths": [0, 0, 2, 0],
+        "margin": [0, 0, 0, 18],
+        "width": 500,
+        "height": 42,
+        "marginTop": 0,
+        "padding": [6, 0, 6, 0],
         "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
         "size": 16,
         "weight": 400,
@@ -23824,6 +24464,40 @@
         "uppercase": false,
         "opacity": 0.7
       },
+      "scrollToTop": {
+        "fill": [222, 239, 255, 208],
+        "text": [10, 39, 70, 255],
+        "border": [45, 233, 185, 80],
+        "borderWidth": 1,
+        "radius": 999,
+        "top": 86,
+        "width": 34,
+        "height": 34,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "scrollToTopHover": {
+        "fill": [255, 255, 255, 203],
+        "text": [10, 39, 70, 255],
+        "border": [128, 255, 220, 72],
+        "borderWidth": 1,
+        "radius": 999,
+        "top": 86,
+        "width": 34,
+        "height": 34,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsLabel": {
         "fill": [0, 0, 0, 0],
         "text": [10, 39, 70, 255],
@@ -24145,6 +24819,24 @@
         "height": 0,
         "marginTop": 0,
         "padding": [0, 0, 0, 0],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "hotkeyRow": {
+        "fill": [0, 0, 0, 0],
+        "text": [10, 39, 70, 255],
+        "border": [0, 0, 0, 13],
+        "borderWidth": 0,
+        "radius": 0,
+        "borderWidths": [0, 0, 2, 0],
+        "margin": [0, 0, 0, 18],
+        "width": 500,
+        "height": 44,
+        "marginTop": 0,
+        "padding": [6, 0, 6, 0],
         "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
         "size": 16,
         "weight": 400,
@@ -26149,6 +26841,40 @@
         "uppercase": false,
         "opacity": 0.7
       },
+      "scrollToTop": {
+        "fill": [24, 39, 80, 188],
+        "text": [220, 251, 255, 255],
+        "border": [44, 232, 255, 76],
+        "borderWidth": 1,
+        "radius": 999,
+        "top": 86,
+        "width": 34,
+        "height": 34,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "scrollToTopHover": {
+        "fill": [9, 16, 34, 193],
+        "text": [220, 251, 255, 255],
+        "border": [117, 255, 245, 50],
+        "borderWidth": 1,
+        "radius": 999,
+        "top": 86,
+        "width": 34,
+        "height": 34,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 13.33,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
       "settingsLabel": {
         "fill": [0, 0, 0, 0],
         "text": [220, 251, 255, 255],
@@ -26470,6 +27196,24 @@
         "height": 0,
         "marginTop": 0,
         "padding": [0, 0, 0, 0],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "hotkeyRow": {
+        "fill": [0, 0, 0, 0],
+        "text": [220, 251, 255, 255],
+        "border": [0, 0, 0, 13],
+        "borderWidth": 0,
+        "radius": 0,
+        "borderWidths": [0, 0, 2, 0],
+        "margin": [0, 0, 0, 18],
+        "width": 500,
+        "height": 44,
+        "marginTop": 0,
+        "padding": [6, 0, 6, 0],
         "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
         "size": 16,
         "weight": 400,

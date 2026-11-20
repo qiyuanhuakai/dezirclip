@@ -51,6 +51,9 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		if widget == "settingsSwitchThumbOn" {
 			style.Left = 25
 		}
+	case "hotkeyRow":
+		style.Padding = [4]float32{6, 0, 6, 0}
+		style.Margin[3] = 18
 	case "hotkeyCap", "hotkeyCapRecording":
 		surface()
 		style.Height, style.Radius, style.Size, style.Weight = 22, 4, 11, 600
@@ -115,6 +118,12 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.RowGap = 8
 	case "headerTop":
 		style.Height = 36
+	case "scrollToTop", "scrollToTopHover":
+		surface()
+		style.Width, style.Height, style.Radius = 32, 32, 16
+		if widget == "scrollToTopHover" {
+			style.Fill, style.Border = selected, accent
+		}
 	case "headerSearch":
 		style.MarginTop = 4
 	case "headerFilters":

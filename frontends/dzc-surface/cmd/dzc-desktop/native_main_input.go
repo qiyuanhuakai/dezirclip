@@ -66,17 +66,21 @@ func (n *nativeMain) searchKey(key ui.TextKey) bool {
 		return true
 	case ui.KeyEnter:
 		if key.Text() == n.historyQuery() && n.keyboard {
-			if batch := n.activeTagBatch(); batch != nil {
-				if row, ok := n.selectedEntry(); ok {
-					n.toggleTagBatchRow(batch, row.Id, n.history.generation)
-				}
-			} else {
-				n.selectedAction(nativePaste)
-			}
+			n.activateSelectedHistory()
 		}
 		return true
 	}
 	return false
+}
+
+func (n *nativeMain) activateSelectedHistory() {
+	if batch := n.activeTagBatch(); batch != nil {
+		if row, ok := n.selectedEntry(); ok {
+			n.toggleTagBatchRow(batch, row.Id, n.history.generation)
+		}
+		return
+	}
+	n.selectedAction(nativePaste)
 }
 
 func (n *nativeMain) selectedAction(action nativeRowAction) {
@@ -201,11 +205,13 @@ func (n *nativeMain) historyShortcuts(c *ui.Context, queryFocused bool) {
 		c.OnShortcut(0, ui.KeyDown, func() { n.navigateHistory(1) })
 		c.OnShortcut(0, ui.KeyEnter, func() {
 			if n.keyboard {
-				n.selectedAction(nativePaste)
+				n.activateSelectedHistory()
 			}
 		})
 	}
-	c.OnShortcut(ui.Ctrl, ui.KeyC, func() { n.selectedAction(nativeCopy) })
+	if n.activeTagBatch() == nil {
+		c.OnShortcut(ui.Ctrl, ui.KeyC, func() { n.selectedAction(nativeCopy) })
+	}
 	c.OnShortcut(0, ui.KeyEscape, func() {
 		if n.closePreview() {
 			return

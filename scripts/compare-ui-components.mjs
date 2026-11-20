@@ -44,7 +44,7 @@ const additionalExamples = {
   "settings-toggle": { states: ["enabled", "default"], text: "Keep clipboard history" },
   "settings-slider": { states: ["default", "keyboard"], text: "Opacity 72%" },
   "hotkey-binding": { states: ["default", "recording"], text: "Quick Paste" },
-  "scroll-to-top": { states: ["default"], text: "Clipboard history" },
+  "scroll-to-top": { states: ["default", "hover"], text: "Clipboard history" },
   "emoji-tabs": { states: ["default", "favorites"], text: "Favorites" },
   "emoji-grid": { states: ["default"], text: "Frequently used" },
 };
@@ -157,7 +157,10 @@ try {
               if (await range.inputValue() !== "73") throw Error("Slider keyboard step did not change opacity to 73");
             }
             const combo = page.getByRole("combobox", { name: "Color mode" });
-            if (state === "hover") await combo.hover();
+            if (state === "hover") {
+              if (fixture === "scroll-to-top") await page.getByRole("button", { name: "Scroll to top" }).hover();
+              else await combo.hover();
+            }
             if (state === "focus") await combo.focus();
             if (state === "popup") await combo.click();
             if (fixture === "disclosure" && state === "expanded") await page.getByRole("button", { name: "Software updates" }).click();

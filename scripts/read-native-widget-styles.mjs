@@ -17,6 +17,8 @@ const samples = [
     settingsFooterCard: [".settings-footer-card", ".settings-footer-card-label"],
     settingsFooterVersion: [".settings-footer-version"], settingsFooterLink: [".settings-footer-link"],
   }],
+  ["scroll-to-top", "default", { scrollToTop: [".scroll-top-button"] }],
+  ["scroll-to-top", "hover", { scrollToTopHover: [".scroll-top-button"] }],
   ["settings-toggle", "default", {
     settingsLabel: [".setting-item .item-label"], settingsToggleRow: [".setting-item"],
     settingsSwitch: [".switch"], settingsSwitchTrack: [".toggle"], settingsSwitchThumb: [".toggle", null, "::before"],
@@ -32,7 +34,7 @@ const samples = [
     settingsRangeFill: ["[data-slider-sample=fill]"],
   }],
   ["hotkey-binding", "default", {
-    hotkeyGroup: [".key-group"], hotkeyCap: [".key-cap"],
+    hotkeyRow: [".hotkey-recorder"], hotkeyGroup: [".key-group"], hotkeyCap: [".key-cap"],
   }],
   ["hotkey-binding", "recording", { hotkeyCapRecording: [".key-cap"] }],
   ["emoji-tabs", "default", {
@@ -252,6 +254,9 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
     await page.locator("main[data-fixture]").waitFor();
     await page.evaluate(() => document.fonts.ready);
     await page.mouse.move(450, 390);
+    if (fixture === "scroll-to-top" && state === "hover") {
+      await page.getByRole("button", { name: "Scroll to top" }).hover();
+    }
     if (fixture === "toast") {
       await page.waitForFunction(() => getComputedStyle(document.querySelector(".toast-item")).opacity === "1");
     }

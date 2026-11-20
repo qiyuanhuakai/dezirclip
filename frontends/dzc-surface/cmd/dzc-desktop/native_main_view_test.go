@@ -322,3 +322,27 @@ func TestNativeMainHistoryPaintsTagsAfterEntryUpdate(t *testing.T) {
 	bounds, ok := tester.Find("work")
 	t.Fatalf("tag color did not paint despite label=%t and bounds=%+v", ok, bounds)
 }
+
+func TestNativeScrollToTopOverlaysHistory(t *testing.T) {
+	n := nativeMain{preferences: map[string]string{"app.language": "en"}}
+	for i := 1; i <= 30; i++ {
+		n.history.rows = append(n.history.rows, protocol.DesktopEntry{
+			Id: int64(i), Preview: "Example history row " + strconv.Itoa(i),
+			SourceApp: "Editor", ContentType: "text", Tags: []string{},
+		})
+	}
+	tester := ui.NewTester(n.view, 500, 420)
+	tester.Scroll(220, 250, 0, 620)
+	tester.Frame()
+	button, ok := tester.Find("Scroll to top")
+	if !ok || button.X+button.W >= 500 || button.Y+button.H >= 420 || n.historyScroll.Y <= 0 {
+		t.Fatalf("scroll control was not over the history viewport: %+v at scroll %+v", button, n.historyScroll)
+	}
+	if err := tester.Click("Scroll to top"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if first, _ := n.list.List.Visible(); first != 0 {
+		t.Fatalf("first visible item after scrolling to top = %d", first)
+	}
+}

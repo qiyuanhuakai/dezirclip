@@ -115,7 +115,7 @@ func (n *nativeMain) view(c *ui.Context) {
 				n.emojiView(c)
 			} else {
 				if n.tagLibrary != nil {
-					n.tagLibraryView(c, kit)
+					n.tagLibraryView(c, kit, &queryFocused)
 				} else {
 					n.editQuery(queryComposing)
 					n.historyView(c, kit)
@@ -192,6 +192,12 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 	if n.private {
 		ui.Text(c, n.text("privacy_session_title", "Private session")).TextColor(c.Theme().TextMuted).Padding(4, 8)
 	}
+	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
+		n.historyRows(c, kit)
+	})
+}
+
+func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit) {
 	generation := n.history.generation
 	compact := n.preferences["app.compact_mode"] == "true"
 	itemSize, tagSize := nativeItemSize.value(n.preferences), nativeTagSize.value(n.preferences)
@@ -328,17 +334,11 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 		n.focusList = false
 	}
 	if list.Submitted() && n.history.selected >= 0 && n.history.selected < len(n.history.rows) {
-		if batch != nil {
-			n.toggleTagBatchRow(batch, n.history.rows[n.history.selected].Id, generation)
-		} else {
-			n.selectedAction(nativePaste)
-		}
+		n.activateSelectedHistory()
 	}
 	if first > 0 && !draggingPin && n.preferences["app.show_scroll_top_button"] != "false" {
-		ui.Row(c).Padding(0, 8, 5).Justify(ui.End).Children(func() {
-			if kit.ScrollToTopButton(c, n.text("scroll_to_top", "Scroll to top")).Clicked() {
-				n.list.List.ScrollTo(0, ui.Start)
-			}
-		})
+		if kit.ScrollToTopButton(c, n.text("scroll_to_top", "Scroll to top")).Absolute().Right(16).Bottom(16).Clicked() {
+			n.list.List.ScrollTo(0, ui.Start)
+		}
 	}
 }
