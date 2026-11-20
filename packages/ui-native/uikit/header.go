@@ -74,9 +74,7 @@ func (k Kit) Header(c *ui.Context, options HeaderOptions) {
 				}
 			})
 		})
-		if options.Query != nil {
-			k.headerSearch(c, options)
-		}
+		k.ClipboardSearch(c, options)
 	})
 }
 
@@ -131,7 +129,11 @@ func (k Kit) ScrollToTopButton(c *ui.Context, label string) ui.Element {
 	})
 }
 
-func (k Kit) headerSearch(c *ui.Context, options HeaderOptions) {
+// ClipboardSearch draws the main clipboard search field and its content filters.
+func (k Kit) ClipboardSearch(c *ui.Context, options HeaderOptions) {
+	if options.Query == nil {
+		return
+	}
 	style := k.style("headerSearch")
 	paint(ui.Column(c), style).Margin(style.MarginTop, 0, 0, 0).Children(func() {
 		field := k.style("headerInput")

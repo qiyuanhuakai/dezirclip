@@ -148,6 +148,7 @@ body.theme-macos:not(.hide-app-border) {
 }
 
 .theme-macos .search-input,
+.theme-macos .search-bar__input,
 .theme-macos .setting-input {
   border: 1px solid var(--macos-input-border) !important;
   border-radius: 10px !important;
@@ -156,9 +157,20 @@ body.theme-macos:not(.hide-app-border) {
 }
 
 .theme-macos .search-input:focus,
+.theme-macos .search-bar__input:focus,
 .theme-macos .setting-input:focus {
   border-color: rgba(10, 132, 255, 0.6) !important;
   box-shadow: var(--macos-input-focus-shadow) !important;
+}
+
+.theme-macos .search-bar__mode,
+.theme-macos .search-bar__history,
+.theme-macos .search-history {
+  border-radius: 10px;
+}
+
+.theme-macos .search-bar__mode-btn {
+  border-radius: 8px;
 }
 
 .theme-macos select.search-input {
