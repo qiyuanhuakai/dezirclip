@@ -719,7 +719,8 @@
           "type": "string",
           "enum": [
             "time",
-            "count"
+            "count",
+            "pinned"
           ]
         },
         "limit": {
@@ -4830,6 +4831,32 @@
       ],
       "additionalProperties": false
     },
+    "LibraryPinMove": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "anchor_id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "before": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "anchor_id",
+        "before"
+      ],
+      "additionalProperties": false
+    },
     "LibraryOrderParams": {
       "type": "object",
       "properties": {
@@ -4850,6 +4877,9 @@
             "$ref": "#/$defs/LibraryPinOrder"
           },
           "maxItems": 32768
+        },
+        "relative_order": {
+          "$ref": "#/$defs/LibraryPinMove"
         }
       },
       "required": [

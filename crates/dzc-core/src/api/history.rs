@@ -273,6 +273,11 @@ impl HistoryService {
             .update_pinned_order(orders)
             .map_err(Into::into)
     }
+    pub fn move_pinned_entry(&self, id: i64, anchor_id: i64, before: bool) -> CoreResult<bool> {
+        self.repository
+            .move_pinned_entry(id, anchor_id, before)
+            .map_err(Into::into)
+    }
     pub fn get_count(&self) -> CoreResult<i64> {
         self.repository.get_count().map_err(Into::into)
     }

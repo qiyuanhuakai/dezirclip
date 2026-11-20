@@ -170,6 +170,8 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 	itemSize, tagSize := nativeItemSize.value(n.preferences), nativeTagSize.value(n.preferences)
 	first, last := n.list.List.Visible()
 	n.pruneProtectedRows(first, last)
+	reorderPins := n.canReorderVisiblePins()
+	draggingPin := false
 	var hovered protocol.DesktopEntry
 	var hoverBounds ui.Rect
 	list := kit.HistoryList(c, &n.list, uikit.HistoryListOptions{
@@ -225,6 +227,7 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 				TagSize:  float32(tagSize),
 				Tags:     n.cardTags(row.Tags),
 				Body:     n.cardBody(cell.Context, row, protected, compact, generation),
+				Reorder:  n.pinReorderGrip(row, cell.Index, generation, reorderPins, func() { draggingPin = true }),
 				Activate: func() {
 					if n.fileGesture.takeClick(row.Id) {
 						return
@@ -234,6 +237,9 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 				},
 				Actions: actions,
 			})
+			if reorderPins && row.Id > 0 && row.IsPinned {
+				draggingPin = n.pinDropTarget(cell.Context, card, row, generation) || draggingPin
+			}
 			n.entryMenu(card, row, generation)
 			if nativeFileCard(row) && (!nativeConcealed(row) || protected != nil) {
 				card.HandleInput(func(event ui.InputEvent) bool { return n.fileCardInput(event, row, generation) })
@@ -247,7 +253,16 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 		},
 	})
 	list.TrackScroll(&n.historyScroll).HandleInput(n.historyWheel)
-	n.hoverPreview(hovered, generation, hoverBounds)
+	if reorderPins {
+		_, over := ui.DragOver[nativePinSource](list)
+		draggingPin = draggingPin || over
+	}
+	if draggingPin {
+		n.hover.reset()
+		n.closePreview()
+	} else {
+		n.hoverPreview(hovered, generation, hoverBounds)
+	}
 	if n.focusList {
 		list.Focus()
 		n.focusList = false
@@ -255,7 +270,7 @@ func (n *nativeMain) historyView(c *ui.Context, kit uikit.Kit) {
 	if list.Submitted() && n.history.selected >= 0 && n.history.selected < len(n.history.rows) {
 		n.selectedAction(nativePaste)
 	}
-	if first > 0 && n.preferences["app.show_scroll_top_button"] != "false" {
+	if first > 0 && !draggingPin && n.preferences["app.show_scroll_top_button"] != "false" {
 		ui.Row(c).Padding(0, 8, 5).Justify(ui.End).Children(func() {
 			if uikit.Button(c, uikit.ButtonOptions{Label: n.text("scroll_to_top", "Scroll to top")}).Clicked() {
 				n.list.List.ScrollTo(0, ui.Start)

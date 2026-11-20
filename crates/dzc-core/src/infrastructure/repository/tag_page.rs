@@ -62,6 +62,7 @@ impl SqliteTagRepository {
         let order = match sort {
             "time" => "ch.timestamp DESC,ch.id DESC",
             "count" => "ch.use_count DESC,ch.timestamp DESC,ch.id DESC",
+            "pinned" => "ch.is_pinned DESC,ch.pinned_order DESC,ch.timestamp DESC,ch.id DESC",
             _ => return Err("unknown tag sort order".into()),
         };
         let mut conn = self.conn.lock().map_err(|error| error.to_string())?;

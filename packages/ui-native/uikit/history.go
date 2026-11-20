@@ -22,7 +22,20 @@ type HistoryCardOptions struct {
 	TagSize  float32
 	Body     func()
 	Activate func()
+	Reorder  *HistoryReorder
 }
+
+// HistoryReorder enables a local drag grip and Alt+arrow movement for a pinned card.
+type HistoryReorder struct {
+	Label    string
+	Value    any
+	Disabled bool
+	Focus    bool
+	OnMove   func(earlier bool)
+	OnDrag   func()
+}
+
+var historyGrip = icon("GripHorizontal")
 
 type HistoryTag struct {
 	Name  string
@@ -34,6 +47,7 @@ type HistoryCardMetaOptions struct {
 	Time    string
 	Pinned  bool
 	Actions []HeaderAction
+	Reorder *HistoryReorder
 }
 
 func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
@@ -72,7 +86,7 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 		ui.Column(c).Grow(1).Children(func() {
 			if options.Source != "" || options.Time != "" || options.Pinned || len(options.Actions) > 0 {
 				k.HistoryCardMeta(c, HistoryCardMetaOptions{
-					Source: options.Source, Time: options.Time, Pinned: options.Pinned, Actions: options.Actions,
+					Source: options.Source, Time: options.Time, Pinned: options.Pinned, Actions: options.Actions, Reorder: options.Reorder,
 				})
 			}
 			if options.Body != nil {
@@ -125,7 +139,30 @@ func (k Kit) HistoryCardMeta(c *ui.Context, options HistoryCardMetaOptions) {
 	paint(ui.Row(c).Height(meta.Height).Gap(8).AlignItems(ui.Center), meta).Children(func() {
 		source := k.style("historySource")
 		ui.Row(c).Grow(1).Gap(source.ColumnGap).AlignItems(ui.Center).Children(func() {
-			if options.Pinned {
+			if drag := options.Reorder; drag != nil {
+				grip := ui.ButtonBase(c).Label(drag.Label).Tooltip(drag.Label).Size(16, meta.Height).
+					Center().Cursor(ui.CursorGrab).Disabled(drag.Disabled).Drag(drag.Value)
+				if drag.Focus && !drag.Disabled {
+					grip.Focus()
+				}
+				if grip.Dragging() {
+					grip.Cursor(ui.CursorGrabbing)
+					if drag.OnDrag != nil {
+						drag.OnDrag()
+					}
+				}
+				grip.Children(func() {
+					ui.Icon(c, historyGrip).Size(14, 14).Rotate(90).TextColor(styleColor(source.Text)).PassThrough()
+				})
+				if drag.OnMove != nil {
+					if grip.Shortcut(ui.Alt, ui.KeyUp) {
+						drag.OnMove(true)
+					}
+					if grip.Shortcut(ui.Alt, ui.KeyDown) {
+						drag.OnMove(false)
+					}
+				}
+			} else if options.Pinned {
 				ui.Icon(c, headerIcons["pin"]).Size(10, 10).TextColor(styleColor(source.Text))
 			}
 			text(c, options.Source, source).SingleLine()

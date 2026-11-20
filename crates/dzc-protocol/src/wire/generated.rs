@@ -1052,10 +1052,20 @@ pub struct LibraryPinOrder {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct LibraryPinMove {
+    pub id: i64,
+    pub anchor_id: i64,
+    pub before: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LibraryOrderParams {
     pub service_instance_id: String,
     pub expected_epoch: u64,
     pub orders: Vec<LibraryPinOrder>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_order: Option<LibraryPinMove>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

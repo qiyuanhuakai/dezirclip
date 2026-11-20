@@ -718,10 +718,17 @@ type LibraryPinOrder struct {
     Order int64 `json:"order"`
 }
 
+type LibraryPinMove struct {
+    Id int64 `json:"id"`
+    AnchorId int64 `json:"anchor_id"`
+    Before bool `json:"before"`
+}
+
 type LibraryOrderParams struct {
     ServiceInstanceId string `json:"service_instance_id"`
     ExpectedEpoch uint64 `json:"expected_epoch"`
     Orders []LibraryPinOrder `json:"orders"`
+    RelativeOrder *LibraryPinMove `json:"relative_order,omitempty"`
 }
 
 type LibraryColorParams struct {

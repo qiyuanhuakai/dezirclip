@@ -1430,6 +1430,47 @@ impl SqliteClipboardRepository {
         Ok(())
     }
 
+    pub fn move_pinned_entry(&self, id: i64, anchor_id: i64, before: bool) -> Result<bool, String> {
+        let mut conn = self.conn.lock().map_err(|err| err.to_string())?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|err| err.to_string())?;
+        let mut pinned = {
+            let mut stmt = tx
+                .prepare("SELECT id,pinned_order FROM clipboard_history WHERE is_pinned=1 ORDER BY pinned_order DESC,timestamp DESC,id DESC")
+                .map_err(|err| err.to_string())?;
+            let rows = stmt
+                .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))
+                .map_err(|err| err.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(|err| err.to_string())?
+        };
+        let position = |entry| pinned.iter().position(|(id, _)| *id == entry);
+        let source = position(id).ok_or("Pinned entry is unavailable")?;
+        let anchor = position(anchor_id).filter(|anchor| *anchor != source)
+            .ok_or("Pinned destination is unavailable")?;
+        let destination = anchor + usize::from(!before) - usize::from(source < anchor);
+        if source == destination {
+            return Ok(false);
+        }
+        let moved = pinned.remove(source);
+        pinned.insert(destination, moved);
+        // Use consecutive ranks so ties from older databases keep the same
+        // relative order as the snapshot, including entries hidden by search.
+        {
+            let mut update = tx
+                .prepare("UPDATE clipboard_history SET pinned_order=?1 WHERE id=?2")
+                .map_err(|err| err.to_string())?;
+            for ((id, previous), rank) in pinned.iter().zip((1..=pinned.len() as i64).rev()) {
+                if *previous != rank {
+                    update.execute(params![rank, id]).map_err(|err| err.to_string())?;
+                }
+            }
+        }
+        tx.commit().map_err(|err| err.to_string())?;
+        self.invalidate_caches();
+        Ok(true)
+    }
+
     pub fn get_entry_by_id_with_conn(
         &self,
         conn: &Connection,

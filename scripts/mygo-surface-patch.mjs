@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-export const MYGO_PATCH_ID = 'mygo-v0.6.4-native-alpha-v7';
+export const MYGO_PATCH_ID = 'mygo-v0.6.4-native-alpha-v8';
 export const MYGO_APP_SHA256 = 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9';
 const modulePath = 'github.com/egoist/mygo';
 const version = 'v0.6.4';
@@ -97,6 +97,21 @@ function linuxPatches(source) {
   return [[surfaceFile, Buffer.from(surface)]];
 }
 
+function localDragPatch(source) {
+  const file = 'ui/input.go';
+  let input = source(file, 'e8cec7096e780d83b34abdddc2ba9e70e0af7ec34f28150b4bfe882bcd36c1aa');
+  const replace = (before, after) => {
+    if (input.split(before).length !== 2) throw new Error('Expected one MyGo local drag input branch');
+    input = input.replace(before, after);
+  };
+  // A virtual list can discard the pressed widget while retaining the local drag.
+  replace('\t\trt.dragMove(x, y)\n\t}\n\tmoved :=',
+    '\t\trt.dragMove(x, y)\n\t} else if d := rt.drag; d != nil && !d.native && !d.canceled {\n\t\td.over = rt.valueTarget(x, y, d.value)\n\t\trt.requestFrame()\n\t}\n\tmoved :=');
+  replace('\tif s := rt.pressed; s != nil && button == rt.pressButton && rt.dragEnd() {\n\t\t// A drag ended, dropping its value: no click.\n\t\trt.pressed = nil\n\t\ts.pressed = false',
+    '\tif button == rt.pressButton && rt.dragEnd() {\n\t\t// A drag ended, dropping its value: no click.\n\t\tif s := rt.pressed; s != nil {\n\t\t\ts.pressed = false\n\t\t}\n\t\trt.pressed = nil');
+  return [file, Buffer.from(input)];
+}
+
 export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
   const goRun = argv => run(go, argv, { cwd: moduleRoot, env });
   const downloaded = JSON.parse(goRun(['mod', 'download', '-json', `${modulePath}@${version}`]));
@@ -120,7 +135,8 @@ export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
     if (sha256(bytes) !== digest) throw new Error(`Unreviewed MyGo source: ${path}`);
     return bytes.toString('utf8');
   }
-  const changes = new Map([['app.go', patchedApp], ...windowsPatches(verifiedSource), ...linuxPatches(verifiedSource)]);
+  const changes = new Map([['app.go', patchedApp], ...windowsPatches(verifiedSource), ...linuxPatches(verifiedSource),
+    localDragPatch(verifiedSource)]);
   for (const [path, bytes] of changes) writeFileSync(join(patchedModule, path), bytes);
   const patchedFiles = treeFiles(patchedModule);
   const expectedFiles = originalFiles.map(file => changes.has(file.path) ? { ...file, sha256: sha256(changes.get(file.path)) } : file);

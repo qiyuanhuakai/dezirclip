@@ -88,6 +88,7 @@ type nativeMain struct {
 	tagCatalog       nativeTagCatalog
 	tagSuggestions   nativeTagSuggestions
 	fileGesture      nativeFileGesture
+	pinFocus         nativePinSource
 	tagLibrary       *nativeTagLibrary
 	editor           *nativeEntryEditor
 	transform        *nativeTransformDialog
@@ -130,6 +131,7 @@ func (n *nativeMain) stopSession() {
 	n.tagCatalog = nativeTagCatalog{}
 	n.tagSuggestions = nativeTagSuggestions{}
 	n.fileGesture = nativeFileGesture{}
+	n.pinFocus = nativePinSource{}
 	n.emoji = nil
 	n.resetPreviewSelection()
 }
@@ -438,7 +440,7 @@ func (n *nativeMain) historyFilter() nativeHistoryFilter {
 	}
 	query := strings.TrimSpace(n.query)
 	if tag, ok := searchTagName(query); ok {
-		return nativeHistoryFilter{tag: tag, kind: n.kind, sort: "time"}
+		return nativeHistoryFilter{tag: tag, kind: n.kind, sort: "pinned"}
 	}
 	return nativeHistoryFilter{query: query, kind: n.kind}
 }

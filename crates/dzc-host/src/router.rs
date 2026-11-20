@@ -1285,6 +1285,47 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn desktop_relative_pin_order_preserves_filtered_entries_and_handles_old_ranks() {
+        let host = synthetic_host();
+        let grant = host.grants().issue_control(ClientRole::Desktop).unwrap();
+        let (desktop, _) = host.hello(HelloParams { grant: Some(grant.token().into()), ..hello(ClientRole::Desktop) }).unwrap();
+        let first = insert(&host, "first tagged fixture", &["work"]);
+        let hidden = insert(&host, "pinned fixture outside the filter", &[]);
+        let third = insert(&host, "third tagged fixture", &["work"]);
+        let unpinned = insert(&host, "unpinned tagged fixture", &["work"]);
+        for id in [first, hidden, third] { host.history.toggle_pin(id, true).unwrap(); }
+        host.history.update_pinned_order(vec![(first, 0), (hidden, 0), (third, 0)]).unwrap();
+        let state = host.snapshot().unwrap();
+        let request = |id, anchor_id, before| serde_json::json!({
+            "service_instance_id": state.service_instance_id, "expected_epoch": state.privacy_epoch,
+            "orders": [], "relative_order": {"id": id, "anchor_id": anchor_id, "before": before}
+        });
+        let ordered = || host.history.query(&api::HistoryQuery {limit: 20, ..Default::default()})
+            .unwrap().into_iter().map(|row| row.id).collect::<Vec<_>>();
+        assert_eq!(ordered(), [third, hidden, first, unpinned]);
+        let move_first = request(first, third, true);
+        assert!(dispatch(&host, &desktop, Method::DesktopHistoryReorder, move_first.clone()).error.is_none());
+        assert_eq!(ordered(), [first, third, hidden, unpinned]);
+        let newer = host.snapshot().unwrap();
+        assert!(newer.history_revision > state.history_revision);
+        assert!(dispatch(&host, &desktop, Method::DesktopHistoryReorder, move_first).error.is_none());
+        assert_eq!(host.snapshot().unwrap().history_revision, newer.history_revision);
+        let tags = host.tag_page_owned(DesktopTagPageParams {
+            tag: "work".into(), query: String::new(), sort_by: "pinned".into(), kind: Some("text".into()),
+            limit: 20, offset: 0, service_instance_id: state.service_instance_id.clone(), expected_epoch: state.privacy_epoch,
+        }).unwrap();
+        assert_eq!(tags.items.into_iter().map(|row| row.id).collect::<Vec<_>>(), [first, third, unpinned]);
+        assert!(dispatch(&host, &desktop, Method::DesktopHistoryReorder, request(first, unpinned, false)).error.is_some());
+        let mut stale = request(third, first, true);
+        stale["expected_epoch"] = (state.privacy_epoch + 1).into();
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopHistoryReorder, stale).error.unwrap().code, WireErrorCode::PrivacyEpochChanged);
+        let mut mixed = request(third, first, true);
+        mixed["orders"] = serde_json::json!([{"id":third,"order":6}]);
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopHistoryReorder, mixed).error.unwrap().code, WireErrorCode::InvalidRequest);
+        assert_eq!(ordered(), [first, third, hidden, unpinned]);
+    }
+
+    #[test]
     fn core_visibility_applies_to_summaries_and_service_local_copy() {
         let host = synthetic_host();
         let ordinary = insert(&host, "ordinary synthetic entry", &[]);

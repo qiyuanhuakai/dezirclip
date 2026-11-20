@@ -293,6 +293,13 @@ func (l *Library) ReorderPins(ctx context.Context, pairs [][2]int64, epoch uint6
 	})
 }
 
+func (l *Library) movePin(ctx context.Context, state protocol.RuntimeState, move protocol.LibraryPinMove) error {
+	return l.edit(ctx, protocol.MethodDesktopHistoryReorder, protocol.LibraryOrderParams{
+		ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch,
+		Orders: []protocol.LibraryPinOrder{}, RelativeOrder: &move,
+	})
+}
+
 func (l *Library) DeleteTagEntries(ctx context.Context, params protocol.LibraryTagBatchParams) (uint64, error) {
 	params.ServiceInstanceId = l.owner.Hello().State.ServiceInstanceId
 	return l.deleteEntries(ctx, protocol.MethodDesktopTagsDeleteEntries, params)

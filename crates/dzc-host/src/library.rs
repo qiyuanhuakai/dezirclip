@@ -96,7 +96,16 @@ impl Host {
             Method::DesktopHistoryReorder => {
                 let p: LibraryOrderParams = serde_json::from_value(params).map_err(invalid)?;
                 self.check_library_state(session, &p.service_instance_id, p.expected_epoch)?;
-                self.history.update_pinned_order(p.orders.into_iter().map(|pair| (pair.id, pair.order)).collect()).map_err(storage)?;
+                if let Some(relative) = p.relative_order {
+                    if !p.orders.is_empty() || relative.id == relative.anchor_id {
+                        return Err(WireErrorCode::InvalidRequest);
+                    }
+                    if !self.history.move_pinned_entry(relative.id, relative.anchor_id, relative.before).map_err(storage)? {
+                        return Ok(json!({ "performed": true }));
+                    }
+                } else {
+                    self.history.update_pinned_order(p.orders.into_iter().map(|pair| (pair.id, pair.order)).collect()).map_err(storage)?;
+                }
             }
             Method::DesktopTagsCreate | Method::DesktopTagsRemove => {
                 let p: LibraryTagParams = serde_json::from_value(params).map_err(invalid)?;
