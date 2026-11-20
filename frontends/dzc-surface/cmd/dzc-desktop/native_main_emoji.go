@@ -224,6 +224,7 @@ func (n *nativeMain) sendEmoji(kind, value string) {
 		return
 	}
 	n.mutating, n.notice = true, ""
+	n.actions.diagnostics.record("emoji-send-requested", 0, nil)
 	session, epoch := n.session, n.history.state.PrivacyEpoch
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 5*time.Second)
@@ -234,9 +235,17 @@ func (n *nativeMain) sendEmoji(kind, value string) {
 			outcome, err = n.actions.SendEmoji(ctx, kind, value, epoch, paste)
 		}
 		if err == nil && paste && outcome == "target_required" {
+			n.actions.diagnostics.record("emoji-paste-target-unavailable", 0, nil)
 			paste = false
 			outcome, err = n.actions.SendEmoji(ctx, kind, value, epoch, false)
 		}
+		stage := "emoji-paste-completed"
+		if err != nil || outcome != "completed" {
+			stage = "emoji-send-failed"
+		} else if !paste {
+			stage = "emoji-copy-completed"
+		}
+		n.actions.diagnostics.record(stage, 0, err)
 		n.update(session, func() {
 			n.mutating = false
 			switch {

@@ -210,7 +210,7 @@ function Wait-Until([scriptblock]$Check, [string]$Failure, [int]$Seconds = 30) {
     throw $Failure
 }
 
-function Get-ControlPoint($root, [string]$Name, [Windows.Automation.ControlType]$Type = $null) {
+function Get-ControlPoint($root, [string]$Name, [Windows.Automation.ControlType]$Type = $null, [switch]$RequireEnabled) {
     $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $Name, [Windows.Automation.PropertyConditionFlags]::IgnoreCase)
     if ($Type) {
         $condition = [Windows.Automation.AndCondition]::new($condition,
@@ -222,7 +222,7 @@ function Get-ControlPoint($root, [string]$Name, [Windows.Automation.ControlType]
             $scroll = $null
             if ($row.TryGetCurrentPattern([Windows.Automation.ScrollItemPattern]::Pattern, [ref]$scroll)) { $scroll.ScrollIntoView() }
         }
-        if ($row -and !$row.Current.IsOffscreen -and !$row.Current.BoundingRectangle.IsEmpty) {
+        if ($row -and (!$RequireEnabled -or $row.Current.IsEnabled) -and !$row.Current.IsOffscreen -and !$row.Current.BoundingRectangle.IsEmpty) {
             $bounds = $row.Current.BoundingRectangle
             if ($bounds.Width -gt 0 -and $bounds.Height -gt 0) {
                 return [System.Drawing.Point]::new([int]($bounds.Left + $bounds.Width / 2), [int]($bounds.Top + $bounds.Height / 2))
@@ -299,7 +299,7 @@ function Test-SymbolPaste($main, $root, $edit, $form, $cli, [string]$serviceInst
     Click-Control $main (Get-ControlPoint $root 'Search by character, name or U+ code')
     [Windows.Forms.SendKeys]::SendWait('U{+}2A7D')
     $symbol = [string][char]0x2a7d
-    Click-Control $main (Get-ControlPoint $root $symbol)
+    Click-Control $main (Get-ControlPoint $root $symbol ([Windows.Automation.ControlType]::Button) -RequireEnabled)
     $null = Wait-Until {
         $edit.Text -ceq $symbol -and $edit.Focused -and [MyGoInput]::GetForegroundWindow() -eq $form.Handle
     } "$renderer symbol picker did not paste the exact symbol into the original editor"
