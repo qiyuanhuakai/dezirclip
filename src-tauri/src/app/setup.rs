@@ -1568,111 +1568,84 @@ fn setup_taskbar_listener(app: &App) {
 }
 
 pub fn handle_global_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_shortcut::Shortcut) {
-    use tauri_plugin_global_shortcut::Shortcut;
+    use crate::app::commands::hotkey_cmd::desktop_shortcut;
+    dispatch_global_shortcut(app, |raw| desktop_shortcut(raw).as_ref() == Some(shortcut));
+}
+
+pub(crate) fn dispatch_global_shortcut(app: &AppHandle, matches: impl Fn(&str) -> bool) {
     let settings = app.state::<SettingsState>();
+    let setting_matches = |setting: &std::sync::Mutex<String>| matches(&setting.lock().unwrap());
 
     let main_items = {
         let val = settings.main_hotkey.lock().unwrap().clone();
         crate::app::commands::hotkey_cmd::parse_hotkey_list(&val)
     };
     for item in main_items {
-        if let Ok(main_s) = item.replace("Win", "Super").parse::<Shortcut>() {
-            if shortcut == &main_s {
-                toggle_window(app);
-                return;
-            }
-        }
-    }
-
-    if let Ok(seq_s) = {
-        let val = settings.sequential_paste_hotkey.lock().unwrap().clone();
-        val.replace("Win", "Super").parse::<Shortcut>()
-    } {
-        if shortcut == &seq_s {
-            crate::services::paste_queue::start_step(app.clone(), false);
-        }
-    }
-
-    if let Ok(rich_s) = {
-        let val = settings.rich_paste_hotkey.lock().unwrap().clone();
-        val.replace("Win", "Super").parse::<Shortcut>()
-    } {
-        if shortcut == &rich_s {
-            crate::services::clipboard_ops::paste_latest_rich(app.clone());
-        }
-    }
-
-    if let Ok(search_s) = {
-        let val = settings.search_hotkey.lock().unwrap().clone();
-        val.replace("Win", "Super").parse::<Shortcut>()
-    } {
-        if shortcut == &search_s {
+        if matches(&item) {
             toggle_window(app);
-            let _ = app.emit("focus-search-input", ());
+            return;
         }
+    }
+
+    if setting_matches(&settings.sequential_paste_hotkey) {
+        crate::services::paste_queue::start_step(app.clone(), false);
+    }
+
+    if setting_matches(&settings.rich_paste_hotkey) {
+        crate::services::clipboard_ops::paste_latest_rich(app.clone());
+    }
+
+    if setting_matches(&settings.search_hotkey) {
+        toggle_window(app);
+        let _ = app.emit("focus-search-input", ());
     }
 
     if settings.screenshot_enabled.load(Ordering::Relaxed) {
-        if let Ok(screenshot_s) = {
-            let val = settings.screenshot_hotkey.lock().unwrap().clone();
-            val.replace("Win", "Super").parse::<Shortcut>()
-        } {
-            if shortcut == &screenshot_s {
-                // The show path may have to rebuild the selector after the idle
-                // destroyer took it, and `build()` cannot run on this thread.
-                // The await is load-bearing: `show_region_selector` is an async
-                // command, and `let _ = future` compiles happily while dropping
-                // the future on the floor, so the body never runs and the hotkey
-                // does nothing at all.
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(err) =
-                        crate::app::commands::screenshot_cmd::show_region_selector(app).await
-                    {
-                        crate::warn!("[hotkey] Failed to show the region selector: {}", err);
-                    }
-                });
-                return;
-            }
+        if setting_matches(&settings.screenshot_hotkey) {
+            // The show path may have to rebuild the selector after the idle
+            // destroyer took it, and `build()` cannot run on this thread.
+            // The await is load-bearing: `show_region_selector` is an async
+            // command, and `let _ = future` compiles happily while dropping
+            // the future on the floor, so the body never runs and the hotkey
+            // does nothing at all.
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) =
+                    crate::app::commands::screenshot_cmd::show_region_selector(app).await
+                {
+                    crate::warn!("[hotkey] Failed to show the region selector: {}", err);
+                }
+            });
+            return;
         }
 
         // Whole-display capture. Shares the `screenshot_enabled` gate rather
         // than growing a second toggle: turning off "region capture" means the
         // user does not want screenshots stealing a global hotkey, and leaving
         // this one armed would be the surprising half of that.
-        if let Ok(full_s) = {
-            let val = settings.screenshot_full_hotkey.lock().unwrap().clone();
-            val.replace("Win", "Super").parse::<Shortcut>()
-        } {
-            if shortcut == &full_s {
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(err) =
-                        crate::app::commands::screenshot_cmd::capture_full_screen(app).await
-                    {
-                        crate::warn!("[hotkey] Failed to capture the full screen: {}", err);
-                    }
-                });
-                return;
-            }
+        if setting_matches(&settings.screenshot_full_hotkey) {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) =
+                    crate::app::commands::screenshot_cmd::capture_full_screen(app).await
+                {
+                    crate::warn!("[hotkey] Failed to capture the full screen: {}", err);
+                }
+            });
+            return;
         }
     }
 
     if settings.quick_paste_enabled.load(Ordering::Relaxed) {
-        if let Ok(quick_s) = {
-            let val = settings.quick_paste_hotkey.lock().unwrap().clone();
-            val.replace("Win", "Super").parse::<Shortcut>()
-        } {
-            if shortcut == &quick_s {
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(err) =
-                        crate::app::commands::quick_paste_cmd::toggle_quick_paste(app).await
-                    {
-                        crate::warn!("[hotkey] Failed to toggle quick-paste: {err}");
-                    }
-                });
-            }
+        if setting_matches(&settings.quick_paste_hotkey) {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) =
+                    crate::app::commands::quick_paste_cmd::toggle_quick_paste(app).await
+                {
+                    crate::warn!("[hotkey] Failed to toggle quick-paste: {err}");
+                }
+            });
         }
     }
 }

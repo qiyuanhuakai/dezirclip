@@ -19,6 +19,10 @@ func TestNativeShortcutRecorderUsesResidentChordNames(t *testing.T) {
 		{ui.Key0, ui.Alt, "Alt+0"},
 		{ui.KeyLeft, ui.Ctrl, "Ctrl+Left"},
 		{ui.KeyEscape, 0, ""},
+		{ui.KeyEscape, ui.Ctrl, "Ctrl+Escape"},
+		{ui.KeyEqual, ui.Shift, "Shift+Equal"},
+		{ui.KeyBackslash, ui.Ctrl, "Ctrl+Backslash"},
+		{ui.KeySemicolon, ui.Alt | ui.Shift, "Alt+Shift+Semicolon"},
 		{ui.KeyUnknown, ui.Ctrl, ""},
 	} {
 		if actual := nativeShortcutChord(test.key, test.mods); actual != test.want {
@@ -61,6 +65,25 @@ func TestCanonicalMainShortcutContinuousEditsAndRollback(t *testing.T) {
 	for raw, canonical := range map[string]string{"win+control+return": "Ctrl+Super+Enter", "shift+esc": "Shift+Escape", "alt+ArrowLeft": "Alt+Left", "meta+del": "Super+Delete", "CTRL+f24": "Ctrl+F24"} {
 		if got := mainShortcutName(raw); got != canonical {
 			t.Fatalf("%s: %s != %s", raw, got, canonical)
+		}
+	}
+}
+
+func TestExtendedShortcutNamesKeepKeypadSeparate(t *testing.T) {
+	for _, tt := range []struct{ raw, canonical, accelerator string }{
+		{"Ctrl+Num1", "Ctrl+Numpad1", "Ctrl+Num1"},
+		{"Ctrl+1", "Ctrl+1", "Ctrl+1"},
+		{"Shift+NumPlus", "Shift+NumpadAdd", "Shift+NumAdd"},
+		{"Shift+Plus", "Shift+Equal", "Shift+="},
+		{"Ctrl+;", "Ctrl+Semicolon", "Ctrl+;"},
+		{"Alt+MediaNextTrack", "Alt+MediaTrackNext", "Alt+MediaNextTrack"},
+		{"Ctrl+PrintScreen", "Ctrl+PrintScreen", "Ctrl+PrintScreen"},
+	} {
+		if got := mainShortcutName(tt.raw); got != tt.canonical {
+			t.Errorf("%q canonicalizes to %q, want %q", tt.raw, got, tt.canonical)
+		}
+		if got := mygoShortcutName(tt.raw); got != tt.accelerator {
+			t.Errorf("%q registers as %q, want %q", tt.raw, got, tt.accelerator)
 		}
 	}
 }

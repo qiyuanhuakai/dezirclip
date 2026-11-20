@@ -139,7 +139,7 @@ pub unsafe extern "system" fn keyboard_proc(
                 || (GetAsyncKeyState(VK_RWIN.0 as i32) as u16 & 0x8000 != 0);
 
             // ESC to cancel
-            if vk == 0x1B && is_down {
+            if vk == 0x1B && is_down && !(ctrl_down || shift_down || alt_down || win_down) {
                 IS_RECORDING.store(false, Ordering::SeqCst);
                 if let Some(handle) = GLOBAL_APP_HANDLE.get() {
                     let _ = handle.emit("recording-cancelled", ());
@@ -154,47 +154,17 @@ pub unsafe extern "system" fn keyboard_proc(
                 return CallNextHookEx(None, n_code, w_param, l_param);
             }
 
-            if !is_win && is_down {
+            if !is_win && (is_down || vk == 0x2c && is_up) {
                 if let Some(handle) = GLOBAL_APP_HANDLE.get() {
-                    let key_name = match vk {
-                        0x20 => "Space".to_string(),
-                        0x0D => "Enter".to_string(),
-                        0x09 => "Tab".to_string(),
-                        0x08 => "Backspace".to_string(),
-                        0x2E => "Delete".to_string(),
-                        0x2D => "Insert".to_string(),
-                        0x21 => "PageUp".to_string(),
-                        0x22 => "PageDown".to_string(),
-                        0x23 => "End".to_string(),
-                        0x24 => "Home".to_string(),
-                        0x25 => "Left".to_string(),
-                        0x26 => "Up".to_string(),
-                        0x27 => "Right".to_string(),
-                        0x28 => "Down".to_string(),
-                        0xBB => "Plus".to_string(),
-                        0xBC => "Comma".to_string(),
-                        0xBD => "Minus".to_string(),
-                        0xBE => "Period".to_string(),
-                        0xBF => "/".to_string(),
-                        0xC0 => "`".to_string(),
-                        0xBA => ";".to_string(),
-                        0xDB => "[".to_string(),
-                        0xDC => "\\".to_string(),
-                        0xDD => "]".to_string(),
-                        0xDE => "'".to_string(),
-                        k if k >= 0x70 && k <= 0x87 => format!("F{}", k - 0x6F),
-                        k if (k >= 0x30 && k <= 0x39) || (k >= 0x41 && k <= 0x5A) => {
-                            format!("{}", char::from_u32(k).unwrap())
-                        }
-                        _ => format!("Key_{}", vk),
+                    let Some(key_name) = dzc_platform::shortcut::windows_key_name(vk) else {
+                        return CallNextHookEx(None, n_code, w_param, l_param);
                     };
-
                     let final_hotkey = format!(
                         "{}{}{}{}{}",
                         if ctrl_down { "Ctrl+" } else { "" },
-                        if shift_down { "Shift+" } else { "" },
                         if alt_down { "Alt+" } else { "" },
-                        if win_down { "Win+" } else { "" },
+                        if shift_down { "Shift+" } else { "" },
+                        if win_down { "Super+" } else { "" },
                         key_name
                     );
 

@@ -37,57 +37,151 @@ const ALT: u8 = 2;
 const SHIFT: u8 = 4;
 const SUPER: u8 = 8;
 
+const LETTERS: [&str; 26] = [
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
+    "T", "U", "V", "W", "X", "Y", "Z",
+];
+const DIGITS: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+const FUNCTIONS: [&str; 24] = [
+    "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "F13", "F14", "F15",
+    "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24",
+];
+const KEY_RANGES: &[(&[&str], u32, u32)] = &[
+    (&LETTERS, 0x41, 0x61),
+    (&DIGITS, 0x30, 0x30),
+    (&FUNCTIONS, 0x70, 0xffbe),
+];
+
+// Win32 virtual keys and X11 keysyms for keys that do not form a contiguous range.
+const NAMED_KEYS: &[(&str, u32, u32, &[&str])] = &[
+    ("Space", 0x20, 0x20, &[]),
+    ("Tab", 0x09, 0xff09, &[]),
+    ("Enter", 0x0d, 0xff0d, &["Return"]),
+    ("Escape", 0x1b, 0xff1b, &["Esc"]),
+    ("Backspace", 0x08, 0xff08, &[]),
+    ("Delete", 0x2e, 0xffff, &["Del"]),
+    ("Insert", 0x2d, 0xff63, &["Ins"]),
+    ("Home", 0x24, 0xff50, &[]),
+    ("End", 0x23, 0xff57, &[]),
+    ("PageUp", 0x21, 0xff55, &[]),
+    ("PageDown", 0x22, 0xff56, &[]),
+    ("Left", 0x25, 0xff51, &["ArrowLeft"]),
+    ("Right", 0x27, 0xff53, &["ArrowRight"]),
+    ("Up", 0x26, 0xff52, &["ArrowUp"]),
+    ("Down", 0x28, 0xff54, &["ArrowDown"]),
+    ("Backquote", 0xc0, 0x60, &["`"]),
+    ("Minus", 0xbd, 0x2d, &["-"]),
+    ("Equal", 0xbb, 0x3d, &["=", "Plus"]),
+    ("BracketLeft", 0xdb, 0x5b, &["["]),
+    ("BracketRight", 0xdd, 0x5d, &["]"]),
+    ("Backslash", 0xdc, 0x5c, &["\\"]),
+    ("Semicolon", 0xba, 0x3b, &[";"]),
+    ("Quote", 0xde, 0x27, &["'"]),
+    ("Comma", 0xbc, 0x2c, &[","]),
+    ("Period", 0xbe, 0x2e, &["."]),
+    ("Slash", 0xbf, 0x2f, &["/"]),
+    ("CapsLock", 0x14, 0xffe5, &[]),
+    ("NumLock", 0x90, 0xff7f, &[]),
+    ("ScrollLock", 0x91, 0xff14, &[]),
+    ("PrintScreen", 0x2c, 0xff61, &[]),
+    ("Pause", 0x13, 0xff13, &["PauseBreak"]),
+    ("ContextMenu", 0x5d, 0xff67, &["Apps"]),
+    ("Numpad0", 0x60, 0xffb0, &["Num0"]),
+    ("Numpad1", 0x61, 0xffb1, &["Num1"]),
+    ("Numpad2", 0x62, 0xffb2, &["Num2"]),
+    ("Numpad3", 0x63, 0xffb3, &["Num3"]),
+    ("Numpad4", 0x64, 0xffb4, &["Num4"]),
+    ("Numpad5", 0x65, 0xffb5, &["Num5"]),
+    ("Numpad6", 0x66, 0xffb6, &["Num6"]),
+    ("Numpad7", 0x67, 0xffb7, &["Num7"]),
+    ("Numpad8", 0x68, 0xffb8, &["Num8"]),
+    ("Numpad9", 0x69, 0xffb9, &["Num9"]),
+    (
+        "NumpadAdd",
+        0x6b,
+        0xffab,
+        &["NumAdd", "NumpadPlus", "NumPlus"],
+    ),
+    ("NumpadSubtract", 0x6d, 0xffad, &["NumSub", "NumSubtract"]),
+    ("NumpadMultiply", 0x6a, 0xffaa, &["NumMult", "NumMultiply"]),
+    ("NumpadDivide", 0x6f, 0xffaf, &["NumDiv", "NumDivide"]),
+    ("NumpadDecimal", 0x6e, 0xffae, &["NumDec", "NumDecimal"]),
+    ("NumpadEnter", 0x00, 0xff8d, &["NumEnter"]),
+    ("NumpadEqual", 0x00, 0xffbd, &["NumEqual"]),
+    ("VolumeMute", 0xad, 0x1008ff12, &["AudioVolumeMute"]),
+    ("VolumeDown", 0xae, 0x1008ff11, &["AudioVolumeDown"]),
+    ("VolumeUp", 0xaf, 0x1008ff13, &["AudioVolumeUp"]),
+    ("MediaTrackNext", 0xb0, 0x1008ff17, &["MediaNextTrack"]),
+    (
+        "MediaTrackPrevious",
+        0xb1,
+        0x1008ff16,
+        &["MediaPreviousTrack", "MediaTrackPrev"],
+    ),
+    ("MediaStop", 0xb2, 0x1008ff15, &[]),
+    ("MediaPlayPause", 0xb3, 0x1008ff14, &[]),
+];
+
 fn key(value: &str) -> Option<Key> {
-    const LETTERS: [&str; 26] = [
-        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R",
-        "S", "T", "U", "V", "W", "X", "Y", "Z",
-    ];
-    const DIGITS: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
-    const FUNCTIONS: [&str; 24] = [
-        "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "F13", "F14",
-        "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24",
-    ];
-    let value = value.to_ascii_uppercase();
-    if let Some(index) = LETTERS.iter().position(|entry| *entry == value) {
-        return Some(Key {
-            name: LETTERS[index],
-            windows: 0x41 + index as u32,
-            x11: 0x61 + index as u32,
-        });
+    for &(names, windows, x11) in KEY_RANGES {
+        if let Some(index) = names
+            .iter()
+            .position(|name| name.eq_ignore_ascii_case(value))
+        {
+            return Some(Key {
+                name: names[index],
+                windows: windows + index as u32,
+                x11: x11 + index as u32,
+            });
+        }
     }
-    if let Some(index) = DIGITS.iter().position(|entry| *entry == value) {
-        return Some(Key {
-            name: DIGITS[index],
-            windows: 0x30 + index as u32,
-            x11: 0x30 + index as u32,
-        });
+    NAMED_KEYS
+        .iter()
+        .find_map(|&(name, windows, x11, aliases)| {
+            let matches = name.eq_ignore_ascii_case(value)
+                || aliases
+                    .iter()
+                    .any(|alias| alias.eq_ignore_ascii_case(value));
+            matches.then_some(Key { name, windows, x11 })
+        })
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn native_key_name(code: u32, platform_code: impl Fn(u32, u32) -> u32) -> Option<&'static str> {
+    for &(names, windows, x11) in KEY_RANGES {
+        if let Some(index) = code.checked_sub(platform_code(windows, x11)) {
+            if let Some(name) = names.get(index as usize) {
+                return Some(name);
+            }
+        }
     }
-    if let Some(index) = FUNCTIONS.iter().position(|entry| *entry == value) {
-        return Some(Key {
-            name: FUNCTIONS[index],
-            windows: 0x70 + index as u32,
-            x11: 0xffbe + index as u32,
-        });
+    NAMED_KEYS
+        .iter()
+        .find_map(|&(name, windows, x11, _)| (platform_code(windows, x11) == code).then_some(name))
+}
+
+#[cfg(target_os = "windows")]
+pub fn windows_key_name(code: u32) -> Option<&'static str> {
+    (code != 0).then_some(())?;
+    native_key_name(code, |windows, _| windows)
+}
+
+#[cfg(target_os = "linux")]
+pub fn x11_key_name(symbols: &[u32]) -> Option<&'static str> {
+    let base = *symbols.first()?;
+    if (0x41..=0x5a).contains(&base) {
+        return native_key_name(base + 0x20, |_, x11| x11);
     }
-    let (name, windows, x11) = match value.as_str() {
-        "SPACE" => ("Space", 0x20, 0x20),
-        "TAB" => ("Tab", 0x09, 0xff09),
-        "ENTER" | "RETURN" => ("Enter", 0x0d, 0xff0d),
-        "ESC" | "ESCAPE" => ("Escape", 0x1b, 0xff1b),
-        "BACKSPACE" => ("Backspace", 0x08, 0xff08),
-        "DELETE" | "DEL" => ("Delete", 0x2e, 0xffff),
-        "INSERT" | "INS" => ("Insert", 0x2d, 0xff63),
-        "HOME" => ("Home", 0x24, 0xff50),
-        "END" => ("End", 0x23, 0xff57),
-        "PAGEUP" => ("PageUp", 0x21, 0xff55),
-        "PAGEDOWN" => ("PageDown", 0x22, 0xff56),
-        "LEFT" | "ARROWLEFT" => ("Left", 0x25, 0xff51),
-        "RIGHT" | "ARROWRIGHT" => ("Right", 0x27, 0xff53),
-        "UP" | "ARROWUP" => ("Up", 0x26, 0xff52),
-        "DOWN" | "ARROWDOWN" => ("Down", 0x28, 0xff54),
-        _ => return None,
-    };
-    Some(Key { name, windows, x11 })
+    // An X11 keypad uses the navigation symbol at level one and the number at level two.
+    if let Some(number) = symbols.get(1).filter(|&&key| x11_keypad_number(key)) {
+        return native_key_name(*number, |_, x11| x11);
+    }
+    native_key_name(base, |_, x11| x11)
+}
+
+#[cfg(target_os = "linux")]
+fn x11_keypad_number(keysym: u32) -> bool {
+    keysym == 0xffae || (0xffb0..=0xffb9).contains(&keysym)
 }
 
 fn parse(value: &str) -> PlatformResult<Chord> {
@@ -421,6 +515,50 @@ mod tests {
             "Ctrl+🧪",
         ] {
             assert!(normalize_shortcut(value).is_err(), "{value:?}");
+        }
+    }
+    #[test]
+    fn extended_keys_round_trip_through_native_names() {
+        for chord in [
+            "Ctrl+Semicolon",
+            "Alt+Numpad5",
+            "Shift+NumpadAdd",
+            "Ctrl+Pause",
+            "Ctrl+CapsLock",
+            "Ctrl+NumLock",
+            "Ctrl+ContextMenu",
+            "Ctrl+PrintScreen",
+            "Alt+MediaTrackNext",
+        ] {
+            assert_eq!(normalize_shortcut(chord).unwrap(), chord);
+        }
+        for (raw, expected) in [
+            ("Ctrl+;", "Ctrl+Semicolon"),
+            ("Win+NumDec", "Super+NumpadDecimal"),
+            ("Ctrl+1", "Ctrl+1"),
+            ("Alt+NumEnter", "Alt+NumpadEnter"),
+            ("Shift+Plus", "Shift+Equal"),
+        ] {
+            assert_eq!(normalize_shortcut(raw).unwrap(), expected);
+        }
+        #[cfg(target_os = "windows")]
+        for (code, expected) in [
+            (0x61, "Numpad1"),
+            (0x31, "1"),
+            (0xbb, "Equal"),
+            (0x5d, "ContextMenu"),
+        ] {
+            assert_eq!(windows_key_name(code), Some(expected));
+        }
+        #[cfg(target_os = "linux")]
+        for (symbols, expected) in [
+            (&[0xff9c, 0xffb1][..], "Numpad1"),
+            (&[0x31, 0x21], "1"),
+            (&[0x3d, 0x2b], "Equal"),
+            (&[0xff7f, 0], "NumLock"),
+            (&[0xff67, 0], "ContextMenu"),
+        ] {
+            assert_eq!(x11_key_name(symbols), Some(expected));
         }
     }
     #[test]

@@ -112,6 +112,7 @@ func (n *nativeMain) recordNativeShortcut(session, lifetime context.Context, sta
 		n.update(session, func() {
 			if n.shortcut == form && form.open && lifetime.Err() == nil {
 				form.listening, form.focus = true, true
+				n.installShortcutInput()
 			}
 		})
 		chord = n.waitForNativeShortcut(lifetime, form.captured)
@@ -226,7 +227,7 @@ func (n *nativeMain) drawRecordedShortcut(c *ui.Context, form *nativeShortcutFor
 	field := n.mainKit().HotkeyBinding(c, status, "", status, true, false).FillWidth()
 	field.HandleInput(func(event ui.InputEvent) bool {
 		switch {
-		case event.Kind == ui.InputKeyDown && event.Key == ui.KeyEscape:
+		case event.Kind == ui.InputKeyDown && event.Key == ui.KeyEscape && event.Mods == 0:
 			n.cancelShortcut()
 			return true
 		case event.Kind == ui.InputKeyDown:
@@ -283,12 +284,20 @@ func nativeShortcutChord(key ui.Key, mods ui.Modifiers) string {
 			ui.KeyEnter: "Enter", ui.KeyBackspace: "Backspace", ui.KeyTab: "Tab", ui.KeySpace: "Space",
 			ui.KeyDelete: "Delete", ui.KeyInsert: "Insert", ui.KeyHome: "Home", ui.KeyEnd: "End",
 			ui.KeyPageUp: "PageUp", ui.KeyPageDown: "PageDown", ui.KeyLeft: "Left", ui.KeyRight: "Right",
-			ui.KeyUp: "Up", ui.KeyDown: "Down",
+			ui.KeyUp: "Up", ui.KeyDown: "Down", ui.KeyEscape: "Escape",
+			ui.KeyBackquote: "Backquote", ui.KeyMinus: "Minus", ui.KeyEqual: "Equal",
+			ui.KeyBracketLeft: "BracketLeft", ui.KeyBracketRight: "BracketRight", ui.KeyBackslash: "Backslash",
+			ui.KeySemicolon: "Semicolon", ui.KeyQuote: "Quote", ui.KeyComma: "Comma", ui.KeyPeriod: "Period",
+			ui.KeySlash: "Slash", ui.KeyContextMenu: "ContextMenu",
 		}[key]
 	}
-	if name == "" {
+	if name == "" || (name == "Escape" && mods == 0) {
 		return ""
 	}
+	return shortcutChord(name, mods)
+}
+
+func shortcutChord(name string, mods ui.Modifiers) string {
 	var keys []string
 	for _, modifier := range []struct {
 		code ui.Modifiers

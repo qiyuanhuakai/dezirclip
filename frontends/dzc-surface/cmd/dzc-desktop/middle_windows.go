@@ -14,7 +14,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-type mouseMessage struct {
+type windowMessage struct {
 	Window         uintptr
 	Message        uint32
 	WParam, LParam uintptr
@@ -76,7 +76,7 @@ func registerMiddleShortcut(pressed func()) error {
 		defer runtime.UnlockOSThread()
 		defer close(registration.done)
 		registration.thread = windows.GetCurrentThreadId()
-		var message mouseMessage
+		var message windowMessage
 		mouseUser32.NewProc("PeekMessageW").Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0, 0)
 		module, _, err := windows.NewLazySystemDLL("kernel32.dll").NewProc("GetModuleHandleW").Call(0)
 		if module == 0 {

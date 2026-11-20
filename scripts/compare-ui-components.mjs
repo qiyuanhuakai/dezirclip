@@ -19,7 +19,7 @@ const presets = JSON.parse(await readFile(resolve(root, "packages/ui-presets/bui
 const cases = {
   "settings-section-card": { states: ["default", "expanded", "wide"], text: "General settings" },
   "settings-choices": { states: ["default"], text: "Update channel" },
-  "hotkey-list": { states: ["default", "multiple", "win-v"], text: "Global hotkey" },
+  "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
   "emoji-favorites": { states: ["default"], text: "Add emoji" },
   "settings-data": { states: ["default"], text: "Data storage path" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
@@ -196,11 +196,13 @@ try {
             }
             if (fixture === "hotkey-list") {
               const buttons = await page.getByRole("button", { name: /^Delete / }).count();
-              const expected = state === "multiple" ? 2 : state === "win-v" ? 1 : 0;
+              const expected = state === "extended" ? 3 : state === "multiple" ? 2 : state === "win-v" ? 1 : 0;
               if (buttons !== expected) throw Error("Incorrect shortcut removal controls");
-              const modifier = state === "win-v" ? "Win" : "Super";
-              if (await page.locator(".hotkey-list").getByText(modifier, { exact: true }).count() !== 1) {
-                throw Error("Incorrect platform modifier on shortcut keycap");
+              const keycaps = state === "extended" ? ["1", "Numpad1", "Semicolon"] : [state === "win-v" ? "Win" : "Super"];
+              for (const keycap of keycaps) {
+                if (await page.locator(".hotkey-list").getByText(keycap, { exact: true }).count() !== 1) {
+                  throw Error("Missing shortcut keycap: " + keycap);
+                }
               }
               if (state === "win-v" && await page.getByRole("button", { name: "Delete Win+V", exact: true }).count()) {
                 throw Error("The system-controlled Win+V binding can be removed");

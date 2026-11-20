@@ -43,7 +43,7 @@ pub(super) fn run(
             }
         }
         // F12 is reserved for the debugger by the native API contract.
-        if chord.key.windows == 0x7b {
+        if chord.key.windows == 0x7b || chord.key.windows == 0 {
             return Err(unsupported(UnsupportedReason::UnsupportedRepresentation));
         }
         RegisterHotKey(None, 1, modifiers, chord.key.windows)

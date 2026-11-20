@@ -1,3 +1,4 @@
+import { isSuperShortcutModifier } from "./shared/lib/shortcutKeys";
 import { useEffect, useMemo, useRef, useCallback, useState } from "react";
 import { invoke } from "./shared/lib/desktopInvoke";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -326,7 +327,7 @@ const App = () => {
           return;
         }
 
-        if (!isEditable && item.toUpperCase().includes('WIN') && matchesHotkey(event, item, { ignoreWin: true })) {
+        if (!isEditable && item.split("+").slice(0, -1).some(isSuperShortcutModifier) && matchesHotkey(event, item, { ignoreWin: true })) {
           event.preventDefault();
           invoke("toggle_window_cmd").catch(console.error);
           return;

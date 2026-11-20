@@ -1,6 +1,7 @@
 package uikit
 
 import (
+	"math"
 	"runtime"
 	"strings"
 	"time"
@@ -109,7 +110,7 @@ func (k Kit) HotkeyListWithOptions(c *ui.Context, options HotkeyListOptions) {
 			k.hotkeyCaps(c, ui.Row(c), "", options.Placeholder, false)
 		}
 		for _, value := range options.Values {
-			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Row(c).MaxWidthPercent(100).Shrink(0).AlignItems(ui.Center).Gap(8).Children(func() {
 				k.hotkeyCaps(c, ui.Row(c).Wrap(), value, "", false)
 				if len(options.Values) > 1 && options.OnRemove != nil &&
 					(options.CanRemove == nil || options.CanRemove(value)) &&
@@ -165,11 +166,21 @@ func (k Kit) hotkeyCaps(c *ui.Context, field ui.Element, value, placeholder stri
 	field.Gap(group.ColumnGap).AlignItems(ui.Center)
 	paint(field, group).Margin(group.Margin[:]...).Children(func() {
 		for _, chord := range strings.Split(value, "+") {
-			width := cap.Size * 2.2
+			minimum := cap.Size * 2.2
 			if chord == "" {
-				chord, width = placeholder, cap.Size*8
+				chord, minimum = placeholder, cap.Size*8
 			}
-			keycap := ui.Box(c).Height(cap.Height).MinWidth(width).Center().PassThrough()
+			if cap.Uppercase {
+				chord = strings.ToUpper(chord)
+			}
+			labelWidth, _ := c.MeasureText(0, ui.Span{Text: chord, Font: cap.Font, Size: cap.Size,
+				Weight: cap.Weight, LetterSpacing: cap.LetterSpacing})
+			border := 2 * cap.BorderWidth
+			if cap.BorderWidths != nil {
+				border = cap.BorderWidths[1] + cap.BorderWidths[3]
+			}
+			width := float32(math.Ceil(float64(max(minimum, labelWidth+border+cap.Padding[1]+cap.Padding[3]))))
+			keycap := ui.Box(c).Size(width, cap.Height).Shrink(0).Center().PassThrough()
 			paint(keycap, k.animatePaint(keycap, cap)).Margin(cap.Margin[:]...).
 				Children(func() { text(c, chord, cap).SingleLine().PassThrough() })
 		}

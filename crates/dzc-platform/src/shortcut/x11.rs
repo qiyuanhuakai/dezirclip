@@ -174,8 +174,12 @@ impl Mapping {
             .enumerate()
             .find_map(|(index, row)| {
                 let code = self.first.checked_add(u8::try_from(index).ok()?)?;
-                (row.first() == Some(&chord.key.x11) && !self.modifiers.contains(&code))
-                    .then_some(code)
+                let keysym = chord.key.x11;
+                let keypad_number = x11_keypad_number(keysym);
+                let matches =
+                    row.first() == Some(&keysym) || (keypad_number && row.get(1) == Some(&keysym));
+                let lock_key = matches!(keysym, 0xffe5 | 0xff7f | 0xff14);
+                (matches && (lock_key || !self.modifiers.contains(&code))).then_some(code)
             })
             .ok_or_else(|| unsupported(UnsupportedReason::UnsupportedRepresentation))?;
         let mut ignored = 0;
@@ -414,7 +418,9 @@ mod tests {
                 .chunks(mapping.width)
                 .enumerate()
                 .find_map(|(index, row)| {
-                    (row.first() == Some(&symbol)).then_some(mapping.first + index as u8)
+                    (row.first() == Some(&symbol)
+                        || (x11_keypad_number(symbol) && row.get(1) == Some(&symbol)))
+                    .then_some(mapping.first + index as u8)
                 })
                 .unwrap()
         };
@@ -500,6 +506,40 @@ mod tests {
         release();
         next.unregister().unwrap();
         assert!(!second.capability().active);
-        println!("actual X11 GrabKey conflict, native press/repeat/release, unregister and reacquisition passed");
+        for (key, chord, other) in [
+            (0xffb1, "Ctrl+Numpad1", Some(0x31)),
+            (0x3b, "Ctrl+Semicolon", None),
+            (0xff7f, "Ctrl+NumLock", Some(0xffbe)),
+            (0xff13, "Ctrl+Pause", None),
+        ] {
+            let (tx, rx) = mpsc::channel();
+            let mut registration = provider
+                .register(
+                    &Shortcut {
+                        id: chord.into(),
+                        accelerator: chord.into(),
+                    },
+                    Box::new(move || {
+                        tx.send(()).unwrap();
+                    }),
+                )
+                .unwrap();
+            inject(KEY_PRESS_EVENT, control);
+            if let Some(other) = other {
+                inject(KEY_PRESS_EVENT, lookup(other));
+                inject(KEY_RELEASE_EVENT, lookup(other));
+                assert!(
+                    rx.recv_timeout(Duration::from_millis(80)).is_err(),
+                    "{chord} reacted to a different key"
+                );
+            }
+            inject(KEY_PRESS_EVENT, lookup(key));
+            inject(KEY_RELEASE_EVENT, lookup(key));
+            inject(KEY_RELEASE_EVENT, control);
+            rx.recv_timeout(Duration::from_secs(2))
+                .unwrap_or_else(|error| panic!("{chord}: {error}"));
+            registration.unregister().unwrap();
+        }
+        println!("actual X11 shortcuts, including keypad, punctuation, Num Lock and Pause, passed");
     }
 }

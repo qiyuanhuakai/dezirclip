@@ -1,7 +1,9 @@
 use crate::app_state::SettingsState;
 use crate::error::{AppError, AppResult};
 use crate::global_state::HOTKEY_STRING;
-use std::sync::atomic::Ordering;
+use dzc_core::ports::{Shortcut as PlatformShortcut, ShortcutProvider, ShortcutRegistration};
+use dzc_platform::shortcut::{normalize_shortcut, NativeShortcutProvider};
+use std::sync::{atomic::Ordering, Mutex};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
@@ -13,15 +15,86 @@ pub(crate) fn parse_hotkey_list(raw: &str) -> Vec<String> {
         .collect()
 }
 
+// These keys have no mapping (or an incorrect mapping) in the plugin.
+fn native_shortcut(canonical: &str) -> bool {
+    let key = canonical.rsplit('+').next().unwrap_or_default();
+    key == "ContextMenu"
+        || cfg!(target_os = "linux")
+            && matches!(
+                key,
+                "CapsLock" | "NumLock" | "NumpadEnter" | "NumpadEqual" | "MediaPlayPause"
+            )
+}
+
+fn unavailable_on_windows(canonical: &str) -> bool {
+    cfg!(target_os = "windows")
+        && matches!(
+            canonical.rsplit('+').next(),
+            Some("F12" | "NumpadEnter" | "NumpadEqual")
+        )
+}
+
+static NATIVE_SHORTCUTS: Mutex<Vec<Box<dyn ShortcutRegistration>>> = Mutex::new(Vec::new());
+
+fn register_native(
+    canonical: &str,
+    pressed: impl FnMut() + Send + 'static,
+) -> AppResult<Box<dyn ShortcutRegistration>> {
+    static PROVIDER: std::sync::OnceLock<NativeShortcutProvider> = std::sync::OnceLock::new();
+    PROVIDER
+        .get_or_init(NativeShortcutProvider::default)
+        .register(
+            &PlatformShortcut {
+                id: canonical.to_owned(),
+                accelerator: canonical.to_owned(),
+            },
+            Box::new(pressed),
+        )
+        .map_err(|error| AppError::Validation(format!("Shortcut unavailable: {error:?}")))
+}
+
+pub(crate) fn desktop_shortcut(raw: &str) -> Option<Shortcut> {
+    match normalize_shortcut(raw) {
+        Ok(canonical) if native_shortcut(&canonical) || unavailable_on_windows(&canonical) => None,
+        Ok(canonical) => canonical.parse().ok(),
+        Err(_) => raw.replace("Win", "Super").parse().ok(),
+    }
+}
+
 fn register_shortcut_if_valid(app: &AppHandle, raw_hotkey: &str) {
-    if dzc_platform::runtime::is_native_wayland() { return; }
+    if dzc_platform::runtime::is_native_wayland() {
+        return;
+    }
     if raw_hotkey.is_empty()
         || raw_hotkey.eq_ignore_ascii_case("MouseMiddle")
         || raw_hotkey.eq_ignore_ascii_case("MButton")
     {
         return;
     }
-    if let Ok(shortcut) = raw_hotkey.replace("Win", "Super").parse::<Shortcut>() {
+    if let Ok(canonical) = normalize_shortcut(raw_hotkey) {
+        if native_shortcut(&canonical) {
+            let app = app.clone();
+            let dispatched = canonical.clone();
+            match register_native(&canonical, move || {
+                let dispatch_app = app.clone();
+                let chord = dispatched.clone();
+                let _ = app.run_on_main_thread(move || {
+                    crate::app::setup::dispatch_global_shortcut(&dispatch_app, |raw| {
+                        normalize_shortcut(raw).is_ok_and(|candidate| candidate == chord)
+                    });
+                });
+            }) {
+                Ok(registration) => NATIVE_SHORTCUTS.lock().unwrap().push(registration),
+                Err(error) => crate::warn!(
+                    "[global-shortcut] Failed to register '{}': {:?}",
+                    canonical,
+                    error
+                ),
+            }
+            return;
+        }
+    }
+    if let Some(shortcut) = desktop_shortcut(raw_hotkey) {
         match app.global_shortcut().register(shortcut.clone()) {
             Ok(_) => crate::info!("[global-shortcut] Registered: {}", raw_hotkey),
             Err(e) => crate::warn!(
@@ -36,7 +109,9 @@ fn register_shortcut_if_valid(app: &AppHandle, raw_hotkey: &str) {
 }
 
 pub fn sync_hotkeys_from_settings(app: &AppHandle) -> AppResult<()> {
-    if dzc_platform::runtime::is_native_wayland() { return Ok(()); }
+    if dzc_platform::runtime::is_native_wayland() {
+        return Ok(());
+    }
     let settings = app
         .try_state::<SettingsState>()
         .ok_or_else(|| AppError::Internal("SettingsState 不可用".to_string()))?;
@@ -55,6 +130,7 @@ pub fn sync_hotkeys_from_settings(app: &AppHandle) -> AppResult<()> {
     }
 
     let _ = app.global_shortcut().unregister_all();
+    NATIVE_SHORTCUTS.lock().unwrap().clear();
     for item in parse_hotkey_list(&main_hotkey) {
         register_shortcut_if_valid(app, &item);
     }
@@ -100,10 +176,13 @@ pub fn test_hotkey_available(app_handle: AppHandle, hotkey: String) -> AppResult
         return Ok(true);
     }
 
-    let normalized = hotkey.replace("Win", "Super");
-    let shortcut = normalized
-        .parse::<Shortcut>()
-        .map_err(|_| AppError::Validation("快捷键格式无效".to_string()))?;
+    if let Ok(canonical) = normalize_shortcut(&hotkey) {
+        if native_shortcut(&canonical) {
+            return register_native(&canonical, || {}).map(|_| true);
+        }
+    }
+    let shortcut = desktop_shortcut(&hotkey)
+        .ok_or_else(|| AppError::Validation("快捷键格式无效或不受当前系统支持".to_string()))?;
 
     match app_handle.global_shortcut().register(shortcut.clone()) {
         Ok(_) => {

@@ -73,8 +73,9 @@ export function SettingsChoicesFixture() {
   </div>;
 }
 
-export function HotkeyListFixture({ multiple, winV }: { multiple: boolean; winV: boolean }) {
-  const [values, setValues] = useState(multiple ? ["Super+V", "Ctrl+Shift+V"] : ["Super+V"]);
+export function HotkeyListFixture({ multiple, winV, extended }: { multiple: boolean; winV: boolean; extended: boolean }) {
+  const [values, setValues] = useState(extended ? ["Ctrl+1", "Ctrl+Numpad1", "Alt+Semicolon"]
+    : multiple ? ["Super+V", "Ctrl+Shift+V"] : ["Super+V"]);
   return <HotkeyListLayout>
     <HotkeyBinding label="Global hotkey" value="" placeholder="+ Global hotkey" recordingLabel="Press a shortcut"
       recording={false} busy={false} disabled={false} onClick={undefined} onKeyDown={undefined}

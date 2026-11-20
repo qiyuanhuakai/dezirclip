@@ -1,3 +1,4 @@
+import { normalizeShortcutForCompare } from "../lib/shortcutKeys";
 import { useCallback, useEffect, useRef } from "react";
 import { invoke } from "../lib/desktopInvoke";
 import { useHotkeyRecording } from "./useHotkeyRecording";
@@ -104,28 +105,15 @@ export const useHotkeyConfig = ({
     [t]
   );
 
-  const normalizeHotkeyForCompare = useCallback(
-    (value: string): string =>
-      value
-        .split("+")
-        .map((item) => {
-          const part = item.trim().toUpperCase();
-          return ["WIN", "WINDOWS", "META", "CMD", "COMMAND"].includes(part) ? "SUPER" : part;
-        })
-        .filter((item) => !!item)
-        .join("+"),
-    []
-  );
-
   const checkHotkeyConflict = useCallback(
     (newHotkey: string, mode: HotkeyMode): boolean => {
       if (!newHotkey) return false;
-      const normalizedNew = normalizeHotkeyForCompare(newHotkey);
+      const normalizedNew = normalizeShortcutForCompare(newHotkey);
       const mainHotkeys = parseMainHotkeys(hotkey);
-      const normalizedMain = new Set(mainHotkeys.map(normalizeHotkeyForCompare));
-      const normalizedSequential = normalizeHotkeyForCompare(sequentialHotkey);
-      const normalizedRich = normalizeHotkeyForCompare(richPasteHotkey);
-      const normalizedSearch = normalizeHotkeyForCompare(searchHotkey);
+      const normalizedMain = new Set(mainHotkeys.map(normalizeShortcutForCompare));
+      const normalizedSequential = normalizeShortcutForCompare(sequentialHotkey);
+      const normalizedRich = normalizeShortcutForCompare(richPasteHotkey);
+      const normalizedSearch = normalizeShortcutForCompare(searchHotkey);
 
       const conflicts = [];
       if (mode !== "main" && normalizedMain.has(normalizedNew)) conflicts.push(t("global_hotkey"));
@@ -146,7 +134,7 @@ export const useHotkeyConfig = ({
       }
       return false;
     },
-    [hotkey, normalizeHotkeyForCompare, parseMainHotkeys, sequentialMode, sequentialHotkey, richPasteHotkey, searchHotkey, t, pushToast]
+    [hotkey, parseMainHotkeys, sequentialMode, sequentialHotkey, richPasteHotkey, searchHotkey, t, pushToast]
   );
 
   const updateHotkey = useCallback(
@@ -196,8 +184,8 @@ export const useHotkeyConfig = ({
       }
 
       const existing = parseMainHotkeys(confirmedHotkeys.current);
-      const normalizedValue = normalizeHotkeyForCompare(value);
-      const hasExisting = existing.some((item) => normalizeHotkeyForCompare(item) === normalizedValue);
+      const normalizedValue = normalizeShortcutForCompare(value);
+      const hasExisting = existing.some((item) => normalizeShortcutForCompare(item) === normalizedValue);
       if (hasExisting) {
         setIsRecording(false);
         return true;
@@ -207,19 +195,19 @@ export const useHotkeyConfig = ({
       setIsRecording(false);
       return true;
     },
-    [checkHotkeyConflict, hotkey, normalizeHotkeyForCompare, parseMainHotkeys, persistMainHotkeys, pushToast, resolveHotkeyErrorMessage, setIsRecording]
+    [checkHotkeyConflict, hotkey, parseMainHotkeys, persistMainHotkeys, pushToast, resolveHotkeyErrorMessage, setIsRecording]
   );
 
   const removeMainHotkey = useCallback(
     async (targetHotkey: string) => {
       const existing = parseMainHotkeys(confirmedHotkeys.current);
-      const normalizedTarget = normalizeHotkeyForCompare(targetHotkey);
-      const next = existing.filter((item) => normalizeHotkeyForCompare(item) !== normalizedTarget);
+      const normalizedTarget = normalizeShortcutForCompare(targetHotkey);
+      const next = existing.filter((item) => normalizeShortcutForCompare(item) !== normalizedTarget);
       if (next.length === existing.length) return false;
       await persistMainHotkeys(next);
       return true;
     },
-    [hotkey, normalizeHotkeyForCompare, parseMainHotkeys, persistMainHotkeys]
+    [hotkey, parseMainHotkeys, persistMainHotkeys]
   );
 
   const updateSequentialHotkey = useCallback(

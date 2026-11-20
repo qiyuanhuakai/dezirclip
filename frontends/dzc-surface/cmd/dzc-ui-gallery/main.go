@@ -366,6 +366,9 @@ func run() error {
 	if g.state == "multiple" || g.state == "win-v" {
 		g.bindings = append(g.bindings, "Ctrl+Shift+V")
 	}
+	if g.state == "extended" {
+		g.bindings = []string{"Ctrl+1", "Ctrl+Numpad1", "Alt+Semicolon"}
+	}
 	g.settingEnabled = g.state == "enabled"
 	g.emojiFavorites = g.state == "favorites"
 	g.historySelected = -1
