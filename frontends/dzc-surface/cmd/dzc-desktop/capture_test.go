@@ -60,9 +60,12 @@ func TestCaptureReplyBelongsToRequest(t *testing.T) {
 	}
 }
 
-func TestAppearanceDoesNotRejectForegroundAction(t *testing.T) {
-	for _, pair := range [][2]string{{"appearance", "reset-settings"}, {"reset-settings", "appearance"}} {
-		t.Run(pair[0], func(t *testing.T) {
+func TestResidentBackgroundRequestDoesNotRejectForegroundAction(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"appearance", "reset-settings"}, {"reset-settings", "appearance"},
+		{"update-check", "install-update"}, {"install-update", "update-check"},
+	} {
+		t.Run(pair[0]+"/"+pair[1], func(t *testing.T) {
 			input, output := io.Pipe()
 			defer input.Close()
 			defer output.Close()
@@ -106,5 +109,47 @@ func TestAppearanceDoesNotRejectForegroundAction(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestResidentUpdateReplyRestoresCachedResult(t *testing.T) {
+	input, output := io.Pipe()
+	defer input.Close()
+	defer output.Close()
+	bridge := residentBridge{output: output}
+	var response residentReply
+	done := make(chan error, 1)
+	go func() {
+		request := residentRequest{Operation: "update-check", UpdateChannel: "preview"}
+		done <- bridge.exchange(t.Context(), request, time.Second, &response)
+	}()
+	var request residentRequest
+	if err := json.NewDecoder(input).Decode(&request); err != nil {
+		t.Fatal(err)
+	}
+	if request.UpdateChannel != "preview" || request.UpdateCheck != nil {
+		t.Fatalf("incorrect update read request: %+v", request)
+	}
+	now := time.Now()
+	want := &nativeUpdateCheck{
+		Result:  nativeUpdateResult{Channel: "preview", CurrentVersion: "1.0.1-beta.1", ChannelVersion: "1.0.1", Status: "available"},
+		Checked: now,
+	}
+	payload, err := json.Marshal(residentReply{ID: request.ID, Success: true, UpdateCheck: want})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge.accept(string(payload))
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	got := response.UpdateCheck
+	if !got.validFor("preview", "1.0.1-beta.1", now) || got.Result.ChannelVersion != "1.0.1" {
+		t.Fatalf("valid update result did not survive the bridge: %+v", got)
+	}
+	if got.validFor("stable", "1.0.1-beta.1", now) || got.validFor("preview", "1.0.1", now) ||
+		got.validFor("preview", "1.0.1-beta.1", now.Add(nativeUpdateInterval)) ||
+		got.validFor("preview", "1.0.1-beta.1", now.Add(-time.Second)) {
+		t.Fatal("restored a check outside its version, channel or time window")
 	}
 }

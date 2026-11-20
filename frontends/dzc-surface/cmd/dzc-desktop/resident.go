@@ -77,6 +77,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 	var update *mygoInstallRequest
 	mygo.App.WhenReady(func() {
 		mygo.App.OnWindowAllClosed(func() {})
+		updateChecks := make(map[string]*nativeUpdateCheck)
 		mainVisible := false
 		refreshMemory := installMemoryPolicy(func() bool { return mainVisible })
 		panel := quickpaste.NewDesktopPanel(owner, placeWindowAtCursor)
@@ -264,6 +265,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 			}
 			go func() {
 				scanner := bufio.NewScanner(events)
+				scanner.Buffer(nil, residentFrameLimit)
 				for scanner.Scan() {
 					line := scanner.Text()
 					if value, found := strings.CutPrefix(line, "tray-show:"); found {
@@ -291,6 +293,23 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 									return
 								}
 								switch request.Operation {
+								case "update-check":
+									channel := request.UpdateChannel
+									if channel != "stable" && channel != "preview" {
+										reply(fmt.Errorf("update_invalid_endpoint"))
+										break
+									}
+									if check := request.UpdateCheck; check != nil {
+										if check.Result.Channel != channel || check.Checked.IsZero() {
+											reply(fmt.Errorf("update_invalid_manifest"))
+											break
+										}
+										updateChecks[channel] = check
+										reply(nil)
+										break
+									}
+									response := residentReply{ID: request.ID, Success: true, UpdateCheck: updateChecks[channel]}
+									_ = json.NewEncoder(input).Encode(response)
 								case "install-update":
 									if request.Update == nil || pasteBusy || closing || relaunch {
 										reply(fmt.Errorf("update_busy"))

@@ -496,6 +496,7 @@ func run() error {
 		go func() {
 			var trayState trayToggleState
 			commands := bufio.NewScanner(os.Stdin)
+			commands.Buffer(nil, residentFrameLimit)
 			for commands.Scan() {
 				command := commands.Text()
 				if len(command) > 0 && command[0] == '{' {

@@ -41,6 +41,13 @@ type nativeUpdateResult struct {
 	installTarget, installSupport string
 }
 
+type nativeUpdateCheck struct {
+	Result  nativeUpdateResult
+	Checked time.Time
+}
+
+const nativeUpdateInterval = 24 * time.Hour
+
 func (u *nativeUpdater) pending() bool {
 	return u.timer != nil || u.cancel != nil
 }
@@ -71,6 +78,7 @@ func (n *nativeMain) configureUpdater(saved string, automatic bool) {
 	if channel != u.channel {
 		u.result, u.err, u.checked, u.notesOpen = nativeUpdateResult{}, nil, time.Time{}, false
 		u.result.installTarget, u.result.installSupport = mygoUpdateTarget()
+		n.restoreUpdateCheck(channel, u.generation)
 	}
 	u.channel, u.automatic = channel, automatic
 	if automatic {
@@ -84,6 +92,36 @@ func (n *nativeMain) configureUpdater(saved string, automatic bool) {
 			})
 		})
 	}
+}
+
+func (n *nativeMain) restoreUpdateCheck(channel string, generation uint64) {
+	if n.window == nil || n.shell == nil {
+		return
+	}
+	go func() {
+		var response residentReply
+		request := residentRequest{Operation: "update-check", UpdateChannel: channel}
+		if n.shell.resident.exchange(context.Background(), request, 4*time.Second, &response) != nil {
+			return
+		}
+		check := response.UpdateCheck
+		if !check.validFor(channel, buildinfo.Version, time.Now()) {
+			return
+		}
+		n.window.Update(func() {
+			u := &n.updater
+			if n.window.IsDestroyed() || u.generation != generation || !u.checked.IsZero() {
+				return
+			}
+			check.Result.installTarget, check.Result.installSupport = u.result.installTarget, u.result.installSupport
+			u.result, u.checked = check.Result, check.Checked
+		})
+	}()
+}
+
+func (check *nativeUpdateCheck) validFor(channel, version string, now time.Time) bool {
+	return check != nil && check.Result.Channel == channel && check.Result.CurrentVersion == version &&
+		!check.Checked.After(now) && now.Sub(check.Checked) < nativeUpdateInterval
 }
 
 func (n *nativeMain) stopUpdater() {
@@ -112,6 +150,12 @@ func (n *nativeMain) checkForUpdates(automatic bool) {
 	go func() {
 		defer cancel()
 		result, attempted, err := n.fetchUpdate(ctx, channel, automatic)
+		checked := time.Now()
+		if attempted && err == nil {
+			request := residentRequest{Operation: "update-check", UpdateChannel: channel,
+				UpdateCheck: &nativeUpdateCheck{Result: result, Checked: checked}}
+			_ = n.shell.resident.send(ctx, request, 4*time.Second)
+		}
 		n.window.Update(func() {
 			if n.window.IsDestroyed() || n.updater.generation != generation {
 				return
@@ -120,7 +164,7 @@ func (n *nativeMain) checkForUpdates(automatic bool) {
 			if err != nil {
 				u.err = err
 			} else if attempted {
-				u.result, u.err, u.checked, u.notesOpen = result, nil, time.Now(), false
+				u.result, u.err, u.checked, u.notesOpen = result, nil, checked, false
 			}
 		})
 	}()
@@ -186,7 +230,7 @@ func recordNativeUpdateAttempt(database, channel string, automatic bool, now tim
 		switch {
 		case err == nil && !info.Mode().IsRegular():
 			return false, errUpdateSchedule
-		case err == nil && now.Sub(info.ModTime()) < 24*time.Hour:
+		case err == nil && now.Sub(info.ModTime()) < nativeUpdateInterval:
 			return false, nil
 		case err != nil && !os.IsNotExist(err):
 			return false, err
