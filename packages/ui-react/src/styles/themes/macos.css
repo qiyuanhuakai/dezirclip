@@ -173,6 +173,15 @@ body.theme-macos:not(.hide-app-border) {
   border-radius: 8px;
 }
 
+.theme-macos .search-bar__history-item,
+.theme-macos .search-history__item {
+  color: var(--dc-text-primary);
+}
+
+.theme-macos .search-history__empty {
+  color: var(--dc-text-muted);
+}
+
 .theme-macos select.search-input {
   -webkit-appearance: none;
   appearance: none;
