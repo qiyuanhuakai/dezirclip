@@ -25,6 +25,7 @@ const figures = [
   ["emoji-favorites", "default", 125],
   ["settings-data", "default", 170],
   ["settings-remove", "default", 115],
+  ["privacy-rules", "default", 390],
   ["tag-toolbar", "default", 85],
   ["tag-search", "default", 180],
   ["app-header", "pinned", 185],

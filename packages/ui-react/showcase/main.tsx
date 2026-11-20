@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import "../src/styles/components/privacy.css";
 import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import { AppHeader, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardMeta, HotkeyBinding, MatchHighlight,
@@ -8,7 +9,7 @@ import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { AttachmentFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
 import { ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture,
-  SettingsDataFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
+  PrivacyRulesFixture, SettingsDataFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
 import "../src/base.css";
 import "../src/styles/components/index.css";
 import "./showcase.css";
@@ -127,6 +128,7 @@ function Showcase() {
     "emoji-favorites": <EmojiFavoritesFixture />,
     "settings-data": <SettingsDataFixture />,
     "settings-remove": <SettingsRemoveFixture />,
+    "privacy-rules": <PrivacyRulesFixture />,
     "tag-toolbar": <TagToolbarFixture />,
     "tag-search": <TagSearchFixture />,
     "attachment-preview": <AttachmentFixture state={state} />,

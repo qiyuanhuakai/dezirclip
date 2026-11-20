@@ -67,6 +67,7 @@ type nativeMain struct {
 	menuTransformsLoading bool
 	resetOpen             bool
 	privacyKindsOpen      bool
+	privacyCustomOpen     bool
 	privacyRules          nativePrivacyRules
 	privacyDialog         *nativePrivacyDialog
 	shortcut              *nativeShortcutForm
@@ -168,6 +169,7 @@ func (n *nativeMain) reloadViewSettings() {
 		// selections and revealed contents belong to the retired session.
 		n.tagLibrary = &nativeTagLibrary{
 			selected: tags.selected, query: tags.query, sort: tags.sort, nameQuery: tags.nameQuery,
+			railCollapsed: tags.railCollapsed,
 		}
 	}
 }

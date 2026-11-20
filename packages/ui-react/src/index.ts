@@ -32,3 +32,4 @@ export { SettingsSlider, type SettingsSliderProps } from "./components/SettingsS
 export { ScrollToTopButton } from "./components/ScrollToTopButton";
 export { HotkeyBinding, HotkeyList, HotkeyListLayout, type HotkeyBindingProps, type HotkeyListProps } from "./components/HotkeyBinding";
 export { HotkeyRemoveButton, SettingsRemoveButton } from "./components/RemoveButton";
+export { PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField } from "./components/PrivacySettings";

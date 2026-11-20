@@ -69,6 +69,26 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 	case "tagSearchClear":
 		style = DefaultWidgetStyle("tagToolbarButton", palette)
 		style.Width, style.Height = 23, 23
+	case "privacyRulesHeading":
+		style.Padding[0], style.Padding[2] = 8, 8
+	case "privacyRuleCard":
+		style.Padding[0], style.Padding[2] = 12, 12
+		style.Border = border
+		style.BorderWidths = &[4]float32{1, 0, 0, 0}
+	case "privacyRuleAction", "privacyRuleCancel":
+		style = DefaultWidgetStyle("settingsDataAction", palette)
+		style.Height, style.Padding = 32, [4]float32{6, 12, 6, 12}
+	case "privacyRuleTitle", "privacyRulesHeadingLabel":
+		style.Weight = palette.EmphasisWeight
+	case "privacyRuleSource", "privacyRuleScope":
+		style.Text, style.Size = muted, 12
+	case "privacySourceExclusion", "privacySourceExclusionFocus":
+		base := "textField"
+		if widget == "privacySourceExclusionFocus" {
+			base = "textFieldFocus"
+		}
+		style = DefaultWidgetStyle(base, palette)
+		style.Height, style.Padding = 88, [4]float32{8, 8, 8, 8}
 	case "tagToolbar":
 		style.Height, style.ColumnGap = 30, 2
 		style.Padding = [4]float32{0, 7, 0, 3}

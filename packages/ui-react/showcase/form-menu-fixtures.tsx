@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { ContextMenuItem, ContextMenuSurface, EmojiAddTile, EmojiFavoriteTile, HotkeyBinding, HotkeyList, HotkeyListLayout, NumberField,
-  SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsRemoveButton, SettingsSectionCard, TagPickerTrigger, TagSearchField, TagToolbar, TextArea, TextField } from "../src";
+  PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField, SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsRemoveButton, SettingsSectionCard, TagPickerTrigger, TagSearchField, TagToolbar, TextArea, TextField } from "../src";
 import { Ellipsis, Eye, ListChecks, ListCollapse, Plus, Tag } from "lucide-react";
 import { settingsPaneColumns } from "../src/components/SettingsSectionCard";
 
@@ -142,5 +142,32 @@ export function TagSearchFixture() {
     <TagSearchField variant="picker" aria-label="Find tags" placeholder="Find tags" />
     <TagSearchField variant="contents" aria-label="Search tagged entries" value={query}
       onChange={event => setQuery(event.target.value)} onClear={() => setQuery("")} clearLabel="Clear search" />
+  </div>;
+}
+
+export function PrivacyRulesFixture() {
+  const [confirming, setConfirming] = useState("scope");
+  return <div className="privacy-rule-manager" style={{ width: 490, "--settings-columns": 2 } as CSSProperties}>
+    <PrivacyRulesHeading label="Privacy rules" count={2} />
+    <PrivacyRuleGrid>
+      <PrivacyRuleCard title="Allowed content" source="Example Editor" scope="Applies only to matching content."
+        identifier={<span>ID a13b4108</span>} created={<span>Created 2026-08-18 10:24</span>}
+        removeLabel="Revoke exception" onRequestRemove={() => setConfirming("exact")}
+        confirming={confirming === "exact" ? {
+          label: "Remove privacy rule", prompt: "Revoke this exception?", cancelLabel: "Cancel",
+          onCancel: () => setConfirming(""), onConfirm: () => setConfirming(""),
+        } : undefined} />
+      <PrivacyRuleCard title="Ignore source" source="Example Browser" scope="Applies to this application's future entries."
+        identifier={<span>ID b27c5419</span>} created={<span>Created 2026-08-18 11:35</span>}
+        removeLabel="Remove rule" onRequestRemove={() => setConfirming("scope")}
+        confirming={confirming === "scope" ? {
+          label: "Remove privacy rule", prompt: "Remove the rule for Example Browser?", cancelLabel: "Cancel",
+          onCancel: () => setConfirming(""), onConfirm: () => setConfirming(""),
+        } : undefined} />
+    </PrivacyRuleGrid>
+    <div className="setting-item column source-exclusion-setting">
+      <span className="item-label">Excluded applications</span>
+      <SourceExclusionField aria-label="Excluded applications" defaultValue={"Example Editor\nExample Browser"} readOnly />
+    </div>
   </div>;
 }

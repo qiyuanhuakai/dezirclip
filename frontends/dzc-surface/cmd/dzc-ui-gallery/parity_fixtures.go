@@ -90,6 +90,27 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			{Icon: "collapse", Label: "Compact view"}, {Icon: "reveal", Label: "Reveal entries", Active: true},
 			{Icon: "manage", Label: "Manage"}, {Icon: "add", Label: "Add entry"}, {Icon: "more", Label: "Tag actions"},
 		}, nil)
+	case "privacy-rules":
+		ui.Column(c).Width(490).Children(func() {
+			count := 2
+			kit.PrivacyRulesHeading(c, "Privacy rules", &count)
+			kit.PrivacyRuleGrid(c, 2, func() {
+				kit.PrivacyRuleCard(c, uikit.PrivacyRuleCardOptions{
+					Title: "Allowed content", Source: "Example Editor", Scope: "Applies only to matching content.",
+					Identifier: "ID a13b4108", Created: "Created 2026-08-18 10:24", RemoveLabel: "Revoke exception",
+				})
+				kit.PrivacyRuleCard(c, uikit.PrivacyRuleCardOptions{
+					Title: "Ignore source", Source: "Example Browser", Scope: "Applies to this application's future entries.",
+					Identifier: "ID b27c5419", Created: "Created 2026-08-18 11:35", RemoveLabel: "Remove rule",
+					Confirming: true, ConfirmLabel: "Remove privacy rule", Prompt: "Remove the rule for Example Browser?", CancelLabel: "Cancel",
+				})
+			})
+			ui.Column(c).FillWidth().Gap(6).Padding(8, 0).Children(func() {
+				kit.SettingsLabel(c, "Excluded applications")
+				value := "Example Editor\nExample Browser"
+				kit.SourceExclusionField(c, &value, "Excluded applications", "").ReadOnly(true)
+			})
+		})
 	case "settings-remove":
 		ui.Column(c).Width(330).Gap(8).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {

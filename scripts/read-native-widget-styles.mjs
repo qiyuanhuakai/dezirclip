@@ -33,6 +33,16 @@ const samples = [
     settingsRemove: [".settings-remove:not(.settings-remove-icon)"],
     settingsRemoveIcon: [".settings-remove-icon"],
   }],
+  ["privacy-rules", "default", {
+    privacyRulesHeading: [".privacy-rule-manager .settings-section-title"],
+    privacyRulesHeadingLabel: [".privacy-rule-manager .settings-section-title .item-label"],
+    privacyRuleAction: [".privacy-rule-card > .settings-action"],
+    privacyRuleCancel: [".privacy-rule-confirm .settings-action:not(.settings-remove)"],
+    privacyRuleCard: [".privacy-rule-card"],
+    privacyRuleTitle: [".privacy-rule-heading .item-label"],
+    privacyRuleSource: [".privacy-rule-source"], privacyRuleScope: [".privacy-rule-scope"],
+    privacySourceExclusion: [".source-exclusion-input"],
+  }],
   ["tag-toolbar", "default", {
     tagToolbar: [".tag-manager-toolbar"], tagToolbarButton: [".tag-manager-toolbar .btn-icon:not(.active)"],
     tagToolbarButtonActive: [".tag-manager-toolbar .btn-icon.active"],

@@ -23,6 +23,7 @@ const cases = {
   "emoji-favorites": { states: ["default"], text: "Add emoji" },
   "settings-data": { states: ["default"], text: "Data storage path" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
+  "privacy-rules": { states: ["default"], text: "Privacy rules" },
   "tag-toolbar": { states: ["default"], text: "Work" },
   "tag-search": { states: ["default"], text: "Work" },
   "text-fields": { states: ["default"], text: "Idle timeout" },
@@ -246,6 +247,15 @@ try {
             const nativeImage = await readFile(target);
             const nativeText = JSON.parse(stdout).join(" ");
             let webText = await page.locator("body").innerText();
+            if (fixture === "privacy-rules") {
+              const confirmation = page.getByRole("group", { name: "Remove privacy rule", exact: true });
+              const excluded = page.getByRole("textbox", { name: "Excluded applications", exact: true });
+              if (await confirmation.getByRole("button", { name: "Remove rule", exact: true }).count() !== 1
+                || await page.getByRole("button", { name: "Revoke exception", exact: true }).count() !== 1
+                || await excluded.inputValue() !== "Example Editor\nExample Browser") {
+                throw Error("Privacy confirmation or source exclusions are missing");
+              }
+            }
             if (fixture === "tag-search") {
               const field = page.getByRole("textbox", { name: "Search tagged entries", exact: true });
               if (await field.inputValue() !== "Release notes"

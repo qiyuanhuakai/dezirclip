@@ -14,6 +14,8 @@ import (
 type nativePrivacyRules struct {
 	started, loading, failed bool
 	rules                    []protocol.PolicyRuleValue
+	pendingDelete            string
+	actionFailed             bool
 }
 
 type nativePrivacyDialog struct {
@@ -91,11 +93,7 @@ func (n *nativeMain) showPrivacyRuleManager() {
 }
 
 func (n *nativeMain) privacyDialogView(c *ui.Context, kit uikit.Kit, dialog *nativePrivacyDialog) {
-	title := n.text("privacy_feedback_title")
-	if dialog.params.RuleId != nil {
-		title = n.text("privacy_rule_delete_title")
-	}
-	kit.Dialog(c, &dialog.open, title, "", n.mutating, func() {
+	kit.Dialog(c, &dialog.open, n.text("privacy_feedback_title"), "", n.mutating, func() {
 		_, height := c.Size()
 		ui.Scroll(c).FillWidth().MaxHeight(max(72, height-146)).Children(func() {
 			ui.Column(c).FillWidth().Gap(6).Children(func() {
@@ -139,7 +137,7 @@ func (n *nativeMain) closePrivacyDialog() {
 
 func (n *nativeMain) commitPrivacyDialog(dialog *nativePrivacyDialog) {
 	if n.session == nil || n.privacyDialog != dialog || n.mutating || dialog.loading || dialog.failed ||
-		(dialog.params.RuleId == nil && (dialog.params.Id == nil || dialog.params.Action == nil)) {
+		dialog.params.Id == nil || dialog.params.Action == nil {
 		return
 	}
 	state, params := n.history.state, dialog.params
@@ -154,12 +152,7 @@ func (n *nativeMain) commitPrivacyDialog(dialog *nativePrivacyDialog) {
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 8*time.Second)
 		defer cancel()
-		var err error
-		if params.RuleId != nil {
-			_, err = n.library.RemovePolicyRule(ctx, *params.RuleId, params.ExpectedEpoch)
-		} else {
-			_, err = n.library.PolicyFeedback(ctx, params)
-		}
+		_, err := n.library.PolicyFeedback(ctx, params)
 		n.update(session, func() {
 			n.prepare(n.resume)
 			if err != nil {
@@ -189,28 +182,47 @@ func (n *nativeMain) loadPrivacyRules() {
 }
 
 func (n *nativeMain) drawPrivacyRules(c *ui.Context) {
-	ui.Text(c, n.text("privacy_rules_title")).FontWeight(600)
-	if !n.privacyRules.started {
+	kit := n.mainKit()
+	rules := &n.privacyRules
+	if !rules.started {
 		n.loadPrivacyRules()
 	}
+	var count *int
+	if rules.started && !rules.loading && !rules.failed {
+		total := len(rules.rules)
+		count = &total
+	}
+	kit.PrivacyRulesHeading(c, n.text("privacy_rules_title"), count)
 	switch {
-	case !n.privacyRules.started || n.privacyRules.loading:
+	case !rules.started || rules.loading:
 		ui.Text(c, n.text("privacy_rules_loading")).TextColor(c.Theme().TextMuted).Wrap()
-	case n.privacyRules.failed:
+	case rules.failed:
 		ui.Text(c, n.text("privacy_rules_load_failed")).TextColor(c.Theme().Danger).Wrap()
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: n.mutating}).Clicked() {
+		if kit.SettingsDataAction(c, n.text("privacy_retry"), "", n.mutating).Clicked() {
 			n.loadPrivacyRules()
 		}
-	case len(n.privacyRules.rules) == 0:
+	case len(rules.rules) == 0:
 		ui.Text(c, n.text("privacy_rules_empty")).TextColor(c.Theme().TextMuted).Wrap()
 	default:
-		for _, rule := range n.privacyRules.rules {
-			n.drawPrivacyRule(c, rule)
+		width, _ := c.Size()
+		columns := 1
+		if width >= 1000 {
+			columns = 3
+		} else if width >= 700 {
+			columns = 2
 		}
+		kit.PrivacyRuleGrid(c, columns, func() {
+			for _, rule := range rules.rules {
+				n.drawPrivacyRule(c, kit, rule)
+			}
+		})
+	}
+	if rules.actionFailed {
+		ui.Text(c, n.text("privacy_rules_action_failed")).TextColor(c.Theme().Danger).Wrap()
 	}
 }
 
-func (n *nativeMain) drawPrivacyRule(c *ui.Context, rule protocol.PolicyRuleValue) {
+func (n *nativeMain) drawPrivacyRule(c *ui.Context, kit uikit.Kit, rule protocol.PolicyRuleValue) {
 	var name, scope string
 	switch rule.Kind {
 	case "exact_exception":
@@ -226,28 +238,45 @@ func (n *nativeMain) drawPrivacyRule(c *ui.Context, rule protocol.PolicyRuleValu
 	if rule.SourceApp != nil {
 		source = n.privacySource(*rule.SourceApp)
 	}
-	ui.Column(c).FillWidth().Gap(5).Padding(8).Radius(c.Theme().Radius).
-		Border(1, c.Theme().Border).Children(func() {
-		ui.Text(c, name).FontWeight(600).Wrap()
-		ui.Text(c, source).Wrap()
-		ui.Text(c, scope).TextColor(c.Theme().TextMuted).Wrap()
-		stamp := time.UnixMilli(rule.CreatedAtMs).Local().Format("2006-01-02 15:04")
-		ui.Text(c, n.text("privacy_rule_identifier")+" "+rule.Id[:min(8, len(rule.Id))]+"     "+
-			n.text("privacy_rule_created")+" "+stamp).TextColor(c.Theme().TextMuted).Wrap()
-		label, prompt := n.text("privacy_rule_remove"), n.text("privacy_rule_delete_source_confirm")
-		if rule.Kind == "exact_exception" {
-			label, prompt = n.text("privacy_rule_revoke_exception"), n.text("privacy_rule_delete_exact_confirm")
-		}
-		if n.mainKit().SettingsRemoveButton(c, label, false, n.mutating || n.privacyDialog != nil).Clicked() {
-			state := n.history.state
-			n.privacyDialog = &nativePrivacyDialog{
-				open: true, prompt: strings.ReplaceAll(prompt, "{source}", source),
-				params: protocol.DesktopPolicyParams{
-					ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, RuleId: &rule.Id,
-				},
-			}
-		}
+	remove, prompt := n.text("privacy_rule_remove"), n.text("privacy_rule_delete_source_confirm")
+	if rule.Kind == "exact_exception" {
+		remove, prompt = n.text("privacy_rule_revoke_exception"), n.text("privacy_rule_delete_exact_confirm")
+	}
+	stamp := time.UnixMilli(rule.CreatedAtMs).Local().Format("2006-01-02 15:04")
+	kit.PrivacyRuleCard(c, uikit.PrivacyRuleCardOptions{
+		Title: name, Source: source, Scope: scope,
+		Identifier:  n.text("privacy_rule_identifier") + " " + rule.Id[:min(8, len(rule.Id))],
+		Created:     n.text("privacy_rule_created") + " " + stamp,
+		RemoveLabel: remove, CancelLabel: n.text("cancel"), ConfirmLabel: n.text("privacy_rule_delete_title"),
+		Prompt: strings.ReplaceAll(prompt, "{source}", source), Confirming: n.privacyRules.pendingDelete == rule.Id,
+		Disabled:        n.mutating || n.privacyDialog != nil,
+		OnRequestRemove: func() { n.privacyRules.pendingDelete, n.privacyRules.actionFailed = rule.Id, false; c.Invalidate() },
+		OnCancel:        func() { n.privacyRules.pendingDelete, n.privacyRules.actionFailed = "", false; c.Invalidate() },
+		OnConfirm:       func() { n.removePrivacyRule(rule.Id) },
 	})
+}
+
+func (n *nativeMain) removePrivacyRule(id string) {
+	state := n.history.state
+	if n.session == nil || state.ServiceInstanceId == "" || n.mutating || n.privacyRules.pendingDelete != id {
+		return
+	}
+	n.mutating, n.privacyRules.actionFailed = true, false
+	session := n.session
+	go func() {
+		ctx, cancel := context.WithTimeout(session, 8*time.Second)
+		defer cancel()
+		_, err := n.library.RemovePolicyRule(ctx, id, state.PrivacyEpoch)
+		n.update(session, func() {
+			n.mutating = false
+			if err != nil {
+				n.privacyRules.actionFailed = true
+				return
+			}
+			n.reloadViewSettings()
+			n.notice = n.text("privacy_feedback_done")
+		})
+	}()
 }
 
 func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
@@ -296,12 +325,24 @@ func (n *nativeMain) privacyTextSetting(c *ui.Context, kit uikit.Kit, key, label
 	}
 	disabled := n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating
 	row.Children(func() {
-		kit.SettingsLabel(c, label).Wrap()
-		kit.TextArea(c, &draft.value, label).FillWidth().Height(88).Placeholder(placeholder).ReadOnly(disabled).Tooltip(hint)
-		if draft.value != saved {
-			if kit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: disabled}).Clicked() {
+		sourceExclusion := key == "app.excluded_source_apps"
+		input := func() {
+			if sourceExclusion {
+				kit.SourceExclusionField(c, &draft.value, label, placeholder).ReadOnly(disabled).Tooltip(hint)
+			} else {
+				kit.TextArea(c, &draft.value, label).FillWidth().Height(80).Placeholder(placeholder).ReadOnly(disabled).Tooltip(hint)
+			}
+			if draft.value != saved && kit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: disabled}).Clicked() {
 				n.saveSetting(key, draft.value)
 			}
+		}
+		if sourceExclusion {
+			kit.SettingsLabel(c, label).Wrap()
+			input()
+		} else {
+			kit.SettingsDisclosure(c, label, &n.privacyCustomOpen, func() {
+				ui.Column(c).FillWidth().Padding(0, 0, 0, 30).Gap(5).Children(input)
+			})
 		}
 	})
 }

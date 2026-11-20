@@ -1,3 +1,5 @@
+import { TextArea } from "@deziro/ui-react/components/TextField";
+import { SourceExclusionField } from "@deziro/ui-react/components/PrivacySettings";
 import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
@@ -98,8 +100,7 @@ export default function PrivacySettingsGroup(props: PrivacySettingsGroupProps) {
                             hintKey="excluded_source_apps"
                             hint={<>{props.t("excluded_source_apps_hint")}<br />{props.t("privacy_rules_legacy_exclusions_hint")}</>}
                         />
-                        <TextArea
-                            className="search-input source-exclusion-input"
+                        <SourceExclusionField
                             aria-label={props.t('excluded_source_apps')}
                             placeholder={props.t('excluded_source_apps_placeholder')}
                             value={excludedSourceAppsDraft}
@@ -212,4 +213,3 @@ export default function PrivacySettingsGroup(props: PrivacySettingsGroupProps) {
         </div>}
     </div>;
 }
-import { TextArea } from "@deziro/ui-react/components/TextField";

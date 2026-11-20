@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { SettingsRemoveButton } from "@deziro/ui-react/components/RemoveButton";
+import { PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading } from "@deziro/ui-react/components/PrivacySettings";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { usePrivacySession } from "../../../../shared/hooks/usePrivacySession";
 import { beginPrivacyAccess, invokePrivacyBound, refreshPrivacyState } from "../../../../shared/lib/privacySession";
@@ -62,40 +62,27 @@ export default function PrivacyRulesManager({ t }: { t: (key: string) => string 
   };
 
   return <section id="privacy-rule-manager" className="privacy-rule-manager" tabIndex={-1} aria-labelledby="privacy-rules-heading">
-    <div className="setting-item settings-section-title">
-      <div className="item-label-group"><span id="privacy-rules-heading" className="item-label">{t("privacy_rules_title")}</span></div>
-      {load === "ready" && <span className="settings-inline-note">{rules.length}</span>}
-    </div>
+    <PrivacyRulesHeading label={t("privacy_rules_title")} count={load === "ready" ? rules.length : undefined} id="privacy-rules-heading" />
     {!ready ? <p role="status" className="settings-description">{t("privacy_state_unavailable")}</p>
       : load === "loading" ? <p role="status" className="settings-description">{t("privacy_rules_loading")}</p>
       : load === "failed" ? <p role="alert" className="privacy-action-error">{t("privacy_rules_load_failed")}</p>
       : rules.length === 0 ? <p className="settings-description">{t("privacy_rules_empty")}</p>
-      : <ul className="privacy-rule-grid">{rules.map(rule => {
+      : <PrivacyRuleGrid>{rules.map(rule => {
         const source = rule.source_app || t("privacy_source_unknown");
         const exact = rule.kind === "exact_exception";
         const created = new Date(rule.created_at_ms);
         const validDate = Number.isFinite(created.getTime());
-        return <li key={rule.id} className="privacy-rule-card">
-          <div className="privacy-rule-heading">
-            <span className="item-label">{t(ruleLabels[rule.kind])}</span>
-            <span className="privacy-rule-source">{source}</span>
-          </div>
-          <p className="privacy-rule-scope">{t(ruleScopes[rule.kind])}</p>
-          <div className="privacy-rule-metadata">
-            <span title={rule.id}>{t("privacy_rule_identifier")} {rule.id.slice(0, 8)}</span>
-            <span>{t("privacy_rule_created")} <time dateTime={validDate ? created.toISOString() : undefined}>{validDate ? created.toLocaleString() : "—"}</time></span>
-          </div>
-          {pendingDelete === rule.id ? <div className="privacy-rule-confirm" role="group" aria-label={t("privacy_rule_delete_title")}>
-            <p>{t(exact ? "privacy_rule_delete_exact_confirm" : "privacy_rule_delete_source_confirm").replace("{source}", source)}</p>
-            <div className="setting-btn-group">
-              <button type="button" className="btn-icon settings-action" disabled={busy} onClick={() => setPendingDelete(null)}>{t("cancel")}</button>
-              <SettingsRemoveButton label={t(exact ? "privacy_rule_revoke_exception" : "privacy_rule_remove")}
-                disabled={disabled} onClick={() => { void remove(rule.id); }} />
-            </div>
-          </div> : <button type="button" className="btn-icon settings-action" disabled={disabled}
-            onClick={() => { setPendingDelete(rule.id); setError(false); }}>{t(exact ? "privacy_rule_revoke_exception" : "privacy_rule_remove")}</button>}
-        </li>;
-      })}</ul>}
+        return <PrivacyRuleCard key={rule.id} title={t(ruleLabels[rule.kind])} source={source} scope={t(ruleScopes[rule.kind])}
+          identifier={<span title={rule.id}>{t("privacy_rule_identifier")} {rule.id.slice(0, 8)}</span>}
+          created={<span>{t("privacy_rule_created")} <time dateTime={validDate ? created.toISOString() : undefined}>{validDate ? created.toLocaleString() : "\u2014"}</time></span>}
+          removeLabel={t(exact ? "privacy_rule_revoke_exception" : "privacy_rule_remove")} disabled={disabled}
+          onRequestRemove={() => { setPendingDelete(rule.id); setError(false); }}
+          confirming={pendingDelete === rule.id ? {
+            label: t("privacy_rule_delete_title"),
+            prompt: t(exact ? "privacy_rule_delete_exact_confirm" : "privacy_rule_delete_source_confirm").replace("{source}", source),
+            cancelLabel: t("cancel"), onCancel: () => setPendingDelete(null), onConfirm: () => { void remove(rule.id); },
+          } : undefined} />;
+      })}</PrivacyRuleGrid>}
     {error && <p role="alert" className="privacy-action-error">{t("privacy_rules_action_failed")}</p>}
     {(load === "failed" || error || !ready) && <button type="button" className="btn-icon settings-action" disabled={busy || state.phase === "loading"}
       onClick={() => { setError(false); setAttempt(value => value + 1); void refreshPrivacyState(); }}>{t("privacy_retry")}</button>}
