@@ -4,6 +4,7 @@ import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { SettingsDataPath, SettingsDataAction } from "@deziro/ui-react/components/SettingsData";
+import { BackupActions, BackupChoices, BackupDialog, BackupField, BackupPreview, BackupReplaceConfirmation } from "@deziro/ui-react/components/BackupDialog";
 
 import { invokePrivacyBound, subscribePrivacyInvalidation } from "../../../../shared/lib/privacySession";
 
@@ -19,6 +20,8 @@ interface ExportModalProps {
     onClose: () => void;
 }
 
+const encryptedBackup = (path: string) => /\.(dzc|tiez)$/i.test(path);
+
 interface ImportModalProps {
     t: (key: string) => string;
     onClose: () => void;
@@ -32,15 +35,25 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
     const [passphraseError, setPassphraseError] = useState("");
     const [passphraseMismatchError, setPassphraseMismatchError] = useState("");
     const [exporting, setExporting] = useState(false);
+    const [picking, setPicking] = useState(false);
+    const [failure, setFailure] = useState("");
 
     const handleBrowse = async () => {
-        const path = await save({
-            defaultPath: format === "json" ? "clipboard-export.json" : "clipboard-export.dzc",
-            filters: format === "json"
-                ? [{ name: "JSON", extensions: ["json"] }]
-                : [{ name: "Encrypted Backup", extensions: ["dzc"] }],
-        });
-        if (path) setFilePath(path);
+        setPicking(true);
+        setFailure("");
+        try {
+            const path = await save({
+                defaultPath: format === "json" ? "clipboard-export.json" : "clipboard-export.dzc",
+                filters: format === "json"
+                    ? [{ name: "JSON", extensions: ["json"] }]
+                    : [{ name: "Encrypted Backup", extensions: ["dzc"] }],
+            });
+            if (path) setFilePath(path);
+        } catch {
+            setFailure(t("native_backup_picker_failed"));
+        } finally {
+            setPicking(false);
+        }
     };
 
     const validate = (): boolean => {
@@ -49,7 +62,7 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
         setPassphraseMismatchError("");
 
         if (format === "encrypted") {
-            if (passphrase.length < 12) {
+            if (Array.from(passphrase).length < 12) {
                 setPassphraseError(t("data.export.passphrase_too_short"));
                 valid = false;
             }
@@ -64,6 +77,7 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
     const handleExport = async () => {
         if (!validate() || !filePath) return;
         setExporting(true);
+        setFailure("");
         try {
             await invoke("export_to_file", {
                 path: filePath,
@@ -71,111 +85,52 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
                 passphrase: format === "encrypted" ? passphrase : undefined,
             });
             onClose();
-        } catch (e: unknown) {
-            console.error(e);
+        } catch {
+            setFailure(t("native_backup_export_failed"));
         } finally {
             setExporting(false);
         }
     };
 
-    return (
-        <div className="data-modal-overlay" onClick={onClose}>
-            <div className="data-modal-content" onClick={(e) => e.stopPropagation()}>
-                <div className="data-modal-title">{t("data.export.title")}</div>
-
-                <div className="data-form-group">
-                    <label className="data-label">{t("data.export.choose_format")}</label>
-                    <div className="data-radio-group">
-                        <label className="data-radio-item">
-                            <input
-                                type="radio"
-                                name="export-format"
-                                value="json"
-                                checked={format === "json"}
-                                onChange={() => setFormat("json")}
-                            />
-                            <span>{t("data.export.json")}</span>
-                        </label>
-                        <label className="data-radio-item">
-                            <input
-                                type="radio"
-                                name="export-format"
-                                value="encrypted"
-                                checked={format === "encrypted"}
-                                onChange={() => setFormat("encrypted")}
-                            />
-                            <span>{t("data.export.encrypted")}</span>
-                        </label>
-                    </div>
-                </div>
-
-                {format === "encrypted" && (
-                    <div className="data-form-group">
-                        <label className="data-label">{t("data.export.passphrase_prompt")}</label>
-                        <input
-                            type="password"
-                            className="data-input"
-                            value={passphrase}
-                            onChange={(e) => setPassphrase(e.target.value)}
-                            placeholder="••••••••••••"
-                        />
-                        {passphraseError && (
-                            <span className="data-error">{passphraseError}</span>
-                        )}
-                        <label className="data-label">{t("data.export.confirm_passphrase")}</label>
-                        <input
-                            type="password"
-                            className="data-input"
-                            value={passphraseConfirm}
-                            onChange={(e) => setPassphraseConfirm(e.target.value)}
-                            placeholder="••••••••••••"
-                        />
-                        {passphraseMismatchError && (
-                            <span className="data-error">{passphraseMismatchError}</span>
-                        )}
-                    </div>
-                )}
-
-                <div className="data-form-group">
-                    <label className="data-label">{t("data_path")}</label>
-                    <div className="data-path-row">
-                        <input
-                            type="text"
-                            className="data-input data-input-path"
-                            value={filePath}
-                            readOnly
-                        />
-                        <button
-                            className="btn-icon btn-icon-export-browse"
-                            onClick={handleBrowse}
-                        >
-                            {t("browse_file")}
-                        </button>
-                    </div>
-                </div>
-
-                <div className="data-modal-actions">
-                    <button className="data-btn data-btn-cancel" onClick={onClose}>
-                        {t("cancel")}
-                    </button>
-                    <button
-                        className="data-btn data-btn-primary"
-                        onClick={handleExport}
-                        disabled={exporting || !filePath}
-                    >
-                        {exporting ? t("processing") : t("data.export.title")}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
+    const busy = exporting || picking;
+    const close = () => { if (!busy) onClose(); };
+    return <BackupDialog title={t("data.export.title")} busy={busy} onClose={close}
+        footer={<BackupActions cancel={t("cancel")} submit={t(busy ? "processing" : "data.export.title")}
+            busy={busy} disabled={!filePath} onCancel={close} onSubmit={handleExport} />}>
+        <BackupChoices label={t("data.export.choose_format")} value={format}
+            options={[{ value: "json", label: t("data.export.json") }, { value: "encrypted", label: t("data.export.encrypted") }]}
+            disabled={busy} onChange={next => {
+                setFormat(next);
+                setFilePath("");
+                setPassphrase("");
+                setPassphraseConfirm("");
+                setPassphraseError("");
+                setPassphraseMismatchError("");
+                setFailure("");
+            }} />
+        {format === "encrypted" && <>
+            <BackupField label={t("data.export.passphrase_prompt")} type="password" value={passphrase}
+                onChange={e => setPassphrase(e.target.value)} placeholder="••••••••••••" autoComplete="new-password"
+                disabled={busy} error={passphraseError} />
+            <BackupField label={t("data.export.confirm_passphrase")} type="password" value={passphraseConfirm}
+                onChange={e => setPassphraseConfirm(e.target.value)} placeholder="••••••••••••" autoComplete="new-password"
+                disabled={busy} error={passphraseMismatchError} />
+        </>}
+        <BackupField label={t("data_path")} value={filePath} readOnly title={filePath}
+            browse={t("browse_file")} onBrowse={handleBrowse} disabled={busy} />
+        {failure && <p className="data-error" role="alert">{failure}</p>}
+    </BackupDialog>;
 };
 
 const ImportModal = ({ t, onClose }: ImportModalProps) => {
     const [mode, setMode] = useState<"merge" | "replace">("merge");
+    const [replaceConfirmed, setReplaceConfirmed] = useState(false);
     const [filePath, setFilePath] = useState("");
     const [passphrase, setPassphrase] = useState("");
     const [importing, setImporting] = useState(false);
+    const [picking, setPicking] = useState(false);
+    const [failure, setFailure] = useState("");
+    const [passphraseError, setPassphraseError] = useState("");
     const [previewEntries, setPreviewEntries] = useState<Array<{ content: string }>>([]);
     const [showPreview, setShowPreview] = useState(false);
 
@@ -191,141 +146,78 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
     }, []);
 
     const handleBrowse = async () => {
-        const selected = await open({
-            multiple: false,
-            filters: [{ name: "Backup", extensions: ["json", "dzc", "tiez"] }],
-        });
-        if (selected) {
-            const path = selected as string;
+        setPicking(true);
+        setFailure("");
+        try {
+            const path = await open({ multiple: false, filters: [{ name: "Backup", extensions: ["json", "dzc", "tiez"] }] });
+            if (!path) return;
             const request = ++selection.current;
             setFilePath(path);
+            setReplaceConfirmed(false);
             setPreviewEntries([]);
             setShowPreview(false);
+            setPassphrase("");
+            setPassphraseError("");
 
-            if (path.endsWith(".dzc") || path.endsWith(".tiez")) {
-                setPassphrase("");
-            } else {
+            if (!encryptedBackup(path)) {
                 try {
                     const data = await invokePrivacyBound<Array<{ content: string }>>("preview_backup_file", { path });
                     if (request !== selection.current) return;
                     setPreviewEntries(data);
                     setShowPreview(true);
                 } catch {
-                    if (request !== selection.current) return;
-                    setPreviewEntries([]);
-                    setShowPreview(false);
+                    if (request === selection.current) setFailure(t("native_backup_preview_failed"));
                 }
             }
+        } catch {
+            setFailure(t("native_backup_picker_failed"));
+        } finally {
+            setPicking(false);
         }
     };
 
     const handleImport = async () => {
-        if (!filePath) return;
+        if (!filePath || mode === "replace" && !replaceConfirmed) return;
+        if (encryptedBackup(filePath) && !passphrase) {
+            setPassphraseError(t("native_backup_password_required"));
+            return;
+        }
+        setPassphraseError("");
+        setFailure("");
         setImporting(true);
         try {
             await invoke("import_from_file", {
                 path: filePath,
                 mode,
-                passphrase: filePath.endsWith(".dzc") || filePath.endsWith(".tiez") ? passphrase : undefined,
+                passphrase: encryptedBackup(filePath) ? passphrase : undefined,
             });
             onClose();
-        } catch (e: unknown) {
-            console.error(e);
+        } catch {
+            setFailure(t("native_backup_import_failed"));
         } finally {
             setImporting(false);
         }
     };
 
-    return (
-        <div className="data-modal-overlay" onClick={onClose}>
-            <div className="data-modal-content" onClick={(e) => e.stopPropagation()}>
-                <div className="data-modal-title">{t("data.import.title")}</div>
-
-                <div className="data-form-group">
-                    <label className="data-label">{t("data.import.mode")}</label>
-                    <div className="data-radio-group">
-                        <label className="data-radio-item">
-                            <input
-                                type="radio"
-                                name="import-mode"
-                                value="merge"
-                                checked={mode === "merge"}
-                                onChange={() => setMode("merge")}
-                            />
-                            <span>{t("data.import.merge")}</span>
-                        </label>
-                        <label className="data-radio-item">
-                            <input
-                                type="radio"
-                                name="import-mode"
-                                value="replace"
-                                checked={mode === "replace"}
-                                onChange={() => setMode("replace")}
-                            />
-                            <span>{t("data.import.replace")}</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div className="data-form-group">
-                    <label className="data-label">{t("data_path")}</label>
-                    <div className="data-path-row">
-                        <input
-                            type="text"
-                            className="data-input data-input-path"
-                            value={filePath}
-                            readOnly
-                        />
-                        <button
-                            className="btn-icon btn-icon-export-browse"
-                            onClick={handleBrowse}
-                        >
-                            {t("browse_file")}
-                        </button>
-                    </div>
-                </div>
-
-                {(filePath.endsWith(".dzc") || filePath.endsWith(".tiez")) && (
-                    <div className="data-form-group">
-                        <label className="data-label">{t("data.import.passphrase_prompt")}</label>
-                        <input
-                            type="password"
-                            className="data-input"
-                            value={passphrase}
-                            onChange={(e) => setPassphrase(e.target.value)}
-                            placeholder="••••••••••••"
-                        />
-                    </div>
-                )}
-
-                {showPreview && previewEntries.length > 0 && (
-                    <div className="data-form-group">
-                        <label className="data-label">{t("data.import.preview")}</label>
-                        <div className="data-preview-list">
-                            {previewEntries.map((entry, i) => (
-                                <div key={i} className="data-preview-item">
-                                    {entry.content}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                <div className="data-modal-actions">
-                    <button className="data-btn data-btn-cancel" onClick={onClose}>
-                        {t("cancel")}
-                    </button>
-                    <button
-                        className="data-btn data-btn-primary"
-                        onClick={handleImport}
-                        disabled={importing || !filePath}
-                    >
-                        {importing ? t("processing") : t("data.import.title")}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
+    const busy = picking || importing;
+    const close = () => { if (!busy) onClose(); };
+    return <BackupDialog title={t("data.import.title")} busy={busy} onClose={close}
+        footer={<BackupActions cancel={t("cancel")} submit={t(busy ? "processing" : "data.import.title")}
+            busy={busy} disabled={!filePath || mode === "replace" && !replaceConfirmed} onCancel={close} onSubmit={handleImport} />}>
+        <BackupChoices label={t("data.import.mode")} value={mode}
+            options={[{ value: "merge", label: t("data.import.merge") }, { value: "replace", label: t("data.import.replace") }]}
+            disabled={busy} onChange={next => { setMode(next); setReplaceConfirmed(false); setFailure(""); }} />
+        {mode === "replace" && <BackupReplaceConfirmation label={t("native_backup_replace_confirm")}
+            checked={replaceConfirmed} disabled={busy} onChange={setReplaceConfirmed} />}
+        <BackupField label={t("data_path")} value={filePath} readOnly title={filePath}
+            browse={t("browse_file")} onBrowse={handleBrowse} disabled={busy} />
+        {encryptedBackup(filePath) && <BackupField label={t("data.import.passphrase_prompt")} type="password"
+            value={passphrase} onChange={e => setPassphrase(e.target.value)} placeholder="••••••••••••"
+            autoComplete="off" disabled={busy} error={passphraseError} />}
+        {showPreview && previewEntries.length > 0 &&
+            <BackupPreview label={t("data.import.preview")} entries={previewEntries.map(entry => entry.content)} />}
+        {failure && <p className="data-error" role="alert">{failure}</p>}
+    </BackupDialog>;
 };
 
 const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGroupProps) => {

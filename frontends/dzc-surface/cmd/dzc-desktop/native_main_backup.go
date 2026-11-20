@@ -16,12 +16,13 @@ import (
 )
 
 type nativeBackupDialog struct {
-	open, restoring, replaceConfirmed bool
-	format, mode, path                string
-	passphrase, confirmation          string
-	message                           string
-	preview                           []protocol.BackupPreviewRow
-	previewAllowed                    bool
+	open, restoring, replaceConfirmed  bool
+	format, mode, path                 string
+	passphrase, confirmation           string
+	passphraseError, confirmationError string
+	message                            string
+	preview                            []protocol.BackupPreviewRow
+	previewAllowed                     bool
 }
 
 func (b *nativeBackupDialog) clearPreview() bool {
@@ -74,51 +75,37 @@ func (n *nativeMain) backupView(c *ui.Context, kit uikit.Kit, form *nativeBackup
 	if form.restoring {
 		title = n.text("data.import.title")
 	}
-	kit.Dialog(c, &form.open, title, n.text("common_close"), n.mutating, func() {
-		_, height := c.Size()
-		ui.Scroll(c).FillWidth().MaxHeight(max(72, height-126)).Children(func() {
-			ui.Column(c).FillWidth().Gap(7).Children(func() {
-				if form.restoring {
-					n.backupImportFields(c, kit, form)
-				} else {
-					n.backupExportFields(c, kit, form)
-				}
-				ui.Row(c).Gap(6).Wrap().AlignItems(ui.Center).Children(func() {
-					if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("browse_file"), Disabled: n.mutating}).Clicked() {
-						n.chooseBackupFile(form, title)
-					}
-					if form.path != "" {
-						ui.Text(c, filepath.Base(form.path)).Grow(1).Tooltip(form.path).Wrap().MaxLines(2)
-					}
-				})
-				if len(form.preview) != 0 {
-					ui.Text(c, n.text("data.import.preview")).FontWeight(600)
-					ui.Scroll(c).MaxHeight(110).Children(func() {
-						ui.Column(c).FillWidth().Gap(4).Children(func() {
-							for _, row := range form.preview {
-								ui.Text(c, row.Content).Wrap().MaxLines(3)
-							}
-						})
-					})
-				}
-				if form.message != "" {
-					ui.Text(c, form.message).TextColor(c.Theme().Danger).Wrap()
-				}
-			})
+	kit.BackupDialog(c, &form.open, title, n.mutating, func() {
+		if form.restoring {
+			n.backupImportFields(c, kit, form)
+		} else {
+			n.backupExportFields(c, kit, form)
+		}
+		kit.BackupField(c, uikit.BackupFieldOptions{
+			Label: n.text("data_path"), Value: &form.path, BrowseLabel: n.text("browse_file"),
+			ReadOnly: true, Disabled: n.mutating, OnBrowse: func() { n.chooseBackupFile(form, title) },
 		})
-		ui.Row(c).Gap(6).Wrap().Justify(ui.End).Children(func() {
-			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_cancel"), Disabled: n.mutating}).Clicked() {
-				form.open = false
+		if form.restoring && form.encrypted() {
+			n.backupPassword(c, kit, &form.passphrase, "data.import.passphrase_prompt", form.passphraseError)
+		}
+		if len(form.preview) != 0 {
+			entries := make([]string, len(form.preview))
+			for i, row := range form.preview {
+				entries[i] = row.Content
 			}
-			label := n.text("native_export_backup")
-			if form.restoring {
-				label = n.text("native_import_backup")
-			}
-			disabled := n.mutating || form.path == "" || form.mode == "replace" && !form.replaceConfirmed
-			if n.mainKit().Button(c, uikit.ButtonOptions{Label: label, Disabled: disabled}).Clicked() {
-				n.submitBackup(form)
-			}
-		})
+			kit.BackupPreview(c, n.text("data.import.preview"), entries)
+		}
+		if form.message != "" {
+			kit.BackupError(c, form.message)
+		}
+	}, func() {
+		submit := title
+		if n.mutating {
+			submit = n.text("processing")
+		}
+		disabled := form.path == "" || form.mode == "replace" && !form.replaceConfirmed
+		kit.BackupActions(c, n.text("cancel"), submit, n.mutating, disabled,
+			func() { form.open = false }, func() { n.submitBackup(form) })
 	})
 	if !form.open {
 		n.closeBackup()
@@ -126,48 +113,41 @@ func (n *nativeMain) backupView(c *ui.Context, kit uikit.Kit, form *nativeBackup
 }
 
 func (n *nativeMain) backupImportFields(c *ui.Context, kit uikit.Kit, form *nativeBackupDialog) {
-	mode := n.text("data.import.mode")
-	ui.Text(c, mode).FontWeight(600)
-	if kit.Select(c, &form.mode, mode, []uikit.SelectOption{
+	if kit.BackupChoices(c, n.text("data.import.mode"), &form.mode, []uikit.SelectOption{
 		{Value: "merge", Label: n.text("data.import.merge")},
 		{Value: "replace", Label: n.text("data.import.replace")},
-	}, n.mutating).Changed() {
+	}, n.mutating) {
 		form.replaceConfirmed = false
 		form.message = ""
 	}
 	if form.mode == "replace" {
 		kit.Checkbox(c, &form.replaceConfirmed, n.text("native_backup_replace_confirm")).Disabled(n.mutating)
 	}
-	if form.encrypted() {
-		n.backupPassword(c, &form.passphrase, n.text("data.import.passphrase_prompt"))
-	}
 }
 
 func (n *nativeMain) backupExportFields(c *ui.Context, kit uikit.Kit, form *nativeBackupDialog) {
-	format := n.text("data.export.choose_format")
-	ui.Text(c, format).FontWeight(600)
-	if kit.Select(c, &form.format, format, []uikit.SelectOption{
+	if kit.BackupChoices(c, n.text("data.export.choose_format"), &form.format, []uikit.SelectOption{
 		{Value: "json", Label: n.text("data.export.json")},
 		{Value: "encrypted", Label: n.text("data.export.encrypted")},
-	}, n.mutating).Changed() {
+	}, n.mutating) {
 		form.path, form.message, form.passphrase, form.confirmation = "", "", "", ""
+		form.passphraseError, form.confirmationError = "", ""
 	}
 	if form.encrypted() {
-		n.backupPassword(c, &form.passphrase, n.text("data.export.passphrase_prompt"))
-		n.backupPassword(c, &form.confirmation, n.text("data.export.confirm_passphrase"))
+		n.backupPassword(c, kit, &form.passphrase, "data.export.passphrase_prompt", form.passphraseError)
+		n.backupPassword(c, kit, &form.confirmation, "data.export.confirm_passphrase", form.confirmationError)
 	}
 }
 
-func (n *nativeMain) backupPassword(c *ui.Context, value *string, label string) {
-	ui.Text(c, label).FontWeight(600)
-	n.mainKit().TextField(c, value, label).FillWidth().Password().ReadOnly(n.mutating)
+func (n *nativeMain) backupPassword(c *ui.Context, kit uikit.Kit, value *string, label, message string) {
+	kit.BackupField(c, uikit.BackupFieldOptions{Label: n.text(label), Value: value, Placeholder: "••••••••••••",
+		Error: message, Password: true, Disabled: n.mutating})
 }
 
 func (n *nativeMain) chooseBackupFile(form *nativeBackupDialog, title string) {
 	if n.session == nil || n.backup != form || n.mutating || n.private {
 		return
 	}
-	form.clearPreview()
 	n.mutating, form.message = true, ""
 	session, window, language := n.session, n.window, n.language()
 	restoring, encrypted := form.restoring, form.encrypted()
@@ -190,9 +170,10 @@ func (n *nativeMain) chooseBackupFile(form *nativeBackupDialog, title string) {
 			if path == "" {
 				return
 			}
+			form.clearPreview()
 			form.path, form.replaceConfirmed = path, false
 			if restoring {
-				form.passphrase = ""
+				form.passphrase, form.passphraseError = "", ""
 				if !form.encrypted() {
 					n.previewBackup(form)
 				}
@@ -246,16 +227,18 @@ func (n *nativeMain) submitBackup(form *nativeBackupDialog) {
 		return
 	}
 	var password *string
+	form.passphraseError, form.confirmationError, form.message = "", "", ""
 	if form.encrypted() {
-		switch {
-		case form.restoring && form.passphrase == "":
-			form.message = n.text("native_backup_password_required")
-			return
-		case !form.restoring && utf8.RuneCountInString(form.passphrase) < 12:
-			form.message = n.text("data.export.passphrase_too_short")
-			return
-		case !form.restoring && form.passphrase != form.confirmation:
-			form.message = n.text("data.export.passphrase_mismatch")
+		if form.restoring && form.passphrase == "" {
+			form.passphraseError = n.text("native_backup_password_required")
+		}
+		if !form.restoring && utf8.RuneCountInString(form.passphrase) < 12 {
+			form.passphraseError = n.text("data.export.passphrase_too_short")
+		}
+		if !form.restoring && form.passphrase != form.confirmation {
+			form.confirmationError = n.text("data.export.passphrase_mismatch")
+		}
+		if form.passphraseError != "" || form.confirmationError != "" {
 			return
 		}
 		value := form.passphrase

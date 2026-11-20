@@ -24,6 +24,25 @@ const samples = [
     settingsDataLabel: [".data-path-label"], settingsDataHeader: [".data-path-header"],
     settingsDataBlock: [".showcase-fields .setting-item"], settingsDataActions: [".data-actions-row"],
   }],
+  ["backup-dialog", "default", {
+    backupBackdrop: [".data-modal-overlay", null, "::backdrop"],
+    backupDialog: [".data-modal-content"], backupTitle: [".data-modal-title"],
+    backupField: [".data-form-group"], backupLabel: [".data-label"],
+    backupChoices: [".data-radio-group"], backupChoice: [".data-radio-item"],
+    backupRadio: [".data-radio-item input:not(:checked)"], backupRadioChecked: [".data-radio-item input:checked"],
+    backupInput: [".data-input"], backupPathRow: [".data-path-row"], backupBrowse: [".btn-icon-export-browse"],
+  }],
+  ["backup-dialog", "encrypted", {
+    backupActions: [".data-modal-actions"], backupCancel: [".data-btn-cancel"], backupSubmit: [".data-btn-primary"],
+  }],
+  ["backup-dialog", "import", {
+    backupPreview: [".data-preview-list"], backupPreviewRow: [".data-preview-item"],
+  }],
+  ["backup-dialog", "error", { backupError: [".data-error"] }],
+  ["backup-dialog", "focus-password", { backupInputFocus: [".data-input"] }],
+  ["backup-dialog", "hover-choice", { backupChoiceHover: [".data-radio-item:nth-child(2)"] }],
+  ["backup-dialog", "hover-cancel", { backupCancelHover: [".data-btn-cancel"] }],
+  ["backup-dialog", "hover-submit", { backupSubmitHover: [".data-btn-primary"] }],
   ["hotkey-list", "multiple", {
     hotkeyEditor: [".hotkey-list-editor"],
     hotkeyEditorHeader: [".hotkey-list-editor > .hotkey-recorder", ".hotkey-list-editor .item-label"],
@@ -337,7 +356,8 @@ function readStyles(sample) {
       ...(id.startsWith("historyCard") || id.startsWith("hotkey") || id === "settingsDataActions"
         ? { margin: sides.map(side => number(style["margin" + side])) } : {}),
       width: switchFace ? number(bounds.width) : pseudo && pseudo !== "::backdrop" ? number(style.width) : element.offsetWidth ?? bounds.width,
-      height: switchFace ? number(bounds.height) : pseudo && pseudo !== "::backdrop" ? number(style.height) : element.offsetHeight ?? bounds.height,
+      height: id === "backupPreview" ? number(style.maxHeight)
+        : switchFace ? number(bounds.height) : pseudo && pseudo !== "::backdrop" ? number(style.height) : element.offsetHeight ?? bounds.height,
       marginTop: number(style.marginTop),
       padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft].map(number),
       font: text.fontFamily.split(",").map(family => family.trim().replace(/^['"]|['"]$/g, "")).join(", "),
@@ -401,6 +421,16 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
     }
     if (fixture === "emoji-favorites" && state === "hover") {
       await page.getByRole("button", { name: "Add emoji" }).hover();
+    }
+    if (fixture === "backup-dialog") {
+      await page.locator(".data-modal-overlay[open]").waitFor();
+      if (state === "focus-password") {
+        await page.getByRole("radio", { name: "Encrypted backup" }).check();
+        await page.getByLabel("Encryption passphrase").focus();
+      }
+      if (state === "hover-choice") await page.locator(".data-radio-item").last().hover();
+      if (state === "hover-cancel") await page.locator(".data-btn-cancel").hover();
+      if (state === "hover-submit") await page.locator(".data-btn-primary").hover();
     }
     if (fixture === "text-fields" && state.startsWith("focus")) {
       await page.getByRole("textbox", { name: state === "focus-text" ? "Entry name" : "Idle timeout" }).focus();

@@ -69,6 +69,8 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 				kit.SettingsDataAction(c, "Import data", "import", false)
 			})
 		})
+	case "backup-dialog":
+		g.backupDialogFixture(c, kit)
 	case "search-select":
 		ui.Column(c).Width(385).Gap(12).Children(func() {
 			ui.Column(c).FillWidth().Gap(6).Padding(6, 0).Children(func() {
@@ -141,4 +143,47 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 		return false
 	}
 	return true
+}
+
+func (g *gallery) backupDialogFixture(c *ui.Context, kit uikit.Kit) {
+	open, restoring := true, g.state == "import"
+	title, path := "Export clipboard history", ""
+	if restoring {
+		title, path = "Import clipboard history", "C:/Example/clipboard.json"
+	}
+	if g.state == "encrypted" || g.state == "error" {
+		path = "C:/Example/clipboard.dzc"
+	}
+	kit.BackupDialog(c, &open, title, false, func() {
+		if restoring {
+			mode := "merge"
+			kit.BackupChoices(c, "Import mode", &mode, []uikit.SelectOption{
+				{Value: "merge", Label: "Merge entries"}, {Value: "replace", Label: "Replace existing entries"},
+			}, false)
+		} else {
+			format := "json"
+			if path != "" {
+				format = "encrypted"
+			}
+			kit.BackupChoices(c, "Export format", &format, []uikit.SelectOption{
+				{Value: "json", Label: "JSON (plain text)"}, {Value: "encrypted", Label: "Encrypted backup"},
+			}, false)
+			if format == "encrypted" {
+				var first, second, message string
+				if g.state == "error" {
+					message = "Passphrase must be at least 12 characters"
+				}
+				kit.BackupField(c, uikit.BackupFieldOptions{Label: "Encryption passphrase", Value: &first,
+					Placeholder: "••••••••••••", Password: true, Error: message})
+				kit.BackupField(c, uikit.BackupFieldOptions{Label: "Confirm passphrase", Value: &second,
+					Placeholder: "••••••••••••", Password: true})
+			}
+		}
+		kit.BackupField(c, uikit.BackupFieldOptions{Label: "File path", Value: &path, ReadOnly: true, BrowseLabel: "Browse"})
+		if restoring {
+			kit.BackupPreview(c, "Preview entries", []string{"Release checklist", "Example screenshot", "Draft notes"})
+		}
+	}, func() {
+		kit.BackupActions(c, "Cancel", title, false, path == "", nil, nil)
+	})
 }

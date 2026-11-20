@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import ThemedSelect from "../src/components/ThemedSelect";
-import { ContextMenuItem, ContextMenuSurface, EmojiAddTile, EmojiFavoriteTile, HotkeyBinding, HotkeyList, HotkeyListLayout, NumberField,
+import { BackupActions, BackupChoices, BackupDialog, BackupField, BackupPreview, BackupReplaceConfirmation, ContextMenuItem, ContextMenuSurface, EmojiAddTile, EmojiFavoriteTile, HotkeyBinding, HotkeyList, HotkeyListLayout, NumberField,
   PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField, SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsRemoveButton, SettingsSectionCard, TagPickerTrigger, TagSearchField, TagToolbar, TextArea, TextField } from "../src";
 import { Ellipsis, Eye, ListChecks, ListCollapse, Plus, Tag } from "lucide-react";
 import { settingsPaneColumns } from "../src/components/SettingsSectionCard";
@@ -107,6 +107,38 @@ export function SettingsDataFixture() {
       <SettingsDataAction icon="import">Import data</SettingsDataAction>
     </div>
   </div>;
+}
+
+export function BackupDialogFixture({ state }: { state: string }) {
+  const restoring = state === "import";
+  const encrypted = ["encrypted", "error", "hover-submit", "hover-cancel"].includes(state);
+  const [format, setFormat] = useState(encrypted ? "encrypted" : "json");
+  const [mode, setMode] = useState("merge");
+  const [open, setOpen] = useState(true);
+  const [confirmed, setConfirmed] = useState(false);
+  const title = restoring ? "Import clipboard history" : "Export clipboard history";
+  const path = state === "default" ? "" : restoring ? "C:/Example/clipboard.json" : "C:/Example/clipboard.dzc";
+  const close = () => setOpen(false);
+  return open && <BackupDialog title={title} onClose={close}
+    footer={<BackupActions cancel="Cancel" submit={title} disabled={!path || mode === "replace" && !confirmed}
+      onCancel={close} onSubmit={() => undefined} />}>
+    {restoring
+      ? <BackupChoices label="Import mode" value={mode} onChange={setMode} options={[
+        { value: "merge", label: "Merge entries" }, { value: "replace", label: "Replace existing entries" },
+      ]} />
+      : <BackupChoices label="Export format" value={format} onChange={setFormat} options={[
+        { value: "json", label: "JSON (plain text)" }, { value: "encrypted", label: "Encrypted backup" },
+      ]} />}
+    {mode === "replace" && <BackupReplaceConfirmation label="Confirm replacing clipboard history"
+      checked={confirmed} onChange={setConfirmed} />}
+    {!restoring && format === "encrypted" && <>
+      <BackupField label="Encryption passphrase" type="password" placeholder="••••••••••••"
+        error={state === "error" ? "Passphrase must be at least 12 characters" : undefined} />
+      <BackupField label="Confirm passphrase" type="password" placeholder="••••••••••••" />
+    </>}
+    <BackupField label="File path" value={path} readOnly browse="Browse" />
+    {restoring && <BackupPreview label="Preview entries" entries={["Release checklist", "Example screenshot", "Draft notes"]} />}
+  </BackupDialog>;
 }
 
 export function SettingsRemoveFixture() {

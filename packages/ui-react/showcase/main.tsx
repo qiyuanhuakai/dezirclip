@@ -8,7 +8,7 @@ import { AppHeader, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, 
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { AttachmentFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
-import { ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture,
+import { BackupDialogFixture, ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture,
   PrivacyRulesFixture, SettingsDataFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, SearchSelectFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
 import "../src/base.css";
 import "../src/styles/components/index.css";
@@ -127,6 +127,7 @@ function Showcase() {
     "hotkey-list": <HotkeyListFixture multiple={state === "multiple" || state === "win-v"} extended={state === "extended"} winV={state === "win-v"} />,
     "emoji-favorites": <EmojiFavoritesFixture />,
     "settings-data": <SettingsDataFixture />,
+    "backup-dialog": <BackupDialogFixture state={state} />,
     "settings-remove": <SettingsRemoveFixture />,
     "privacy-rules": <PrivacyRulesFixture />,
     "tag-toolbar": <TagToolbarFixture />,
@@ -203,7 +204,7 @@ function Showcase() {
     return <main className="showcase" data-fixture={fixture}>{examples[fixture as keyof typeof examples]}</main>;
   }
   return <main className="showcase">
-    {Object.entries(examples).filter(([name]) => !["confirm", "tag-dialog", "toast", "progress"].includes(name))
+    {Object.entries(examples).filter(([name]) => !["backup-dialog", "confirm", "tag-dialog", "toast", "progress"].includes(name))
       .map(([name, example]) => <section key={name} data-fixture={name}>{example}</section>)}
   </main>;
 }

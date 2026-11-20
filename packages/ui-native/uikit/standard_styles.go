@@ -28,6 +28,64 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.BorderWidth, style.Radius = 1, float32(palette.Radius)
 	}
 	switch widget {
+	case "backupDialog":
+		surface()
+		style.Width, style.BorderWidth, style.Padding = 500, 4, [4]float32{16, 16, 16, 16}
+	case "backupBackdrop":
+		style.Fill = [4]uint8{0, 0, 0, 128}
+	case "backupTitle":
+		style.Fill, style.Text = accent, [4]uint8{255, 255, 255, 255}
+		style.Weight, style.Size, style.Uppercase, style.MarginBottom = 900, 14, true, 16
+		style.Padding, style.Radius = [4]float32{4, 8, 4, 8}, 4
+	case "backupField":
+		style.MarginBottom = 12
+	case "backupLabel":
+		style.Weight, style.Uppercase, style.MarginBottom = 700, true, 4
+	case "backupChoices":
+		style.ColumnGap = 12
+	case "backupChoice", "backupChoiceHover":
+		surface()
+		style.Padding, style.ColumnGap = [4]float32{6, 10, 6, 10}, 6
+		if widget == "backupChoiceHover" {
+			style.Border, style.Fill = accent, selected
+		}
+	case "backupRadio", "backupRadioChecked":
+		style.Width, style.Height, style.BorderWidth, style.Border = 13, 13, 1, muted
+		if widget == "backupRadioChecked" {
+			style.BorderWidth, style.Border = 4, accent
+		}
+	case "backupInput", "backupInputFocus":
+		surface()
+		style.Height, style.Font, style.Padding = 30, "monospace", [4]float32{6, 8, 6, 8}
+		if widget == "backupInputFocus" {
+			style.Border = accent
+		}
+	case "backupPathRow":
+		style.ColumnGap = 8
+	case "backupBrowse":
+		style = DefaultWidgetStyle("settingsDataAction", palette)
+		style.Size, style.Uppercase = 10, true
+	case "backupError":
+		style.Text = rgba(ui.LightTheme().Danger)
+	case "backupPreview":
+		surface()
+		style.Height = 150
+	case "backupPreviewRow":
+		style.Text, style.Border = muted, border
+		style.Padding = [4]float32{4, 8, 4, 8}
+		style.BorderWidths = &[4]float32{0, 0, 1, 0}
+	case "backupActions":
+		style.MarginTop, style.ColumnGap = 4, 8
+	case "backupCancel", "backupCancelHover", "backupSubmit", "backupSubmitHover":
+		surface()
+		style.Height, style.Weight, style.Uppercase = 34, 700, true
+		style.Padding = [4]float32{8, 16, 8, 16}
+		if strings.HasPrefix(widget, "backupSubmit") {
+			style.Fill, style.Border, style.Text = accent, accent, [4]uint8{255, 255, 255, 255}
+		}
+		if strings.HasSuffix(widget, "Hover") {
+			style.Fill = rgba(styleColor(style.Fill).Mix(ui.Hex(palette.Selected), 0.5))
+		}
 	case "settingsDataBlock":
 		style.RowGap, style.Padding = 6, [4]float32{6, 0, 8, 0}
 	case "settingsRemove", "settingsRemoveIcon":

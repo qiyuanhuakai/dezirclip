@@ -25,6 +25,7 @@ export { SettingsChoices, type SettingsChoice } from "./components/SettingsChoic
 export { SettingsSectionCard, SettingsGroupHeader, settingsPaneColumns } from "./components/SettingsSectionCard";
 export { EmojiAddTile, EmojiFavoriteTile } from "./components/EmojiFavoriteTiles";
 export { SettingsDataPath, SettingsDataAction } from "./components/SettingsData";
+export { BackupDialog, BackupChoices, BackupField, BackupPreview, BackupReplaceConfirmation, BackupActions } from "./components/BackupDialog";
 export { TagPickerTrigger, TagSearchField, TagToolbar } from "./components/TagToolbar";
 export { CharacterSearch, EmojiGrid, EmojiTabs, type EmojiTab } from "./components/EmojiPicker";
 export { SettingsToggle, type SettingsToggleProps } from "./components/SettingsToggle";

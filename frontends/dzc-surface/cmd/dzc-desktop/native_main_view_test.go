@@ -365,11 +365,42 @@ func TestNativeBackupConfirmationFitsMinimumWindow(t *testing.T) {
 		window.backup.preview[i].Content = "This is an ordinary entry from the selected clipboard backup."
 	}
 	tester := ui.NewTester(window.view, 250, 300)
-	for _, label := range []string{"Cancel", "Import"} {
+	for _, label := range []string{"Cancel", "Import Clipboard History"} {
 		bounds, ok := tester.Find(label)
 		if !ok || bounds.H <= 0 || bounds.Y < 0 || bounds.Y+bounds.H > 300 {
 			t.Errorf("%s is outside the minimum-size backup dialog: %+v", label, bounds)
 		}
+	}
+}
+
+func TestNativeBackupFormatsAndReplaceConfirmation(t *testing.T) {
+	window := nativeMain{showSettings: true, settingsSection: "data", preferences: map[string]string{"app.language": "en"}}
+	export := &nativeBackupDialog{open: true, format: "json", path: "fixture.json"}
+	window.backup = export
+	tester := ui.NewTester(window.view, 560, 420)
+	if err := tester.Click("Encrypted backup"); err != nil {
+		t.Fatal(err)
+	}
+	if export.format != "encrypted" || export.path != "" || !tester.HasText("CONFIRM PASSPHRASE") {
+		t.Fatal("selecting a new backup format did not reset the output path and show encryption fields")
+	}
+	if err := tester.Click("Cancel"); err != nil || window.backup != nil {
+		t.Fatalf("cancel did not close the backup dialog: %v", err)
+	}
+	restore := &nativeBackupDialog{open: true, restoring: true, mode: "merge", path: "fixture.json"}
+	window.backup = restore
+	tester.Frame()
+	if err := tester.Click(window.text("data.import.replace")); err != nil {
+		t.Fatal(err)
+	}
+	if restore.mode != "replace" || restore.replaceConfirmed {
+		t.Fatal("selecting replacement must wait for explicit confirmation")
+	}
+	if err := tester.Click(window.text("native_backup_replace_confirm")); err != nil {
+		t.Fatal(err)
+	}
+	if !restore.replaceConfirmed {
+		t.Fatal("checking the replacement confirmation did not update the form")
 	}
 }
 

@@ -22,6 +22,7 @@ const cases = {
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
   "emoji-favorites": { states: ["default"], text: "Add emoji" },
   "settings-data": { states: ["default"], text: "Data storage path" },
+  "backup-dialog": { states: ["default", "encrypted", "error", "import"], text: "File path" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
   "privacy-rules": { states: ["default"], text: "Privacy rules" },
   "tag-toolbar": { states: ["default"], text: "Work" },
@@ -293,6 +294,10 @@ try {
               : comparable(webText, marker) && comparable(nativeText, marker);
             const extra = state === "popup" ? "Light" : state === "expanded" && fixture === "disclosure" ? "Preview channel"
               : fixture === "context-menu" && state !== "default" ? state === "text" ? "Uppercase" : "Ignore this source"
+              : fixture === "backup-dialog" ? {
+                default: "Export format", encrypted: "Confirm passphrase", error: "Passphrase must be at least 12 characters",
+                import: "Release checklist",
+              }[state]
               : state === "southeast" ? "SouthEast" : state === "scrolled" ? "1 scroll" : "";
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
             const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64") });
@@ -308,6 +313,24 @@ try {
               } else {
                 await close.click();
                 await dialog.waitFor({ state: "hidden" });
+              }
+            }
+            if (fixture === "backup-dialog" && state === "import") {
+              const dialog = page.getByRole("dialog", { name: "Import clipboard history" });
+              const submit = dialog.getByRole("button", { name: "Import clipboard history" });
+              try {
+                await page.setViewportSize({ width: 250, height: 300 });
+                await dialog.getByRole("radio", { name: "Replace existing entries" }).check();
+                if (await submit.isEnabled()) throw Error("Replacement was enabled without confirmation");
+                await dialog.getByRole("checkbox", { name: "Confirm replacing clipboard history" }).check();
+                const bounds = await submit.boundingBox();
+                if (!await submit.isEnabled() || !bounds || bounds.y < 0 || bounds.y + bounds.height > 300) {
+                  throw Error("Replacement action was inaccessible at the minimum window size");
+                }
+                await page.keyboard.press("Escape");
+                await dialog.waitFor({ state: "hidden" });
+              } finally {
+                await page.setViewportSize(size);
               }
             }
             const ratio = pixels.inkNative / pixels.inkWeb;
