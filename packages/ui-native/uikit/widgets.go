@@ -266,20 +266,25 @@ func (k Kit) SettingsDisclosure(c *ui.Context, title string, open *bool, content
 
 func (k Kit) SettingHelp(c *ui.Context, label string, open *bool, help string) {
 	ui.Column(c).Gap(4).Children(func() {
-		style := k.style("help")
-		control := ui.ButtonBase(c).Label(label)
-		if control.Hovered() {
-			style = k.style("helpActive")
-		}
-		paint(control.Size(style.Width, style.Height).AlignSelf(ui.Start), style)
-		control.Children(func() { ui.Icon(c, circleHelp).Size(15, 15).TextColor(styleColor(style.Text)) })
-		if control.Clicked() {
-			*open = !*open
-		}
+		k.settingsHelpButton(c, label, open)
 		if *open {
 			text(c, help, k.style("helpText")).LineHeight(1.5)
 		}
 	})
+}
+
+func (k Kit) settingsHelpButton(c *ui.Context, label string, open *bool) {
+	style := k.style("help")
+	control := ui.ButtonBase(c).Label(label).Expanded(*open).FocusRing(true).Shrink(0)
+	if control.Hovered() {
+		style = k.style("helpActive")
+	}
+	paint(control.Size(style.Width, style.Height).AlignSelf(ui.Start).Center(), style).Children(func() {
+		ui.Icon(c, circleHelp).Size(15, 15).TextColor(styleColor(style.Text)).PassThrough()
+	})
+	if control.Clicked() {
+		*open = !*open
+	}
 }
 
 func (k Kit) ProgressToast(c *ui.Context, message string, progress float64, status string, dismiss func()) {

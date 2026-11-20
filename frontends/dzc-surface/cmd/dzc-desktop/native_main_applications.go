@@ -62,15 +62,15 @@ func (n *nativeMain) applicationSetting(c *ui.Context, kind, label string) {
 	if path != "" && catalog.labelsByPath[path] == "" {
 		options = append(options, uikit.SelectOption{Value: path, Label: applicationFilename(path)})
 	}
-	ui.Column(c).AlignSelf(ui.Stretch).MinWidth(0).Gap(8).Children(func() {
-		kit := n.mainKit()
-		kit.SettingsLabel(c, strings.ToUpper(label)).FontSize(11).Opacity(0.8)
+	kit := n.mainKit()
+	kit.SettingsField(c.Key(key), uikit.SettingsFieldOptions{Stacked: true, Last: kind == "url"}).Children(func() {
+		kit.SettingsLabel(c, strings.ToUpper(label)).FontSize(11).Opacity(0.8).Margin(0, 0, 8, 0)
 		_, changed := kit.SearchSelect(c, uikit.SearchSelectOptions{
 			Label: label, Placeholder: n.text("not_configured"), NoMatches: n.text("no_matching_apps"),
 			Value: &selected, Choices: options, Disabled: n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "",
 		})
 		if path != "" {
-			ui.Text(c, applicationFilename(path)).FontSize(10).TextColor(c.Theme().TextMuted).Wrap()
+			ui.Text(c, applicationFilename(path)).FontSize(10).TextColor(c.Theme().TextMuted).Margin(2, 0, 0).Wrap()
 		}
 		if changed {
 			n.saveSetting(key, selected)

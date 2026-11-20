@@ -199,7 +199,8 @@ func (n *nativeMain) idleSettings(c *ui.Context) {
 	const enabled = "app.idle_destroy_enabled"
 	n.booleanSettings(c, nativeBooleanSetting{enabled, n.text("idle_destroy_enabled"), false})
 	if n.settingEnabled(enabled, false) {
-		n.numberSetting(c, "app.idle_destroy_seconds", n.text("idle_destroy_seconds"), defaultIdleSeconds, minIdleSeconds, maxIdleSeconds)
+		n.numberSetting(c, "app.idle_destroy_seconds", n.text("idle_destroy_seconds"), n.text("idle_destroy_seconds_hint"),
+			defaultIdleSeconds, minIdleSeconds, maxIdleSeconds)
 	}
 }
 
@@ -208,7 +209,7 @@ func (n *nativeMain) soundSettings(c *ui.Context) {
 	n.booleanSettings(c, nativeBooleanSetting{enabled, n.text("sound_effects"), false})
 	if n.settingEnabled(enabled, false) {
 		volume := nativeRangeSetting{key: "app.sound_volume", unit: "%", maximum: 100, fallback: 70}
-		n.rangeSetting(c, volume, n.text("sound_volume"), volume.value(n.preferences))
+		n.rangeSetting(c, volume, n.text("sound_volume"), "", volume.value(n.preferences))
 		n.booleanSettings(c, nativeBooleanSetting{"app.sound_paste_enabled", n.text("paste_sound"), true})
 	}
 }
@@ -223,7 +224,7 @@ func (n *nativeMain) clipboardSettings(c *ui.Context, kit uikit.Kit) {
 		nativeBooleanSetting{"app.delete_after_paste", n.text("delete_after_paste", "Delete entries after pasting"), false},
 		nativeBooleanSetting{"app.move_to_top_after_paste", n.text("move_to_top_after_paste", "Move pasted entries to top"), true},
 	)
-	ui.Column(c).Gap(8).Children(func() { n.pasteMethodSetting(c, kit) })
+	n.pasteMethodSetting(c, kit)
 	n.sequentialSettings(c)
 }
 
@@ -296,7 +297,7 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpa
 	n.typographySettings(c)
 	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() { n.backgroundSettings(c) })
 	previewOpacity := opacityPreference(n.preferences["app.preview_opacity"], n.preferences["app.surface_opacity"])
-	n.rangeSetting(c, nativePreviewOpacity, n.text("preview_opacity"), previewOpacity)
+	n.rangeSetting(c, nativePreviewOpacity, n.text("preview_opacity"), n.text("preview_opacity_hint"), previewOpacity)
 	if surfaceOpacity != nil {
 		*surfaceOpacity = n.drawSurfaceOpacity(c, *surfaceOpacity)
 	}
@@ -304,7 +305,7 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpa
 
 func (n *nativeMain) drawSurfaceOpacity(c *ui.Context, displayed int) int {
 	saved := opacityPreference(n.preferences["app.surface_opacity"])
-	live := n.rangeSetting(c, nativeSurfaceOpacity, n.text("surface_opacity", "Surface opacity"), saved)
+	live := n.rangeSetting(c, nativeSurfaceOpacity, n.text("surface_opacity", "Surface opacity"), "", saved)
 	if live != displayed {
 		c.Invalidate()
 	}
@@ -317,14 +318,18 @@ func (n *nativeMain) drawSurfaceOpacity(c *ui.Context, displayed int) int {
 }
 
 func (n *nativeMain) settingChoices(c *ui.Context, kit uikit.Kit, key, label, fallback string, options []uikit.SelectOption) {
-	ui.Column(c).Gap(8).Children(func() {
-		kit.SettingsLabel(c, label)
+	kit.SettingsField(c.Key(key), uikit.SettingsFieldOptions{Stacked: true, Last: key == "app.language"}).Children(func() {
+		kit.SettingsLabel(c, label).Margin(0, 0, 8, 0)
 		value := n.preferences[key]
 		if value == "" {
 			value = fallback
 		}
 		kit.SettingsChoices(c, label, value, options, false, n.mutating, func(value string) { n.saveSetting(key, value) })
 	})
+}
+
+func (n *nativeMain) settingsHelpLabel(label string) string {
+	return n.text("settings_help") + ": " + label
 }
 
 func (n *nativeMain) toolsSettings(c *ui.Context) {

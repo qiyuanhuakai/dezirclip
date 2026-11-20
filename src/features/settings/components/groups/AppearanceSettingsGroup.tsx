@@ -1,4 +1,5 @@
 import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
+import { SettingsField } from "@deziro/ui-react/components/SettingsField";
 import { SettingsSlider } from "@deziro/ui-react/components/SettingsSlider";
 import { SettingHelp } from "../SettingHelp";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
@@ -152,11 +153,11 @@ const AppearanceSettingsGroup = ({
         <SettingsGroupHeader title={t('appearance_settings')} collapsed={collapsed} onToggle={onToggle} />
         {!collapsed && (
             <div className="group-content">
-                <div className="setting-item column">
+                <SettingsField stacked>
                     <ThemeManager t={t} theme={theme} setTheme={setTheme} saveAppSetting={saveAppSetting} />
-                </div>
+                </SettingsField>
 
-                <div className="setting-item column">
+                <SettingsField stacked>
                     <div className="item-label-group" style={{ marginBottom: '8px' }}>
                         <span className="item-label">{t('color_mode')}</span>
                     </div>
@@ -167,16 +168,16 @@ const AppearanceSettingsGroup = ({
                             { value: 'dark', label: t('mode_dark') },
                         ]}
                         onChange={value => { setColorMode(value); saveAppSetting('color_mode', value); }} />
-                </div>
+                </SettingsField>
 
-                <div className="setting-item column no-border">
+                <SettingsField stacked last>
                     <div className="item-label-group" style={{ marginBottom: '8px' }}>
                         <span className="item-label">{t('language')}</span>
                     </div>
                     <SettingsChoices<Locale> label={t('language')} value={language}
                         options={[{ value: 'zh', label: '简体' }, { value: 'tw', label: '繁體' }, { value: 'en', label: 'English' }]}
                         onChange={value => { setLanguage(value); saveAppSetting('language', value); }} />
-                </div>
+                </SettingsField>
 
                 <div className="setting-item">
                     <LabelWithHint
@@ -204,7 +205,7 @@ const AppearanceSettingsGroup = ({
                             }} />
                 </div>
 
-                <div className="setting-item column">
+                <SettingsField stacked>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                         <LabelWithHint
                             label={t('clipboard_item_font_size') || '条目字体大小'}
@@ -226,9 +227,9 @@ const AppearanceSettingsGroup = ({
                             saveAppSetting('clipboard_item_font_size', String(val));
                         }}
                     />
-                </div>
+                </SettingsField>
 
-                <div className="setting-item column">
+                <SettingsField stacked>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                         <LabelWithHint
                             label={t('clipboard_tag_font_size') || '标签字体大小'}
@@ -250,9 +251,9 @@ const AppearanceSettingsGroup = ({
                             saveAppSetting('clipboard_tag_font_size', String(val));
                         }}
                     />
-                </div>
+                </SettingsField>
 
-                <div className="setting-item column">
+                <SettingsField stacked>
                     <LabelWithHint
                         label={t('font_main') || '界面字体'}
                         hintKey="font_main"
@@ -269,9 +270,9 @@ const AppearanceSettingsGroup = ({
                             saveAppSetting('font_main', val);
                         }}
                     />
-                </div>
+                </SettingsField>
 
-                <div className="setting-item column">
+                <SettingsField stacked>
                     <LabelWithHint
                         label={t('font_mono') || '等宽字体'}
                         hintKey="font_mono"
@@ -288,10 +289,10 @@ const AppearanceSettingsGroup = ({
                             saveAppSetting('font_mono', val);
                         }}
                     />
-                </div>
+                </SettingsField>
 
                 <NativeFeatureBoundary t={t}>
-                    <div className="setting-item column">
+                    <SettingsField stacked>
                         <div className="settings-range-header">
                             <div className="settings-label-line">
                             <label className="item-label" htmlFor="preview-opacity">{t("preview_opacity")}</label>
@@ -307,7 +308,7 @@ const AppearanceSettingsGroup = ({
                                 setDraftPreviewOpacity(value);
                                 void savePreview(() => savePreviewPreference("opacity", value));
                             }} />
-                    </div>
+                    </SettingsField>
                     {(previewSaveError || previewLoadError) && <p className="hint" role="alert">{t("preview_preferences_failed")}</p>}
                 </NativeFeatureBoundary>
 
@@ -387,7 +388,7 @@ const AppearanceSettingsGroup = ({
                         </div>
 
                         <NativeFeatureBoundary t={t}>
-                        <div className="setting-item column">
+                        <SettingsField stacked>
                             <div className="settings-range-header">
                                 <span className="item-label">{t('surface_opacity') || '界面底板透明度'}</span>
                                 <span className="settings-range-value">{surfaceOpacity}%</span>
@@ -404,7 +405,7 @@ const AppearanceSettingsGroup = ({
                                 }}
                             />
 
-                        </div>
+                        </SettingsField>
                         </NativeFeatureBoundary>
                     </>
                 )}

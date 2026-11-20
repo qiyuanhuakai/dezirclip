@@ -10,6 +10,22 @@ import (
 
 func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool {
 	switch name {
+	case "settings-field":
+		ui.Column(c).Width(330).Gap(8).Children(func() {
+			kit.SettingsField(c, uikit.SettingsFieldOptions{Stacked: true}).Children(func() {
+				kit.SettingsFieldLabel(c, "Interface font", "Setting help: Interface font", "Use the theme font by default.")
+				font := "example"
+				kit.SearchSelect(c, uikit.SearchSelectOptions{Label: "Interface font", Value: &font, Choices: []uikit.SelectOption{
+					{Label: "Default font"}, {Value: "example", Label: "Example Sans"},
+				}})
+			})
+			kit.SettingsField(c, uikit.SettingsFieldOptions{}).Children(func() {
+				kit.SettingsFieldLabel(c, "Idle timeout", "", "").Grow(1)
+				timeout := "30"
+				input, _ := kit.SettingsNumberField(c, &timeout, "Idle timeout", false)
+				input.Width(112)
+			})
+		})
 	case "settings-section-card":
 		if g.state == "wide" {
 			kit.SettingsSectionGrid(c, "General settings", 700, func() {

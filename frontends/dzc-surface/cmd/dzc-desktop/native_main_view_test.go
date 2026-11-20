@@ -310,6 +310,27 @@ func TestNativeApplicationSelectsFitTheirSettingsColumns(t *testing.T) {
 	}
 }
 
+func TestNativeSettingsFieldHelpExpandsIndependently(t *testing.T) {
+	window := nativeMain{showSettings: true, settingsSection: "appearance",
+		preferences: map[string]string{"app.language": "en"},
+		fontChoices: &nativeFontChoices{main: []string{"Example Sans"}, mono: []string{"Example Mono"}}}
+	view := ui.NewTester(window.view, 850, 700)
+	label := window.settingsHelpLabel(window.text("font_main", "Interface font"))
+	hint := window.text("font_main_hint")
+	if view.HasText(hint) {
+		t.Fatal("font help was expanded when settings opened")
+	}
+	if err := view.Click(label); err != nil || !view.HasText(hint) {
+		t.Fatalf("font help did not open: %v, visible: %v", err, view.Texts())
+	}
+	if view.HasText(window.text("font_mono_hint")) {
+		t.Fatal("opening interface font help also opened monospace font help")
+	}
+	if err := view.Click(label); err != nil || view.HasText(hint) {
+		t.Fatalf("font help did not close: %v", err)
+	}
+}
+
 func TestNativeSurfaceOpacityDragUpdatesThemedControls(t *testing.T) {
 	window := nativeMain{theme: "liquid-glass", mode: "light", showSettings: true,
 		preferences: map[string]string{"app.surface_opacity": "20", "app.language": "en"}}

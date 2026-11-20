@@ -22,6 +22,7 @@ export { HistoryCard, HistoryCardContent, HistoryImagePreview, HistoryCardMeta, 
 export { ContextMenuSurface, ContextMenuItem, type ContextMenuSurfaceProps, type ContextMenuItemProps } from "./components/ContextMenu";
 export { TextField, NumberField, TextArea } from "./components/TextField";
 export { SettingsChoices, type SettingsChoice } from "./components/SettingsChoices";
+export { SettingsField } from "./components/SettingsField";
 export { SettingsSectionCard, SettingsGroupHeader, settingsPaneColumns } from "./components/SettingsSectionCard";
 export { EmojiAddTile, EmojiFavoriteTile } from "./components/EmojiFavoriteTiles";
 export { SettingsDataPath, SettingsDataAction } from "./components/SettingsData";

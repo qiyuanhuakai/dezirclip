@@ -34,8 +34,8 @@ func (s nativeRangeSetting) value(preferences map[string]string) int {
 }
 
 func (n *nativeMain) typographySettings(c *ui.Context) {
-	n.rangeSetting(c, nativeItemSize, n.text("clipboard_item_font_size", "Item font size"), nativeItemSize.value(n.preferences))
-	n.rangeSetting(c, nativeTagSize, n.text("clipboard_tag_font_size", "Tag font size"), nativeTagSize.value(n.preferences))
+	n.rangeSetting(c, nativeItemSize, n.text("clipboard_item_font_size", "Item font size"), n.text("clipboard_item_font_size_hint"), nativeItemSize.value(n.preferences))
+	n.rangeSetting(c, nativeTagSize, n.text("clipboard_tag_font_size", "Tag font size"), n.text("clipboard_tag_font_size_hint"), nativeTagSize.value(n.preferences))
 
 	if n.fontChoices == nil {
 		if n.fontsFailed {
@@ -51,8 +51,8 @@ func (n *nativeMain) typographySettings(c *ui.Context) {
 		}
 		return
 	}
-	n.fontSetting(c, "app.font_main", n.text("font_main", "Interface font"), n.fontChoices.main)
-	n.fontSetting(c, "app.font_mono", n.text("font_mono", "Monospace font"), n.fontChoices.mono)
+	n.fontSetting(c, "app.font_main", n.text("font_main", "Interface font"), n.text("font_main_hint"), n.fontChoices.main)
+	n.fontSetting(c, "app.font_mono", n.text("font_mono", "Monospace font"), n.text("font_mono_hint"), n.fontChoices.mono)
 }
 
 func (n *nativeMain) findFonts() {
@@ -83,7 +83,7 @@ func (n *nativeMain) findFonts() {
 	}()
 }
 
-func (n *nativeMain) fontSetting(c *ui.Context, key, label string, choices []string) {
+func (n *nativeMain) fontSetting(c *ui.Context, key, label, hint string, choices []string) {
 	kit := n.mainKit()
 	system := n.text("font_default_option")
 	options := make([]uikit.SelectOption, 1, len(choices)+2)
@@ -97,8 +97,8 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label string, choices []str
 	if !found {
 		options = append(options, uikit.SelectOption{Value: selected, Label: selected})
 	}
-	ui.Column(c).AlignSelf(ui.Stretch).MinWidth(0).Gap(8).Children(func() {
-		kit.SettingsLabel(c, label)
+	kit.SettingsField(c.Key(key), uikit.SettingsFieldOptions{Stacked: true}).Children(func() {
+		kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), hint)
 		_, changed := kit.SearchSelect(c, uikit.SearchSelectOptions{
 			Label: label, Placeholder: system, NoMatches: n.text("no_matching_fonts"),
 			Value: &selected, Choices: options, Disabled: n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "",
@@ -109,20 +109,20 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label string, choices []str
 	})
 }
 
-func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, label string, saved int) int {
+func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, label, hint string, saved int) int {
 	type draft struct {
 		value float64
 		dirty bool
 	}
-	row := ui.Column(c).FillWidth().Padding(6, 0)
+	kit := n.mainKit()
+	row := kit.SettingsField(c.Key(setting.key), uikit.SettingsFieldOptions{Stacked: true, Last: setting == nativeBackgroundOpacity})
 	edit := ui.Local(row, setting.key, func() draft { return draft{value: float64(saved)} })
 	if !edit.dirty && !n.mutating {
 		edit.value = float64(saved)
 	}
 	row.Children(func() {
-		kit := n.mainKit()
 		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-			kit.SettingsLabel(c, label).Grow(1).Wrap()
+			kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), hint).Grow(1)
 			kit.SettingsLabel(c, strconv.Itoa(int(edit.value))+setting.unit).FontSize(11).TextColor(c.Theme().TextMuted)
 		})
 		slider := kit.Slider(c, &edit.value, float64(setting.minimum), float64(setting.maximum), label).

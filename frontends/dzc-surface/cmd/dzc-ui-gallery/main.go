@@ -249,6 +249,9 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 }
 
 func (g *gallery) prepare(tester *ui.Tester) error {
+	if g.fixture == "settings-field" && g.state == "expanded" {
+		return tester.Click("Setting help: Interface font")
+	}
 	if g.fixture == "surface-opacity" {
 		return tester.Click("Color mode")
 	}

@@ -1,3 +1,4 @@
+import { SettingsField } from "@deziro/ui-react/components/SettingsField";
 import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import { useEffect, useRef, useState } from "react";
@@ -238,7 +239,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             </div>
                             {limitError && <span role="alert">{props.t("common_error")} · {limitError}</span>}
                             {props.persistentLimitEnabled && (
-                                <div className="setting-item">
+                                <SettingsField>
                                     <props.LabelWithHint
                                         label={props.t('persistent_limit')}
                                         hintKey="persistent_limit"
@@ -269,7 +270,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                             }
                                         }}
                                     />
-                                </div>
+                                </SettingsField>
                             )}
                         </>
                     )}
@@ -471,19 +472,20 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                     props.saveAppSetting('move_to_top_after_paste', String(val));
                                 }} />
                     </div>
-                    <div className="setting-item">
+                    <SettingsField>
                         <props.LabelWithHint
                             label={props.t('paste_method')}
                             hintKey="paste_method"
                         />
                         <ThemedSelect
+                            ariaLabel={props.t('paste_method')}
                             options={pasteMethodOptions}
                             value={props.pasteMethod}
                             width="max(160px, 12em)"
                             onChange={applyPasteMethod}
                         />
                         {pasteMethodError && <span role="alert">{props.t('common_error')}</span>}
-                    </div>
+                    </SettingsField>
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('sequential_paste_mode')}

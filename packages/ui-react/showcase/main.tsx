@@ -9,7 +9,7 @@ import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { AttachmentFixture, HistoryImageFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
 import { BackupDialogFixture, ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture, SettingsUpdateFixture,
-  PrivacyRulesFixture, SettingsDataFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, SearchSelectFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
+  PrivacyRulesFixture, SettingsDataFixture, SettingsFieldsFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, SearchSelectFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
 import "../src/base.css";
 import "../src/styles/components/index.css";
 import "./showcase.css";
@@ -147,6 +147,7 @@ function Showcase() {
 
   const examples = {
     "text-fields": <TextFieldsFixture />,
+    "settings-field": <SettingsFieldsFixture />,
     "context-menu": <ContextMenuFixture state={state} />,
     "settings-section-card": state === "wide" ? <SettingsSectionGridFixture /> : <SettingsSectionFixture open={state === "expanded"} />,
     "settings-choices": <SettingsChoicesFixture />,

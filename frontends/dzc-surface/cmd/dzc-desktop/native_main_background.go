@@ -185,7 +185,7 @@ func (n *nativeMain) backgroundSettings(c *ui.Context) {
 	})
 	if path != "" {
 		ui.Text(c, filepath.Base(path)).TextColor(c.Theme().TextMuted).Wrap()
-		n.rangeSetting(c, nativeBackgroundOpacity, n.text("background_opacity"), nativeBackgroundOpacity.value(n.preferences))
+		n.rangeSetting(c, nativeBackgroundOpacity, n.text("background_opacity"), "", nativeBackgroundOpacity.value(n.preferences))
 	}
 }
 

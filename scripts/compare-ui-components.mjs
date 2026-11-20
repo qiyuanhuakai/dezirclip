@@ -18,6 +18,7 @@ const selectedFixtures = flags.get("fixture")?.split(",");
 const presets = JSON.parse(await readFile(resolve(root, "packages/ui-presets/builtin-presets.json"), "utf8"));
 const cases = {
   "surface-opacity": { states: ["0", "20", "65", "85", "100"], text: "Appearance" },
+  "settings-field": { states: ["default", "expanded"], text: "Interface font" },
   "settings-section-card": { states: ["default", "expanded", "wide"], text: "General settings" },
   "settings-choices": { states: ["default"], text: "Update channel" },
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
@@ -155,6 +156,10 @@ try {
             await page.mouse.move(450, 390);
             await page.goto(url.href);
             await page.locator("main[data-fixture]").waitFor();
+            if (fixture === "settings-field" && state === "expanded") {
+              await page.getByRole("button", { name: "Setting help: Interface font" }).click();
+              await page.getByText("Use the theme font by default.", { exact: true }).waitFor();
+            }
             if (fixture === "surface-opacity") {
               await page.getByRole("combobox", { name: "Color mode" }).click();
               await page.getByRole("option", { name: "Light", exact: true }).waitFor();
@@ -302,6 +307,7 @@ try {
               ? ["Clipboard", "history"].every(word => comparable(webText, word) && comparable(nativeText, word))
               : comparable(webText, marker) && comparable(nativeText, marker);
             const extra = state === "popup" || fixture === "surface-opacity" ? "Light"
+              : fixture === "settings-field" && state === "expanded" ? "Use the theme font by default."
               : state === "expanded" && fixture === "disclosure" ? "Preview channel"
               : fixture === "context-menu" && state !== "default" ? state === "text" ? "Uppercase" : "Ignore this source"
               : fixture === "settings-update" ? {

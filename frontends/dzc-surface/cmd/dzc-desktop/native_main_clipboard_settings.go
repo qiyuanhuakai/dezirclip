@@ -33,14 +33,16 @@ func (n *nativeMain) pasteMethodSetting(c *ui.Context, kit uikit.Kit) {
 		saved = "shift_insert"
 	}
 	selected, label := saved, n.text("paste_method")
-	kit.SettingsLabel(c, label)
-	if kit.Select(c, &selected, label, options, n.mutating).Changed() && selected != saved {
-		if selected == "game_mode" {
-			n.enableGameMode(saved)
-		} else {
-			n.saveSetting(nativePasteMethodKey, selected)
+	kit.SettingsField(c, uikit.SettingsFieldOptions{}).Children(func() {
+		kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), n.text("paste_method_hint")).Grow(1).MinWidth(110)
+		if kit.Select(c, &selected, label, options, n.mutating).Changed() && selected != saved {
+			if selected == "game_mode" {
+				n.enableGameMode(saved)
+			} else {
+				n.saveSetting(nativePasteMethodKey, selected)
+			}
 		}
-	}
+	})
 }
 
 func (n *nativeMain) enableGameMode(previous string) {
@@ -215,10 +217,10 @@ func (n *nativeMain) retentionSettings(c *ui.Context) {
 	if !n.settingEnabled("app.persistent_limit_enabled", true) {
 		return
 	}
-	n.numberSetting(c, "app.persistent_limit", n.text("persistent_limit"), 500, 50, 99999)
+	n.numberSetting(c, "app.persistent_limit", n.text("persistent_limit"), n.text("persistent_limit_hint"), 500, 50, 99999)
 }
 
-func (n *nativeMain) numberSetting(c *ui.Context, key, label string, fallback, minimum, maximum int) {
+func (n *nativeMain) numberSetting(c *ui.Context, key, label, hint string, fallback, minimum, maximum int) {
 	saved := n.preferences[key]
 	if saved == "" {
 		saved = strconv.Itoa(fallback)
@@ -226,25 +228,24 @@ func (n *nativeMain) numberSetting(c *ui.Context, key, label string, fallback, m
 	type limitDraft struct {
 		value, saved string
 	}
-	row := ui.Column(c.Key(key)).Gap(8)
+	kit := n.mainKit()
+	row := kit.SettingsField(c.Key(key), uikit.SettingsFieldOptions{})
 	draft := ui.Local(row, key, func() limitDraft { return limitDraft{value: saved, saved: saved} })
 	if draft.saved != saved {
 		draft.value, draft.saved = saved, saved
 	}
 	row.Children(func() {
-		kit := n.mainKit()
-		kit.SettingsLabel(c, label)
-		ui.Row(c).FillWidth().Gap(6).Wrap().Children(func() {
-			input := kit.NumberField(c, &draft.value, label).Width(112).ReadOnly(n.mutating)
-			limit, valid := nativeBoundedNumber(draft.value, minimum, maximum)
-			save := kit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: n.mutating || !valid || draft.value == saved})
-			if save.Clicked() || input.Submitted() && valid && !n.mutating {
-				draft.value = limit
-				if limit != saved {
-					n.saveSetting(key, limit)
-				}
-			}
-		})
+		kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), hint).Grow(1).MinWidth(110)
+		input, committed := kit.SettingsNumberField(c, &draft.value, label, n.mutating)
+		input.Width(112)
+		if !committed {
+			return
+		}
+		limit, valid := nativeBoundedNumber(draft.value, minimum, maximum)
+		draft.value = saved
+		if valid && limit != saved {
+			n.saveSetting(key, limit)
+		}
 	})
 }
 

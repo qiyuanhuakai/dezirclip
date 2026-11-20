@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { SettingsField } from "@deziro/ui-react/components/SettingsField";
 import ThemedSelect, { type ThemedSelectOption } from "../ThemedSelect";
 import type { DefaultAppsMap, InstalledAppOption } from "../../../app/types";
 import { getClipboardTypeName } from "../../../../shared/lib/clipboardTypeName";
@@ -73,7 +74,7 @@ const DefaultAppsSettingsGroup = ({
                         const value = currentValue(type);
                         const options = optionsByType[type];
                         return (
-                            <div key={type} className={`setting-item column ${idx === arr.length - 1 ? 'no-border' : ''}`}>
+                            <SettingsField key={type} stacked last={idx === arr.length - 1}>
                                 <div className="item-label-group" style={{ marginBottom: '8px' }}>
                                     <span className="item-label" style={{ textTransform: 'uppercase', fontSize: '11px', opacity: 0.8 }}>
                                         {getClipboardTypeName(type, t)}
@@ -102,7 +103,7 @@ const DefaultAppsSettingsGroup = ({
                                         {stripExe(userPath)}
                                     </span>
                                 )}
-                            </div>
+                            </SettingsField>
                         );
                     })}
                 </div>

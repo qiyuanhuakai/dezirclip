@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import ThemedSelect from "../src/components/ThemedSelect";
 import { BackupActions, BackupChoices, BackupDialog, BackupField, BackupPreview, BackupReplaceConfirmation, ContextMenuItem, ContextMenuSurface, EmojiAddTile, EmojiFavoriteTile, HotkeyBinding, HotkeyList, HotkeyListLayout, NumberField,
-  PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField, SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsRemoveButton, SettingsSectionCard, TagPickerTrigger, TagSearchField, TagToolbar, TextArea, TextField } from "../src";
+  PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField, SettingHelp, SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsField, SettingsRemoveButton, SettingsSectionCard, TagPickerTrigger, TagSearchField, TagToolbar, TextArea, TextField } from "../src";
 import { Ellipsis, Eye, ListChecks, ListCollapse, Plus, Tag } from "lucide-react";
 import { settingsPaneColumns } from "../src/components/SettingsSectionCard";
 import { UpdateProgress, UpdateVersionRow } from "../src/components/SettingsUpdate";
@@ -12,6 +12,26 @@ export function TextFieldsFixture() {
     <label>Search terms<TextField placeholder="Filter by name" /></label>
     <label>Idle timeout<NumberField defaultValue="30" /></label>
     <label>Notes<TextArea rows={3} defaultValue={"First line\nSecond line"} /></label>
+  </div>;
+}
+
+export function SettingsFieldsFixture() {
+  const [font, setFont] = useState("example");
+  return <div className="showcase-fields">
+    <SettingsField stacked>
+      <div className="item-label-group">
+        <div className="settings-label-line">
+          <label className="item-label" htmlFor="example-font">Interface font</label>
+          <SettingHelp label="Interface font" helpLabel="Setting help">Use the theme font by default.</SettingHelp>
+        </div>
+      </div>
+      <ThemedSelect inputId="example-font" value={font} onChange={setFont} width="100%" searchable
+        options={[{ value: "", label: "Default font" }, { value: "example", label: "Example Sans" }]} />
+    </SettingsField>
+    <SettingsField>
+      <label className="item-label item-label-group" htmlFor="example-timeout">Idle timeout</label>
+      <NumberField id="example-timeout" className="showcase-setting-number" defaultValue="30" />
+    </SettingsField>
   </div>;
 }
 
