@@ -137,6 +137,22 @@ func TestNativeWideTagLibraryKeepsNavigationBesideHistory(t *testing.T) {
 	}
 }
 
+func TestNativeNarrowTagPickerFiltersChoices(t *testing.T) {
+	n := nativeMain{tagLibrary: &nativeTagLibrary{sort: "time"}, preferences: map[string]string{"app.language": "en"}}
+	n.tagCatalog.names, n.tagCatalog.counts, n.tagCatalog.fresh = []string{"Personal", "Work"}, map[string]uint64{"Personal": 1, "Work": 3}, true
+	view := ui.NewTester(n.view, 360, 420)
+	if err := view.Click("Tag"); err != nil {
+		t.Fatal(err)
+	}
+	view.Type("wor")
+	if _, ok := view.Find("Personal (1)"); ok {
+		t.Fatal("unrelated tag stayed visible after typing")
+	}
+	if err := view.Click("Work (3)"); err != nil || n.tagLibrary.selected != "Work" {
+		t.Fatalf("the filtered tag could not be selected: %v", err)
+	}
+}
+
 func TestNativeMainUsesSavedInterfaceFont(t *testing.T) {
 	window := nativeMain{theme: "macos", mode: "dark", preferences: map[string]string{"app.font_main": " Custom UI "}}
 	var font string

@@ -133,12 +133,22 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 			kit.SettingsLabel(c, label).Grow(1).MinWidth(0).SingleLine()
 			return
 		}
-		options := []uikit.SelectOption{{Label: n.text("native_select_tag")}}
+		options := make([]string, 0, len(catalog.names))
+		names := make(map[string]string, len(catalog.names))
+		current := ""
 		for _, name := range catalog.names {
-			options = append(options, uikit.SelectOption{Value: name, Label: fmt.Sprintf("%s (%d)", name, catalog.counts[name])})
+			label := fmt.Sprintf("%s (%d)", name, catalog.counts[name])
+			options = append(options, label)
+			names[label] = name
+			if name == tags.selected {
+				current = label
+			}
 		}
-		kit.Select(c, &tags.selected, n.text("tag_name", "Tag"), options, len(options) == 1).
-			Width(0).Grow(1).MinWidth(72).Height(27)
+		picker, changed := kit.TagPicker(c, &current, n.text("tag_name", "Tag"), n.text("native_select_tag"), options, len(options) == 0)
+		picker.Width(0).Grow(1).MinWidth(72)
+		if changed {
+			tags.selected = names[current]
+		}
 	}, []uikit.HeaderAction{
 		{Icon: layoutIcon, Label: layoutLabel, Active: compact, Disabled: n.mutating, Run: func() {
 			n.saveSetting("app.compact_mode", fmt.Sprint(!compact))

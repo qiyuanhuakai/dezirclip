@@ -87,7 +87,7 @@ func (k Kit) SettingsSectionCard(c *ui.Context, title string, open *bool, conten
 			header = k.interactive(c, row, header, expanded)
 		}
 		paint(row.FillWidth().Height(header.Height).AlignItems(ui.Center).Gap(8), header).Children(func() {
-			text(c, title, header).Grow(1).Wrap().PassThrough()
+			text(c, title, header).Grow(1).Wrap().Translate(0, header.TranslateY).PassThrough()
 			if open != nil {
 				arrow := chevronRight
 				if expanded {

@@ -26,7 +26,9 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 		})
 	case "hotkey-list":
 		ui.Column(c).Gap(6).Children(func() {
-			kit.SettingsLabel(c, "Global hotkey")
+			kit.HotkeyRow(c, "Global hotkey", func() {
+				kit.HotkeyBinding(c, "+ Global hotkey", "", "+ Global hotkey", false, false)
+			})
 			kit.HotkeyList(c, g.bindings, "Not set", "Delete", false, func(value string) {
 				g.bindings = slices.DeleteFunc(g.bindings, func(binding string) bool { return value == binding })
 			})

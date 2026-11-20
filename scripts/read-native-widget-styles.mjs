@@ -271,6 +271,8 @@ function readStyles(sample) {
     const transform = style.transform !== "none" ? new DOMMatrixReadOnly(style.transform) : null;
     const translateX = number(transform?.m41);
     const translateY = number(transform?.m42);
+    const headingShift = id.startsWith("settingsGroupHeader")
+      ? (number(text.paddingTop) - number(text.paddingBottom)) / 2 : 0;
     const marginBottom = number(style.marginBottom);
     const bounds = element.getBoundingClientRect();
     const switchFace = /^settingsSwitch(Left|Right)/.test(id);
@@ -296,6 +298,7 @@ function readStyles(sample) {
       ...(id === "historyActionsCompactAnchor" ? { right } : {}),
       ...(/^historyActionCompact/.test(id) && translateX ? { translateX } : {}),
       ...(/^historyActions?Compact/.test(id) && translateY ? { translateY } : {}),
+      ...(headingShift ? { translateY: headingShift } : {}),
       ...(id.startsWith("settingsSwitchThumb") ? { left: number(left + translateX) } : {}),
       ...(id.endsWith("InputIcon") ? { left } : {}),
       ...(content.startsWith('"') ? { caption: JSON.parse(content) } : {}),

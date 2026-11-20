@@ -95,7 +95,7 @@ func (k Kit) HotkeyRemoveButton(c *ui.Context, label string, disabled bool) ui.E
 	return button
 }
 
-var shortcutRemoveIcon = icon("Minus")
+var shortcutRemoveIcon = icon("HotkeyRemove")
 
 func (k Kit) hotkeyCaps(c *ui.Context, field ui.Element, value, placeholder string, recording bool) ui.Element {
 	group := k.style("hotkeyGroup")
@@ -171,8 +171,12 @@ func (k Kit) styleField(c *ui.Context, field ui.Element, widget string) ui.Eleme
 }
 
 func (k Kit) Combo(c *ui.Context, value *string, label, placeholder string, choices []string, disabled bool) (ui.Element, bool) {
+	return k.combo(c, value, label, placeholder, choices, disabled, k.style("select").Height)
+}
+
+func (k Kit) combo(c *ui.Context, value *string, label, placeholder string, choices []string, disabled bool, height float32) (ui.Element, bool) {
 	type draft struct{ text, saved string }
-	box := ui.Box(c).Height(k.style("select").Height)
+	box := ui.Box(c).Height(height)
 	edit := ui.Local(box, "deziro-combobox", func() draft { return draft{text: *value, saved: *value} })
 	if edit.saved != *value {
 		edit.text, edit.saved = *value, *value
@@ -182,7 +186,7 @@ func (k Kit) Combo(c *ui.Context, value *string, label, placeholder string, choi
 		parts := ui.ComboboxBase(c, &edit.text)
 		indicator := k.style("selectIndicator")
 		field := k.styleField(c, parts.Input.Fill().Label(label).Placeholder(placeholder).Disabled(disabled), "select").
-			PaddingEnd(indicator.Width + 4)
+			Height(height).PaddingEnd(indicator.Width + 4)
 		paint(ui.Row(c).Absolute().Right(3).Top(0).Bottom(0).Width(indicator.Width).Center().PassThrough(), indicator).
 			Children(func() {
 				ui.Icon(c, chevronDown).Size(16, 16).TextColor(styleColor(indicator.Text)).PassThrough()
