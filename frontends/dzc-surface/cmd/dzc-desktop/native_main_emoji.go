@@ -17,8 +17,7 @@ type nativeEmojiPanel struct {
 	loadError            bool
 	query, searched, tab string
 	matches              []characterGroup
-	limit                int
-	scroll               ui.ScrollState
+	characters           ui.ListState
 }
 
 func (n *nativeMain) openEmoji() {
@@ -58,35 +57,23 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 		kit.CharacterSearch(c, &panel.query, n.text("emoji_search"), func(composing bool) {
 			if !composing && (panel.tab != tab || panel.searched != panel.query) {
 				panel.matches = searchCharacters(tab, panel.query)
-				panel.tab, panel.searched, panel.limit = tab, panel.query, characterPageSize
-				panel.scroll = ui.ScrollState{}
+				panel.tab, panel.searched = tab, panel.query
+				panel.characters = ui.ListState{}
 			}
 		})
 	})
 	width, _ := c.Size()
-	ui.Scroll(c).FillWidth().MinHeight(0).Grow(1).Shrink(1).TrackScroll(&panel.scroll).Children(func() {
-		ui.Column(c).FillWidth().Padding(0, 8).Children(func() {
-			kit.CharacterContent(c, width-16, func(contentWidth float32) {
-				remaining, total := panel.limit, 0
-				for _, group := range panel.matches {
-					total += len(group.Entries)
-					if remaining == 0 {
-						continue
-					}
-					visible := min(remaining, len(group.Entries))
-					kit.CharacterGrid(c, n.emojiGroupName(group.ID), group.choices[:visible], contentWidth, n.mutating, func(value string) {
-						n.sendEmoji("text", value)
-					})
-					remaining -= visible
-				}
-				if total == 0 {
-					kit.SettingsLabel(c, n.text("emoji_search_empty")).AlignSelf(ui.Center)
-				} else if total > panel.limit && kit.Button(c, uikit.ButtonOptions{Label: n.text("emoji_more")}).
-					AlignSelf(ui.Center).Clicked() {
-					panel.limit += characterPageSize
-				}
-			})
-		})
+	groups := make([]uikit.CharacterGroup, 0, len(panel.matches))
+	for _, group := range panel.matches {
+		groups = append(groups, uikit.CharacterGroup{Label: n.emojiGroupName(group.ID), Choices: group.choices})
+	}
+	label := n.text("emoji_tab")
+	if tab == "symbols" {
+		label = n.text("emoji_symbols_tab")
+	}
+	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Padding(0, 8).Children(func() {
+		kit.CharacterList(c, &panel.characters, width-16, groups, label,
+			n.text("emoji_search_empty"), n.mutating, func(value string) { n.sendEmoji("text", value) })
 	})
 }
 

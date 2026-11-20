@@ -17,6 +17,7 @@ import (
 )
 
 type gallery struct {
+	characterList                       ui.ListState
 	theme, mode, fixture, state         string
 	choice, query, searchMode, filter   string
 	settingsSelection                   string
@@ -139,12 +140,11 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 	case "emoji-grid":
 		width, _ := c.Size()
 		padding := presets.Select(g.theme, g.mode).ShowcasePadding()
-		kit.CharacterContent(c, width-padding[1]-padding[3], func(contentWidth float32) {
-			kit.CharacterGrid(c, "Frequently used", []uikit.CharacterChoice{
+		kit.CharacterList(c, &g.characterList, width-padding[1]-padding[3],
+			[]uikit.CharacterGroup{{Label: "Frequently used", Choices: []uikit.CharacterChoice{
 				{Value: "😀"}, {Value: "😄"}, {Value: "😂"}, {Value: "🤣"}, {Value: "😊"}, {Value: "😍"},
 				{Value: "😘"}, {Value: "😎"}, {Value: "🤔"}, {Value: "🔥"}, {Value: "✨"}, {Value: "👌"},
-			}, contentWidth, false, nil)
-		})
+			}}}, "Emoji", "No results", false, nil)
 	case "clipboard-search":
 		kit.ClipboardSearch(c, uikit.HeaderOptions{
 			Query: &g.query, Placeholder: "搜索剪切板...", Filter: &g.filter,

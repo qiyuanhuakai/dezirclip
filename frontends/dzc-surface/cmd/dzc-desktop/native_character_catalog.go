@@ -17,8 +17,6 @@ import (
 //go:embed emoji-data.json
 var emojiCatalogJSON []byte
 
-const characterPageSize = 160
-
 type characterCatalog struct {
 	Emoji   []characterGroup
 	Symbols []characterGroup

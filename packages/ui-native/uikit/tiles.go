@@ -62,24 +62,32 @@ func (k Kit) CharacterContent(c *ui.Context, width float32, draw func(float32)) 
 
 // CharacterGrid fits tiles to the supplied content width and describes each glyph.
 func (k Kit) CharacterGrid(c *ui.Context, label string, entries []CharacterChoice, width float32, disabled bool, onSelect func(string)) {
-	title, group, grid, tile := k.style("emojiGroupTitle"), k.style("emojiGroup"), k.style("emojiGrid"), k.style("emojiTile")
+	title, group, grid := k.style("emojiGroupTitle"), k.style("emojiGroup"), k.style("emojiGrid")
 	gap := grid.ColumnGap
-	columns := max(1, int((width+gap)/(34+gap)))
+	columns := characterColumnCount(width, gap)
 	ui.Column(c).FillWidth().Gap(group.RowGap).Children(func() {
 		paint(text(c, label, title).FillWidth(), title)
 		tileRows(c, len(entries), columns, width, gap, func(index int, cellWidth float32) {
-			entry := entries[index]
-			button := ui.ButtonBase(c).Label(entry.Value).Size(cellWidth, tile.Height).Center().FocusRing(true).Disabled(disabled)
-			if entry.Name != "" {
-				button.Description(entry.Name).Tooltip(entry.Name)
-			}
-			style := k.interactive(c, button, tile, false)
-			paint(button, style).Children(func() { text(c, entry.Value, style).SingleLine().PassThrough() })
-			if button.Clicked() && onSelect != nil {
-				onSelect(entry.Value)
-			}
+			k.characterTile(c, entries[index], cellWidth, disabled, onSelect)
 		})
 	})
+}
+
+func characterColumnCount(width, gap float32) int {
+	return max(1, int((width+gap)/(34+gap)))
+}
+
+func (k Kit) characterTile(c *ui.Context, entry CharacterChoice, width float32, disabled bool, onSelect func(string)) {
+	tile := k.style("emojiTile")
+	button := ui.ButtonBase(c).Label(entry.Value).Size(width, tile.Height).Center().FocusRing(true).Disabled(disabled)
+	if entry.Name != "" {
+		button.Description(entry.Name).Tooltip(entry.Name)
+	}
+	style := k.interactive(c, button, tile, false)
+	paint(button, style).Children(func() { text(c, entry.Value, style).SingleLine().PassThrough() })
+	if button.Clicked() && onSelect != nil {
+		onSelect(entry.Value)
+	}
 }
 
 // TileGrid keeps empty slots at the end of the last row and sizes every row
