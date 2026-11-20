@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ContextMenuItem, ContextMenuSurface, EmojiAddTile, EmojiFavoriteTile, HotkeyBinding, HotkeyList, HotkeyListLayout, NumberField,
-  SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsRemoveButton, SettingsSectionCard, TagToolbar, TextArea, TextField } from "../src";
+  SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsRemoveButton, SettingsSectionCard, TagPickerTrigger, TagSearchField, TagToolbar, TextArea, TextField } from "../src";
 import { Ellipsis, Eye, ListChecks, ListCollapse, Plus, Tag } from "lucide-react";
 import { settingsPaneColumns } from "../src/components/SettingsSectionCard";
 
@@ -131,5 +131,16 @@ export function TagToolbarFixture() {
       <button className="btn-icon" type="button" aria-label="Add entry"><Plus size={16} /></button>
       <button className="btn-icon" type="button" aria-label="Tag actions"><Ellipsis size={16} /></button>
     </TagToolbar>
+  </div>;
+}
+
+export function TagSearchFixture() {
+  const [query, setQuery] = useState("Release notes");
+  return <div className="tag-manager" style={{ display: "grid", gap: 8, width: 380 }}>
+    <TagToolbar><TagPickerTrigger current="Work" aria-expanded={false} /></TagToolbar>
+    <div style={{ width: 156 }}><TagSearchField variant="rail" aria-label="Find a tag" placeholder="Find a tag" /></div>
+    <TagSearchField variant="picker" aria-label="Find tags" placeholder="Find tags" />
+    <TagSearchField variant="contents" aria-label="Search tagged entries" value={query}
+      onChange={event => setQuery(event.target.value)} onClear={() => setQuery("")} clearLabel="Clear search" />
   </div>;
 }

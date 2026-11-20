@@ -13,6 +13,7 @@ import (
 
 type nativeTagLibrary struct {
 	selected, query, sort, nameQuery string
+	railCollapsed, focusRailSearch   bool
 	dialog                           *nativeTagDialog
 	batch                            nativeTagBatch
 	reveal                           map[nativeCardKey]bool
@@ -54,17 +55,19 @@ func (n *nativeMain) closeTagLibrary() {
 func (n *nativeMain) tagLibraryView(c *ui.Context, kit uikit.Kit, queryFocused *bool) {
 	tags := n.tagLibrary
 	contents := func() {
-		n.tagLibraryControls(c, kit, tags)
+		n.tagLibraryControls(c, kit, tags, queryFocused)
+		field := kit.TagSearch(c, uikit.TagSearchOptions{
+			Variant: uikit.TagContentsSearch, Query: &tags.query, Label: n.text("tag_content_search", "Search tagged entries…"),
+			ClearLabel: n.text("tag_clear_search", "Clear search"), OnKey: n.searchKey, Disabled: tags.selected == "",
+		})
 		if tags.selected == "" {
 			return
 		}
-		field := kit.TextField(c, &tags.query, n.text("tag_content_search", "Search tagged entries…")).
-			FillWidth().Placeholder(n.text("tag_content_search", "Search tagged entries…")).OnTextKey(n.searchKey)
 		if n.focusSearch {
 			field.Focus()
 			n.focusSearch = false
 		}
-		*queryFocused = field.Focused()
+		*queryFocused = *queryFocused || field.Focused()
 		n.editQuery(field.Composing())
 		n.tagBatchToolbar(c, kit, tags)
 		n.historyView(c, kit)
@@ -75,33 +78,73 @@ func (n *nativeMain) tagLibraryView(c *ui.Context, kit uikit.Kit, queryFocused *
 		return
 	}
 	ui.Row(c).FillWidth().Grow(1).MinHeight(0).Gap(8).Padding(0, 8, 8).AlignItems(ui.Stretch).Children(func() {
-		ui.Column(c).Width(156).Shrink(0).MinHeight(0).Gap(4).Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-				kit.SettingsLabel(c, n.text("tags")).Grow(1)
-				if kit.TagToolbarButton(c, uikit.HeaderAction{Icon: "add", Label: n.text("tag_create"), Disabled: n.mutating}).Clicked() {
-					n.startTagDialog(tags, "create")
-				}
-			})
-			kit.TextField(c, &tags.nameQuery, n.text("tag_search_label", "Find a tag")).
-				FillWidth().Placeholder(n.text("tag_search_label", "Find a tag…"))
-			ui.Scroll(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
-				sections := make([]uikit.SettingsSection, 0, len(n.tagCatalog.names))
-				for _, name := range n.tagCatalog.names {
-					if strings.Contains(strings.ToLower(name), strings.ToLower(strings.TrimSpace(tags.nameQuery))) {
-						sections = append(sections, uikit.SettingsSection{ID: name, Label: fmt.Sprintf("%s (%d)", name, n.tagCatalog.counts[name])})
-					}
-				}
-				kit.SettingsRail(c, n.text("tags"), tags.selected, sections, func(id string) {
-					tags.selected = id
-					n.editQuery(false)
-				})
-			})
-		})
+		n.tagLibraryRail(c, kit, tags, queryFocused)
 		ui.Column(c).Grow(1).MinWidth(0).FillHeight().MinHeight(0).Gap(5).Children(contents)
 	})
 }
 
-func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nativeTagLibrary) {
+func (n *nativeMain) tagLibraryRail(c *ui.Context, kit uikit.Kit, tags *nativeTagLibrary, queryFocused *bool) {
+	width := float32(150)
+	icon, toggle := "back", n.text("tag_collapse_navigation")
+	if tags.railCollapsed {
+		width = 42
+		icon, toggle = "forward", n.text("tag_expand_navigation")
+	}
+	ui.Column(c).Width(width).Shrink(0).MinHeight(0).Gap(4).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+			if kit.TagToolbarButton(c, uikit.HeaderAction{Icon: icon, Label: toggle}).Clicked() {
+				tags.railCollapsed = !tags.railCollapsed
+				c.Invalidate()
+			}
+			if !tags.railCollapsed {
+				n.tagRailAdd(c, kit, tags)
+			}
+		})
+		if tags.railCollapsed {
+			if kit.TagToolbarButton(c, uikit.HeaderAction{Icon: "search", Label: n.text("tag_search_label")}).Clicked() {
+				tags.railCollapsed, tags.focusRailSearch = false, true
+				n.focusList = false
+				c.Invalidate()
+			}
+		} else {
+			field := kit.TagSearch(c, uikit.TagSearchOptions{Variant: uikit.TagRailSearch,
+				Query: &tags.nameQuery, Label: n.text("tag_search_label", "Find a tag")})
+			if tags.focusRailSearch {
+				tags.focusRailSearch = !field.Focused()
+				if tags.focusRailSearch {
+					field.Focus()
+					c.Invalidate()
+				}
+			}
+			*queryFocused = field.Focused()
+		}
+		ui.Scroll(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
+			ui.Column(c).FillWidth().Gap(4).Children(func() {
+				for _, name := range n.tagCatalog.names {
+					if !uikit.MatchesTagName(name, tags.nameQuery) {
+						continue
+					}
+					choice := uikit.TagChoice{ID: name, Label: name, Count: n.tagCatalog.counts[name]}
+					if kit.TagRailChoice(c, choice, tags.selected == name, tags.railCollapsed).Clicked() {
+						tags.selected = name
+						n.editQuery(false)
+					}
+				}
+			})
+		})
+		if tags.railCollapsed {
+			n.tagRailAdd(c, kit, tags)
+		}
+	})
+}
+
+func (n *nativeMain) tagRailAdd(c *ui.Context, kit uikit.Kit, tags *nativeTagLibrary) {
+	if kit.TagToolbarButton(c, uikit.HeaderAction{Icon: "add", Label: n.text("tag_create"), Disabled: n.mutating}).Clicked() {
+		n.startTagDialog(tags, "create")
+	}
+}
+
+func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nativeTagLibrary, queryFocused *bool) {
 	catalog := &n.tagCatalog
 	if !catalog.fresh && !catalog.failed {
 		n.loadTagCatalog()
@@ -133,22 +176,23 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 			kit.SettingsLabel(c, label).Grow(1).MinWidth(0).SingleLine()
 			return
 		}
-		options := make([]string, 0, len(catalog.names))
-		names := make(map[string]string, len(catalog.names))
-		current := ""
+		options := make([]uikit.TagChoice, 0, len(catalog.names))
 		for _, name := range catalog.names {
-			label := fmt.Sprintf("%s (%d)", name, catalog.counts[name])
-			options = append(options, label)
-			names[label] = name
-			if name == tags.selected {
-				current = label
-			}
+			options = append(options, uikit.TagChoice{ID: name, Label: name, Count: catalog.counts[name]})
 		}
-		picker, changed := kit.TagPicker(c, &current, n.text("tag_name", "Tag"), n.text("native_select_tag"), options, len(options) == 0)
-		picker.Width(0).Grow(1).MinWidth(72)
-		if changed {
-			tags.selected = names[current]
+		var create func()
+		if !n.mutating {
+			create = func() { n.startTagDialog(tags, "create") }
 		}
+		_, pickerOpen := kit.TagNavigation(c, uikit.TagNavigationOptions{
+			Label: n.text("tags"), SearchLabel: n.text("tag_search_label"), CreateLabel: n.text("tag_create"),
+			EmptyLabel: n.text("tag_no_matching_tags"), Selected: tags.selected, Choices: options, OnCreate: create,
+			OnChoose: func(name string) {
+				tags.selected = name
+				n.editQuery(false)
+			},
+		})
+		*queryFocused = *queryFocused || pickerOpen
 	}, []uikit.HeaderAction{
 		{Icon: layoutIcon, Label: layoutLabel, Active: compact, Disabled: n.mutating, Run: func() {
 			n.saveSetting("app.compact_mode", fmt.Sprint(!compact))

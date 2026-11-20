@@ -8,7 +8,7 @@ import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { AttachmentFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
 import { ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture,
-  SettingsDataFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
+  SettingsDataFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
 import "../src/base.css";
 import "../src/styles/components/index.css";
 import "./showcase.css";
@@ -128,6 +128,7 @@ function Showcase() {
     "settings-data": <SettingsDataFixture />,
     "settings-remove": <SettingsRemoveFixture />,
     "tag-toolbar": <TagToolbarFixture />,
+    "tag-search": <TagSearchFixture />,
     "attachment-preview": <AttachmentFixture state={state} />,
     "preview-toolbar": <PreviewToolbarFixture state={state} />,
     "preview-image": <PreviewImageFixture state={state} />,

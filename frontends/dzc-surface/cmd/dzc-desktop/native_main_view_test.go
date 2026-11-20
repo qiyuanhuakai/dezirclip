@@ -147,15 +147,30 @@ func TestNativeWideTagLibraryKeepsNavigationBesideHistory(t *testing.T) {
 	n := nativeMain{tagLibrary: &nativeTagLibrary{sort: "time"}, preferences: map[string]string{"app.language": "en"}}
 	n.tagCatalog.names, n.tagCatalog.counts, n.tagCatalog.fresh = []string{"Work"}, map[string]uint64{"Work": 3}, true
 	view := ui.NewTester(n.view, 740, 360)
-	if err := view.Click("Work (3)"); err != nil || n.tagLibrary.selected != "Work" {
+	if err := view.Click("Work"); err != nil || n.tagLibrary.selected != "Work" {
 		t.Fatalf("wide tag navigation did not select the tag: %v", err)
 	}
 	n.history.rows = []protocol.DesktopEntry{{Id: 1, Preview: "Tagged entry fixture", ContentType: "text", Tags: []string{"Work"}}}
 	view.Frame()
-	rail, ok := view.Find("Work (3)")
+	rail, ok := view.Find("Work")
 	entry, ok2 := view.Find("Tagged entry fixture")
 	if !ok || !ok2 || rail.X+rail.W >= entry.X || entry.Y >= 360 {
 		t.Fatalf("tag navigation and entry bounds: %+v %+v, visible texts %v", rail, entry, view.Texts())
+	}
+	if err := view.Click(n.text("tag_collapse_navigation")); err != nil || !n.tagLibrary.railCollapsed {
+		t.Fatalf("the tag rail did not collapse: %v", err)
+	}
+	if err := view.Click(n.text("tag_search_label")); err != nil {
+		t.Fatal(err)
+	}
+	view.Frame()
+	view.Type("tag:work")
+	if n.tagLibrary.railCollapsed || n.tagLibrary.nameQuery != "tag:work" {
+		t.Fatalf("rail collapsed=%t, search query=%q, visible labels %v", n.tagLibrary.railCollapsed, n.tagLibrary.nameQuery, view.Texts())
+	}
+	view.SetSize(360, 420)
+	if _, ok := view.Find(n.text("tags") + ": Work"); !ok || n.tagLibrary.selected != "Work" {
+		t.Fatal("switching to the narrow tag picker lost the current tag")
 	}
 }
 
@@ -163,15 +178,27 @@ func TestNativeNarrowTagPickerFiltersChoices(t *testing.T) {
 	n := nativeMain{tagLibrary: &nativeTagLibrary{sort: "time"}, preferences: map[string]string{"app.language": "en"}}
 	n.tagCatalog.names, n.tagCatalog.counts, n.tagCatalog.fresh = []string{"Personal", "Work"}, map[string]uint64{"Personal": 1, "Work": 3}, true
 	view := ui.NewTester(n.view, 360, 420)
-	if err := view.Click("Tag"); err != nil {
+	if err := view.Click(n.text("tags") + ": " + n.text("tags")); err != nil {
 		t.Fatal(err)
 	}
-	view.Type("wor")
-	if _, ok := view.Find("Personal (1)"); ok {
+	if !view.Focused(n.text("tag_search_label")) {
+		t.Fatal("the picker did not focus its search field")
+	}
+	view.Type("tag:wor")
+	if _, ok := view.Find("Personal"); ok {
 		t.Fatal("unrelated tag stayed visible after typing")
 	}
-	if err := view.Click("Work (3)"); err != nil || n.tagLibrary.selected != "Work" {
-		t.Fatalf("the filtered tag could not be selected: %v", err)
+	if _, ok := view.Find("Work"); !ok {
+		t.Fatal("the filtered tag was not offered")
+	}
+	view.Key(0, ui.KeyEnter)
+	if n.tagLibrary.selected != "Work" {
+		t.Fatal("Enter did not choose the filtered tag")
+	}
+	n.tagLibrary.query = "fixture"
+	view.Frame()
+	if err := view.Click(n.text("tag_clear_search")); err != nil || n.tagLibrary.query != "" {
+		t.Fatalf("the clear button did not clear the tagged-entry search: %v", err)
 	}
 }
 

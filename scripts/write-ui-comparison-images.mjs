@@ -26,6 +26,7 @@ const figures = [
   ["settings-data", "default", 170],
   ["settings-remove", "default", 115],
   ["tag-toolbar", "default", 85],
+  ["tag-search", "default", 180],
   ["app-header", "pinned", 185],
   ["history-list", "selected", 245],
   ["history-card", "selected", 110],

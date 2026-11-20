@@ -3,7 +3,7 @@ package uikit
 import "github.com/egoist/mygo/ui"
 
 var headerIcons = map[string]*ui.SVG{
-	"back": icon("ChevronLeft"), "pin": icon("Pin"), "unpin": icon("PinOff"),
+	"back": icon("ChevronLeft"), "forward": chevronRight, "pin": icon("Pin"), "unpin": icon("PinOff"),
 	"search": icon("Search"), "settings": icon("Settings"), "emoji": icon("Smile"),
 	"tag": icon("Tag"), "clear": icon("Trash2"), "hide": closeIcon,
 	"reveal": icon("Eye"), "conceal": icon("EyeOff"),
@@ -174,10 +174,11 @@ func (k Kit) CharacterSearch(c *ui.Context, query *string, label string, onEdit 
 	}
 }
 
-func (k Kit) searchField(c *ui.Context, options HeaderOptions, prefix string) {
+func (k Kit) searchField(c *ui.Context, options HeaderOptions, prefix string) ui.Element {
+	var input ui.Element
 	field := k.style(prefix + "Input")
 	ui.Box(c).Height(field.Height).Children(func() {
-		input := ui.TextInputBase(c, options.Query).Fill().Label(options.Placeholder)
+		input = ui.TextInputBase(c, options.Query).Fill().Label(options.Placeholder)
 		styledText(paintTextField(input, field), field)
 		if options.OnQueryKey != nil {
 			input.OnTextKey(options.OnQueryKey)
@@ -200,10 +201,14 @@ func (k Kit) searchField(c *ui.Context, options HeaderOptions, prefix string) {
 				Children(func() { text(c, options.Placeholder, field).SingleLine().PassThrough() })
 		}
 		icon := k.style(prefix + "InputIcon")
+		if prefix == string(TagContentsSearch) {
+			icon.Left = max(0, icon.Left-3)
+		}
 		ui.Icon(c, headerIcons["search"]).Absolute().Left(icon.Left).Top((field.Height-icon.Height)/2).
 			Size(icon.Width, icon.Height).TextColor(styleColor(icon.Text)).PassThrough()
 		if options.QueryPopup != nil {
 			options.QueryPopup(input)
 		}
 	})
+	return input
 }

@@ -69,6 +69,20 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 				kit.SettingsDataAction(c, "Import data", "import", false)
 			})
 		})
+	case "tag-search":
+		ui.Column(c).Width(380).Gap(8).Children(func() {
+			rail, picker, contents := "", "", "Release notes"
+			kit.TagToolbar(c, func() {
+				kit.TagNavigation(c, uikit.TagNavigationOptions{Label: "Tags", SearchLabel: "Find tags", Selected: "work",
+					Choices: []uikit.TagChoice{{ID: "work", Label: "Work", Count: 4}}})
+			}, nil, nil)
+			ui.Column(c).Width(156).Children(func() {
+				kit.TagSearch(c, uikit.TagSearchOptions{Variant: uikit.TagRailSearch, Query: &rail, Label: "Find a tag"})
+			})
+			kit.TagSearch(c, uikit.TagSearchOptions{Variant: uikit.TagPickerSearch, Query: &picker, Label: "Find tags"})
+			kit.TagSearch(c, uikit.TagSearchOptions{Variant: uikit.TagContentsSearch, Query: &contents,
+				Label: "Search tagged entries", ClearLabel: "Clear search"})
+		})
 	case "tag-toolbar":
 		kit.TagToolbar(c, func() {
 			kit.SettingsLabel(c, "Work").Grow(1)

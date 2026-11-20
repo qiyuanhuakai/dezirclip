@@ -44,9 +44,37 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 	case "hotkeyRemove":
 		surface()
 		style.Width, style.Height = 24, 24
+	case "tagSearchInput", "tagRailSearchInput", "tagPickerSearchInput":
+		style = DefaultWidgetStyle("characterInput", palette)
+		style.Size, style.Height, style.Padding = 12, 30, [4]float32{5, 7, 5, 28}
+		if widget == "tagRailSearchInput" {
+			style.Size, style.Padding = 11, [4]float32{6, 4, 6, 25}
+		}
+		if widget == "tagSearchInput" {
+			style.Height, style.Padding = 32, [4]float32{6, 27, 6, 29}
+		}
+	case "tagSearchInputPlaceholder", "tagRailSearchInputPlaceholder", "tagPickerSearchInputPlaceholder":
+		style = DefaultWidgetStyle("characterInputPlaceholder", palette)
+	case "tagSearchInputIcon", "tagRailSearchInputIcon", "tagPickerSearchInputIcon":
+		style = DefaultWidgetStyle("characterInputIcon", palette)
+		style.Width, style.Height, style.Left = 13, 13, 9
+		if widget == "tagRailSearchInputIcon" {
+			style.Left = 8
+		}
+		if widget == "tagSearchInputIcon" {
+			style.Width, style.Height = 14, 14
+		}
+	case "tagSearchClearIcon":
+		style.Width, style.Height = 8, 13
+	case "tagSearchClear":
+		style = DefaultWidgetStyle("tagToolbarButton", palette)
+		style.Width, style.Height = 23, 23
 	case "tagToolbar":
 		style.Height, style.ColumnGap = 30, 2
 		style.Padding = [4]float32{0, 7, 0, 3}
+	case "tagPickerTrigger":
+		style = DefaultWidgetStyle("headerButton", palette)
+		style.Size, style.Padding = 12, [4]float32{3, 6, 3, 6}
 	case "tagToolbarButton", "tagToolbarButtonActive":
 		style = DefaultWidgetStyle("headerButton", palette)
 		style.Padding = [4]float32{}

@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useStat
 import { invoke } from '../../../shared/lib/desktopInvoke';
 import { emit } from '@tauri-apps/api/event';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { ArrowDownWideNarrow, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, Eye, EyeOff, List, ListChecks, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
+import { ArrowDownWideNarrow, Check, ChevronLeft, ChevronRight, Edit2, Eye, EyeOff, List, ListChecks, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
 import type { ClipboardEntry, Locale } from '../../../shared/types';
 import { errorMessage } from '../../../shared/lib/errorMessage';
 import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
@@ -17,6 +17,8 @@ import { matchesTagName } from '../../../shared/lib/tagQuery';
 import { hideCompactPreviewGlobal } from '../../clipboard/components/ClipboardItem';
 import { clearRichTextSnapshots } from '../../../shared/lib/richTextSnapshot';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
+
+import { TagPickerTrigger, TagSearchField, TagToolbar } from "@deziro/ui-react/components/TagToolbar";
 
 const QrCodeDialog = lazy(() => import('../../clipboard/components/QrCodeDialog'));
 
@@ -367,11 +369,11 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
             </div>
             {collapsed ? <button type="button" className="btn-icon tag-manager-rail-search-toggle" title={t('tag_search_label')} aria-label={t('tag_search_label')}
                 onClick={() => { setCollapsed(false); requestAnimationFrame(() => tagSearchInput.current?.focus()); }}><Search size={15} /></button>
-                : <div className="search-container tag-manager-rail-search"><Search className="search-icon" size={13} /><input ref={tagSearchInput} className="search-input"
+                : <TagSearchField variant="rail" ref={tagSearchInput}
                     value={tagSearch} onChange={event => setTagSearch(event.target.value)}
                     onCompositionStart={() => setTagSearchComposing(true)}
                     onCompositionEnd={event => { setTagSearch(event.currentTarget.value); setTagSearchComposing(false); }}
-                    onBlur={() => setTagSearchComposing(false)} placeholder={t('tag_search_label')} aria-label={t('tag_search_label')} /></div>}
+                    onBlur={() => setTagSearchComposing(false)} placeholder={t('tag_search_label')} aria-label={t('tag_search_label')} />}
             <div className="tag-manager-tag-list" aria-busy={library.metadataLoading}>
                 {renderTagList(false)}
             </div>
@@ -380,26 +382,24 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         <section className="tag-manager-content" aria-label={selectedTag ?? t('tag_manager')}>
             <TagToolbar>
                 {split ? <span className="tag-manager-current" title={selectedTag ?? ''}><Tag size={14} /><span>{selectedTag ?? t('tags')}</span></span>
-                    : <button ref={pickerButton} type="button" className={`btn-icon tag-manager-current tag-manager-picker-trigger${pickerOpen ? ' active' : ''}`}
+                    : <TagPickerTrigger ref={pickerButton} current={selectedTag ?? t("tags")}
                         aria-label={`${t('tags')}: ${selectedTag ?? t('tags')}`} title={selectedTag ?? t('tags')}
-                        aria-haspopup="dialog" aria-expanded={pickerOpen} aria-controls={pickerOpen ? pickerId : undefined}
+                        aria-expanded={pickerOpen} aria-controls={pickerOpen ? pickerId : undefined}
                         onClick={() => { setMenuOpen(false); setPickerActiveTag(selectedTag); setPickerOpen(current => !current); }}
                         onKeyDown={event => {
                             if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
                             if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); setMenuOpen(false); setPickerActiveTag(selectedTag); setPickerOpen(true); }
-                        }}><Tag size={14} /><span>{selectedTag ?? t('tags')}</span><ChevronDown size={13} /></button>}
+                        }} />}
                 {!split && pickerOpen && <div ref={picker} id={pickerId} role="dialog" aria-label={t('tag_search_label')}
                     className="item-context-menu tag-manager-picker" onBlur={event => {
                         if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget) && event.relatedTarget !== pickerButton.current) setPickerOpen(false);
                     }}>
                     <div className="tag-manager-picker-tools">
-                        <div className="search-container tag-manager-picker-search"><Search className="search-icon" size={13} />
-                            <input ref={tagSearchInput} className="search-input" value={tagSearch} onChange={event => { focusSequence.current += 1; setTagSearch(event.target.value); }}
+                        <TagSearchField variant="picker" ref={tagSearchInput} value={tagSearch} onChange={event => { focusSequence.current += 1; setTagSearch(event.target.value); }}
                                 onCompositionStart={() => setTagSearchComposing(true)}
                                 onCompositionEnd={event => { setTagSearch(event.currentTarget.value); setTagSearchComposing(false); }}
                                 onBlur={() => setTagSearchComposing(false)}
                                 placeholder={t('tag_search_label')} aria-label={t('tag_search_label')} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls={tagListId} />
-                        </div>
                         <button type="button" className="btn-icon" title={t('tag_create')} aria-label={t('tag_create')} onClick={() => openDialog({ kind: 'createTag' })}><Plus size={16} /></button>
                     </div>
                     {filteredTags.length ? <div className={`tag-manager-tag-list tag-manager-picker-size-${Math.min(filteredTags.length, 6)}`} aria-busy={library.metadataLoading}>{renderTagList(true)}</div>
@@ -446,8 +446,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     {menuItem(<Trash2 size={14} />, t(protectedTag(selectedTag) ? 'common_delete' : 'tag_remove'), () => openDialog({ kind: 'removeTag', tag: selectedTag }), protectedTag(selectedTag) && privacyProtection)}
                 </div>}
             </TagToolbar>
-            <div className="search-container tag-manager-search"><Search className="search-icon" size={14} />
-                <input ref={searchInput} className="search-input" value={library.query} maxLength={256} disabled={!selectedTag}
+            <TagSearchField variant="contents" ref={searchInput} value={library.query} maxLength={256} disabled={!selectedTag}
                     onChange={event => library.setQuery(event.target.value)} placeholder={t('tag_content_search')} aria-label={t('tag_content_search')}
                     onCompositionStart={() => library.setIsComposing(true)}
                     onCompositionEnd={event => { library.setQuery(event.currentTarget.value); library.setIsComposing(false); }}
@@ -455,9 +454,8 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     onKeyDown={event => {
                         if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
                         if (event.key === 'Escape' && library.query) { event.stopPropagation(); library.setQuery(''); }
-                    }} />
-                {library.query && <button type="button" className="btn-icon tag-manager-clear" onClick={() => library.setQuery('')} aria-label={t('tag_clear_search')}><X size={13} /></button>}
-            </div>
+                    }}
+                clearLabel={t('tag_clear_search')} onClear={() => library.setQuery('')} />
             {managementMode && <div className="tag-manager-batch-toolbar">
                 <button type="button" className="btn-icon tag-manager-text-button" disabled={busy || library.loading || library.error || library.total === 0} onClick={selectAll}
                     aria-pressed={selection.mode === 'all' && selection.excludedIds.length === 0}>
@@ -512,4 +510,3 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         {qrEntry && <Suspense fallback={null}><QrCodeDialog entry={qrEntry} onClose={() => setQrEntry(null)} /></Suspense>}
     </div>;
 }
-import { TagToolbar } from "@deziro/ui-react/components/TagToolbar";

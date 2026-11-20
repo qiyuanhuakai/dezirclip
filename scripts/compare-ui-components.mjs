@@ -24,6 +24,7 @@ const cases = {
   "settings-data": { states: ["default"], text: "Data storage path" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
   "tag-toolbar": { states: ["default"], text: "Work" },
+  "tag-search": { states: ["default"], text: "Work" },
   "text-fields": { states: ["default"], text: "Idle timeout" },
   "context-menu": { states: ["default", "text", "privacy"], text: "Clipboard entry" },
   "attachment-preview": { states: ["default", "compact", "media", "expanded"], text: "Notes.pdf" },
@@ -245,6 +246,14 @@ try {
             const nativeImage = await readFile(target);
             const nativeText = JSON.parse(stdout).join(" ");
             let webText = await page.locator("body").innerText();
+            if (fixture === "tag-search") {
+              const field = page.getByRole("textbox", { name: "Search tagged entries", exact: true });
+              if (await field.inputValue() !== "Release notes"
+                || await page.getByRole("button", { name: "Clear search" }).count() !== 1
+                || await page.locator(".tag-manager .search-icon").count() !== 3) {
+                throw Error("Incorrect tag search fields or clear button");
+              }
+            }
             if (fixture === "character-search") {
               const field = page.getByRole("searchbox", { name: "Search symbols" });
               if (await field.inputValue() !== (state === "filled" ? "Clipboard" : "")) throw Error("Wrong character search query");
