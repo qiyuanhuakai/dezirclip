@@ -129,6 +129,13 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 		})
 	case "settings-toggle":
 		kit.SettingsToggle(c, &g.settingEnabled, "Keep clipboard history")
+	case "settings-toggle-help":
+		ui.Column(c).Width(330).Gap(8).Children(func() {
+			kit.SettingsToggleField(c, &g.settingEnabled, "Move pasted entries to top", "Setting help: Move pasted entries to top",
+				"After pasting, move the item to the top of the list.", false)
+			winV := false
+			kit.SettingsToggleField(c, &winV, "Use Win+V", "Setting help: Use Win+V", "Use Win+V to open DezirClip.", true)
+		})
 	case "settings-slider":
 		ui.Column(c).FillWidth().Padding(6, 0).Children(func() {
 			kit.SettingsLabel(c, fmt.Sprintf("Opacity %.0f%%", g.previewOpacity))
@@ -253,6 +260,12 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 }
 
 func (g *gallery) prepare(tester *ui.Tester) error {
+	if g.fixture == "settings-toggle-help" && g.state == "expanded" {
+		if err := tester.Click("Setting help: Move pasted entries to top"); err != nil {
+			return err
+		}
+		tester.Move(450, 390)
+	}
 	if g.fixture == "character-panel" && g.state == "after-scroll" {
 		tester.Scroll(270, 185, 0, 2000)
 		tester.Scroll(270, 185, 0, 2000)
@@ -412,7 +425,7 @@ func run() error {
 	if g.state == "extended" {
 		g.bindings = []string{"Ctrl+1", "Ctrl+Numpad1", "Alt+Semicolon"}
 	}
-	g.settingEnabled = g.state == "enabled"
+	g.settingEnabled = g.state == "enabled" || g.fixture == "settings-toggle-help"
 	g.emojiFavorites = g.state == "favorites"
 	g.historySelected = -1
 	if g.fixture == "history-list" && g.state == "selected" {

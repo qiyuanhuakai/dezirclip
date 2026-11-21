@@ -1,5 +1,5 @@
 import { SettingsField } from "@deziro/ui-react/components/SettingsField";
-import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
+import { SettingsToggle, SettingsToggleField } from "@deziro/ui-react/components/SettingsToggle";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import { useEffect, useRef, useState } from "react";
 import type { ComponentType, CSSProperties, ReactNode } from "react";
@@ -80,6 +80,7 @@ interface ClipboardSettingsGroupProps {
 
 const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
     const sequentialHotkeyParts = props.sequentialHotkey ? props.sequentialHotkey.split('+') : [];
+    const helpLabel = props.t("settings_help");
     const searchHotkeyParts = props.searchHotkey ? props.searchHotkey.split('+') : [];
     const pasteMethodOptions = [
         { value: "shift_insert", label: props.t("paste_method_shift_insert") },
@@ -216,27 +217,15 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
             </div>
             {!props.collapsed && (
                 <div className="group-content">
-                    <div className="setting-item">
-                        <props.LabelWithHint
-                            label={props.t('persistent_storage')}
-                            hintKey="persistent_storage"
-                        />
-                        <SettingsToggle checked={props.persistent}
-                                aria-label={props.t('persistent_storage')}
-                                onChange={(e) => props.setPersistent(e.target.checked)} />
-                    </div>
+                    <SettingsToggleField label={props.t("persistent_storage")} helpLabel={helpLabel}
+                        description={props.t("persistent_storage_hint")} checked={props.persistent}
+                        onChange={(e) => props.setPersistent(e.target.checked)} />
                     {props.persistent && (
                         <>
-                            <div className="setting-item">
-                                <props.LabelWithHint
-                                    label={props.t('persistent_limit_enabled')}
-                                    hintKey="persistent_limit_enabled"
-                                />
-                                <SettingsToggle checked={props.persistentLimitEnabled}
-                                        aria-label={props.t('persistent_limit_enabled')}
-                                        disabled={limitSaving}
-                                        onChange={(e) => void saveLimit("persistent_limit_enabled", String(e.target.checked))} />
-                            </div>
+                            <SettingsToggleField label={props.t("persistent_limit_enabled")} helpLabel={helpLabel}
+                                description={props.t("persistent_limit_enabled_hint")} checked={props.persistentLimitEnabled}
+                                disabled={limitSaving}
+                                onChange={(e) => void saveLimit("persistent_limit_enabled", String(e.target.checked))} />
                             {limitError && <span role="alert">{props.t("common_error")} · {limitError}</span>}
                             {props.persistentLimitEnabled && (
                                 <SettingsField>
@@ -274,14 +263,9 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             )}
                         </>
                     )}
-                    <div className="setting-item">
-                        <props.LabelWithHint
-                            label={props.t('merge_duplicates')}
-                            hintKey="merge_duplicates"
-                        />
-                        <SettingsToggle checked={props.deduplicate}
-                                onChange={(e) => props.setDeduplicate(e.target.checked)} />
-                    </div>
+                    <SettingsToggleField label={props.t("merge_duplicates")} helpLabel={helpLabel}
+                        description={props.t("merge_duplicates_hint")} checked={props.deduplicate}
+                        onChange={(e) => props.setDeduplicate(e.target.checked)} />
                     <div className="setting-item">
                         <div className="item-label-group">
                             <span className="item-label">{props.t('capture_files')}</span>
@@ -289,17 +273,9 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         <SettingsToggle checked={props.captureFiles}
                                 onChange={(e) => props.setCaptureFiles(e.target.checked)} />
                     </div>
-                    <div className="setting-item">
-                        <props.LabelWithHint
-                            label={props.t('capture_rich_text') || '捕获富文本'}
-                            hintKey="capture_rich_text"
-                        />
-                        <SettingsToggle checked={props.captureRichText}
-                                onChange={(e) => {
-                                    const val = e.target.checked;
-                                    props.setCaptureRichText(val);
-                                }} />
-                    </div>
+                    <SettingsToggleField label={props.t("capture_rich_text") || "捕获富文本"} helpLabel={helpLabel}
+                        description={props.t("capture_rich_text_hint")} checked={props.captureRichText}
+                        onChange={(e) => props.setCaptureRichText(e.target.checked)} />
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('rich_text_snapshot_preview') || '富文本快照预览'}
@@ -460,18 +436,13 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                     props.saveAppSetting('delete_after_paste', String(val));
                                 }} />
                     </div>
-                    <div className="setting-item">
-                        <props.LabelWithHint
-                            label={props.t('move_to_top_after_paste')}
-                            hintKey="move_to_top_after_paste"
-                        />
-                        <SettingsToggle checked={props.moveToTopAfterPaste}
-                                onChange={(e) => {
-                                    const val = e.target.checked;
-                                    props.setMoveToTopAfterPaste(val);
-                                    props.saveAppSetting('move_to_top_after_paste', String(val));
-                                }} />
-                    </div>
+                    <SettingsToggleField label={props.t("move_to_top_after_paste")} helpLabel={helpLabel}
+                        description={props.t("move_to_top_after_paste_hint")} checked={props.moveToTopAfterPaste}
+                        onChange={(e) => {
+                            const val = e.target.checked;
+                            props.setMoveToTopAfterPaste(val);
+                            props.saveAppSetting('move_to_top_after_paste', String(val));
+                        }} />
                     <SettingsField>
                         <props.LabelWithHint
                             label={props.t('paste_method')}
@@ -486,12 +457,8 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         />
                         {pasteMethodError && <span role="alert">{props.t('common_error')}</span>}
                     </SettingsField>
-                    <div className="setting-item">
-                        <props.LabelWithHint
-                            label={props.t('sequential_paste_mode')}
-                            hintKey="sequential_paste_mode"
-                        />
-                        <SettingsToggle checked={props.sequentialMode}
+                    <SettingsToggleField label={props.t("sequential_paste_mode")} helpLabel={helpLabel}
+                        description={props.t("sequential_paste_mode_hint")} checked={props.sequentialMode}
                                 onChange={(e) => {
                                     const val = e.target.checked;
                                     props.setSequentialModeState(val);
@@ -520,8 +487,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         }
                                     }
                                 }} />
-                    </div>
-
                     {props.sequentialMode && props.pasteQueueCount > 0 && (
                         <div className="setting-item setting-item--detail">
                             <div className="item-label-group">
@@ -601,13 +566,8 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         onAdd={props.addMainHotkey} onRemove={props.removeMainHotkey}
                         canRemove={item => !isWinVHotkey(item) || !props.registryWinVEnabled} />
 
-                    <div className="setting-item">
-                        <props.LabelWithHint
-                            label={props.t('use_win_v_shortcut')}
-                            hintKey="use_win_v_shortcut"
-                        />
-                        <SettingsToggle checked={props.registryWinVEnabled}
-                                aria-label={props.t('use_win_v_shortcut')}
+                    <SettingsToggleField label={props.t("use_win_v_shortcut")} helpLabel={helpLabel}
+                        description={props.t("use_win_v_shortcut_hint")} checked={props.registryWinVEnabled}
                                 disabled={registryWinVChanging}
                                 onChange={async (e) => {
                                     if (registryWinVChanging) return;
@@ -712,7 +672,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         setRegistryWinVChanging(false);
                                     }
                                 }} />
-                    </div>
                     </NativeFeatureBoundary>
                 </div>
             )}

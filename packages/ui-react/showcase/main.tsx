@@ -4,7 +4,7 @@ import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HotkeyBinding, MatchHighlight,
   ProgressToast, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail, SettingsSectionCard,
-  SettingsSlider, SettingsToggle, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
+  SettingsSlider, SettingsToggle, SettingsToggleField, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { AttachmentFixture, HistoryImageFixture, HistoryRichTextFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
@@ -141,7 +141,7 @@ function Showcase() {
   const [filters, setFilters] = useState(["text"]);
   const [opened, setOpened] = useState(true);
   const [toastVisible, setToastVisible] = useState(true);
-  const [enabled, setEnabled] = useState(state === "enabled");
+  const [enabled, setEnabled] = useState(state === "enabled" || fixture === "settings-toggle-help");
   const [opacity, setOpacity] = useState(72);
   const [tab, setTab] = useState<EmojiTab>(state === "favorites" ? "favorites" : "emoji");
 
@@ -177,6 +177,13 @@ function Showcase() {
       compact={state === "compact"} onFeedback={() => undefined} onWebsite={() => undefined} onResetSettings={() => undefined} />,
     "settings-toggle": <div className="setting-item"><span className="item-label">Keep clipboard history</span>
       <SettingsToggle aria-label="Keep clipboard history" checked={enabled} onChange={event => setEnabled(event.currentTarget.checked)} />
+    </div>,
+    "settings-toggle-help": <div className="showcase-fields settings-view showcase-toggle-help">
+      <SettingsToggleField label="Move pasted entries to top" helpLabel="Setting help"
+        description="After pasting, move the item to the top of the list." checked={enabled}
+        onChange={event => setEnabled(event.currentTarget.checked)} />
+      <SettingsToggleField label="Use Win+V" helpLabel="Setting help"
+        description="Use Win+V to open DezirClip." checked={false} disabled />
     </div>,
     "settings-slider": <div className="settings-view showcase-settings"><div className="setting-item column">
       <span className="item-label">Opacity {opacity}%</span>

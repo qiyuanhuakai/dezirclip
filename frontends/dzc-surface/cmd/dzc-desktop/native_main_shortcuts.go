@@ -37,7 +37,7 @@ func (n *nativeMain) shortcutValue(key, fallback string) string {
 	return fallback
 }
 
-func (n *nativeMain) clipboardShortcuts(c *ui.Context) {
+func (n *nativeMain) globalShortcutSettings(c *ui.Context) {
 	label := n.text("global_hotkey")
 	kit := n.mainKit()
 	bindings := nativeMainChords(n.shortcutValue(mainShortcutSetting, ""))
@@ -59,9 +59,6 @@ func (n *nativeMain) clipboardShortcuts(c *ui.Context) {
 		})
 	})
 	n.winVSettings(c, kit)
-	n.shortcutSetting(c, "app.search_hotkey", n.text("search_hotkey_label"), "Alt+F")
-	n.shortcutSetting(c, "app.sequential_hotkey", n.text("sequential_paste_hotkey_label"), "Alt+V")
-	n.shortcutSetting(c, "app.rich_paste_hotkey", n.text("rich_paste_hotkey_label"), "Ctrl+Shift+Z")
 }
 
 func nativeMainChords(raw string) []string {

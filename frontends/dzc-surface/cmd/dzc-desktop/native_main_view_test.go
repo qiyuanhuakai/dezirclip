@@ -134,6 +134,34 @@ func TestNativeWideSettingsScroll(t *testing.T) {
 	}
 }
 
+func TestNativeClipboardSettingsKeepSequentialControlsTogether(t *testing.T) {
+	n := nativeMain{showSettings: true, settingsSection: "clipboard", preferences: map[string]string{"app.language": "en"}}
+	view := ui.NewTester(n.view, 670, 760)
+	shortcut := n.text("sequential_paste_hotkey_label")
+	clear := n.text("sequential_paste_clear_queue")
+	if view.HasText(shortcut) || view.HasText(clear) {
+		t.Fatal("disabled sequential paste showed its shortcut or queue controls")
+	}
+	n.preferences["app.sequential_mode"] = "true"
+	n.queueCount.known = true
+	view.Frame()
+	if !view.HasText(shortcut) || view.HasText(clear) {
+		t.Fatal("empty sequential queue should show only the shortcut")
+	}
+	n.queueCount.count = 3
+	view.Frame()
+	order := []string{n.text("search_hotkey_label"), "Move pasted entries to top", n.text("paste_method"),
+		n.text("sequential_paste_mode"), clear, shortcut, n.text("global_hotkey")}
+	lastY := float32(-1)
+	for _, label := range order {
+		bounds, shown := view.Find(label)
+		if !shown || bounds.Y <= lastY {
+			t.Fatalf("%q missing or out of order: %v shown=%t", label, bounds, shown)
+		}
+		lastY = bounds.Y
+	}
+}
+
 func TestNativeResponsiveSettingsFieldPlacement(t *testing.T) {
 	n := nativeMain{showSettings: true, settingsSection: "general", preferences: map[string]string{"app.language": "en"}}
 	view := ui.NewTester(n.view, 699, 420)
@@ -361,6 +389,23 @@ func TestNativeApplicationSelectsFitTheirSettingsColumns(t *testing.T) {
 	writer, writerOK := view.Find(window.text("system_default") + " (Example Writer)")
 	if !editorOK || !writerOK || editor.X+editor.W > writer.X || editor.Y != writer.Y {
 		t.Fatalf("default applications do not fit their own columns: editor=%+v writer=%+v, visible %v", editor, writer, view.Texts())
+	}
+}
+
+func TestNativeUpdateChannelHelpFollowsTheSelectedChannel(t *testing.T) {
+	window := nativeMain{preferences: map[string]string{"app.language": "en"}}
+	window.updater.channel = "preview"
+	view := ui.NewTester(func(c *ui.Context) {
+		window.updateSettings(c, window.mainKit())
+	}, 460, 340)
+	label := window.settingsHelpLabel(window.text("updater_channel"))
+	if err := view.Click(label); err != nil || !view.HasText(window.text("updater_preview_hint")) {
+		t.Fatalf("preview channel help did not open: %v, visible %v", err, view.Texts())
+	}
+	window.updater.channel = "stable"
+	view.Frame()
+	if !view.HasText(window.text("updater_stable_hint")) || view.HasText(window.text("updater_preview_hint")) {
+		t.Fatalf("channel help retained the previous value: %v", view.Texts())
 	}
 }
 

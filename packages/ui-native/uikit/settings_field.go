@@ -35,7 +35,11 @@ func (k Kit) SettingsFieldLabel(c *ui.Context, label, helpLabel, description str
 			k.settingsHelpButton(c, helpLabel, open)
 		})
 		if *open {
-			text(c, description, k.style("helpText")).FillWidth().MinWidth(0).Wrap()
+			widget := "helpText"
+			if _, themed := k.widgets["settingsFieldHelpText"]; themed {
+				widget = "settingsFieldHelpText"
+			}
+			text(c, description, k.style(widget)).FillWidth().MinWidth(0).Wrap()
 		}
 	})
 	return column

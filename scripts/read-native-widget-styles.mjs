@@ -232,6 +232,10 @@ const samples = [
   ["disclosure", "expanded", { disclosureContent: [".settings-disclosure > div:not([hidden])"] }],
   ["help", "default", { help: [".setting-help-button"] }],
   ["help", "expanded", { helpText: [".setting-help-text"], helpActive: [".setting-help-button"] }],
+  ["settings-toggle-help", "expanded", {
+    settingsFieldHelpText: [".setting-item .setting-help-text"],
+    settingsSwitchDisabled: [".switch input:disabled + .toggle"],
+  }],
   ["progress", "default", {
     progress: [".progress-toast"], progressMessage: [".progress-toast-message"],
     progressLabel: [".progress-toast-percent"], progressTrack: [".progress-toast-bar-track"],
@@ -559,6 +563,9 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
     }
     if (fixture === "help" && state === "expanded") {
       await page.getByRole("button", { name: "Setting help: Software updates" }).click();
+    }
+    if (fixture === "settings-toggle-help") {
+      await page.getByRole("button", { name: "Setting help: Move pasted entries to top" }).click();
     }
     await page.evaluate(async () => {
       await new Promise(resolve => requestAnimationFrame(resolve));

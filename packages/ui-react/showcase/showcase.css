@@ -45,6 +45,9 @@ html:root.showcase-opacity-background {
 .showcase-fields .showcase-setting-number {
   width: 112px;
 }
+.showcase-toggle-help {
+  padding: 0;
+}
 .showcase-fields .numeric-input {
   width: 112px;
 }

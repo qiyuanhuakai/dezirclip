@@ -356,11 +356,17 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	busy := u.cancel != nil
 	disabled := u.channel == "" || busy || n.mutating || n.session == nil || n.history.state.ServiceInstanceId == ""
 	auto := u.automatic
-	if kit.SettingsToggle(c, &auto, n.text("updater_auto_check")).Disabled(disabled).Changed() {
+	autoLabel := n.text("updater_auto_check")
+	if kit.SettingsToggleField(c, &auto, autoLabel, n.settingsHelpLabel(autoLabel), n.text("updater_auto_hint"), disabled) {
 		n.saveSetting("app.update_auto_check", strconv.FormatBool(auto))
 	}
 	channelLabel := n.text("updater_channel")
-	kit.HotkeyRow(c, channelLabel, func() {
+	channelHint := n.text("updater_stable_hint")
+	if u.channel == "preview" {
+		channelHint = n.text("updater_preview_hint")
+	}
+	kit.SettingsField(c, uikit.SettingsFieldOptions{}).Children(func() {
+		kit.SettingsFieldLabel(c, channelLabel, n.settingsHelpLabel(channelLabel), channelHint).Grow(1).MinWidth(110)
 		kit.SettingsChoices(c, channelLabel, u.channel, []uikit.SelectOption{
 			{Value: "stable", Label: n.text("updater_channel_stable_name")},
 			{Value: "preview", Label: n.text("updater_channel_preview_name")},

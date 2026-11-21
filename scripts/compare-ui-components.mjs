@@ -64,6 +64,7 @@ const additionalExamples = {
   "character-panel": { states: ["default", "after-scroll"], text: "Symbols" },
   "clipboard-search": { states: ["default", "selected"], text: "富文本" },
   "settings-toggle": { states: ["enabled", "default"], text: "Keep clipboard history" },
+  "settings-toggle-help": { states: ["default", "expanded"], text: "Move pasted entries to top" },
   "settings-slider": { states: ["default", "keyboard"], text: "Opacity 72%" },
   "hotkey-binding": { states: ["default", "recording"], text: "Quick Paste" },
   "scroll-to-top": { states: ["default", "hover"], text: "Clipboard history" },
@@ -158,6 +159,14 @@ try {
             await page.mouse.move(450, 390);
             await page.goto(url.href);
             await page.locator("main[data-fixture]").waitFor();
+            if (fixture === "settings-toggle-help" && state === "expanded") {
+              await page.getByRole("button", { name: "Setting help: Move pasted entries to top" }).click();
+              await page.getByText("After pasting, move the item to the top of the list.").waitFor();
+              await page.mouse.move(450, 390);
+              if (!await page.getByRole("checkbox", { name: "Move pasted entries to top" }).isChecked()) {
+                throw Error("Opening the description changed the preference");
+              }
+            }
             if (fixture === "character-panel") {
               const viewport = page.locator(".emoji-content");
               const nextGroup = viewport.getByText("Geometric shapes", { exact: true });
@@ -334,6 +343,7 @@ try {
               ? ["Clipboard", "history"].every(word => comparable(webText, word) && comparable(nativeText, word))
               : comparable(webText, marker) && comparable(nativeText, marker);
             const extra = state === "popup" || fixture === "surface-opacity" ? "Light"
+              : fixture === "settings-toggle-help" && state === "expanded" ? "After pasting, move the item to the top of the list."
               : fixture === "character-panel" ? state === "after-scroll" ? "Mathematics" : "Arrows"
               : fixture === "settings-field" && state === "expanded" ? "Use the theme font by default."
               : state === "expanded" && fixture === "disclosure" ? "Preview channel"

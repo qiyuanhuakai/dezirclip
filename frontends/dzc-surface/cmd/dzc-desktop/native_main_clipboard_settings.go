@@ -163,8 +163,9 @@ func (n *nativeMain) loadQueueCount() {
 }
 
 func (n *nativeMain) sequentialSettings(c *ui.Context) {
-	n.booleanSettings(c, nativeBooleanSetting{"app.sequential_mode", n.text("sequential_paste_mode"), false})
-	if !n.settingEnabled("app.sequential_mode", false) {
+	const setting = "app.sequential_mode"
+	n.booleanSettingWithHelp(c, setting, n.text("sequential_paste_mode"), n.text("sequential_paste_mode_hint"), false)
+	if !n.settingEnabled(setting, false) {
 		return
 	}
 	if !n.queueCount.known && !n.queueCount.failed {
@@ -176,16 +177,19 @@ func (n *nativeMain) sequentialSettings(c *ui.Context) {
 		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: n.mutating}).Clicked() {
 			n.loadQueueCount()
 		}
-	case n.queueCount.known:
-		ui.Row(c).ColumnSpan(-1).Wrap().Gap(6).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, strings.ReplaceAll(n.text("sequential_paste_queue_count"), "{count}", strconv.FormatUint(uint64(n.queueCount.count), 10)))
-			if n.mainKit().Button(c, uikit.ButtonOptions{
-				Label: n.text("sequential_paste_clear_queue"), Disabled: n.queueCount.count == 0 || n.mutating,
+	case n.queueCount.known && n.queueCount.count > 0:
+		kit := n.mainKit()
+		kit.SettingsField(c, uikit.SettingsFieldOptions{}).ColumnSpan(-1).Children(func() {
+			label := strings.ReplaceAll(n.text("sequential_paste_queue_count"), "{count}", strconv.FormatUint(uint64(n.queueCount.count), 10))
+			kit.SettingsLabel(c, label).Grow(1).Wrap()
+			if kit.Button(c, uikit.ButtonOptions{
+				Label: n.text("sequential_paste_clear_queue"), Disabled: n.mutating,
 			}).Clicked() {
 				n.clearNativePasteQueue()
 			}
 		})
 	}
+	n.shortcutSetting(c, "app.sequential_hotkey", n.text("sequential_paste_hotkey_label"), "Alt+V")
 }
 
 func (n *nativeMain) clearNativePasteQueue() {
@@ -209,11 +213,11 @@ func (n *nativeMain) clearNativePasteQueue() {
 }
 
 func (n *nativeMain) retentionSettings(c *ui.Context) {
-	n.booleanSettings(c, nativeBooleanSetting{"app.persistent", n.text("persistent_storage", "Keep clipboard history"), false})
+	n.booleanSettingWithHelp(c, "app.persistent", n.text("persistent_storage", "Keep clipboard history"), n.text("persistent_storage_hint"), false)
 	if !n.settingEnabled("app.persistent", false) {
 		return
 	}
-	n.booleanSettings(c, nativeBooleanSetting{"app.persistent_limit_enabled", n.text("persistent_limit_enabled", "Limit stored clipboard entries"), true})
+	n.booleanSettingWithHelp(c, "app.persistent_limit_enabled", n.text("persistent_limit_enabled", "Limit stored clipboard entries"), n.text("persistent_limit_enabled_hint"), true)
 	if !n.settingEnabled("app.persistent_limit_enabled", true) {
 		return
 	}

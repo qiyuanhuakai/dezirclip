@@ -13,39 +13,66 @@ import (
 func (k Kit) SettingsToggle(c *ui.Context, on *bool, label string) ui.Element {
 	rowStyle := k.style("settingsToggleRow")
 	switchStyle := k.style("settingsSwitch")
-	suffix := ""
-	if *on {
-		suffix = "On"
-	}
-	trackStyle, thumbStyle := k.style("settingsSwitchTrack"+suffix), k.style("settingsSwitchThumb"+suffix)
 	row := paint(ui.CheckboxBase(c, on).Label(label).FillWidth().MinHeight(rowStyle.Height).
 		Gap(10).AlignItems(ui.Center).FocusRing(true), rowStyle)
 	row.Children(func() {
 		k.SettingsLabel(c, label).Grow(1).Wrap().PassThrough()
 		track := ui.Box(c).Size(switchStyle.Width, switchStyle.Height).Shrink(0).PassThrough()
-		paint(track, k.animatePaint(track, trackStyle)).Children(func() {
-			if thumbStyle.Width > 0 && thumbStyle.Height > 0 {
-				left := thumbStyle.Left
-				if duration := time.Duration(k.palette().TransitionMs) * time.Millisecond; duration > 0 {
-					left = track.Animate("switch-position", left, duration)
-				}
-				paint(ui.Box(c).Absolute().Left(left).Top(thumbStyle.Top).
-					Size(thumbStyle.Width, thumbStyle.Height).PassThrough(), thumbStyle)
-			}
-			for _, name := range []string{"settingsSwitchLeft", "settingsSwitchRight"} {
-				face := k.style(name + suffix)
-				if face.Width <= 0 || face.Height <= 0 {
-					continue
-				}
-				element := ui.Box(c).Absolute().Size(face.Width, face.Height).Left(face.Left).
-					Top(face.Top).Center().PassThrough()
-				paint(element, k.animatePaint(element, face)).Children(func() {
-					text(c, face.Caption, face).PassThrough()
-				})
-			}
-		})
+		k.paintSettingsSwitch(c, track, *on)
 	})
 	return row
+}
+
+// SettingsToggleField places an accessible switch beside an optional expandable description.
+func (k Kit) SettingsToggleField(c *ui.Context, on *bool, label, helpLabel, description string, disabled bool) bool {
+	switchStyle := k.style("settingsSwitch")
+	changed := false
+	k.SettingsField(c, SettingsFieldOptions{}).Children(func() {
+		k.SettingsFieldLabel(c, label, helpLabel, description).Grow(1)
+		ui.Box(c).Size(switchStyle.Width, switchStyle.Height).Margin(0, 0, 0, 12).Shrink(0).Children(func() {
+			control := ui.CheckboxBase(c, on).Label(label).Fill().Disabled(disabled).FocusRing(true)
+			face := ui.Box(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).PassThrough()
+			k.paintSettingsSwitch(c, face, *on)
+			if disabled {
+				opacity := float32(0.56)
+				if style, themed := k.widgets["settingsSwitchDisabled"]; themed {
+					opacity = style.Opacity
+				}
+				face.Opacity(opacity)
+			}
+			changed = control.Changed()
+		})
+	})
+	return changed
+}
+
+func (k Kit) paintSettingsSwitch(c *ui.Context, track ui.Element, on bool) {
+	suffix := ""
+	if on {
+		suffix = "On"
+	}
+	trackStyle, thumbStyle := k.style("settingsSwitchTrack"+suffix), k.style("settingsSwitchThumb"+suffix)
+	paint(track, k.animatePaint(track, trackStyle)).Children(func() {
+		if thumbStyle.Width > 0 && thumbStyle.Height > 0 {
+			left := thumbStyle.Left
+			if duration := time.Duration(k.palette().TransitionMs) * time.Millisecond; duration > 0 {
+				left = track.Animate("switch-position", left, duration)
+			}
+			paint(ui.Box(c).Absolute().Left(left).Top(thumbStyle.Top).
+				Size(thumbStyle.Width, thumbStyle.Height).PassThrough(), thumbStyle)
+		}
+		for _, name := range []string{"settingsSwitchLeft", "settingsSwitchRight"} {
+			face := k.style(name + suffix)
+			if face.Width <= 0 || face.Height <= 0 {
+				continue
+			}
+			element := ui.Box(c).Absolute().Size(face.Width, face.Height).Left(face.Left).
+				Top(face.Top).Center().PassThrough()
+			paint(element, k.animatePaint(element, face)).Children(func() {
+				text(c, face.Caption, face).PassThrough()
+			})
+		}
+	})
 }
 
 // SettingsLabel paints the visible label of a settings row.

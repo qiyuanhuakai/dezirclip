@@ -1,4 +1,5 @@
-import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
+import { SettingsToggleField } from "@deziro/ui-react/components/SettingsToggle";
+import { SettingsField } from "@deziro/ui-react/components/SettingsField";
 import { SettingsChoices } from "@deziro/ui-react/components/SettingsChoices";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { SettingHelp, SettingsLabel } from "../SettingHelp";
@@ -44,19 +45,16 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
                     {state.phase === "idle" && <><br />{t("updater_not_checked")}</>}
                 </SettingHelp>
             </h4>
-            <div className="setting-item">
-                <SettingsLabel label={t("updater_auto_check")} hintKey="updater_auto" />
-                <SettingsToggle checked={state.autoCheck} disabled={disabled}
-                        aria-label={t("updater_auto_check")}
-                        onChange={event => void saveUpdatePreference("autoCheck", event.target.checked)} />
-            </div>
-            <div className="setting-item update-channel-row">
+            <SettingsToggleField label={t("updater_auto_check")} helpLabel={t("settings_help")}
+                description={t("updater_auto_hint")} checked={state.autoCheck} disabled={disabled}
+                onChange={event => void saveUpdatePreference("autoCheck", event.target.checked)} />
+            <SettingsField className="update-channel-row">
                 <SettingsLabel label={t("updater_channel")} hintKey="updater_channel"
                     hint={t(state.channel === "stable" ? "updater_stable_hint" : "updater_preview_hint")} />
                 <SettingsChoices segmented label={t("updater_channel")} value={state.channel} disabled={disabled}
                     options={[{ value: "stable", label: "Stable" }, { value: "preview", label: "Preview" }]}
                     onChange={channel => { setConfirmationId(null); void saveUpdatePreference("channel", channel); }} />
-            </div>
+            </SettingsField>
             <UpdateVersionRow label={t("updater_current_version")} version={state.currentVersion} />
             {channelVersion && <UpdateVersionRow label={t("updater_channel_version")} version={channelVersion} />}
             <div className="setting-btn-group update-actions">

@@ -46,8 +46,8 @@ func (n *nativeMain) winVSettings(c *ui.Context, kit uikit.Kit) {
 		enabled = n.preferences[winVSetting] == "true"
 	}
 	ui.Column(c).ColumnSpan(-1).Gap(6).Children(func() {
-		if kit.SettingsToggle(c, &enabled, n.text("use_win_v_shortcut")).
-			Tooltip(n.text("use_win_v_shortcut_hint")).Disabled(!state.known || !n.shortcutAvailable()).Changed() {
+		label := n.text("use_win_v_shortcut")
+		if kit.SettingsToggleField(c, &enabled, label, n.settingsHelpLabel(label), n.text("use_win_v_shortcut_hint"), !state.known || !n.shortcutAvailable()) {
 			state.confirm = true
 		}
 		if state.failed && kit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry"),

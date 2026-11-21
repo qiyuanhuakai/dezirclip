@@ -1,4 +1,4 @@
-import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
+import { SettingsToggleField } from "@deziro/ui-react/components/SettingsToggle";
 import { SettingsField } from "@deziro/ui-react/components/SettingsField";
 import { SettingsSlider } from "@deziro/ui-react/components/SettingsSlider";
 import { SettingHelp } from "../SettingHelp";
@@ -179,31 +179,21 @@ const AppearanceSettingsGroup = ({
                         onChange={value => { setLanguage(value); saveAppSetting('language', value); }} />
                 </SettingsField>
 
-                <div className="setting-item">
-                    <LabelWithHint
-                        label={t('show_app_border') || '显示应用边框'}
-                        hintKey="show_app_border"
-                    />
-                    <SettingsToggle checked={showAppBorder}
-                            onChange={(e) => {
-                                const val = e.target.checked;
-                                setShowAppBorder(val);
-                                saveAppSetting('show_app_border', String(val));
-                            }} />
-                </div>
+                <SettingsToggleField label={t("show_app_border") || "显示应用边框"} helpLabel={t("settings_help")}
+                    description={t("show_app_border_hint")} checked={showAppBorder}
+                    onChange={(e) => {
+                        const val = e.target.checked;
+                        setShowAppBorder(val);
+                        saveAppSetting('show_app_border', String(val));
+                    }} />
 
-                <div className="setting-item">
-                    <LabelWithHint
-                        label={t('compact_mode') || 'Compact Mode'}
-                        hintKey="compact_mode"
-                    />
-                    <SettingsToggle checked={compactMode}
-                            onChange={(e) => {
-                                const val = e.target.checked;
-                                setCompactMode(val);
-                                saveAppSetting('compact_mode', String(val));
-                            }} />
-                </div>
+                <SettingsToggleField label={t("compact_mode") || "Compact Mode"} helpLabel={t("settings_help")}
+                    description={t("compact_mode_hint")} checked={compactMode}
+                    onChange={(e) => {
+                        const val = e.target.checked;
+                        setCompactMode(val);
+                        saveAppSetting('compact_mode', String(val));
+                    }} />
 
                 <SettingsField stacked>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
