@@ -237,6 +237,11 @@ const samples = [
   ["history-ocr", "failed", { historyOCRBadgeFailed: [".ocr-badge"] }],
   ["history-ocr", "unsupported", { historyOCRBadgeUnsupported: [".ocr-badge"] }],
   ["history-card", "hover", { historyCardHover: [".history-item"] }],
+  ["history-card", "action-hover", { historyActionHover: [".item-actions .btn-icon"] }],
+  ["history-card", "active", { historyActionActive: [".item-actions .btn-icon.active"] }],
+  ["history-card", "active-hover", { historyActionActiveHover: [".item-actions .btn-icon.active"] }],
+  ["history-card", "action-pressed", { historyActionPressed: [".item-actions .btn-icon"] }],
+  ["history-card", "active-pressed", { historyActionActivePressed: [".item-actions .btn-icon.active"] }],
   ["history-card", "compact", {
     historyCardCompact: [".history-item.compact"], historyContentCompact: [".content-preview"],
     historyMetaCompact: [".item-meta"],
@@ -247,6 +252,8 @@ const samples = [
   ["history-card", "compact-action-hover", { historyActionCompactHover: [".item-actions .btn-icon"] }],
   ["history-card", "compact-active", { historyActionCompactActive: [".item-actions .btn-icon.active"] }],
   ["history-card", "compact-active-hover", { historyActionCompactActiveHover: [".item-actions .btn-icon.active"] }],
+  ["history-card", "compact-action-pressed", { historyActionCompactPressed: [".item-actions .btn-icon"] }],
+  ["history-card", "compact-active-pressed", { historyActionCompactActivePressed: [".item-actions .btn-icon.active"] }],
   ["app-header", "default", {
     header: ["header"], headerTop: [".header-top"], headerTitle: [".header-title"],
     headerButton: [".header-top .btn-icon"],
@@ -484,8 +491,8 @@ function readStyles(sample) {
         right, bottom, maxWidthPercent: style.maxWidth.endsWith("%") ? number(style.maxWidth) : 0,
       } : {}),
       ...(/^(historyTag|historyTagCompact)$/.test(id) ? { minHeight: number(style.minHeight) } : {}),
-      ...((/^historyActionCompact/.test(id) || /^(previewToolbarActive|tagToolbarButtonActive)$/.test(id)) && translateX ? { translateX } : {}),
-      ...((/^historyActions?Compact/.test(id) || /^(previewToolbarActive|tagToolbarButtonActive)$/.test(id)) && translateY ? { translateY } : {}),
+      ...((/^historyAction(?!s|.*Icon)/.test(id) || /^(previewToolbarActive|tagToolbarButtonActive)$/.test(id)) && translateX ? { translateX } : {}),
+      ...((/^historyAction(?!.*Icon)/.test(id) || /^(previewToolbarActive|tagToolbarButtonActive)$/.test(id)) && translateY ? { translateY } : {}),
       ...(headingShift ? { translateY: headingShift } : {}),
       ...(id.startsWith("settingsSwitchThumb") ? { left: number(left + translateX) } : {}),
       ...(id.endsWith("InputIcon") ? { left } : {}),
@@ -622,11 +629,13 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
     if (fixture === "context-menu") {
       await page.getByRole("menuitem", { name: "Privacy" }).hover();
     }
-    if (fixture === "history-card" && state.endsWith("hover")) {
-      await page.locator(".history-item").hover();
+    const pressHistoryAction = fixture === "history-card" && state.endsWith("pressed");
+    if (fixture === "history-card" && (state.endsWith("hover") || pressHistoryAction)) {
+      if (state.startsWith("compact") || state === "hover") await page.locator(".history-item").hover();
       if (state.includes("action") || state.includes("active")) {
         await page.getByRole("button", { name: "Pin", exact: true }).hover();
       }
+      if (pressHistoryAction) await page.mouse.down();
     }
     if (fixture === "history-ocr" && state === "expanded") {
       await page.getByTestId("ocr-toggle").click();
@@ -684,6 +693,7 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
       await page.evaluate(prepareSliderSamples, ".preview-toolbar-opacity input[type=range]");
     }
     Object.assign(styles, await page.evaluate(readStyles, { selectors, materialOpacity }));
+    if (pressHistoryAction) await page.mouse.up();
   }
   const viewport = page.viewportSize();
   const bounds = await page.locator(".showcase").boundingBox();

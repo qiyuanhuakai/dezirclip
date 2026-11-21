@@ -549,28 +549,37 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 		return nil
 	}
 	switch g.state {
-	case "compact", "compact-hover", "compact-active-hover", "compact-action-hover":
+	case "compact", "compact-hover", "compact-active-hover", "compact-action-hover",
+		"compact-action-pressed", "compact-active-pressed", "action-hover", "active-hover",
+		"action-pressed", "active-pressed":
 		if g.fixture != "history-card" {
 			break
 		}
-		if _, ok := tester.Find("Pin"); ok {
-			return fmt.Errorf("compact toolbar was present before hovering")
+		duration := time.Duration(presets.Select(g.theme, g.mode).Tokens().TransitionMs) * time.Millisecond
+		if strings.HasPrefix(g.state, "compact") {
+			if _, ok := tester.Find("Pin"); ok {
+				return fmt.Errorf("compact toolbar was present before hovering")
+			}
+			if g.state == "compact" {
+				break
+			}
+			bounds, ok := tester.Find("Copied from the active editor")
+			if !ok {
+				return fmt.Errorf("history card is absent")
+			}
+			tester.Move(bounds.X+40, bounds.Y+bounds.H/2)
+			tester.Advance(duration)
 		}
-		if g.state == "compact" {
-			break
-		}
-		bounds, ok := tester.Find("Copied from the active editor")
-		if !ok {
-			return fmt.Errorf("history card is absent")
-		}
-		tester.Move(bounds.X+40, bounds.Y+bounds.H/2)
-		tester.Advance(time.Duration(presets.Select(g.theme, g.mode).Tokens().TransitionMs) * time.Millisecond)
 		pin, ok := tester.Find("Pin")
 		if !ok {
-			return fmt.Errorf("compact toolbar was absent after hovering")
+			return fmt.Errorf("toolbar was absent in %s", g.state)
 		}
 		if g.state != "compact-hover" {
 			tester.Move(pin.X+pin.W/2, pin.Y+pin.H/2)
+			if strings.HasSuffix(g.state, "pressed") {
+				tester.Press(pin.X+pin.W/2, pin.Y+pin.H/2)
+			}
+			tester.Advance(duration)
 		}
 	case "southeast", "scrolled":
 		bounds, ok := tester.Find("Input target")

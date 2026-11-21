@@ -29,6 +29,8 @@ const figures = [
   ["history-tags", "default", 120, 0, "history-tags"],
   ["history-tags", "compact", 82, 0, "history-tags-compact"],
   ["history-card", "compact-hover", 90, 0, "history-card-compact-actions"],
+  ["history-card", "compact-active-hover", 90, 0, "history-card-compact-active-actions"],
+  ["history-card", "active-hover", 120, 0, "history-card-inline-actions"],
   ["context-menu", "text", 215],
   ["text-fields", "default", 275],
   ["settings-section-card", "expanded", 120],

@@ -1020,7 +1020,7 @@ body.theme-liquid-glass:not(.hide-app-border) {
   background: var(--lg-history-hover-bg) !important;
 }
 
-.theme-liquid-glass .history-item:active {
+.theme-liquid-glass .history-item:active:where(:not(:has(.item-actions .btn-icon:active))) {
   transform: none !important;
   box-shadow: var(--lg-history-shadow) !important;
 }

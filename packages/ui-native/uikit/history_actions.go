@@ -42,32 +42,46 @@ func (k Kit) historyCardActions(c *ui.Context, row ui.Element, actions []HeaderA
 	}
 	style, glyph := k.style(group), k.style(iconWidget)
 	style.Opacity = 1
+	duration := time.Duration(k.palette().TransitionMs) * time.Millisecond
 	return paint(row.Gap(style.ColumnGap).AlignItems(ui.Center), style).Children(func() {
 		for _, action := range actions {
 			style := k.style(widget)
 			button := ui.ButtonBase(c).Label(action.Label).Tooltip(action.Label).Size(style.Width, style.Height).
-				Disabled(action.Disabled || fading).Center()
-			if compact {
-				state := widget
-				if action.Active {
-					state += "Active"
-				}
-				if button.Hovered() {
+				Disabled(action.Disabled || fading).Selected(action.Active).FocusRing(true).Center()
+			state := widget
+			if action.Active {
+				state += "Active"
+			}
+			if !action.Disabled && !fading {
+				if button.Pressed() {
+					state += "Pressed"
+				} else if button.Hovered() {
 					state += "Hover"
 				}
-				style = k.style(state)
-				if !button.Pressed() && !button.FocusVisible() {
-					style = k.animatePaint(button, style)
-				} else {
-					style = k.interactive(c, button, style, action.Active)
-				}
+			}
+			if _, exists := k.widgets[state]; exists {
+				style = k.animatePaint(button, k.style(state))
 			} else {
-				if action.Active {
+				// Older theme catalogs omit the inline states and compact press states.
+				if compact {
+					fallback := widget
+					if action.Active {
+						fallback += "Active"
+					}
+					if button.Hovered() && !action.Disabled && !fading {
+						fallback += "Hover"
+					}
+					style = k.style(fallback)
+				} else if action.Active {
 					style.Fill, style.Border = rgba(c.Theme().Selection), rgba(c.Theme().Accent)
 				}
-				style = k.interactive(c, button, style, action.Active)
+				if !action.Disabled && !fading {
+					style = k.interactive(c, button, style, action.Active)
+				}
 			}
-			paint(button, style).Translate(style.TranslateX, style.TranslateY)
+			x := button.Animate("history-action-x", style.TranslateX, duration)
+			y := button.Animate("history-action-y", style.TranslateY, duration)
+			paint(button, style).Translate(x, y)
 			button.Children(func() {
 				if image := headerIcons[action.Icon]; image != nil {
 					ui.Icon(c, image).Size(glyph.Width, glyph.Height).TextColor(styleColor(style.Text)).PassThrough()

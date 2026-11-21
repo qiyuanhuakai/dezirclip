@@ -202,7 +202,8 @@ select.search-input option {
   background: var(--bg-input);
 }
 
-.history-item:active {
+/* The card face responds to pressing the card itself. */
+.history-item:active:where(:not(:has(.item-actions .btn-icon:active))) {
   transform: translate(2px, 2px);
   box-shadow: 2px 2px 0 0 var(--shadow-color);
 }

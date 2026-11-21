@@ -327,7 +327,7 @@ body.dark-mode.theme-macos .compact-popover-portal .rich-text-preview {
   background: var(--macos-history-hover-bg) !important;
 }
 
-.theme-macos .history-item:active {
+.theme-macos .history-item:active:where(:not(:has(.item-actions .btn-icon:active))) {
   transform: none !important;
   box-shadow: var(--macos-history-active-shadow) !important;
 }

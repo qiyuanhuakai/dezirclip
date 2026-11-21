@@ -62,7 +62,9 @@ const cases = {
   "history-rich-text": { states: ["default", "compact"], text: "Release checklist" },
   "settings-rail": { states: ["default", "selected", "long-label"], text: "Appearance" },
   "settings-footer": { states: ["default", "compact"], text: "Reset defaults" },
-  "history-card": { states: ["default", "selected", "pinned", "compact", "compact-hover", "compact-action-hover", "compact-active-hover"], text: "Copied from the active editor" },
+  "history-card": { states: ["default", "selected", "pinned", "action-hover", "active", "active-hover", "action-pressed",
+    "active-pressed", "compact", "compact-hover", "compact-action-hover", "compact-active-hover", "compact-action-pressed",
+    "compact-active-pressed"], text: "Copied from the active editor" },
   "app-header": { states: ["default", "pinned", "settings"], text: "DezirClip" },
   select: { states: ["default", "disabled", "hover", "focus", "popup"], text: "System" },
   "search-bar": { states: ["default", "filled", "loading", "error"], text: "FTS5" },
@@ -399,17 +401,32 @@ try {
               }
             }
             await page.mouse.move(450, 390);
-            if (fixture === "history-card" && state.startsWith("compact")) {
+            const pressedHistoryAction = fixture === "history-card" && state.endsWith("pressed");
+            if (fixture === "history-card") {
               const pin = page.getByRole("button", { name: "Pin", exact: true });
-              await page.waitForFunction(() => getComputedStyle(document.querySelector(".item-actions")).visibility === "hidden");
-              if (state.endsWith("hover")) {
-                await page.locator(".history-item").hover();
-                if (state !== "compact-hover") {
-                  await pin.waitFor();
-                  const bounds = await pin.boundingBox();
-                  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+              const showToolbar = state.endsWith("hover") || pressedHistoryAction;
+              if (state.startsWith("compact")) {
+                await page.waitForFunction(() => getComputedStyle(document.querySelector(".item-actions")).visibility === "hidden");
+                if (showToolbar) {
+                  await page.locator(".history-item").hover();
+                  await page.waitForFunction(() => getComputedStyle(document.querySelector(".item-actions")).opacity === "1");
                 }
-                await page.waitForFunction(() => getComputedStyle(document.querySelector(".item-actions")).opacity === "1");
+              }
+              if (showToolbar && state !== "compact-hover") {
+                await pin.hover();
+                if (pressedHistoryAction) {
+                  const cardFace = () => page.locator(".history-item").evaluate(async card => {
+                    await Promise.allSettled(card.getAnimations().map(animation => animation.finished));
+                    const style = getComputedStyle(card);
+                    return [style.transform, style.boxShadow].join("|");
+                  });
+                  const resting = await cardFace();
+                  await page.mouse.down();
+                  if (await cardFace() !== resting) {
+                    await page.mouse.up();
+                    throw Error("Pressing a toolbar button also moved or depressed the history card");
+                  }
+                }
               }
             }
             if (fixture === "context-menu" && state !== "default") {
@@ -565,6 +582,7 @@ try {
             if (fixture === "settings-data" && state === "hover-path") await page.locator(".data-panel").hover();
             if (fixture === "settings-data" && state === "hover-action") await page.locator(".data-actions-row .btn-icon").first().hover();
             const webImage = await page.screenshot({ path: join(output, id + "_web.png"), animations: "disabled" });
+            if (pressedHistoryAction) await page.mouse.up();
             const { stdout } = await execute(resolve(native), nativeArgs, { timeout: 10000 });
             const nativeImage = await readFile(target);
             const inspection = JSON.parse(stdout);
