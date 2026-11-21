@@ -275,6 +275,13 @@ func run() error {
 	}
 	// The Desktop always loads the packaged local UI even in a developer shell.
 	os.Unsetenv("MYGO_DEV_URL")
+	var updateWindowPipe *os.File
+	if activation == "show" {
+		updateWindowPipe = takeMyGoUpdateWindowPipe()
+		if updateWindowPipe != nil {
+			defer updateWindowPipe.Close()
+		}
+	}
 	ctx := context.Background()
 	bootStarted := time.Now()
 	actions, err := client.OpenDesktop(ctx, buildinfo.Version, !mainWindow && elevatedInstance == "")
@@ -290,7 +297,7 @@ func run() error {
 	mygo.App.SetName("DezirClip MyGo")
 	useNativeMain := os.Getenv("DZC_MYGO_NATIVE_MAIN") != "0"
 	if !mainWindow {
-		return runResident(actions, minimized, activation, useNativeMain)
+		return runResident(actions, minimized, activation, useNativeMain, updateWindowPipe)
 	}
 	if actions.Hello().State.ServiceInstanceId != os.Args[2] {
 		return client.ErrProtocol

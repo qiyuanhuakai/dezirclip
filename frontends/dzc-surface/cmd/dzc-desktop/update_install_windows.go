@@ -15,7 +15,9 @@ import (
 )
 
 // NSIS has no build-info mode. Its signed payload is checked by the installer.
-func preflightMyGoUpdate(context.Context, mygoInstallRequest) error { return nil }
+func preflightMyGoUpdate(context.Context, *mygoInstallRequest) error { return nil }
+
+func takeMyGoUpdateWindowPipe() *os.File { return nil }
 
 func mygoUpdateTarget() (path, support string) {
 	executable, err := os.Executable()

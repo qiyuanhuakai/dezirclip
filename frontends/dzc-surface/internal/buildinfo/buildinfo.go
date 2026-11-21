@@ -4,6 +4,7 @@ package buildinfo
 import (
 	_ "embed"
 	"encoding/json"
+	"runtime"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/control"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
@@ -59,15 +60,17 @@ func DesktopReport() any {
 
 func componentReport(component string) any {
 	return struct {
-		Component        string                   `json:"component"`
-		ComponentVersion string                   `json:"component_version"`
-		SourceRevision   string                   `json:"source_revision"`
-		SourceState      string                   `json:"source_state"`
-		BuildID          string                   `json:"build_id"`
-		ProtocolVersion  protocol.ProtocolVersion `json:"protocol_version"`
-		MyGoVersion      string                   `json:"mygo_version"`
-		MyGoSource       string                   `json:"mygo_source_revision"`
-		Target           string                   `json:"target"`
-		ToolkitPatchID   string                   `json:"toolkit_patch_id"`
-	}{component, Version, SourceRevision, SourceState, BuildID, protocol.Version, toolkit.Version, toolkit.Source, Target, ToolkitPatch}
+		Component         string                   `json:"component"`
+		ComponentVersion  string                   `json:"component_version"`
+		SourceRevision    string                   `json:"source_revision"`
+		SourceState       string                   `json:"source_state"`
+		BuildID           string                   `json:"build_id"`
+		ProtocolVersion   protocol.ProtocolVersion `json:"protocol_version"`
+		MyGoVersion       string                   `json:"mygo_version"`
+		MyGoSource        string                   `json:"mygo_source_revision"`
+		Target            string                   `json:"target"`
+		ToolkitPatchID    string                   `json:"toolkit_patch_id"`
+		UpdateWindowReady bool                     `json:"update_window_ready,omitempty"`
+	}{component, Version, SourceRevision, SourceState, BuildID, protocol.Version, toolkit.Version, toolkit.Source, Target, ToolkitPatch,
+		component == "mygo-desktop" && runtime.GOOS == "linux"}
 }

@@ -26,6 +26,8 @@ var updateVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]
 var errUpdateVerification = errors.New("update_download_or_signature_failed")
 var errUpdateInstall = errors.New("update_install_failed")
 
+const mygoUpdateWindowMarker = "dezirclip-mygo-window-visible\n"
+
 type mygoArtifact struct {
 	URL, Signature string
 }
@@ -190,6 +192,7 @@ func copyUpdateBody(target io.Writer, body io.Reader, total int64, report func(i
 
 type mygoInstallRequest struct {
 	Path, Version, Signature string
+	waitForWindow            bool
 }
 
 type mygoUpdateHandoff struct {

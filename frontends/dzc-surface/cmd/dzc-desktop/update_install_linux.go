@@ -16,6 +16,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const updateWindowPipeEnv = "DZC_MYGO_UPDATE_WINDOW_PIPE"
+const updateWindowTimeout = 60 * time.Second
+
+var errUpdateWindowUnconfirmed = errors.New("the replacement AppImage has not confirmed its window opened")
+
 func mygoUpdateTarget() (path, support string) {
 	executable, err := os.Executable()
 	if err != nil {
@@ -60,7 +65,7 @@ func prepareMyGoUpdate(request mygoInstallRequest) (*mygoUpdateHandoff, error) {
 	}, nil
 }
 
-func preflightMyGoUpdate(ctx context.Context, request mygoInstallRequest) error {
+func preflightMyGoUpdate(ctx context.Context, request *mygoInstallRequest) error {
 	if !mygoAppImage(request.Path) {
 		return fmt.Errorf("%w: candidate is not an AppImage", errUpdateInstall)
 	}
@@ -75,12 +80,14 @@ func preflightMyGoUpdate(ctx context.Context, request mygoInstallRequest) error 
 		return fmt.Errorf("%w: read candidate build info: %v", errUpdateInstall, err)
 	}
 	var info struct {
-		Component string `json:"component"`
-		Version   string `json:"component_version"`
+		Component         string `json:"component"`
+		Version           string `json:"component_version"`
+		UpdateWindowReady bool   `json:"update_window_ready"`
 	}
 	if err := json.Unmarshal(output, &info); err != nil || info.Component != "mygo-desktop" || info.Version != request.Version {
 		return fmt.Errorf("%w: candidate reported an unexpected desktop build", errUpdateInstall)
 	}
+	request.waitForWindow = info.UpdateWindowReady
 	return nil
 }
 
@@ -101,12 +108,57 @@ func installMyGoUpdate(request mygoInstallRequest) error {
 		child := exec.Command(target, "--show")
 		child.Dir = filepath.Dir(target)
 		child.Env, child.Stderr = mygoAppImageEnvironment(os.Environ()), os.Stderr
+		return launchMyGoAppImage(child, request.waitForWindow, updateWindowTimeout)
+	})
+}
+
+func takeMyGoUpdateWindowPipe() *os.File {
+	if os.Getenv(updateWindowPipeEnv) != "1" {
+		return nil
+	}
+	_ = os.Unsetenv(updateWindowPipeEnv)
+	// Only the new resident can acknowledge readiness. Its service and UI children must not hold the pipe open.
+	const fd = 3
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil || stat.Mode&unix.S_IFMT != unix.S_IFIFO {
+		return nil
+	}
+	unix.CloseOnExec(fd)
+	return os.NewFile(fd, "appimage-window-ready")
+}
+
+func launchMyGoAppImage(child *exec.Cmd, waitForWindow bool, timeout time.Duration) error {
+	if !waitForWindow {
 		if err := child.Start(); err != nil {
 			return err
 		}
 		_ = child.Process.Release()
 		return nil
-	})
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	defer writer.Close()
+	if err = reader.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		return err
+	}
+	child.ExtraFiles = []*os.File{writer}
+	child.Env = append(child.Environ(), updateWindowPipeEnv+"=1")
+	if err = child.Start(); err != nil {
+		return err
+	}
+	_ = writer.Close()
+	go func() { _ = child.Wait() }()
+	marker := make([]byte, len(mygoUpdateWindowMarker))
+	if _, err = io.ReadFull(reader, marker); err == nil && string(marker) == mygoUpdateWindowMarker {
+		return nil
+	}
+	if errors.Is(err, io.EOF) {
+		return fmt.Errorf("%w: the replacement AppImage exited before opening a window", errUpdateInstall)
+	}
+	return errors.Join(errUpdateWindowUnconfirmed, err)
 }
 
 func replaceMyGoAppImage(candidate, target string, mode os.FileMode, start func() error) error {
@@ -120,6 +172,10 @@ func replaceMyGoAppImage(candidate, target string, mode os.FileMode, start func(
 		return err
 	}
 	if err := start(); err != nil {
+		if errors.Is(err, errUpdateWindowUnconfirmed) {
+			// A slow process may still be using the new image. Keep both launchers in place.
+			return fmt.Errorf("%w (previous AppImage retained at %q)", err, backup)
+		}
 		// Restore the previous launcher atomically. If restoration fails, leave
 		// the backup in staging so the original binary can still be recovered.
 		return errors.Join(err, os.Rename(backup, target))

@@ -64,7 +64,7 @@ func downloadResidentUpdate(ctx context.Context, artifact mygoArtifact, version,
 		discardResidentUpdate(path)
 		return mygoInstallRequest{}, err
 	}
-	if err := preflightMyGoUpdate(ctx, request); err != nil {
+	if err := preflightMyGoUpdate(ctx, &request); err != nil {
 		discardResidentUpdate(path)
 		return mygoInstallRequest{}, err
 	}

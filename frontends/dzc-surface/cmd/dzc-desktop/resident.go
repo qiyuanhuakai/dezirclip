@@ -62,7 +62,7 @@ func refreshMainShortcuts(owner *client.Client, registered map[string]bool, togg
 
 // Parent and child use inherited pipes for window lifecycle, and authenticate
 // separately to Rust.
-func runResident(owner *client.Client, minimized bool, activation string, useNativeMain bool) error {
+func runResident(owner *client.Client, minimized bool, activation string, useNativeMain bool, updateWindowPipe *os.File) error {
 	diagnostics := newDesktopDiagnostics(owner, "resident")
 	diagnostics.record("start", 0, nil)
 	defer diagnostics.record("run-returned", 0, nil)
@@ -737,6 +737,11 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 					case "visible", "hidden":
 						mygo.RunOnMain(func() {
 							mainVisible = line == "visible"
+							if mainVisible && updateWindowPipe != nil {
+								_, _ = updateWindowPipe.WriteString(mygoUpdateWindowMarker)
+								_ = updateWindowPipe.Close()
+								updateWindowPipe = nil
+							}
 							if mainVisible && !activationStarted.IsZero() {
 								desktopTiming("activation to visible", activationStarted)
 								activationStarted = time.Time{}
