@@ -27,8 +27,8 @@ const cases = {
   "backup-dialog": { states: ["default", "encrypted", "error", "import", "replace", "replace-confirmed"], text: "File path" },
   "settings-update": { states: ["default", "unknown-size", "installing"], text: "Installed version" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
-  "privacy-rules": { states: ["default"], text: "Privacy rules" },
-  "privacy-detection": { states: ["default", "narrow", "focus"], text: "Custom detection patterns" },
+  "privacy-rules": { states: ["default", "resized"], text: "Privacy rules" },
+  "privacy-detection": { states: ["default", "narrow", "focus", "resized"], text: "Custom detection patterns" },
   "tag-toolbar": { states: ["default"], text: "Work" },
   "tag-search": { states: ["default"], text: "Work" },
   "search-select": { states: ["default", "apps-filtered", "empty", "typo"], text: "Interface font" },
@@ -311,6 +311,25 @@ try {
 
             if (fixture === "privacy-detection" && state === "focus") {
               await page.getByRole("textbox", { name: "Patterns" }).focus();
+            }
+            if (state === "resized" && (fixture === "privacy-detection" || fixture === "privacy-rules")) {
+              const label = fixture === "privacy-detection" ? "Patterns" : "Excluded applications";
+              const textarea = page.getByRole("textbox", { name: label });
+              const before = await textarea.boundingBox();
+              if (!before) throw Error("Privacy textarea is not visible");
+              const x = before.x + before.width - 5;
+              const y = before.y + before.height - 5;
+              const delta = 40;
+              await page.mouse.move(x, y);
+              await page.mouse.down();
+              await page.mouse.move(x - 24, y + delta, { steps: 4 });
+              await page.mouse.up();
+              await page.mouse.move(450, 390);
+              const after = await textarea.boundingBox();
+              if (!after || Math.abs(after.width - before.width) > 1 ||
+                  Math.abs(after.height - before.height - delta) > 1) {
+                throw Error(`Privacy textarea ${label} did not resize vertically: ${JSON.stringify({ before, after })}`);
+              }
             }
             if (fixture === "toast") {
               await page.waitForFunction(() => getComputedStyle(document.querySelector(".toast-item")).opacity === "1");

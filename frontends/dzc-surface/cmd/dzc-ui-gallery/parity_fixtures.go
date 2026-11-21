@@ -153,8 +153,18 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 		}, nil)
 	case "privacy-rules":
 		ui.Column(c).Width(490).Children(func() {
+			drawExclusions := func() {
+				ui.Column(c).FillWidth().Gap(6).Padding(8, 0).Children(func() {
+					kit.SettingsLabel(c, "Application exclusions")
+					value := "Example Editor\nExample Browser"
+					kit.SourceExclusionField(c, &value, "Excluded applications", "").ReadOnly(true)
+				})
+			}
 			count := 2
 			kit.PrivacyRulesHeading(c, "Privacy rules", &count)
+			if g.state == "resized" {
+				drawExclusions()
+			}
 			kit.PrivacyRuleGrid(c, 2, func() {
 				kit.PrivacyRuleCard(c, uikit.PrivacyRuleCardOptions{
 					Title: "Allowed content", Source: "Example Editor", Scope: "Applies only to matching content.",
@@ -166,15 +176,13 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 					Confirming: true, ConfirmLabel: "Remove privacy rule", Prompt: "Remove the rule for Example Browser?", CancelLabel: "Cancel",
 				})
 			})
-			ui.Column(c).FillWidth().Gap(6).Padding(8, 0).Children(func() {
-				kit.SettingsLabel(c, "Excluded applications")
-				value := "Example Editor\nExample Browser"
-				kit.SourceExclusionField(c, &value, "Excluded applications", "").ReadOnly(true)
-			})
+			if g.state != "resized" {
+				drawExclusions()
+			}
 		})
 	case "privacy-detection":
 		width := float32(490)
-		if g.state == "narrow" {
+		if g.state == "narrow" || g.state == "resized" {
 			width = 290
 		}
 		panel := ui.Column(c).Width(width).Gap(8)

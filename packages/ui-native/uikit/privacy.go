@@ -72,8 +72,7 @@ func (k Kit) privacyRuleAction(c *ui.Context, label, widget string, disabled boo
 
 // SourceExclusionField draws the full-width input used for application exclusions.
 func (k Kit) SourceExclusionField(c *ui.Context, value *string, label, placeholder string) ui.Element {
-	field := ui.TextAreaBase(c, value).Label(label).Placeholder(placeholder)
-	return k.styleField(c, field.FillWidth(), "privacySourceExclusion").MinHeight(88)
+	return k.resizablePrivacyTextArea(c, value, label, placeholder, "privacySourceExclusion", 88)
 }
 
 type PrivacyDetectionOption struct {
@@ -113,9 +112,57 @@ func (k Kit) PrivacyPatternsField(c *ui.Context, value *string, label, placehold
 	var field ui.Element
 	padding := k.style("privacyPatternsContainer").Padding
 	ui.Column(c).FillWidth().MinWidth(0).Padding(padding[:]...).Children(func() {
-		input := ui.TextAreaBase(c, value).Label(label).Placeholder(placeholder).
-			FillWidth().MinHeight(style.MinHeight)
-		field = k.styleField(c, input, "privacyPatternsField")
+		field = k.resizablePrivacyTextArea(c, value, label, placeholder, "privacyPatternsField", style.MinHeight)
+	})
+	return field
+}
+
+func (k Kit) resizablePrivacyTextArea(c *ui.Context, value *string, label, placeholder, widget string, minimum float32) ui.Element {
+	style := k.style(widget)
+	minimum = max(minimum, style.MinHeight)
+	wrapper := ui.Column(c).FillWidth().MinWidth(0)
+	type resizeState struct {
+		height, startHeight, startPointer float32
+		active                            bool
+	}
+	resize := ui.Local(wrapper, "text-area-resize", func() resizeState {
+		return resizeState{height: max(minimum, style.Height)}
+	})
+	height := max(minimum, resize.height)
+	var field ui.Element
+	wrapper.Children(func() {
+		field = k.styleField(c, ui.TextAreaBase(c, value).Label(label).Placeholder(placeholder).FillWidth(), widget).Height(height)
+		ui.Box(c).Absolute().Bottom(1).Right(1).Size(12, 12).Role(ui.RoleNone).Cursor(ui.CursorResizeNS).
+			HandleInput(func(event ui.InputEvent) bool {
+				if event.Button != 0 {
+					return false
+				}
+				// The corner moves with the field. Measure from the field's top edge.
+				pointer := height + event.Y
+				switch event.Kind {
+				case ui.InputPointerDown:
+					resize.active, resize.startHeight, resize.startPointer = true, height, pointer
+					return true
+				case ui.InputPointerMove:
+					if resize.active {
+						resize.height = max(minimum, resize.startHeight+pointer-resize.startPointer)
+						return true
+					}
+				case ui.InputPointerUp:
+					if resize.active {
+						resize.active = false
+						return true
+					}
+				}
+				return false
+			}).Draw(func(p *ui.Painter, r ui.Rect) {
+			x, y := r.X+r.W-2, r.Y+r.H-2
+			color := styleColor(style.Text).Alpha(0.55)
+			var grip ui.Path
+			grip.MoveTo(x-4, y).LineTo(x, y-4)
+			grip.MoveTo(x-8, y).LineTo(x, y-8)
+			p.StrokePath(&grip, 1, color)
+		})
 	})
 	return field
 }

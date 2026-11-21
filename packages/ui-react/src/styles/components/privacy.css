@@ -71,6 +71,7 @@
   width: 100%;
   max-width: 100%;
   min-height: 80px;
+  resize: vertical;
   padding: 8px;
   border-radius: 0;
 }

@@ -273,6 +273,26 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 }
 
 func (g *gallery) prepare(tester *ui.Tester) error {
+	if g.state == "resized" && (g.fixture == "privacy-detection" || g.fixture == "privacy-rules") {
+		label := "Patterns"
+		if g.fixture == "privacy-rules" {
+			label = "Excluded applications"
+		}
+		before, ok := tester.Find(label)
+		if !ok {
+			return fmt.Errorf("no privacy textarea named %s", label)
+		}
+		x, y := before.X+before.W-5, before.Y+before.H-5
+		const delta = 40
+		tester.Press(x, y)
+		tester.Move(x-24, y+delta)
+		tester.Release(x-24, y+delta)
+		after, found := tester.Find(label)
+		dw, dh := after.W-before.W, after.H-before.H
+		if !found || dw < -0.5 || dw > 0.5 || dh < delta-0.5 || dh > delta+0.5 {
+			return fmt.Errorf("privacy textarea %s did not resize vertically: before %+v, after %+v", label, before, after)
+		}
+	}
 	if g.fixture == "privacy-detection" && g.state == "focus" {
 		return tester.Click("Patterns")
 	}

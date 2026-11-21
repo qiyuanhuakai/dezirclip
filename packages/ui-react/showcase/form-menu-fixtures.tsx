@@ -212,10 +212,15 @@ export function TagSearchFixture() {
   </div>;
 }
 
-export function PrivacyRulesFixture() {
+export function PrivacyRulesFixture({ resized }: { resized: boolean }) {
   const [confirming, setConfirming] = useState("scope");
+  const exclusions = <div className="setting-item column source-exclusion-setting">
+    <span className="item-label">Application exclusions</span>
+    <SourceExclusionField aria-label="Excluded applications" defaultValue={"Example Editor\nExample Browser"} readOnly />
+  </div>;
   return <div className="privacy-rule-manager" style={{ width: 490, "--settings-columns": 2 } as CSSProperties}>
     <PrivacyRulesHeading label="Privacy rules" count={2} />
+    {resized && exclusions}
     <PrivacyRuleGrid>
       <PrivacyRuleCard title="Allowed content" source="Example Editor" scope="Applies only to matching content."
         identifier={<span>ID a13b4108</span>} created={<span>Created 2026-08-18 10:24</span>}
@@ -232,10 +237,7 @@ export function PrivacyRulesFixture() {
           onCancel: () => setConfirming(""), onConfirm: () => setConfirming(""),
         } : undefined} />
     </PrivacyRuleGrid>
-    <div className="setting-item column source-exclusion-setting">
-      <span className="item-label">Excluded applications</span>
-      <SourceExclusionField aria-label="Excluded applications" defaultValue={"Example Editor\nExample Browser"} readOnly />
-    </div>
+    {!resized && exclusions}
   </div>;
 }
 

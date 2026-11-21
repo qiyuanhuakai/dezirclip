@@ -7,6 +7,82 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestPrivacyTextAreasResizeVerticallyWithoutChangingTheText(t *testing.T) {
+	for _, fixture := range []struct {
+		name string
+		draw func(Kit, *ui.Context, *string, string, string) ui.Element
+	}{
+		{"Excluded applications", Kit.SourceExclusionField},
+		{"Custom patterns", Kit.PrivacyPatternsField},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			const original = "First line\nSecond line"
+			value := original
+			tester := ui.NewTester(func(c *ui.Context) {
+				fixture.draw(Kit{}, c, &value, fixture.name, "")
+			}, 230, 300)
+			bounds := func() ui.Rect {
+				rect, ok := tester.Find(fixture.name)
+				if !ok {
+					t.Fatal("textarea missing")
+				}
+				return rect
+			}
+			initial := bounds()
+			x, y := initial.X+initial.W-5, initial.Y+initial.H-5
+			tester.Press(x, y)
+			tester.Move(x-32, y+28)
+			tester.Move(x-46, y+52)
+			tester.Release(x-46, y+52)
+			expanded := bounds()
+			if expanded.H != initial.H+52 || expanded.W != initial.W || value != original {
+				t.Fatalf("drag result %+v, initial %+v, text %q", expanded, initial, value)
+			}
+			x, y = expanded.X+expanded.W-5, expanded.Y+expanded.H-5
+			tester.Press(x, y)
+			tester.Move(x, y-100)
+			tester.Release(x, y-100)
+			if reduced := bounds(); reduced != initial {
+				t.Fatalf("resized textarea below its original height: %+v", reduced)
+			}
+			tester.ClickAt(initial.X+15, initial.Y+15)
+			tester.Type("Edited ")
+			if value == original {
+				t.Fatal("textarea could not be edited after resizing")
+			}
+		})
+	}
+}
+
+func TestResizedPrivacyTextAreaKeepsFollowingSettingsReachable(t *testing.T) {
+	var scroll ui.ScrollState
+	value := "One pattern"
+	tester := ui.NewTester(func(c *ui.Context) {
+		ui.Scroll(c).Fill().TrackScroll(&scroll).Children(func() {
+			ui.Column(c).FillWidth().Padding(6).Gap(10).Children(func() {
+				(Kit{}).PrivacyPatternsField(c, &value, "Patterns", "")
+				ui.ButtonBase(c).Height(32).Label("Following setting")
+			})
+		})
+	}, 245, 145)
+	field, ok := tester.Find("Patterns")
+	if !ok {
+		t.Fatal("privacy textarea missing")
+	}
+	x, y := field.X+field.W-5, field.Y+field.H-5
+	tester.Press(x, y)
+	tester.Move(x, y+51)
+	tester.Release(x, y+51)
+	if scroll.MaxY <= 0 {
+		t.Fatal("the expanded settings did not create scrollable overflow")
+	}
+	tester.Scroll(4, 90, 0, scroll.MaxY)
+	tail, found := tester.Find("Following setting")
+	if !found || scroll.Y <= 0 || tail.Y+tail.H > 145 {
+		t.Fatalf("could not scroll to the setting below the expanded textarea: %+v at %v", tail, scroll.Y)
+	}
+}
+
 func TestHotkeyLabelUsesThePlatformModifier(t *testing.T) {
 	for _, tt := range []struct{ platform, value, want string }{
 		{"windows", "Super+V", "Win+V"},
