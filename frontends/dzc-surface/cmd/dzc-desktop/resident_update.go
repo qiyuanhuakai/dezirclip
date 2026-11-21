@@ -33,6 +33,14 @@ func checkResidentUpdate(ctx context.Context, database, channel string, automati
 	return &nativeUpdateCheck{Result: result, Checked: time.Now()}, nil
 }
 
+// A failed check is part of the channel's state until another check replaces it.
+func failedResidentUpdateCheck(channel, version string, err error, checked time.Time) *nativeUpdateCheck {
+	return &nativeUpdateCheck{
+		Result:  nativeUpdateResult{Channel: channel, CurrentVersion: version},
+		Checked: checked, Failure: err.Error(),
+	}
+}
+
 func residentUpdateArtifact(check *nativeUpdateCheck, channel, version string) (mygoArtifact, error) {
 	if !check.validFor(channel, buildinfo.Version, time.Now()) || check.Result.Status != "available" ||
 		check.Result.Available == nil || check.Result.Available.Version != version ||

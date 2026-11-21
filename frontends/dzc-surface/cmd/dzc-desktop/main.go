@@ -515,12 +515,12 @@ func run() error {
 						continue
 					}
 					reply := shell.resident.accept(command)
-					if native != nil && (reply.UpdateStatus != nil || reply.ID == 0 && reply.UpdateChannel != "") {
+					if native != nil && (reply.UpdateStatus != nil || reply.UpdateChannel != "") {
 						win.Update(func() {
 							if reply.UpdateStatus != nil {
 								native.updater.applyInstallStatus(*reply.UpdateStatus)
 							}
-							if reply.ID == 0 && reply.UpdateChannel != "" {
+							if reply.UpdateChannel != "" {
 								native.updater.applyCheckEvent(reply)
 							}
 						})

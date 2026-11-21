@@ -38,9 +38,10 @@ type residentReply struct {
 	Success   bool   `json:"success"`
 	Error     string `json:"error,omitempty"`
 
-	UpdateCheck   *nativeUpdateCheck    `json:"update_check,omitempty"`
-	UpdateChannel string                `json:"update_channel,omitempty"`
-	UpdateStatus  *residentUpdateStatus `json:"update_status,omitempty"`
+	UpdateCheck    *nativeUpdateCheck    `json:"update_check,omitempty"`
+	UpdateChannel  string                `json:"update_channel,omitempty"`
+	UpdateStatus   *residentUpdateStatus `json:"update_status,omitempty"`
+	UpdateChecking bool                  `json:"update_checking,omitempty"`
 }
 type residentBridge struct {
 	output     io.Writer

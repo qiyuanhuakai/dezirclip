@@ -64,6 +64,7 @@ type nativeUpdateResult struct {
 type nativeUpdateCheck struct {
 	Result  nativeUpdateResult
 	Checked time.Time
+	Failure string
 }
 
 const nativeUpdateInterval = 24 * time.Hour
@@ -102,32 +103,18 @@ func (n *nativeMain) configureUpdater(saved string, automatic bool) {
 	if channel != u.channel {
 		u.result, u.err, u.checked, u.notesOpen = nativeUpdateResult{}, nil, time.Time{}, false
 		u.result.installTarget, u.result.installSupport = mygoUpdateTarget()
-		n.restoreUpdateCheck(channel, u.generation)
 	}
 	u.channel, u.automatic = channel, automatic
+	n.restoreUpdateCheck(channel)
 }
 
-func (n *nativeMain) restoreUpdateCheck(channel string, generation uint64) {
+func (n *nativeMain) restoreUpdateCheck(channel string) {
 	if n.window == nil || n.shell == nil {
 		return
 	}
 	go func() {
-		var response residentReply
 		request := residentRequest{Operation: "update-check", UpdateChannel: channel}
-		if n.shell.resident.exchange(context.Background(), request, 4*time.Second, &response) != nil {
-			return
-		}
-		check := response.UpdateCheck
-		if !check.validFor(channel, buildinfo.Version, time.Now()) {
-			return
-		}
-		n.window.Update(func() {
-			u := &n.updater
-			if n.window.IsDestroyed() || u.generation != generation {
-				return
-			}
-			u.applyCheck(check)
-		})
+		_ = n.shell.resident.send(context.Background(), request, 4*time.Second)
 	}()
 }
 
@@ -155,6 +142,9 @@ func (u *nativeUpdater) applyCheck(check *nativeUpdateCheck) {
 	}
 	result.installTarget, result.installSupport = u.result.installTarget, u.result.installSupport
 	u.result, u.err, u.checked, u.notesOpen = result, nil, check.Checked, false
+	if check.Failure != "" {
+		u.err = errors.New(check.Failure)
+	}
 }
 
 func (n *nativeMain) checkForUpdates() {
@@ -184,10 +174,8 @@ func (u *nativeUpdater) applyCheckEvent(reply residentReply) {
 	if reply.UpdateChannel != u.channel || u.installing() {
 		return
 	}
-	u.checking = false
-	if reply.Error != "" {
-		u.err = errors.New(reply.Error)
-	} else if reply.UpdateCheck != nil {
+	u.checking = reply.UpdateChecking
+	if reply.UpdateCheck != nil {
 		u.applyCheck(reply.UpdateCheck)
 	}
 }
@@ -220,6 +208,12 @@ func (u *nativeUpdater) applyInstallStatus(status residentUpdateStatus) {
 	u.installErr = nil
 	if status.Failure != "" {
 		u.installErr = errors.New(status.Failure)
+		u.confirm = false
+		if candidate := u.result.Available; candidate != nil {
+			available := *candidate
+			available.Artifact = nil
+			u.result.Available = &available
+		}
 	}
 }
 

@@ -73,6 +73,56 @@ func TestResidentCheckEventsKeepTheSelectedChannelAndNewestResult(t *testing.T) 
 	}
 }
 
+func TestReopenedUpdaterRecoversAnActiveCheckAndItsFailure(t *testing.T) {
+	now := time.Now()
+	failed := failedResidentUpdateCheck("preview", buildinfo.Version, errUpdateVerification, now)
+	reopened := nativeUpdater{channel: "preview"}
+	reopened.applyCheckEvent(residentReply{ID: 8, Success: true, UpdateChannel: "preview", UpdateChecking: true})
+	if !reopened.checking {
+		t.Fatal("the reopened window lost the active check")
+	}
+	payload, err := json.Marshal(residentReply{ID: 9, Success: true, UpdateChannel: "preview", UpdateCheck: failed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := residentBridge{}
+	reopened.applyCheckEvent(bridge.accept(string(payload)))
+	if reopened.checking || reopened.err == nil || reopened.err.Error() != errUpdateVerification.Error() || !reopened.checked.Equal(now) {
+		t.Fatalf("the check failure did not survive reopening: %+v", reopened)
+	}
+	if !failed.validFor("preview", buildinfo.Version, now) {
+		t.Fatal("the failure was not retained as a fresh check result")
+	}
+	if _, err := residentUpdateArtifact(failed, "preview", "2.0.0"); err == nil {
+		t.Fatal("a failed check allowed installation")
+	}
+	reopened.applyCheck(&nativeUpdateCheck{
+		Result: nativeUpdateResult{Channel: "preview", Status: "current"}, Checked: now.Add(-time.Second),
+	})
+	if reopened.err == nil {
+		t.Fatal("an older successful result cleared the recent check error")
+	}
+	reopened.applyCheckEvent(residentReply{UpdateChannel: "preview", UpdateCheck: &nativeUpdateCheck{
+		Result: nativeUpdateResult{Channel: "preview", Status: "current"}, Checked: now.Add(time.Second),
+	}})
+	if reopened.err != nil || reopened.result.Status != "current" {
+		t.Fatal("a newer completed check did not clear the error")
+	}
+}
+
+func TestFailedNativeInstallDiscardsTheCandidateWithoutLosingReleaseNotes(t *testing.T) {
+	u := nativeUpdater{channel: "preview"}
+	if err := json.Unmarshal([]byte(`{"available":{"version":"2.0.0","notes":"Release notes","artifact":{"url":"package","signature":"signature"}}}`), &u.result); err != nil {
+		t.Fatal(err)
+	}
+	u.confirm = true
+	u.applyInstallStatus(residentUpdateStatus{Failure: "update_install_failed"})
+	u.installErr = nil
+	if u.confirm || u.result.Available == nil || u.result.Available.Artifact != nil || u.result.Available.Notes != "Release notes" {
+		t.Fatalf("the failed install left an actionable candidate or lost its notes: %+v", u.result.Available)
+	}
+}
+
 func TestUpdateConfirmationKeepsOnlyTheSelectedCandidate(t *testing.T) {
 	for _, test := range []struct {
 		name, candidate string

@@ -78,6 +78,18 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 	var mainDone <-chan struct{}
 	var update *mygoUpdateHandoff
 	var updateLanguage nativeLanguage
+	failUpdate := func(event string, err error) {
+		if update == nil {
+			return
+		}
+		diagnostics.record(event, 0, err)
+		handoff := update
+		update = nil
+		handoff.abort()
+		if handoff.reportFailure != nil {
+			handoff.reportFailure(updateLanguage.text("updater_error_install"))
+		}
+	}
 	defer func() {
 		if update != nil {
 			update.abort()
@@ -167,22 +179,26 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 				return false
 			}
 			checkingUpdates[channel] = true
+			if !automatic && updateStatus != nil && updateStatus.Failure != "" {
+				publishUpdate(residentUpdateStatus{})
+			}
 			go func() {
 				ctx, cancel := context.WithTimeout(activationContext, 50*time.Second)
 				defer cancel()
 				check, err := checkResidentUpdate(ctx, updateDatabase, channel, automatic)
 				mygo.RunOnMain(func() {
 					delete(checkingUpdates, channel)
-					if stopping || check == nil && err == nil {
+					if stopping {
 						return
 					}
-					reply := residentReply{UpdateCheck: check, UpdateChannel: channel}
 					if err != nil {
-						reply.Error = err.Error()
-					} else {
+						check = failedResidentUpdateCheck(channel, buildinfo.Version, err, time.Now())
+					}
+					if check != nil {
 						updateChecks[channel] = check
 					}
-					if automatic {
+					reply := residentReply{UpdateCheck: check, UpdateChannel: channel}
+					if automatic && check != nil {
 						diagnostics.record("automatic-update-checked", 0, err)
 					}
 					if commands != nil {
@@ -388,15 +404,16 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 										reply(fmt.Errorf("update_invalid_endpoint"))
 										break
 									}
-									if request.UpdateNow {
-										if !useNativeMain || !checkUpdate(channel, false) {
-											reply(errors.New("update_busy"))
-										} else {
-											reply(nil)
-										}
+									if request.UpdateNow && (!useNativeMain || !checkingUpdates[channel] && !checkUpdate(channel, false)) {
+										reply(errors.New("update_busy"))
 										break
 									}
-									response := residentReply{ID: request.ID, Success: true, UpdateCheck: updateChecks[channel], UpdateStatus: updateStatus}
+									check := updateChecks[channel]
+									if !check.validFor(channel, buildinfo.Version, time.Now()) {
+										check = nil
+									}
+									response := residentReply{ID: request.ID, Success: true, UpdateChannel: channel,
+										UpdateCheck: check, UpdateChecking: checkingUpdates[channel], UpdateStatus: updateStatus}
 									_ = json.NewEncoder(input).Encode(response)
 								case "install-update":
 									if !useNativeMain || pasteBusy || closing || relaunch || updateInProgress() {
@@ -414,12 +431,13 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 										reply(err)
 										break
 									}
+									delete(updateChecks, request.UpdateChannel)
 									publishUpdate(residentUpdateStatus{Progress: nativeInstallProgress{Phase: updateDownloading, Total: -1}})
 									reply(nil)
 									go func() {
 										install, err := downloadResidentUpdate(activationContext, artifact, version, target, func(progress nativeInstallProgress) {
 											mygo.RunOnMain(func() {
-												if !stopping {
+												if !stopping && updateStatus.Progress.Phase == updateDownloading {
 													publishUpdate(residentUpdateStatus{Progress: progress})
 												}
 											})
@@ -918,11 +936,13 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 		refreshMemory()
 	})
 	if err := mygo.App.Run(); err != nil {
+		failUpdate("update-resident-quit-failed", err)
 		return fmt.Errorf("native desktop: %w", err)
 	}
 	log.Print("Desktop native loop stopped; waiting for main process")
 	if mainChild != nil {
 		if err := waitDesktopExit(mainDone, mainChild.Process.Kill, 5*time.Second); err != nil {
+			failUpdate("update-main-stop-failed", err)
 			return err
 		}
 	}
@@ -941,21 +961,15 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 	defer cancel()
 	log.Print("Desktop main process stopped; stopping authenticated Service")
 	if err := owner.StopDesktopService(ctx); err != nil {
-		if update != nil {
-			diagnostics.record("update-service-stop-failed", 0, err)
-			handoff := update
-			update = nil
-			handoff.abort()
-			if handoff.reportFailure != nil {
-				handoff.reportFailure(updateLanguage.text("updater_error_install"))
-			}
-		}
+		failUpdate("update-service-stop-failed", err)
 		return err
 	}
 	if update != nil {
-		handoff := update
+		if err := update.finish(); err != nil {
+			failUpdate("update-install-handoff-failed", err)
+			return err
+		}
 		update = nil
-		return handoff.finish()
 	}
 	return nil
 }
