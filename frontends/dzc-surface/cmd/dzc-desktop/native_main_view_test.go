@@ -438,6 +438,23 @@ func TestNativeMainShellOpacity(t *testing.T) {
 	}
 }
 
+func TestNativePreviewUsesTheConfiguredClipboardTextSize(t *testing.T) {
+	window := nativeMain{theme: "macos", mode: "light", preferences: map[string]string{
+		"app.theme": "macos", "app.font_main": "Georgia",
+	}}
+	for _, saved := range []string{"11", "18", ""} {
+		window.preferences["app.clipboard_item_font_size"] = saved
+		size := nativeItemSize.value(window.preferences)
+		hover := window.previewAppearance().theme()
+		resident := resolveNativeSurfaceAppearance(window.preferences, false).preview
+		if hover.FontSize != float32(size) || resident.Tokens.FontSize != size ||
+			hover.Font != "Georgia" || resident.Tokens.FontFamilies[0] != "Georgia" {
+			t.Fatalf("clipboard preview typography differs: saved %q, hover %s/%g, pinned %v/%d",
+				saved, hover.Font, hover.FontSize, resident.Tokens.FontFamilies, resident.Tokens.FontSize)
+		}
+	}
+}
+
 func TestNativeFontSelectionsStayVisibleBeforeAndAfterDiscovery(t *testing.T) {
 	window := nativeMain{
 		theme: "macos", mode: "dark", readingFonts: true,

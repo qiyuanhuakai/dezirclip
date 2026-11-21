@@ -32,8 +32,9 @@ func TestNativePopupAppearanceUsesSelectedThemeAndSeparateOpacity(t *testing.T) 
 					t.Fatalf("popup palette disagrees with the selected preset: %+v", got)
 				}
 				if got.quickPaste.Tokens.FontFamilies[0] != "Example UI" || got.preview.Tokens.FontFamilies[0] != "Example UI" ||
-					got.quickPaste.Tokens.FontSize != 18 || got.preview.Tokens.FontSize != want.FontSize {
-					t.Fatalf("popup typography settings were not applied: %+v", got)
+					got.quickPaste.Tokens.FontSize != 18 || got.preview.Tokens.FontSize != 18 {
+					t.Fatalf("popup typography settings were not applied: quick paste %+v, preview %+v",
+						got.quickPaste.Tokens, got.preview.Tokens)
 				}
 				if got.quickPaste.Opacity != .20 || got.preview.Opacity != 0 {
 					t.Fatalf("independent opacity values were lost: %+v", got)

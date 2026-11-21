@@ -354,6 +354,15 @@ body:not(.theme-mica):not(.theme-acrylic):not(.theme-macos) .history-item.compac
     font-family: var(--font-main);
 }
 
+.preview-text {
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--clipboard-item-font-size);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 /* Content Preview */
 .history-item.compact .content-preview {
     font-size: var(--clipboard-item-font-size);

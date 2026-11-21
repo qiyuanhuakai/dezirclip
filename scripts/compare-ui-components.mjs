@@ -41,6 +41,8 @@ const cases = {
   "tag-history-entry": { states: ["default", "compact", "browse"], text: "Release checklist" },
   "tag-batch-toolbar": { states: ["default", "selected", "narrow"], text: "selected" },
   "tag-search": { states: ["default"], text: "Work" },
+  "font-select": { states: ["default", "open"], text: "Georgia" },
+  "preview-text": { states: ["small", "large"], text: "second line stays visible" },
   "search-select": { states: ["default", "apps-filtered", "empty", "typo", "long-options"], text: "Interface font" },
   "tag-suggestions": { states: ["active", "empty"], text: "Tags" },
   "text-fields": { states: ["default"], text: "Idle timeout" },
@@ -405,6 +407,27 @@ try {
             }
             if (fixture === "toast") {
               await page.waitForFunction(() => getComputedStyle(document.querySelector(".toast-item")).opacity === "1");
+            }
+            if (fixture === "font-select") {
+              const value = page.locator(".dezirclip-select__single-value");
+              if (!(await value.evaluate(node => getComputedStyle(node).fontFamily)).includes("Georgia")) {
+                throw Error("The selected family is not rendered in its own font");
+              }
+              if (state === "open") {
+                await page.getByRole("combobox", { name: "Interface font" }).click();
+                const option = page.getByRole("option", { name: "Courier New" });
+                if (!(await option.evaluate(node => getComputedStyle(node).fontFamily)).includes("Courier New")) {
+                  throw Error("The font option does not preview its own family");
+                }
+              }
+            }
+            if (fixture === "preview-text") {
+              const preview = page.locator(".preview-text");
+              const fontSize = await preview.evaluate(node => getComputedStyle(node).fontSize);
+              if (fontSize !== (state === "large" ? "18px" : "11px") ||
+                  !(await preview.textContent()).includes("\n")) {
+                throw Error("Preview ignored the clipboard font size or discarded a line break");
+              }
             }
             if (fixture === "search-select" && state !== "default") {
               const input = page.getByRole("combobox", { name: "Images" });

@@ -3,7 +3,7 @@ import "../src/styles/components/privacy.css";
 import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryCardTag, HistoryCardTags, HotkeyBinding, MatchHighlight,
-  ProgressToast, QuickPastePanel, QuickPasteRow, QuickPasteSearch, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail, SettingsSectionCard,
+  PreviewText, ProgressToast, QuickPastePanel, QuickPasteRow, QuickPasteSearch, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail, SettingsSectionCard,
   SettingsSlider, SettingsToggle, SettingsToggleField, TagDialog, TagHistoryEntry, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
@@ -192,6 +192,16 @@ function TagHistoryEntriesFixture() {
   </div>;
 }
 
+function FontPickerFixture() {
+  const [selected, setSelected] = useState("Georgia");
+  return <div style={{ width: 350 }} className="setting-item column">
+    <span className="item-label">Interface font</span>
+    <ThemedSelect value={selected} onChange={setSelected} ariaLabel="Interface font" width="100%" searchable
+      options={[{ value: "", label: "Default font" }, { value: "Georgia", label: "Georgia", fontFamily: "Georgia, serif" },
+        { value: "Courier New", label: "Courier New", fontFamily: '"Courier New", monospace' }]} />
+  </div>;
+}
+
 function Showcase() {
   const [activeSettings, setActiveSettings] = useState(state === "selected" ? "updates" : "appearance");
   const tagName = useRef<HTMLInputElement>(null);
@@ -232,6 +242,10 @@ function Showcase() {
     "tag-search": <TagSearchFixture />,
     "tag-suggestions": <TagSuggestionsFixture />,
     "search-select": <SearchSelectFixture state={state} />,
+    "font-select": <FontPickerFixture />,
+    "preview-text": <div style={{ width: 365, "--clipboard-item-font-size": state === "large" ? "18px" : "11px" } as CSSProperties}>
+      <PreviewText text={"Read the clipboard preview.\nThe second line stays visible."} />
+    </div>,
     "attachment-preview": <AttachmentFixture state={state} />,
     "history-image": <HistoryImageFixture state={state} />,
     "history-ocr": <HistoryOCRFixture state={state} />,

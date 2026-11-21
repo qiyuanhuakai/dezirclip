@@ -141,6 +141,25 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 				})
 			}
 		})
+	case "font-select":
+		ui.Column(c).Width(350).Gap(6).Padding(6, 0).Children(func() {
+			kit.SettingsLabel(c, "Interface font")
+			value := "Georgia"
+			kit.SearchSelect(c, uikit.SearchSelectOptions{Label: "Interface font", Value: &value,
+				Choices: []uikit.SelectOption{{Label: "Default font"},
+					{Value: "Georgia", Label: "Georgia", FontFamily: "Georgia, serif"},
+					{Value: "Courier New", Label: "Courier New", FontFamily: "Courier New, monospace"}}})
+		})
+	case "preview-text":
+		appearance := *c.Theme()
+		appearance.FontSize = 11
+		if g.state == "large" {
+			appearance.FontSize = 18
+		}
+		c.SetTheme(&appearance)
+		ui.Column(c).Width(365).Height(90).Children(func() {
+			uikit.PreviewText(c, "Read the clipboard preview.\nThe second line stays visible.")
+		})
 	case "search-select":
 		scope := ui.Column(c).Width(385).Gap(12)
 		choices := []uikit.SelectOption{{Label: "System default (Example Browser)"}}

@@ -62,6 +62,8 @@ const figures = [
   ["backup-dialog", "glass", 420, 0, "backup-dialog-glass"],
   ["tag-suggestions", "empty", 190, 0, "tag-suggestions-empty"],
   ["settings-rail", "long-label", 225, 0, "settings-rail-long-label"],
+  ["font-select", "open", 210, 0, "font-select"],
+  ["preview-text", "large", 92, 0, "preview-text"],
   ["search-select", "long-options", 355, 0, "search-select-long-options"],
   ["search-select", "apps-filtered", 218],
   ["search-select", "empty", 218, 0, "search-select-empty"],

@@ -65,9 +65,10 @@ func (k Kit) Button(c *ui.Context, options ButtonOptions) ui.Element {
 }
 
 type SelectOption struct {
-	Value    string
-	Label    string
-	Disabled bool
+	Value, Label string
+	// FontFamily previews a font in a searchable select without styling the query.
+	FontFamily string
+	Disabled   bool
 }
 
 func (k Kit) Select(c *ui.Context, selected *string, label string, options []SelectOption, disabled bool) ui.Element {

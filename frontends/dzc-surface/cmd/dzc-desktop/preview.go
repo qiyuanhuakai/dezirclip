@@ -351,7 +351,7 @@ func (body *previewBody) draw(c *ui.Context) {
 	} else if body.formatted != nil {
 		drawRichPreview(c, body.formatted)
 	} else {
-		ui.Text(c, body.text).Wrap()
+		uikit.PreviewText(c, body.text)
 	}
 }
 

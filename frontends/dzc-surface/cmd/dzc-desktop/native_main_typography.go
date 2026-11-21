@@ -93,11 +93,11 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label, hint string, choices
 	selected := n.preferences[key]
 	found := selected == ""
 	for _, family := range choices {
-		options = append(options, uikit.SelectOption{Value: family, Label: family})
+		options = append(options, uikit.SelectOption{Value: family, Label: family, FontFamily: family})
 		found = found || family == selected
 	}
 	if !found {
-		options = append(options, uikit.SelectOption{Value: selected, Label: selected})
+		options = append(options, uikit.SelectOption{Value: selected, Label: selected, FontFamily: selected})
 	}
 	kit.SettingsField(c.Key(key), uikit.SettingsFieldOptions{Stacked: true}).Children(func() {
 		kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), hint)
@@ -106,8 +106,16 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label, hint string, choices
 			Value: &selected, Choices: options, Disabled: n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "",
 		})
 		if changed {
-			n.saveSetting(key, selected)
+			n.saveFont(key, selected)
 		}
+	})
+}
+
+func (n *nativeMain) saveFont(key, selected string) {
+	n.writeSettingWithEffect(func(ctx context.Context, epoch uint64) error {
+		return n.library.SetSetting(ctx, key, selected, epoch)
+	}, func() {
+		n.preferences[key] = selected
 	})
 }
 

@@ -7,6 +7,7 @@ export interface ThemedSelectOption {
   value: string;
   label: string;
   disabled?: boolean;
+  fontFamily?: string;
 }
 
 export interface ThemedSelectProps {
@@ -112,8 +113,9 @@ const ThemedSelect = ({
             color: "var(--select-single-value-color)",
             caretColor: "var(--accent-color)"
           }),
-          singleValue: (base) => ({
+          singleValue: (base, { data }) => ({
             ...base,
+            ...(data.fontFamily ? { fontFamily: data.fontFamily } : {}),
             color: "var(--select-single-value-color)",
             fontWeight: 600
           }),
@@ -145,6 +147,7 @@ const ThemedSelect = ({
           }),
           option: (base, state) => ({
             ...base,
+            ...(state.data.fontFamily ? { fontFamily: state.data.fontFamily } : {}),
             fontSize: "12px",
             overflowWrap: "anywhere",
             cursor: "pointer",

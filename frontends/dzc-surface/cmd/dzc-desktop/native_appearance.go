@@ -104,9 +104,9 @@ func resolveNativeSurfaceAppearance(settings map[string]string, systemDark bool)
 	if tint := preset.SurfaceTint(); tint != "" {
 		a.Tokens.Background = tint
 	}
+	a.Tokens.FontSize = nativeItemSize.value(settings)
 	preview := a
 	preview.Opacity = float64(opacityPreference(settings["app.preview_opacity"], settings["app.surface_opacity"])) / 100
-	a.Tokens.FontSize = nativeItemSize.value(settings)
 	return nativeSurfaceAppearance{base: base, quickPaste: a, preview: preview, preset: preset}
 }
 

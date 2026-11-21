@@ -48,6 +48,9 @@ func (k Kit) SearchSelect(c *ui.Context, options SearchSelectOptions) (ui.Elemen
 			for _, choice := range options.Choices {
 				if choice.Value == *options.Value {
 					label = choice.Label
+					if choice.FontFamily != "" {
+						fieldStyle.Font = choice.FontFamily
+					}
 					break
 				}
 			}
@@ -102,6 +105,9 @@ func (k Kit) SearchSelect(c *ui.Context, options SearchSelectOptions) (ui.Elemen
 							}
 						}
 						rowStyle := k.style(widget)
+						if choice.FontFamily != "" {
+							rowStyle.Font = choice.FontFamily
+						}
 						paint(row.MinWidth(0).MinHeight(rowStyle.Height).AlignItems(ui.Center), rowStyle).
 							Children(func() { text(c, choice.Label, rowStyle).MinWidth(0).Grow(1).Wrap().PassThrough() })
 					}

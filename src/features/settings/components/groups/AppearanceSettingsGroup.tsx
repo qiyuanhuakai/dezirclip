@@ -60,10 +60,13 @@ interface AppearanceSettingsGroupProps {
 type SystemFont = { family: string; is_mono: boolean; path: string };
 
 function fontOptions(fonts: SystemFont[], monospace: boolean, selected: string, defaultOption: { value: string; label: string }) {
+    const describeFont = (family: string) => ({
+        value: family, label: family, fontFamily: JSON.stringify(family),
+    });
     const options = [defaultOption, ...fonts.filter(font => font.is_mono === monospace)
-        .map(font => ({ value: font.family, label: font.family }))];
+        .map(font => describeFont(font.family))];
     if (selected && !options.some(option => option.value === selected)) {
-        options.push({ value: selected, label: selected });
+        options.push(describeFont(selected));
     }
     return options;
 }

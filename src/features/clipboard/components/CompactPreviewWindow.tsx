@@ -1,3 +1,4 @@
+import { PreviewText } from "@deziro/ui-react/components/PreviewText";
 import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
 import { attachmentTiles } from "../../../shared/lib/attachmentPreview";
 import { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
@@ -421,7 +422,7 @@ const CompactPreviewWindow = () => {
                     onLoad={() => requestResizeRef.current?.()} onError={() => setRichImageFallbackFailed(true)} />}</>
             );
         }
-        return payload.content || payload.preview || "";
+        return <PreviewText text={payload.content || payload.preview || ""} />;
     }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, richPreviewData.cleanHtml, richPresentation, pinned, zoom, presented, singleMediaSource]);
 
     const request = payload ?? lastRequest.current;

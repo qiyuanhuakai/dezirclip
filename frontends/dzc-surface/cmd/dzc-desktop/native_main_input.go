@@ -161,6 +161,7 @@ func (n *nativeMain) previewAppearance() previewAppearance {
 	language := string(n.language())
 	preset := n.preset()
 	appearance := theme.Appearance{Mode: n.mode, Locale: language, Opacity: float64(opacity) / 100, Tokens: preset.Tokens()}
+	appearance.Tokens.FontSize = nativeItemSize.value(n.preferences)
 	if tint := preset.SurfaceTint(); tint != "" {
 		appearance.Tokens.Background = tint
 	}

@@ -460,6 +460,16 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 		}
 		return nil
 	}
+	if g.fixture == "font-select" && g.state == "open" {
+		value, ok := tester.Find("Georgia")
+		if !ok {
+			return fmt.Errorf("the current font selection is missing")
+		}
+		tester.ClickAt(value.X+value.W/2, value.Y+value.H/2)
+		if _, found := tester.Find("Courier New"); !found {
+			return fmt.Errorf("the font menu did not show the font choices")
+		}
+	}
 	if g.fixture == "search-select" && g.state != "default" {
 		field, _ := tester.Find("Images")
 		if err := tester.Click("Images"); err != nil {
