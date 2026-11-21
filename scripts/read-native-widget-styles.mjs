@@ -418,6 +418,7 @@ function readStyles(sample) {
     const headingShift = id.startsWith("settingsGroupHeader")
       ? (number(text.paddingTop) - number(text.paddingBottom)) / 2 : 0;
     const marginBottom = number(style.marginBottom);
+    const backdropBlur = id === "backupDialog" ? number(style.backdropFilter.match(/blur\(([^)]+)\)/)?.[1]) : 0;
     const bounds = element.getBoundingClientRect();
     const switchFace = /^settingsSwitch(Left|Right)/.test(id);
     const switchBounds = switchFace ? element.parentElement.getBoundingClientRect() : null;
@@ -425,6 +426,7 @@ function readStyles(sample) {
     return [id, {
       fill: color(style.backgroundColor, id === "settingsRangeTrack" ? "" : tint), text: color(text.color), border: color(style["border" + borderSide + "Color"]),
       borderWidth: borderWidths[0],
+      ...(backdropBlur ? { backdropBlur } : {}),
       radius: id === "settingsRangeThumb" && style.borderTopLeftRadius.endsWith("%")
         ? Math.min(bounds.width, bounds.height) * number(style.borderTopLeftRadius) / 100
         : number(style.borderTopLeftRadius),

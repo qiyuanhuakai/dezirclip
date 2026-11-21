@@ -2,6 +2,15 @@ package uikit
 
 import "github.com/egoist/mygo/ui"
 
+// BackupDialogBackground softens the view behind a glass backup dialog.
+// Apply it to the background sibling so the dialog itself stays sharp.
+func (k Kit) BackupDialogBackground(background ui.Element) ui.Element {
+	if sigma := k.style("backupDialog").BackdropBlur; sigma > 0 {
+		return background.Blur(sigma)
+	}
+	return background
+}
+
 func (k Kit) BackupDialog(c *ui.Context, open *bool, title string, busy bool, body, footer func()) {
 	style := k.style("backupDialog")
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {

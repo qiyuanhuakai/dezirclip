@@ -68,17 +68,23 @@ const suggestionTags = [
 
 function TagSuggestionsFixture() {
   const [selected, setSelected] = useState(state === "active" ? "Documents" : "");
+  const [query, setQuery] = useState(selected ? "tag:" + selected : "");
+  const input = useRef<HTMLInputElement>(null);
   const tags = state === "empty" ? [] : suggestionTags;
   return <div className="showcase-tag-suggestions">
-    <input className="search-input" aria-label="Search clipboard" readOnly value={selected ? "tag:" + selected : ""} />
-    <TagSuggestions label="Tags" count={tags.length}>
-      {state === "empty" && <TagSuggestionRetry>Retry loading tags</TagSuggestionRetry>}
-      {tags.length === 0 ? <TagSuggestionStatus role="listbox" aria-label="Tags">No matching tags</TagSuggestionStatus>
-        : <div role="listbox" aria-label="Tags">
-          {tags.map(({ tag, color }) => <TagSuggestion key={tag} tag={tag} color={color} active={tag === selected}
-            onClick={() => setSelected(tag)} />)}
-        </div>}
-    </TagSuggestions>
+    <ClipboardSearch t={() => "Search clipboard"} contentTypes={[]} search={query} setSearch={setQuery} isComposing={false}
+      setIsComposing={() => undefined} searchInputRef={input} showTagFilter setShowTagFilter={() => undefined}
+      searchIsFocused setSearchIsFocused={() => undefined} setEditingTagsId={() => undefined}
+      typeFilter={null} setTypeFilter={() => undefined} renderTagFilter={({ id }) =>
+        <TagSuggestions label="Tags" count={tags.length}>
+          {state === "empty" && <TagSuggestionRetry>Retry loading tags</TagSuggestionRetry>}
+          {tags.length === 0 ? <TagSuggestionStatus id={id} role="listbox" aria-label="Tags">No matching tags</TagSuggestionStatus>
+            : <div id={id} role="listbox" aria-label="Tags">
+              {tags.map(({ tag, color }) => <TagSuggestion key={tag} tag={tag} color={color} active={tag === selected}
+                onClick={() => { setSelected(tag); setQuery("tag:" + tag); }} />)}
+            </div>}
+        </TagSuggestions>}
+    />
   </div>;
 }
 

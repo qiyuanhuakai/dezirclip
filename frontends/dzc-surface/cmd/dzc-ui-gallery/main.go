@@ -126,8 +126,7 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 	case "history-list":
 		g.renderHistoryList(c, kit)
 	case "tag-suggestions":
-		ui.Column(c).Width(330).Children(func() {
-			anchor := kit.TextField(c, &g.query, "Search clipboard").FillWidth().Height(32).ReadOnly(true)
+		ui.Column(c).Width(346).Children(func() {
 			names := []string{"Design", "Documents", "Work"}
 			colors := map[string]ui.Color{"Design": ui.Hex("#ed7841"), "Documents": ui.Hex("#687ee2"), "Work": ui.Hex("#25a58b")}
 			options := uikit.TagSuggestionsOptions{
@@ -139,7 +138,8 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 				options.Names = nil
 				options.Status, options.Retry = "No matching tags", "Retry loading tags"
 			}
-			kit.TagSuggestions(c, anchor, &g.tagSuggestionOpen, options)
+			kit.ClipboardSearch(c, uikit.HeaderOptions{Query: &g.query, Placeholder: "Search clipboard",
+				QueryPopup: func(anchor ui.Element) { kit.TagSuggestions(c, anchor, &g.tagSuggestionOpen, options) }})
 		})
 	case "settings-rail":
 		if g.settingsSelection == "" {
@@ -385,10 +385,14 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 		tester.Move(4, 4)
 		return nil
 	}
-	if g.fixture == "settings-data" && g.state == "hover-path" {
-		bounds, ok := tester.Find("C:/Example/Documents/Clipboard/profile.db")
+	if g.fixture == "settings-data" && (g.state == "hover-path" || g.state == "hover-action") {
+		label := "C:/Example/Documents/Clipboard/profile.db"
+		if g.state == "hover-action" {
+			label = "Export data"
+		}
+		bounds, ok := tester.Find(label)
 		if !ok {
-			return fmt.Errorf("missing data path")
+			return fmt.Errorf("missing data settings hover target %q", label)
 		}
 		tester.Move(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
 		return nil

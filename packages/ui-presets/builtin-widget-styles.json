@@ -530,8 +530,8 @@
         "border": [55, 55, 55, 255],
         "borderWidth": 1,
         "radius": 0,
-        "top": 32,
-        "width": 330,
+        "top": 42,
+        "width": 314,
         "height": 149,
         "marginTop": 5,
         "padding": [6, 6, 6, 6],
@@ -556,7 +556,7 @@
         "lineHeight": 1.5,
         "columnGap": 8,
         "rowGap": 8,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [3, 7, 7, 7],
@@ -589,7 +589,7 @@
         "border": [55, 55, 55, 255],
         "borderWidth": 0,
         "radius": 0,
-        "width": 316,
+        "width": 300,
         "height": 36,
         "marginTop": 0,
         "padding": [1, 0, 1, 0],
@@ -608,7 +608,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -627,7 +627,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -661,7 +661,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 48,
         "marginTop": 0,
         "padding": [15, 8, 15, 8],
@@ -678,7 +678,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [5, 7, 5, 7],
@@ -6190,8 +6190,8 @@
         "border": [112, 112, 112, 255],
         "borderWidth": 1,
         "radius": 0,
-        "top": 32,
-        "width": 330,
+        "top": 42,
+        "width": 314,
         "height": 149,
         "marginTop": 5,
         "padding": [6, 6, 6, 6],
@@ -6216,7 +6216,7 @@
         "lineHeight": 1.5,
         "columnGap": 8,
         "rowGap": 8,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [3, 7, 7, 7],
@@ -6249,7 +6249,7 @@
         "border": [237, 237, 237, 255],
         "borderWidth": 0,
         "radius": 0,
-        "width": 316,
+        "width": 300,
         "height": 36,
         "marginTop": 0,
         "padding": [1, 0, 1, 0],
@@ -6268,7 +6268,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -6287,7 +6287,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -6321,7 +6321,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 48,
         "marginTop": 0,
         "padding": [15, 8, 15, 8],
@@ -6338,7 +6338,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [5, 7, 5, 7],
@@ -11842,8 +11842,8 @@
         "border": [156, 165, 180, 255],
         "borderWidth": 1,
         "radius": 8,
-        "top": 32,
-        "width": 330,
+        "top": 41,
+        "width": 314,
         "height": 149,
         "marginTop": 5,
         "padding": [6, 6, 6, 6],
@@ -11886,7 +11886,7 @@
         "lineHeight": 1.5,
         "columnGap": 8,
         "rowGap": 8,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [3, 7, 7, 7],
@@ -11919,7 +11919,7 @@
         "border": [55, 55, 55, 255],
         "borderWidth": 0,
         "radius": 0,
-        "width": 316,
+        "width": 300,
         "height": 36,
         "marginTop": 0,
         "padding": [1, 0, 1, 0],
@@ -11938,7 +11938,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -11957,7 +11957,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -11991,7 +11991,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 48,
         "marginTop": 0,
         "padding": [15, 8, 15, 8],
@@ -12008,7 +12008,7 @@
         "borderWidth": 0,
         "radius": 4.8,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [5, 7, 5, 7],
@@ -17332,8 +17332,8 @@
         "border": [105, 118, 140, 255],
         "borderWidth": 1,
         "radius": 8,
-        "top": 32,
-        "width": 330,
+        "top": 41,
+        "width": 314,
         "height": 149,
         "marginTop": 5,
         "padding": [6, 6, 6, 6],
@@ -17405,7 +17405,7 @@
         "lineHeight": 1.5,
         "columnGap": 8,
         "rowGap": 8,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [3, 7, 7, 7],
@@ -17438,7 +17438,7 @@
         "border": [246, 247, 251, 255],
         "borderWidth": 0,
         "radius": 0,
-        "width": 316,
+        "width": 300,
         "height": 36,
         "marginTop": 0,
         "padding": [1, 0, 1, 0],
@@ -17457,7 +17457,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -17476,7 +17476,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -17510,7 +17510,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 48,
         "marginTop": 0,
         "padding": [15, 8, 15, 8],
@@ -17527,7 +17527,7 @@
         "borderWidth": 0,
         "radius": 4.8,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [5, 7, 5, 7],
@@ -22876,8 +22876,8 @@
         "border": [139, 158, 185, 255],
         "borderWidth": 1,
         "radius": 8,
-        "top": 32,
-        "width": 330,
+        "top": 41,
+        "width": 314,
         "height": 149,
         "marginTop": 5,
         "padding": [6, 6, 6, 6],
@@ -22920,7 +22920,7 @@
         "lineHeight": 1.5,
         "columnGap": 8,
         "rowGap": 8,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [3, 7, 7, 7],
@@ -22953,7 +22953,7 @@
         "border": [40, 54, 75, 255],
         "borderWidth": 0,
         "radius": 0,
-        "width": 316,
+        "width": 300,
         "height": 36,
         "marginTop": 0,
         "padding": [1, 0, 1, 0],
@@ -22972,7 +22972,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -22991,7 +22991,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -23025,7 +23025,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 48,
         "marginTop": 0,
         "padding": [15, 8, 15, 8],
@@ -23042,7 +23042,7 @@
         "borderWidth": 0,
         "radius": 4.8,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [5, 7, 5, 7],
@@ -28366,8 +28366,8 @@
         "border": [99, 120, 148, 255],
         "borderWidth": 1,
         "radius": 8,
-        "top": 32,
-        "width": 330,
+        "top": 41,
+        "width": 314,
         "height": 149,
         "marginTop": 5,
         "padding": [6, 6, 6, 6],
@@ -28439,7 +28439,7 @@
         "lineHeight": 1.5,
         "columnGap": 8,
         "rowGap": 8,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [3, 7, 7, 7],
@@ -28472,7 +28472,7 @@
         "border": [246, 247, 251, 255],
         "borderWidth": 0,
         "radius": 0,
-        "width": 316,
+        "width": 300,
         "height": 36,
         "marginTop": 0,
         "padding": [1, 0, 1, 0],
@@ -28491,7 +28491,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -28510,7 +28510,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -28544,7 +28544,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 48,
         "marginTop": 0,
         "padding": [15, 8, 15, 8],
@@ -28561,7 +28561,7 @@
         "borderWidth": 0,
         "radius": 4.8,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [5, 7, 5, 7],
@@ -33954,7 +33954,7 @@
         }
       },
       "settingsDataAction": {
-        "fill": [255, 255, 255, 122],
+        "fill": [255, 255, 255, 140],
         "text": [29, 29, 31, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
@@ -33981,7 +33981,25 @@
             "values": [0, 1, 0, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
+        }
       },
       "settingsDataLabel": {
         "fill": [0, 0, 0, 0],
@@ -34097,7 +34115,7 @@
         }
       },
       "settingsDataActionHover": {
-        "fill": [255, 255, 255, 189],
+        "fill": [255, 255, 255, 152],
         "text": [29, 29, 31, 255],
         "border": [60, 60, 65, 51],
         "borderWidth": 1,
@@ -34124,7 +34142,25 @@
             "values": [0, 1, 0, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [255, 255, 255, 47],
+          "full": [255, 255, 255, 209],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [255, 255, 255, 47]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 152]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 209]
+            }
+          ]
+        }
       },
       "tagSuggestions": {
         "fill": [255, 255, 255, 158],
@@ -34132,8 +34168,8 @@
         "border": [29, 29, 31, 255],
         "borderWidth": 1,
         "radius": 10,
-        "top": 32,
-        "width": 330,
+        "top": 41,
+        "width": 314,
         "height": 149,
         "marginTop": 5,
         "padding": [6, 6, 6, 6],
@@ -34181,7 +34217,7 @@
         "lineHeight": 1.5,
         "columnGap": 8,
         "rowGap": 8,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [3, 7, 7, 7],
@@ -34214,7 +34250,7 @@
         "border": [29, 29, 31, 255],
         "borderWidth": 0,
         "radius": 0,
-        "width": 316,
+        "width": 300,
         "height": 36,
         "marginTop": 0,
         "padding": [1, 0, 1, 0],
@@ -34233,7 +34269,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -34252,7 +34288,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -34286,7 +34322,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 48,
         "marginTop": 0,
         "padding": [15, 8, 15, 8],
@@ -34303,7 +34339,7 @@
         "borderWidth": 0,
         "radius": 5.4,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [5, 7, 5, 7],
@@ -34334,6 +34370,7 @@
         "text": [29, 29, 31, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
+        "backdropBlur": 30,
         "radius": 16,
         "width": 500,
         "height": 237,
@@ -42123,7 +42160,7 @@
         }
       },
       "settingsDataAction": {
-        "fill": [50, 54, 63, 133],
+        "fill": [46, 48, 58, 224],
         "text": [245, 245, 247, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
@@ -42150,7 +42187,61 @@
             "values": [0, 1, 0, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 32,
+              "rgba": [44, 49, 58, 110]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 48, 58, 128]
+            },
+            {
+              "percent": 45,
+              "rgba": [44, 48, 58, 155]
+            },
+            {
+              "percent": 47,
+              "rgba": [46, 47, 58, 162]
+            },
+            {
+              "percent": 50,
+              "rgba": [46, 49, 57, 173]
+            },
+            {
+              "percent": 53,
+              "rgba": [45, 47, 59, 183]
+            },
+            {
+              "percent": 59,
+              "rgba": [45, 47, 57, 204]
+            },
+            {
+              "percent": 65,
+              "rgba": [46, 48, 58, 224]
+            },
+            {
+              "percent": 68,
+              "rgba": [44, 48, 58, 235]
+            },
+            {
+              "percent": 74,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
+        }
       },
       "settingsDataLabel": {
         "fill": [0, 0, 0, 0],
@@ -42302,7 +42393,7 @@
         }
       },
       "settingsDataActionHover": {
-        "fill": [67, 72, 84, 204],
+        "fill": [50, 54, 64, 219],
         "text": [245, 245, 247, 255],
         "border": [255, 255, 255, 41],
         "borderWidth": 1,
@@ -42329,7 +42420,117 @@
             "values": [0, 1, 0, 0],
             "inset": true
           }
-        ]
+        ],
+        "fillRange": {
+          "clear": [70, 70, 85, 51],
+          "full": [50, 53, 63, 242],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [70, 70, 85, 51]
+            },
+            {
+              "percent": 8,
+              "rgba": [60, 64, 74, 72]
+            },
+            {
+              "percent": 11,
+              "rgba": [61, 64, 77, 80]
+            },
+            {
+              "percent": 17,
+              "rgba": [56, 62, 72, 95]
+            },
+            {
+              "percent": 19,
+              "rgba": [58, 61, 71, 101]
+            },
+            {
+              "percent": 23,
+              "rgba": [56, 58, 70, 110]
+            },
+            {
+              "percent": 26,
+              "rgba": [56, 58, 69, 119]
+            },
+            {
+              "percent": 28,
+              "rgba": [53, 58, 70, 124]
+            },
+            {
+              "percent": 30,
+              "rgba": [53, 57, 67, 129]
+            },
+            {
+              "percent": 31,
+              "rgba": [55, 56, 68, 131]
+            },
+            {
+              "percent": 32,
+              "rgba": [54, 58, 67, 133]
+            },
+            {
+              "percent": 33,
+              "rgba": [54, 56, 67, 136]
+            },
+            {
+              "percent": 35,
+              "rgba": [54, 57, 66, 142]
+            },
+            {
+              "percent": 37,
+              "rgba": [54, 56, 68, 147]
+            },
+            {
+              "percent": 41,
+              "rgba": [52, 55, 67, 157]
+            },
+            {
+              "percent": 42,
+              "rgba": [53, 56, 65, 160]
+            },
+            {
+              "percent": 43,
+              "rgba": [52, 57, 66, 162]
+            },
+            {
+              "percent": 51,
+              "rgba": [52, 54, 65, 183]
+            },
+            {
+              "percent": 53,
+              "rgba": [52, 56, 65, 188]
+            },
+            {
+              "percent": 54,
+              "rgba": [51, 53, 65, 191]
+            },
+            {
+              "percent": 58,
+              "rgba": [51, 55, 65, 201]
+            },
+            {
+              "percent": 61,
+              "rgba": [51, 54, 63, 209]
+            },
+            {
+              "percent": 65,
+              "rgba": [50, 54, 64, 219]
+            },
+            {
+              "percent": 73,
+              "rgba": [50, 53, 64, 240]
+            },
+            {
+              "percent": 74,
+              "rgba": [50, 53, 63, 242]
+            },
+            {
+              "percent": 100,
+              "rgba": [50, 53, 63, 242]
+            }
+          ]
+        }
       },
       "tagSuggestions": {
         "fill": [38, 41, 52, 209],
@@ -42337,8 +42538,8 @@
         "border": [244, 247, 255, 255],
         "borderWidth": 1,
         "radius": 10,
-        "top": 32,
-        "width": 330,
+        "top": 41,
+        "width": 314,
         "height": 149,
         "marginTop": 5,
         "padding": [6, 6, 6, 6],
@@ -42390,7 +42591,7 @@
         "lineHeight": 1.5,
         "columnGap": 8,
         "rowGap": 8,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [3, 7, 7, 7],
@@ -42423,7 +42624,7 @@
         "border": [244, 247, 255, 255],
         "borderWidth": 0,
         "radius": 0,
-        "width": 316,
+        "width": 300,
         "height": 36,
         "marginTop": 0,
         "padding": [1, 0, 1, 0],
@@ -42442,7 +42643,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -42461,7 +42662,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -42495,7 +42696,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 48,
         "marginTop": 0,
         "padding": [15, 8, 15, 8],
@@ -42512,7 +42713,7 @@
         "borderWidth": 0,
         "radius": 5.4,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [5, 7, 5, 7],
@@ -42543,6 +42744,7 @@
         "text": [245, 245, 247, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
+        "backdropBlur": 30,
         "radius": 16,
         "width": 500,
         "height": 237,
@@ -51059,8 +51261,8 @@
         "border": [29, 29, 31, 255],
         "borderWidth": 1,
         "radius": 10,
-        "top": 32,
-        "width": 330,
+        "top": 41,
+        "width": 314,
         "height": 149,
         "marginTop": 5,
         "padding": [6, 6, 6, 6],
@@ -51085,7 +51287,7 @@
         "lineHeight": 1.5,
         "columnGap": 8,
         "rowGap": 8,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [3, 7, 7, 7],
@@ -51118,7 +51320,7 @@
         "border": [29, 29, 31, 255],
         "borderWidth": 0,
         "radius": 0,
-        "width": 316,
+        "width": 300,
         "height": 36,
         "marginTop": 0,
         "padding": [1, 0, 1, 0],
@@ -51137,7 +51339,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -51156,7 +51358,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -51190,7 +51392,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 48,
         "marginTop": 0,
         "padding": [15, 8, 15, 8],
@@ -51207,7 +51409,7 @@
         "borderWidth": 0,
         "radius": 5.4,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [5, 7, 5, 7],
@@ -56471,8 +56673,8 @@
         "border": [245, 245, 247, 255],
         "borderWidth": 1,
         "radius": 10,
-        "top": 32,
-        "width": 330,
+        "top": 41,
+        "width": 314,
         "height": 149,
         "marginTop": 5,
         "padding": [6, 6, 6, 6],
@@ -56497,7 +56699,7 @@
         "lineHeight": 1.5,
         "columnGap": 8,
         "rowGap": 8,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [3, 7, 7, 7],
@@ -56530,7 +56732,7 @@
         "border": [245, 245, 247, 255],
         "borderWidth": 0,
         "radius": 0,
-        "width": 316,
+        "width": 300,
         "height": 36,
         "marginTop": 0,
         "padding": [1, 0, 1, 0],
@@ -56549,7 +56751,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -56568,7 +56770,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -56602,7 +56804,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 48,
         "marginTop": 0,
         "padding": [15, 8, 15, 8],
@@ -56619,7 +56821,7 @@
         "borderWidth": 0,
         "radius": 5.4,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [5, 7, 5, 7],
@@ -61840,8 +62042,8 @@
         "border": [92, 154, 171, 255],
         "borderWidth": 1,
         "radius": 9,
-        "top": 32,
-        "width": 330,
+        "top": 41,
+        "width": 314,
         "height": 149,
         "marginTop": 5,
         "padding": [6, 6, 6, 6],
@@ -61866,7 +62068,7 @@
         "lineHeight": 1.5,
         "columnGap": 8,
         "rowGap": 8,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [3, 7, 7, 7],
@@ -61899,7 +62101,7 @@
         "border": [10, 39, 70, 255],
         "borderWidth": 0,
         "radius": 0,
-        "width": 316,
+        "width": 300,
         "height": 36,
         "marginTop": 0,
         "padding": [1, 0, 1, 0],
@@ -61918,7 +62120,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -61937,7 +62139,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -61971,7 +62173,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 48,
         "marginTop": 0,
         "padding": [15, 8, 15, 8],
@@ -61988,7 +62190,7 @@
         "borderWidth": 0,
         "radius": 5.4,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [5, 7, 5, 7],
@@ -67388,8 +67590,8 @@
         "border": [87, 149, 177, 255],
         "borderWidth": 1,
         "radius": 9,
-        "top": 32,
-        "width": 330,
+        "top": 41,
+        "width": 314,
         "height": 149,
         "marginTop": 5,
         "padding": [6, 6, 6, 6],
@@ -67414,7 +67616,7 @@
         "lineHeight": 1.5,
         "columnGap": 8,
         "rowGap": 8,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [3, 7, 7, 7],
@@ -67447,7 +67649,7 @@
         "border": [220, 251, 255, 255],
         "borderWidth": 0,
         "radius": 0,
-        "width": 316,
+        "width": 300,
         "height": 36,
         "marginTop": 0,
         "padding": [1, 0, 1, 0],
@@ -67466,7 +67668,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -67485,7 +67687,7 @@
         "lineHeight": 1.5,
         "columnGap": 9,
         "rowGap": 9,
-        "width": 316,
+        "width": 300,
         "height": 34,
         "marginTop": 0,
         "padding": [0, 9, 0, 9],
@@ -67519,7 +67721,7 @@
         "borderWidth": 0,
         "radius": 0,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 48,
         "marginTop": 0,
         "padding": [15, 8, 15, 8],
@@ -67536,7 +67738,7 @@
         "borderWidth": 0,
         "radius": 5.4,
         "lineHeight": 1.5,
-        "width": 316,
+        "width": 300,
         "height": 27,
         "marginTop": 0,
         "padding": [5, 7, 5, 7],

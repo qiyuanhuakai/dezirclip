@@ -30,7 +30,7 @@ const cases = {
   "settings-choices": { states: ["default"], text: "Update channel" },
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
   "emoji-favorites": { states: ["default"], text: "Add emoji" },
-  "settings-data": { states: ["default", "hover-path"], text: "Data storage path" },
+  "settings-data": { states: ["default", "hover-path", "hover-action"], text: "Data storage path" },
   "backup-dialog": { states: ["default", "encrypted", "error", "import", "replace", "replace-confirmed"], text: "File path" },
   "settings-update": { states: ["default", "unknown-size", "installing"], text: "Installed version" },
   "settings-update-actions": { states: ["default", "busy", "hover"], text: "Check now" },
@@ -226,7 +226,6 @@ try {
               await page.getByRole("button", { name: "Setting help: Interface font" }).click();
               await page.getByText("Use the theme font by default.", { exact: true }).waitFor();
             }
-            if (fixture === "settings-data" && state === "hover-path") await page.locator(".data-panel").hover();
             if (fixture === "backup-dialog" && ["macos", "liquid-glass"].includes(theme)) {
               const styled = await page.locator(".data-modal-content").evaluate(dialog => {
                 const panel = getComputedStyle(dialog);
@@ -263,7 +262,7 @@ try {
               await page.getByRole("option", { name: "Light", exact: true }).waitFor();
             }
             if (fixture === "tag-suggestions") {
-              const field = await page.getByRole("textbox", { name: "Search clipboard" }).boundingBox();
+              const field = await page.getByRole("combobox", { name: "Search clipboard" }).boundingBox();
               const popup = await page.locator(".dc-tag-filter-picker").boundingBox();
               if (!field || !popup || Math.abs(field.x - popup.x) > 1 || Math.abs(field.width - popup.width) > 1) {
                 throw Error("Tag suggestions are not aligned with the clipboard search field");
@@ -409,6 +408,8 @@ try {
                 }
               }
             }
+            if (fixture === "settings-data" && state === "hover-path") await page.locator(".data-panel").hover();
+            if (fixture === "settings-data" && state === "hover-action") await page.locator(".data-actions-row .btn-icon").first().hover();
             const webImage = await page.screenshot({ path: join(output, id + "_web.png"), animations: "disabled" });
             const { stdout } = await execute(resolve(native), nativeArgs, { timeout: 10000 });
             const nativeImage = await readFile(target);

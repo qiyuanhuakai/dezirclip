@@ -31,6 +31,7 @@ type ColorStop struct {
 }
 
 type WidgetStyle struct {
+	BackdropBlur  float32
 	BorderWidths  *[4]float32
 	CornerRadii   *[4]float32
 	Outline       *Outline

@@ -478,9 +478,9 @@
 
 .theme-liquid-glass .btn-icon-data-action {
   --data-action-radius: 10px;
-  --data-action-bg: var(--lg-dialog-button-bg);
+  --data-action-bg: var(--lg-input-bg);
   --data-action-border: var(--lg-dialog-button-border);
-  --data-action-hover-bg: var(--lg-dialog-button-hover-bg);
+  --data-action-hover-bg: color-mix(in srgb, var(--lg-dialog-button-hover-bg) 25%, var(--data-action-bg));
   --data-action-hover-border: var(--lg-dialog-button-hover-border);
   --data-action-shadow: inset 0 1px 0 var(--glass-edge-top), inset 0 -1px 0 var(--glass-edge-bottom);
 }

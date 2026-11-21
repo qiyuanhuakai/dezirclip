@@ -49,6 +49,9 @@ func (n *nativeMain) view(c *ui.Context) {
 		return ""
 	}
 	shell := ui.Box(c).Fill().Clip()
+	if n.backup != nil {
+		shell = kit.BackupDialogBackground(shell)
+	}
 	queryFocused := false
 	shell.Children(func() {
 		n.drawBackground(c, preset.Tokens().Radius)
