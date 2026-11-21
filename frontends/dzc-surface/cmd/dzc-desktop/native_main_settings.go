@@ -24,6 +24,7 @@ func (n *nativeMain) openSettings() {
 	}
 	n.resetPreviewSelection()
 	n.settingsScroll = ui.ScrollState{}
+	n.settingsStackScroll = ui.ScrollState{}
 	if n.settingsSection == "privacy" {
 		n.settingsSection = "general"
 	}
@@ -36,6 +37,7 @@ func (n *nativeMain) openSettings() {
 func (n *nativeMain) closeSettings() {
 	if !n.profile.moving && !n.profile.restartPending {
 		n.showSettings = false
+		n.focusPrivacyRules = false
 		n.updater.confirm = false
 		n.resetOpacityPreviews()
 	}
@@ -107,7 +109,7 @@ func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nat
 			n.settingsOpen[pane.ID] = &open
 		}
 	}
-	ui.Scroll(c).FillWidth().Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Center).Children(func() {
+	ui.Scroll(c).FillWidth().Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Center).TrackScroll(&n.settingsStackScroll).Children(func() {
 		ui.Column(c).FillWidth().MaxWidth(420).Gap(8).Padding(8).Children(func() {
 			for _, pane := range panes {
 				open := n.settingsOpen[pane.ID]
@@ -284,7 +286,7 @@ func (n *nativeMain) clipboardSettings(c *ui.Context, kit uikit.Kit) {
 
 func (n *nativeMain) privacySettings(c *ui.Context, kit uikit.Kit) {
 	n.drawPrivacySession(c, kit)
-	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() { n.drawPrivacyRules(c) })
+	n.drawPrivacyRules(c)
 	n.booleanSettingWithHelp(c, "app.privacy_protection", n.text("privacy_protection"), n.text("privacy_protection_hint"), true)
 	n.drawPrivacyDetection(c, kit)
 }

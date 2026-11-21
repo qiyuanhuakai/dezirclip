@@ -63,12 +63,14 @@ type nativeMain struct {
 	settingsSection       string
 	settingsOpen          map[string]*bool
 	settingsScroll        ui.ScrollState
+	settingsStackScroll   ui.ScrollState
 	clearHistoryOpen      bool
 	menu                  uikit.ContextMenu
 	menuTransformsLoading bool
 	resetOpen             bool
 	privacyKindsOpen      bool
 	privacyCustomOpen     bool
+	focusPrivacyRules     bool
 	sourceExclusions      nativePrivacyTextDraft
 	customPrivacyRules    nativePrivacyTextDraft
 	privacyTextTimer      *time.Timer

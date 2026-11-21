@@ -686,6 +686,36 @@ func TestNativeMainPrivacySettingsAreClosedOnReentry(t *testing.T) {
 	}
 }
 
+func TestNativePrivacyRulesShortcutRevealsTheManager(t *testing.T) {
+	for _, width := range []int{360, 760} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			const height = 300
+			window := nativeMain{
+				preferences: map[string]string{"app.language": "en"},
+				privacyRules: nativePrivacyRules{started: true, rules: []protocol.PolicyRuleValue{
+					{Id: "example-rule", Kind: "ignore_source"},
+				}},
+			}
+			view := ui.NewTester(window.view, width, height)
+			window.showPrivacyRuleManager()
+			view.Frame()
+			view.Advance(250 * time.Millisecond)
+			title, ok := view.Find(window.text("privacy_rules_title"))
+			if !ok || title.H <= 0 || title.Y < 40 || title.Y > 105 {
+				t.Fatalf("the privacy rules heading did not appear at the start of the settings viewport: %#v, found=%t", title, ok)
+			}
+			if !view.Focused(window.text("privacy_rules_manage")) {
+				t.Fatal("the shortcut did not give the rules manager keyboard focus")
+			}
+			view.Scroll(float32(width)*0.7, 160, 0, 120)
+			view.Advance(250 * time.Millisecond)
+			if err := view.Click(window.text("privacy_rule_remove")); err != nil || window.privacyRules.pendingDelete != "example-rule" {
+				t.Fatalf("the rule could not be removed from the same viewport: %v", err)
+			}
+		})
+	}
+}
+
 func TestNativeBackupConfirmationFitsMinimumWindow(t *testing.T) {
 	window := nativeMain{showSettings: true, settingsSection: "data", preferences: map[string]string{"app.language": "en"}}
 	window.backup = &nativeBackupDialog{

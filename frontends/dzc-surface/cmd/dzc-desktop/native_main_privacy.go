@@ -280,6 +280,7 @@ func (n *nativeMain) showPrivacyRuleManager() {
 	n.closePrivacyDialog()
 	n.openSettings()
 	n.settingsSection = "privacy"
+	n.focusPrivacyRules = true
 	for id, open := range n.settingsOpen {
 		*open = id == "privacy"
 	}
@@ -375,6 +376,27 @@ func (n *nativeMain) loadPrivacyRules() {
 }
 
 func (n *nativeMain) drawPrivacyRules(c *ui.Context) {
+	manager := ui.Column(c.Key("privacy-rule-manager")).ColumnSpan(-1).FillWidth().MinWidth(0).
+		Gap(8).Role(ui.RoleGroup).Label(n.text("privacy_rules_manage")).Focusable().FocusRing(true)
+	if n.focusPrivacyRules {
+		manager.Focus()
+		scroll := &n.settingsScroll
+		if width, _ := c.Size(); width < nativeSplitWidth {
+			scroll = &n.settingsStackScroll
+		}
+		box, viewport := manager.LayoutBounds(), scroll.Bounds(c)
+		if box.H > 0 && viewport.H > 0 {
+			scroll.ScrollTo(scroll.X, max(0, scroll.Y+box.Y-viewport.Y-8), ui.Animation{})
+			n.focusPrivacyRules = false
+		} else {
+			manager.ScrollIntoView()
+		}
+		c.Invalidate()
+	}
+	manager.Children(func() { n.drawPrivacyRuleList(c) })
+}
+
+func (n *nativeMain) drawPrivacyRuleList(c *ui.Context) {
 	kit := n.mainKit()
 	rules := &n.privacyRules
 	if !rules.started {

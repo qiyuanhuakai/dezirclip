@@ -568,9 +568,24 @@ const App = () => {
   appSettingsRef.current = appSettings;
   const backgroundSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const backgroundSaveGeneration = useRef(0);
+  const sourceExclusionsSaveQueue = useRef<Promise<boolean>>(Promise.resolve(true));
 
   const saveAppSetting = useCallback(async (type: string, path: string) => {
     const key = `app.${type}`;
+    if (type === "excluded_source_apps") {
+      const request = sourceExclusionsSaveQueue.current.then(async () => {
+        try {
+          await invoke("save_setting", { key, value: path });
+          setAppSettings(prev => ({ ...prev, [key]: path }));
+          return true;
+        } catch {
+          pushToast(t("privacy_action_failed"));
+          return false;
+        }
+      });
+      sourceExclusionsSaveQueue.current = request;
+      return request;
+    }
     if (appSettingsRef.current[key] === path) return;
     if (["quick_paste_enabled", "screenshot_enabled", "quick_paste_hotkey", "screenshot_hotkey",
       "screenshot_full_hotkey", "delete_after_paste", "move_to_top_after_paste"].includes(type)) {

@@ -1,6 +1,6 @@
 import { PrivacyDetectionOptions, PrivacyPatternsField, SourceExclusionField } from "@deziro/ui-react/components/PrivacySettings";
 import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type ComponentType } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { refreshPrivacyState } from "../../../../shared/lib/privacySession";
@@ -14,7 +14,7 @@ interface PrivacySettingsGroupProps {
     onToggle: () => void;
     LabelWithHint: ComponentType<LabelWithHintProps>;
     appSettings: Record<string, string>;
-    saveAppSetting: (key: string, value: string) => void;
+    saveAppSetting: (key: string, value: string) => void | Promise<boolean | void>;
     privacyProtection: boolean;
     setPrivacyProtection: (val: boolean) => void;
     privacyProtectionKinds: string[];
@@ -67,11 +67,39 @@ export default function PrivacySettingsGroup(props: PrivacySettingsGroupProps) {
     };
 
     const excludedSourceApps = props.appSettings['app.excluded_source_apps'] || '';
-    const [excludedSourceAppsDraft, setExcludedSourceAppsDraft] = useState(excludedSourceApps);
+    const [excludedSourceAppsDraft, setExcludedSourceAppsDraft] = useState<string | null>(null);
+    const [exclusionsSaveFailed, setExclusionsSaveFailed] = useState(false);
+    const pendingExclusions = useRef<string | null>(null);
+    const exclusionsWrite = useRef<{ value: string } | null>(null);
+    const exclusionsWriter = useRef(props.saveAppSetting);
+    exclusionsWriter.current = props.saveAppSetting;
 
-    useEffect(() => {
-        setExcludedSourceAppsDraft(excludedSourceApps);
-    }, [excludedSourceApps]);
+    const saveExclusions = useCallback(() => {
+        const value = pendingExclusions.current;
+        if (value === null || exclusionsWrite.current?.value === value) return;
+        const request = { value };
+        exclusionsWrite.current = request;
+        const finish = (saved: boolean) => {
+            if (exclusionsWrite.current !== request) return;
+            exclusionsWrite.current = null;
+            if (pendingExclusions.current !== value) return;
+            setExclusionsSaveFailed(!saved);
+            if (saved) {
+                pendingExclusions.current = null;
+                setExcludedSourceAppsDraft(null);
+            }
+        };
+        void (async () => {
+            try {
+                finish((await exclusionsWriter.current("excluded_source_apps", value)) !== false);
+            } catch {
+                finish(false);
+            }
+        })();
+    }, []);
+    useLayoutEffect(() => {
+        if (!props.collapsed) return saveExclusions;
+    }, [props.collapsed, saveExclusions]);
     return <div className={`settings-group ${props.collapsed ? "collapsed" : ""}`}>
         <div className="group-header" onClick={props.onToggle}>
             <h3>{props.t("privacy_settings")}</h3>
@@ -102,12 +130,23 @@ export default function PrivacySettingsGroup(props: PrivacySettingsGroupProps) {
                         <SourceExclusionField
                             aria-label={props.t('excluded_source_apps')}
                             placeholder={props.t('excluded_source_apps_placeholder')}
-                            value={excludedSourceAppsDraft}
+                            value={excludedSourceAppsDraft ?? excludedSourceApps}
                             onFocus={() => invoke('focus_clipboard_window').catch(console.error)}
-                            onChange={(event) => setExcludedSourceAppsDraft(event.target.value)}
-                            onBlur={() => props.saveAppSetting('excluded_source_apps', excludedSourceAppsDraft)}
+                            onChange={({ target: { value } }) => {
+                                pendingExclusions.current = value;
+                                setExcludedSourceAppsDraft(value);
+                                setExclusionsSaveFailed(false);
+                            }}
+                            onBlur={saveExclusions}
                             spellCheck={false}
                         />
+                        {exclusionsSaveFailed && (
+                            <p role="alert">{props.t("privacy_rules_save_failed")}{" "}
+                                <button type="button" className="btn-icon settings-action" onClick={saveExclusions}>
+                                    {props.t("common_retry")}
+                                </button>
+                            </p>
+                        )}
                     </div>
 
                     <div className="setting-item column">
