@@ -252,14 +252,42 @@ try {
                   root.style.setProperty("--custom-bg-image", background);
                   document.body.classList.add("has-custom-bg");
                   try {
+                    const scrim = getComputedStyle(dialog.closest(".data-modal-overlay"), "::backdrop");
                     return getComputedStyle(document.querySelector("#root")).backdropFilter === "none" &&
-                      getComputedStyle(dialog).backdropFilter === "blur(6px)";
+                      scrim.backdropFilter === "none" &&
+                      getComputedStyle(dialog).backdropFilter === "blur(1px)";
                   } finally {
                     document.body.classList.remove("has-custom-bg");
                     root.style.removeProperty("--custom-bg-image");
                   }
                 });
                 if (!keepsLocalBlur) throw Error("The wallpaper disabled the backup sheet's local blur");
+                const minimumContrast = await page.locator(".data-modal-content").evaluate(dialog => {
+                  const root = document.documentElement;
+                  const previous = root.style.getPropertyValue("--surface-layer-scale");
+                  const channels = color => color.match(/[\d.]+/g).map(Number);
+                  const composite = ([r, g, b, alpha = 1], backdrop) =>
+                    [r, g, b].map((value, i) => value * alpha + backdrop[i] * (1 - alpha));
+                  const luminance = (rgb) => rgb.map(value => value / 255)
+                    .map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+                    .reduce((sum, value, i) => sum + value * [0.2126, 0.7152, 0.0722][i], 0);
+                  root.style.setProperty("--surface-layer-scale", "0");
+                  try {
+                    const scrim = channels(getComputedStyle(dialog.closest(".data-modal-overlay"), "::backdrop").backgroundColor);
+                    const panel = channels(getComputedStyle(dialog).backgroundColor);
+                    const label = channels(getComputedStyle(dialog.querySelector(".data-label")).color);
+                    return Math.min(...[0, 255].map(value => {
+                      const surface = composite(panel, composite(scrim, [value, value, value]));
+                      const bg = luminance(surface);
+                      const fg = luminance(composite(label, surface));
+                      return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+                    }));
+                  } finally {
+                    if (previous) root.style.setProperty("--surface-layer-scale", previous);
+                    else root.style.removeProperty("--surface-layer-scale");
+                  }
+                });
+                if (minimumContrast < 4.5) throw Error(`Glass sheet label contrast dropped to ${minimumContrast.toFixed(2)}:1`);
               }
             }
             if (fixture === "backup-dialog" && state.startsWith("replace")) {

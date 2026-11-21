@@ -311,7 +311,7 @@
 }
 
 .theme-liquid-glass .data-modal-overlay {
-  --backup-panel-bg: var(--lg-dialog-bg);
+  --backup-panel-bg: rgba(255, 255, 255, calc(0.54 + 0.14 * var(--surface-layer-scale, 1)));
   --backup-panel-border: var(--lg-dialog-border);
   --backup-panel-shadow: var(--lg-dialog-shadow);
   --backup-panel-radius: 16px;
@@ -336,6 +336,18 @@
   background: rgba(0, 0, 0, 0.36);
 }
 
+.theme-liquid-glass .data-modal-overlay::backdrop {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.theme-liquid-glass.dark-mode .data-modal-overlay {
+  --backup-panel-bg: rgba(38, 41, 52, calc(0.59 + 0.14 * var(--surface-layer-scale, 1)));
+}
+
+.theme-liquid-glass.dark-mode .data-modal-overlay::backdrop {
+  background: rgba(0, 0, 0, 0.18);
+}
+
 :is(.theme-macos, .theme-liquid-glass) .data-modal-content {
   background: var(--backup-panel-bg);
   border: 1px solid var(--backup-panel-border);
@@ -345,7 +357,9 @@
 }
 
 .theme-liquid-glass .data-modal-content {
-  backdrop-filter: blur(6px);
+  /* A small radius softens edges while preserving fine detail through the glass. */
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
 }
 
 :is(.theme-macos, .theme-liquid-glass) .data-modal-title {

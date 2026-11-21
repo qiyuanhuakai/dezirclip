@@ -11,7 +11,7 @@ func TestBackupGlassSoftensOnlyTheAreaCoveredByTheDialog(t *testing.T) {
 	open := false
 	kit := Kit{widgets: map[string]theme.WidgetStyle{
 		"backupBackdrop": {Opacity: 1},
-		"backupDialog":   {Width: 220, Radius: 16, BackdropBlur: 6, Opacity: 1, Fill: [4]uint8{248, 250, 255, 48}},
+		"backupDialog":   {Width: 220, Radius: 16, BackdropBlur: 1, Opacity: 1, Fill: [4]uint8{255, 255, 255, 161}},
 	}}
 	view := ui.NewTester(func(c *ui.Context) {
 		ui.Box(c).Fill().Background(ui.RGB(255, 255, 255)).Draw(func(p *ui.Painter, bounds ui.Rect) {
@@ -36,10 +36,10 @@ func TestBackupGlassSoftensOnlyTheAreaCoveredByTheDialog(t *testing.T) {
 			t.Errorf("pixel outside the sheet changed at (%d,%d): %v -> %v", x, y, before, after)
 		}
 	}
-	sharp := withoutDialog.RGBAAt(141, 140).R
-	soft := withDialog.RGBAAt(141, 140).R
-	dark, bright := withDialog.RGBAAt(210, 140).R, withDialog.RGBAAt(165, 140).R
-	if int(soft)-int(sharp) < 80 || int(bright)-int(dark) < 140 {
-		t.Errorf("glass should soften narrow details while retaining broad contrast: stripe %d -> %d, dark=%d, light=%d", sharp, soft, dark, bright)
+	stroke := int(withDialog.RGBAAt(141, 140).R)
+	edge := int(withDialog.RGBAAt(142, 140).R)
+	dark, bright := int(withDialog.RGBAAt(210, 140).R), int(withDialog.RGBAAt(165, 140).R)
+	if bright-stroke < 50 || bright-edge < 10 || edge <= stroke || bright-dark < 90 {
+		t.Errorf("glass should retain a two-pixel stroke with softened edges: stroke=%d, edge=%d, dark=%d, light=%d", stroke, edge, dark, bright)
 	}
 }
