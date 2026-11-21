@@ -42,11 +42,21 @@ func (n *nativeMain) closeSettings() {
 }
 
 func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *int) {
+	width, _ := c.Size()
+	cardWidth := min(width, 420) - 16
+	if width >= nativeSplitWidth {
+		cardWidth = width - 26 - kit.SettingsRailWidth()
+	}
+	if n.preferences["app.show_app_border"] != "false" {
+		cardWidth -= 2
+	}
 	panes := []nativeSettingsPane{
 		{uikit.SettingsSection{ID: "general", Label: n.text("general_settings", "General")}, func() { n.generalSettings(c) }},
 		{uikit.SettingsSection{ID: "clipboard", Label: n.text("clipboard_settings")}, func() { n.clipboardSettings(c, kit) }},
 		{uikit.SettingsSection{ID: "privacy", Label: n.text("privacy_settings")}, func() { n.privacySettings(c, kit) }},
-		{uikit.SettingsSection{ID: "appearance", Label: n.text("appearance_settings")}, func() { n.appearanceSettings(c, kit, surfaceOpacity) }},
+		{uikit.SettingsSection{ID: "appearance", Label: n.text("appearance_settings")}, func() {
+			n.appearanceSettings(c, kit, kit.SettingsSectionContentWidth(cardWidth), surfaceOpacity)
+		}},
 		{uikit.SettingsSection{ID: "applications", Label: n.text("default_apps")}, func() { n.defaultAppsSettings(c) }},
 		{uikit.SettingsSection{ID: "data", Label: n.text("data_management")}, func() { n.dataSettings(c) }},
 		{uikit.SettingsSection{ID: "tools", Label: n.text("tools_settings")}, func() { n.toolsSettings(c) }},
@@ -55,7 +65,6 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 	if n.settingsSection == "" {
 		n.settingsSection = "general"
 	}
-	width, _ := c.Size()
 	if width < nativeSplitWidth {
 		n.settingsAccordion(c, kit, panes)
 		return
@@ -306,17 +315,9 @@ func (n *nativeMain) changePrivateSession(active bool) {
 	}()
 }
 
-func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpacity *int) {
-	themes := []uikit.SelectOption{
-		{Value: "retro", Label: n.text("theme_retro")}, {Value: "mica", Label: n.text("theme_mica")}, {Value: "acrylic", Label: n.text("theme_acrylic")},
-		{Value: "liquid-glass", Label: n.text("theme_liquid_glass")}, {Value: "macos", Label: n.text("theme_macos")}, {Value: "scifi", Label: n.text("theme_scifi")},
-	}
-	for _, imported := range n.importedThemes {
-		themes = append(themes, uikit.SelectOption{Value: "custom:" + imported.Id, Label: imported.Name})
-	}
-	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() {
-		n.settingChoices(c, kit, "app.theme", n.text("visual_theme", "Theme"), "mica", themes)
-		n.themeActions(c)
+func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, width float32, surfaceOpacity *int) {
+	kit.SettingsField(c.Key("theme"), uikit.SettingsFieldOptions{Stacked: true}).ColumnSpan(-1).Children(func() {
+		n.themeSettings(c, kit, width)
 	})
 	n.settingChoices(c, kit, "app.color_mode", n.text("color_mode", "Color mode"), "system", []uikit.SelectOption{
 		{Value: "system", Label: n.text("mode_system")}, {Value: "light", Label: n.text("mode_light")}, {Value: "dark", Label: n.text("mode_dark")},
@@ -329,7 +330,7 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpa
 	n.typographySettings(c)
 	previewOpacity := opacityPreference(n.preferences["app.preview_opacity"], n.preferences["app.surface_opacity"])
 	n.rangeSetting(c, nativePreviewOpacity, n.text("preview_opacity"), n.text("preview_opacity_hint"), previewOpacity)
-	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() { n.backgroundSettings(c) })
+	n.backgroundSettings(c, kit)
 	if surfaceOpacity != nil {
 		*surfaceOpacity = n.drawSurfaceOpacity(c, *surfaceOpacity)
 	}

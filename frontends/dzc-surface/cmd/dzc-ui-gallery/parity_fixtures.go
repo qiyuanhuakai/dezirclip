@@ -10,6 +10,10 @@ import (
 
 func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool {
 	switch name {
+	case "theme-manager":
+		g.themeManagerFixture(c, kit)
+	case "background-settings":
+		g.backgroundSettingsFixture(c, kit)
 	case "settings-field":
 		ui.Column(c).Width(330).Gap(8).Children(func() {
 			kit.SettingsField(c, uikit.SettingsFieldOptions{Stacked: true}).Children(func() {

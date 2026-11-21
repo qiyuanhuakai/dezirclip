@@ -42,6 +42,9 @@ html:root.showcase-opacity-background {
   max-width: 330px;
   font-size: 14px;
 }
+.settings-view.showcase-background-config {
+  padding: 0;
+}
 .showcase-fields label {
   display: grid;
   gap: 3px;

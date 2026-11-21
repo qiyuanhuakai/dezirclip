@@ -1,12 +1,12 @@
 import { SettingsToggleField } from "@deziro/ui-react/components/SettingsToggle";
 import { SettingsField } from "@deziro/ui-react/components/SettingsField";
 import { SettingsSlider } from "@deziro/ui-react/components/SettingsSlider";
+import { SettingsBackground } from "@deziro/ui-react/components/SettingsAppearance";
 import { SettingHelp } from "../SettingHelp";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { open, message } from "@tauri-apps/plugin-dialog";
-import { SettingsRemoveButton } from "@deziro/ui-react/components/RemoveButton";
 import { SettingsGroupHeader } from "@deziro/ui-react/components/SettingsSectionCard";
 import { SettingsChoices } from "@deziro/ui-react/components/SettingsChoices";
 import type { Locale } from "../../../../shared/types";
@@ -150,6 +150,25 @@ const AppearanceSettingsGroup = ({
     const defaultOption = useMemo(() => ({ value: "", label: t("font_default_option") }), [t]);
     const fontMainOptions = useMemo(() => fontOptions(systemFonts, false, fontMain, defaultOption), [defaultOption, systemFonts, fontMain]);
     const fontMonoOptions = useMemo(() => fontOptions(systemFonts, true, fontMono, defaultOption), [defaultOption, systemFonts, fontMono]);
+
+    const chooseBackground = async () => {
+        try {
+            const selected = await open({
+                multiple: false,
+                filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+            });
+            if (typeof selected !== "string") return;
+            try {
+                const stats = await invoke<{ size: number }>("get_file_size", { path: selected });
+                if (stats.size > 10 * 1024 * 1024) {
+                    await message(t("background_size_error"), { title: t("error"), kind: "error" });
+                    return;
+                }
+            } catch (err) { console.warn(err); }
+            setCustomBackground(selected);
+            saveAppSetting("custom_background", selected);
+        } catch (err) { console.error(err); }
+    };
 
     return (
     <div className={`settings-group ${collapsed ? 'collapsed' : ''}`}>
@@ -307,58 +326,13 @@ const AppearanceSettingsGroup = ({
 
                 {(['mica', 'acrylic', 'liquid-glass'].includes(resolveBuiltinTheme(theme))) && (
                     <>
-                        <div className="setting-item column no-border">
-                            <div className="settings-background-controls">
-                                <span className="item-label">{t('custom_background') || '自定义背景'}</span>
-                                <button
-                                    onClick={async () => {
-                                        try {
-                                            const selected = await open({
-                                                multiple: false,
-                                                filters: [{
-                                                    name: 'Image',
-                                                    extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif']
-                                                }]
-                                            });
-                                            if (selected && typeof selected === 'string') {
-                                                try {
-                                                    const stats = await invoke<{ size: number }>('get_file_size', { path: selected });
-                                                    const maxSize = 10 * 1024 * 1024;
-                                                    if (stats.size > maxSize) {
-                                                        await message(
-                                                            t('background_size_error') || `图片文件过大！请选择小于 ${Math.round(maxSize / 1024 / 1024)}MB 的图片。`,
-                                                            { title: t('error') || '错误', kind: 'error' }
-                                                        );
-                                                        return;
-                                                    }
-                                                } catch (e) { console.warn(e); }
-                                                setCustomBackground(selected);
-                                                saveAppSetting('custom_background', selected);
-                                            }
-                                        } catch (err) { console.error(err); }
-                                    }}
-                                    type="button"
-                                    className="btn-icon settings-action settings-action--compact settings-background-choose"
-                                >
-                                    {customBackground ? (t('change_background') || '更换背景') : (t('choose_background') || '选择背景')}
-                                </button>
-                                {customBackground && (
-                                    <SettingsRemoveButton iconOnly
-                                        onClick={() => {
-                                            setCustomBackground('');
-                                            saveAppSetting('custom_background', '');
-                                        }}
-                                        className="settings-background-clear"
-                                        label={t('clear_background') || '清除背景'}
-                                    />
-                                )}
-                            </div>
-                            {customBackground && (
-                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', wordBreak: 'break-all' }}>
-                                    {customBackground.split(/[/\\]/).pop()}
-                                </div>
-                            )}
-
+                        <SettingsBackground label={t("custom_background")} clearLabel={t("clear_background")}
+                            chooseLabel={t(customBackground ? "change_background" : "choose_background")}
+                            filename={customBackground.split(/[/\\]/).pop()}
+                            onChoose={() => void chooseBackground()} onClear={() => {
+                                setCustomBackground("");
+                                saveAppSetting("custom_background", "");
+                            }}>
                             {customBackground && (
                                 <div className="setting-item column no-border" style={{ marginTop: '12px' }}>
                                     <div className="settings-range-header">
@@ -378,7 +352,7 @@ const AppearanceSettingsGroup = ({
                                     />
                                 </div>
                             )}
-                        </div>
+                        </SettingsBackground>
 
                         <NativeFeatureBoundary t={t}>
                         <SettingsField stacked>

@@ -24,6 +24,7 @@ export { HistoryOCRBadge, HistoryOCRResult, type HistoryOCRStatus, type HistoryO
 export { ContextMenuSurface, ContextMenuItem, type ContextMenuSurfaceProps, type ContextMenuItemProps } from "./components/ContextMenu";
 export { TextField, NumberField, TextArea } from "./components/TextField";
 export { SettingsChoices, type SettingsChoice } from "./components/SettingsChoices";
+export { SettingsThemeManager, SettingsBackground } from "./components/SettingsAppearance";
 export { SettingsField } from "./components/SettingsField";
 export { SettingsSectionCard, SettingsGroupHeader, settingsPaneColumns } from "./components/SettingsSectionCard";
 export { EmojiAddTile, EmojiFavoriteTile } from "./components/EmojiFavoriteTiles";

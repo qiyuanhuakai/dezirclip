@@ -7,6 +7,17 @@ type SettingsSection struct {
 	Label string
 }
 
+// SettingsSectionContentWidth accounts for the card frame and its content padding.
+func (k Kit) SettingsSectionContentWidth(cardWidth float32) float32 {
+	frame := k.style("settingsGroupOpen")
+	content := k.style("settingsGroupContent")
+	return cardWidth - horizontalBorders(frame) - frame.Padding[1] - frame.Padding[3] - content.Padding[1] - content.Padding[3]
+}
+
+func (k Kit) SettingsRailWidth() float32 {
+	return k.style("settingsRail").Width
+}
+
 func (k Kit) SettingsDataPath(c *ui.Context, label, path string, actions func()) {
 	block, header := k.style("settingsDataBlock"), k.style("settingsDataHeader")
 	paint(ui.Column(c).FillWidth().Gap(block.RowGap+header.MarginBottom), block).Children(func() {

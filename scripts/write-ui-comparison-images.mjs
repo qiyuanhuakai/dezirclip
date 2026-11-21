@@ -17,6 +17,8 @@ const figures = [
   ["settings-keyboard-preview", "default", 155],
   ["character-panel", "after-scroll", 310, 0, "character-panel-scroll"],
   ["settings-field", "expanded", 200],
+  ["theme-manager", "imported", 310],
+  ["background-settings", "saved", 165],
   ["surface-opacity", "20", 312, 0, "surface-opacity-20"],
   ["surface-opacity", "85", 312, 0, "surface-opacity-85"],
   ["quick-paste-panel", "65", 242],

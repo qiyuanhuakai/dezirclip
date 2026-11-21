@@ -7,6 +7,7 @@ import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDia
   SettingsSlider, SettingsToggle, SettingsToggleField, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
+import { BackgroundSettingsFixture, ThemeManagerFixture } from "./appearance-fixtures";
 import { AttachmentFixture, HistoryImageFixture, HistoryOCRFixture, HistoryRichTextFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
 import { BackupDialogFixture, ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture, SettingsUpdateFixture,
   PrivacyDetectionFixture, PrivacyRulesFixture, SettingsDataFixture, SettingsFieldsFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, SearchSelectFixture, TagBatchToolbarFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture, UpdateActionsFixture } from "./form-menu-fixtures";
@@ -162,6 +163,8 @@ function Showcase() {
     "hotkey-list": <HotkeyListFixture multiple={state === "multiple" || state === "win-v"} extended={state === "extended"} winV={state === "win-v"} />,
     "emoji-favorites": <EmojiFavoritesFixture />,
     "settings-data": <SettingsDataFixture />,
+    "theme-manager": <ThemeManagerFixture state={state} />,
+    "background-settings": <BackgroundSettingsFixture state={state} />,
     "backup-dialog": <BackupDialogFixture state={state} />,
     "settings-update": <SettingsUpdateFixture state={state} />,
     "settings-update-actions": <UpdateActionsFixture state={state} />,

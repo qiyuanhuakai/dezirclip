@@ -20,6 +20,8 @@ const cases = {
   "surface-opacity": { states: ["0", "20", "65", "85", "100"], text: "Appearance" },
   "quick-paste-panel": { states: ["0", "65", "100"], text: "Release checklist" },
   "settings-field": { states: ["default", "expanded"], text: "Interface font" },
+  "theme-manager": { states: ["default", "imported", "wide"], text: "Visual theme" },
+  "background-settings": { states: ["default", "saved"], text: "Custom background" },
   "settings-section-card": { states: ["default", "expanded", "wide"], text: "General settings" },
   "settings-choices": { states: ["default"], text: "Update channel" },
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
@@ -464,6 +466,33 @@ try {
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
             const dialog = fixture === "backup-dialog" ? await page.locator(".data-modal-content").boundingBox() : undefined;
             const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64"), dialog });
+            if (fixture === "theme-manager") {
+              const imported = page.getByRole("group", { name: "Imported themes" }).getByRole("button", { name: "Studio theme" });
+              const exportTheme = page.getByRole("button", { name: "Export theme" });
+              if ((await exportTheme.count() > 0) !== (state === "imported") ||
+                comparable(nativeText, "Export theme") !== (state === "imported")) {
+                throw Error("Export is available for the wrong theme");
+              }
+              if (state !== "imported") {
+                await imported.click();
+                await exportTheme.waitFor();
+              }
+              await page.getByRole("group", { name: "Built-in themes" }).getByRole("button", { name: "Mica" }).click();
+              await exportTheme.waitFor({ state: "hidden" });
+            }
+            if (fixture === "background-settings") {
+              const slider = page.getByRole("slider", { name: "Background opacity" });
+              if ((await slider.count() > 0) !== (state === "saved") ||
+                comparable(nativeText, "Workspace wallpaper.png") !== (state === "saved")) {
+                throw Error("Wallpaper controls disagree with the saved image");
+              }
+              if (state === "default") {
+                await page.getByRole("button", { name: "Choose background" }).click();
+                await slider.waitFor();
+              }
+              await page.getByRole("button", { name: "Clear background" }).click();
+              await slider.waitFor({ state: "hidden" });
+            }
             if (fixture === "quick-paste-panel" && pixels.backgroundDistance > 2) {
               throw Error(`Quick Paste backdrop differs at ${state}%: ${pixels.backgroundDistance}`);
             }

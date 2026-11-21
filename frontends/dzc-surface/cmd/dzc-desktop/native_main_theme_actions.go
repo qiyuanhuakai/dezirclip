@@ -18,25 +18,38 @@ const (
 	removeNativeTheme
 )
 
-func (n *nativeMain) themeActions(c *ui.Context) {
-	disabled := n.mutating || n.session == nil || n.history.state.ServiceInstanceId == ""
-	full := len(n.importedThemes) >= maxImportedThemes
-	ui.Row(c).Gap(6).Wrap().Children(func() {
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("theme_import"), Disabled: disabled || full}).Clicked() {
-			n.changeThemeFile(importNativeTheme, protocol.DesktopThemePackage{})
-		}
-		if selected := n.findImportedTheme(n.theme); selected != nil {
-			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("theme_export"), Disabled: disabled}).Clicked() {
-				n.changeThemeFile(exportNativeTheme, *selected)
-			}
-			if n.mainKit().SettingsRemoveButton(c, n.text("theme_delete", "Remove theme"), false, disabled).Clicked() {
-				n.changeThemeFile(removeNativeTheme, *selected)
-			}
-		}
-	})
-	if full {
-		ui.Text(c, n.text("theme_limit_reached")).TextColor(c.Theme().TextMuted)
+func (n *nativeMain) themeSettings(c *ui.Context, kit uikit.Kit, width float32) {
+	builtins := []uikit.SelectOption{
+		{Value: "retro", Label: n.text("theme_retro")}, {Value: "mica", Label: n.text("theme_mica")}, {Value: "acrylic", Label: n.text("theme_acrylic")},
+		{Value: "liquid-glass", Label: n.text("theme_liquid_glass")}, {Value: "macos", Label: n.text("theme_macos")}, {Value: "scifi", Label: n.text("theme_scifi")},
 	}
+	imported := make([]uikit.SelectOption, 0, len(n.importedThemes))
+	for _, item := range n.importedThemes {
+		imported = append(imported, uikit.SelectOption{Value: "custom:" + item.Id, Label: item.Name})
+	}
+	active := n.theme
+	if active == "" {
+		active = "mica"
+	}
+	full := len(n.importedThemes) >= maxImportedThemes
+	options := uikit.ThemeManagerOptions{
+		Label: n.text("visual_theme"), BuiltinLabel: n.text("theme_builtin", "Built-in themes"), ImportedLabel: n.text("theme_custom", "Imported themes"),
+		Active: active, Builtins: builtins, Imported: imported, ImportDisabled: full,
+		Disabled:    n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "",
+		ImportLabel: n.text("theme_import"), ExportLabel: n.text("theme_export"), RemoveLabel: n.text("theme_delete"),
+		OnChange: func(value string) { n.saveSetting("app.theme", value) },
+		OnImport: func() {
+			n.changeThemeFile(importNativeTheme, protocol.DesktopThemePackage{})
+		},
+	}
+	if selected := n.findImportedTheme(active); selected != nil {
+		options.OnExport = func() { n.changeThemeFile(exportNativeTheme, *selected) }
+		options.OnRemove = func() { n.changeThemeFile(removeNativeTheme, *selected) }
+	}
+	if full {
+		options.LimitMessage = n.text("theme_limit_reached")
+	}
+	kit.SettingsThemeManager(c, width, options)
 }
 
 func (n *nativeMain) changeThemeFile(action nativeThemeAction, selected protocol.DesktopThemePackage) {

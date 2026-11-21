@@ -162,7 +162,7 @@ func (n *nativeMain) animateBackground() {
 	})
 }
 
-func (n *nativeMain) backgroundSettings(c *ui.Context) {
+func (n *nativeMain) backgroundSettings(c *ui.Context, kit uikit.Kit) {
 	switch n.themeBase() {
 	case "mica", "acrylic", "liquid-glass":
 	default:
@@ -170,23 +170,21 @@ func (n *nativeMain) backgroundSettings(c *ui.Context) {
 	}
 	path := n.preferences[backgroundSetting]
 	label := n.text("choose_background")
+	var filename string
 	if path != "" {
 		label = n.text("change_background")
+		filename = filepath.Base(path)
 	}
-	ui.Text(c, n.text("custom_background")).FontWeight(600)
-	ui.Row(c).Gap(6).Wrap().Children(func() {
-		disabled := n.mutating || n.session == nil || n.history.state.ServiceInstanceId == ""
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: label, Disabled: disabled}).Clicked() {
-			n.chooseBackground(label)
-		}
-		if path != "" && n.mainKit().SettingsRemoveButton(c, n.text("clear_background"), true, disabled).Clicked() {
-			n.saveSetting(backgroundSetting, "")
-		}
+	ui.Column(c.Key("background")).ColumnSpan(-1).Children(func() {
+		kit.SettingsBackground(c, uikit.SettingsBackgroundOptions{
+			Label: n.text("custom_background"), ChooseLabel: label, ClearLabel: n.text("clear_background"), Filename: filename,
+			Disabled: n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "",
+			OnChoose: func() { n.chooseBackground(label) },
+			OnClear:  func() { n.saveSetting(backgroundSetting, "") },
+		}, func() {
+			n.rangeSetting(c, nativeBackgroundOpacity, n.text("background_opacity"), "", nativeBackgroundOpacity.value(n.preferences))
+		})
 	})
-	if path != "" {
-		ui.Text(c, filepath.Base(path)).TextColor(c.Theme().TextMuted).Wrap()
-		n.rangeSetting(c, nativeBackgroundOpacity, n.text("background_opacity"), "", nativeBackgroundOpacity.value(n.preferences))
-	}
 }
 
 func (n *nativeMain) chooseBackground(label string) {
