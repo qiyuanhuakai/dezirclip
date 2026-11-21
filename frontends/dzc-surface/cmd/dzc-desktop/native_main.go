@@ -37,6 +37,7 @@ type nativeMain struct {
 	ocrJob                nativeOCRJob
 	ocrEngine             *protocol.OcrEngineInfo
 	ocrEngineLoading      bool
+	ocrEngineFailed       bool
 	protectedRows         map[nativeCardKey]*nativeProtectedRow
 	cardTagColors         map[string]string
 	readingTagColors      bool
@@ -86,6 +87,7 @@ type nativeMain struct {
 	fontsFailed           bool
 	readingFonts          bool
 	capturing             bool
+	captureError          string
 	reading               bool
 	private               bool
 	privateUntil          *int64
@@ -122,14 +124,14 @@ func (n *nativeMain) stopSession() {
 	n.cancelSearchTimer()
 	n.history.reset(protocol.RuntimeState{}, nativeHistoryFilter{})
 	n.cardMedia = nativeVisibleCache[nativeCardKey, nativeCardMedia]{}
-	n.ocrJob, n.ocrEngine, n.ocrEngineLoading = nativeOCRJob{}, nil, false
+	n.ocrJob, n.ocrEngine, n.ocrEngineLoading, n.ocrEngineFailed = nativeOCRJob{}, nil, false, false
 	n.cardTagColors, n.readingTagColors = nil, false
 	n.reading, n.failed, n.mutating, n.private = false, false, n.profile.moving || n.profile.restartPending || n.winV.changing || n.restartingAdmin, false
 	n.privateUntil = nil
 	n.notice, n.keyboard, n.focusList = "", false, false
 	n.temporarySearch = false
 	n.searchWheel, n.towardsTop = 0, time.Time{}
-	n.capturing = false
+	n.capturing, n.captureError = false, ""
 	n.profile.reading = false
 	n.resetOpen = false
 	n.clearHistoryOpen = false

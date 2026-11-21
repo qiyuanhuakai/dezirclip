@@ -186,29 +186,55 @@ func (n *nativeMain) copyOCR(row protocol.DesktopEntry, generation uint64) {
 	}()
 }
 
-func (n *nativeMain) drawOCREngine(c *ui.Context) {
-	if n.ocrEngine == nil {
-		if n.session != nil && !n.ocrEngineLoading {
-			n.ocrEngineLoading = true
-			session := n.session
-			go func() {
-				ctx, cancel := context.WithTimeout(session, 7*time.Second)
-				defer cancel()
-				engine, _ := n.library.OcrEngine(ctx)
-				n.update(session, func() {
-					n.ocrEngine, n.ocrEngineLoading = &engine, false
-				})
-			}()
+func (n *nativeMain) drawOCREngine(c *ui.Context, kit uikit.Kit) {
+	canProbe := n.session != nil && n.library != nil && n.window != nil
+	if n.ocrEngine == nil && !n.ocrEngineFailed {
+		n.probeOCREngine()
+	}
+	available := false
+	var status string
+	switch {
+	case n.ocrEngineFailed:
+		status = n.text("ocr_engine_check_failed")
+	case n.ocrEngine != nil:
+		available = n.ocrEngine.Available
+		status = n.text("ocr_engine_unavailable")
+		if available {
+			status = n.text("ocr_engine_available")
 		}
+		if name := n.ocrEngine.EngineName; name != "" {
+			status = name + " (" + status + ")"
+		}
+	case canProbe:
+		status = n.text("common_loading")
+	default:
+		status = n.text("ocr_engine_unavailable")
+	}
+	retry := n.text("common_retry")
+	if n.ocrEngineLoading {
+		retry = n.text("processing")
+	}
+	kit.CaptureEngineStatus(c, uikit.CaptureEngineStatusOptions{
+		Label: n.text("ocr_status_label"), Status: status, Available: available, Retry: retry,
+		Disabled: !canProbe || n.ocrEngineLoading, OnRetry: n.probeOCREngine,
+	})
+}
+
+func (n *nativeMain) probeOCREngine() {
+	if n.session == nil || n.library == nil || n.window == nil || n.ocrEngineLoading {
 		return
 	}
-	status := n.text("ocr_engine_unavailable")
-	if n.ocrEngine.Available {
-		status = n.text("ocr_engine_available")
-	}
-	name := n.ocrEngine.EngineName
-	if name != "" {
-		status = name + " · " + status
-	}
-	ui.Text(c, n.text("ocr_status_label")+" · "+status).TextColor(c.Theme().TextMuted).Wrap()
+	n.ocrEngineLoading, n.ocrEngineFailed = true, false
+	session := n.session
+	go func() {
+		ctx, cancel := context.WithTimeout(session, 7*time.Second)
+		defer cancel()
+		engine, err := n.library.OcrEngine(ctx)
+		n.update(session, func() {
+			n.ocrEngineLoading, n.ocrEngineFailed = false, err != nil
+			if err == nil {
+				n.ocrEngine = &engine
+			}
+		})
+	}()
 }

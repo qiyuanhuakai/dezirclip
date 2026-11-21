@@ -22,6 +22,9 @@ const cases = {
   "settings-field": { states: ["default", "expanded"], text: "Interface font" },
   "theme-manager": { states: ["default", "imported", "wide"], text: "Visual theme" },
   "background-settings": { states: ["default", "saved"], text: "Custom background" },
+  "capture-actions": { states: ["default", "disabled", "narrow"], text: "Capture full screen" },
+  "capture-engine": { states: ["available", "unavailable", "loading", "failed"], text: "OCR engine status" },
+  "fixed-capture-renderer": { states: ["default"], text: "MyGo Native" },
   "settings-section-card": { states: ["default", "expanded", "wide"], text: "General settings" },
   "settings-choices": { states: ["default"], text: "Update channel" },
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
@@ -466,6 +469,48 @@ try {
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
             const dialog = fixture === "backup-dialog" ? await page.locator(".data-modal-content").boundingBox() : undefined;
             const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64"), dialog });
+            if (fixture === "capture-actions") {
+              const region = page.getByRole("button", { name: "Capture region" });
+              const full = page.getByRole("button", { name: "Capture full screen" });
+              if ((await region.isDisabled()) !== (state === "disabled") || (await full.isDisabled()) !== (state === "disabled")) {
+                throw Error("Capture buttons disagree with the busy state");
+              }
+              if (state !== "disabled") {
+                if (state === "narrow") {
+                  const scope = await page.locator(".showcase-capture-config").boundingBox();
+                  for (const button of [region, full]) {
+                    const bounds = await button.boundingBox();
+                    if (!scope || !bounds || bounds.x + bounds.width > scope.x + scope.width + 1) throw Error("A capture button is clipped");
+                  }
+                }
+                await region.click();
+                await page.getByText("Region selected", { exact: true }).waitFor();
+                await full.click();
+                await page.getByText("Full screen selected", { exact: true }).waitFor();
+              }
+            }
+            if (fixture === "fixed-capture-renderer") {
+              const label = await page.getByText("Quick Paste interface", { exact: true }).boundingBox();
+              const value = await page.getByText("MyGo Native", { exact: true }).boundingBox();
+              if (!label || !value || value.x < label.x + label.width - 1 || Math.abs(label.y + label.height / 2 - value.y - value.height / 2) > 2) {
+                throw Error("The fixed renderer is out of line with its label");
+              }
+            }
+            if (fixture === "capture-engine") {
+              const status = {
+                available: "Tesseract (Available)", unavailable: "Tesseract (Not available)",
+                loading: "Loading…", failed: "Could not check the OCR engine",
+              }[state];
+              if (!comparable(nativeText, status) || await page.getByRole("status").textContent() !== status) {
+                throw Error("OCR engine status disagrees with the probe result");
+              }
+              if (state === "loading") {
+                if (await page.getByRole("button", { name: "Processing…" }).isEnabled()) throw Error("A second OCR probe is allowed while loading");
+              } else {
+                await page.getByRole("button", { name: "Retry" }).click();
+                await page.getByRole("status").getByText("Tesseract (Available)", { exact: true }).waitFor();
+              }
+            }
             if (fixture === "theme-manager") {
               const imported = page.getByRole("group", { name: "Imported themes" }).getByRole("button", { name: "Studio theme" });
               const exportTheme = page.getByRole("button", { name: "Export theme" });

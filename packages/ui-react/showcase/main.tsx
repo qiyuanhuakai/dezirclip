@@ -8,6 +8,7 @@ import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDia
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { BackgroundSettingsFixture, ThemeManagerFixture } from "./appearance-fixtures";
+import { CaptureActionsFixture, CaptureEngineFixture, FixedCaptureRendererFixture } from "./capture-fixtures";
 import { AttachmentFixture, HistoryImageFixture, HistoryOCRFixture, HistoryRichTextFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
 import { BackupDialogFixture, ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture, SettingsUpdateFixture,
   PrivacyDetectionFixture, PrivacyRulesFixture, SettingsDataFixture, SettingsFieldsFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, SearchSelectFixture, TagBatchToolbarFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture, UpdateActionsFixture } from "./form-menu-fixtures";
@@ -165,6 +166,9 @@ function Showcase() {
     "settings-data": <SettingsDataFixture />,
     "theme-manager": <ThemeManagerFixture state={state} />,
     "background-settings": <BackgroundSettingsFixture state={state} />,
+    "capture-actions": <CaptureActionsFixture state={state} />,
+    "capture-engine": <CaptureEngineFixture state={state} />,
+    "fixed-capture-renderer": <FixedCaptureRendererFixture />,
     "backup-dialog": <BackupDialogFixture state={state} />,
     "settings-update": <SettingsUpdateFixture state={state} />,
     "settings-update-actions": <UpdateActionsFixture state={state} />,

@@ -693,6 +693,7 @@ export const zh = {
         screenshot_failed: "截图失败",
         ocr_engine_available: "可用",
         ocr_engine_unavailable: "暂不可用",
+        ocr_engine_check_failed: "无法检查 OCR 引擎",
         search_mode_hint: "模糊/正则搜索模式",
 
         // Search mode toggles

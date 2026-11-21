@@ -689,6 +689,7 @@ export const tw = {
         screenshot_failed: "截圖失敗",
         ocr_engine_available: "可用",
         ocr_engine_unavailable: "暫不可用",
+        ocr_engine_check_failed: "無法檢查 OCR 引擎",
         search_mode_hint: "模糊/正則搜尋模式",
 
         // Search mode toggles

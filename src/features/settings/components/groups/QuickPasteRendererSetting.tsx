@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { FixedCaptureRenderer } from "@deziro/ui-react/components/SettingsCapture";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { emit } from "@tauri-apps/api/event";
 import ThemedSelect from "../ThemedSelect";
@@ -12,10 +13,7 @@ interface RendererProps {
 
 export default function QuickPasteRendererSetting(props: RendererProps) {
     if (import.meta.env.MODE === "mygo") {
-        return <div className="setting-item quick-paste-renderer-setting">
-            <div className="item-label-group"><span className="item-label">{props.t("quick_paste_renderer")}</span></div>
-            <span>MyGo Native</span>
-        </div>;
+        return <FixedCaptureRenderer label={props.t("quick_paste_renderer")} value="MyGo Native" />;
     }
     return <SelectableRenderer {...props} />;
 }

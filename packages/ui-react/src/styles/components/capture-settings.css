@@ -7,18 +7,18 @@
   font-size: 12px;
   font-weight: 600;
   line-height: 1;
+  --capture-badge-color: var(--dc-text-secondary);
+  background: color-mix(in srgb, var(--capture-badge-color) 14%, transparent);
+  color: var(--capture-badge-color);
+  border: 1px solid color-mix(in srgb, var(--capture-badge-color) 28%, transparent);
 }
 
 .capture-engine-badge--available {
-  background: color-mix(in srgb, var(--color-success, #34c759) 14%, transparent);
-  color: var(--color-success, #34c759);
-  border: 1px solid color-mix(in srgb, var(--color-success, #34c759) 28%, transparent);
+  --capture-badge-color: #26724a;
 }
 
-.capture-engine-badge--unavailable {
-  background: color-mix(in srgb, var(--text-muted, #8e8e93) 14%, transparent);
-  color: var(--text-muted, #8e8e93);
-  border: 1px solid color-mix(in srgb, var(--text-muted, #8e8e93) 28%, transparent);
+.dark-mode .capture-engine-badge--available {
+  --capture-badge-color: #70d69b;
 }
 
 .capture-engine-badge__dot {
@@ -26,12 +26,18 @@
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
+  background: var(--capture-badge-color);
 }
 
-.capture-engine-badge--available .capture-engine-badge__dot {
-  background: var(--color-success, #34c759);
+.settings-capture-status .tools-engine-status-actions > [role="status"] {
+  min-width: 0;
 }
 
-.capture-engine-badge--unavailable .capture-engine-badge__dot {
-  background: var(--text-muted, #8e8e93);
+:is(.settings-capture-actions, .settings-capture-status) .settings-action:disabled {
+  opacity: .5;
+}
+
+.settings-view .setting-item.quick-paste-renderer-setting > .settings-value {
+  flex: 0 1 auto;
+  color: var(--dc-text-secondary);
 }

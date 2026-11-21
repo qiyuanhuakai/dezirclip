@@ -1,8 +1,8 @@
 import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
+import { CaptureEngineStatus, CaptureSettingsActions, CaptureSettingsHeading } from "@deziro/ui-react/components/SettingsCapture";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
-import { Camera } from "lucide-react";
 import HotkeyRecorder from "../HotkeyRecorder";
 import QuickPasteRendererSetting from "./QuickPasteRendererSetting";
 
@@ -81,6 +81,7 @@ const ToolsCaptureSection = ({
     const [isRecordingQuickPaste, setIsRecordingQuickPaste] = useState(false);
     const [ocrEngineInfo, setOcrEngineInfo] = useState<OcrEngineInfo | null>(null);
     const [ocrLoading, setOcrLoading] = useState(false);
+    const [ocrLoadFailed, setOcrLoadFailed] = useState(false);
     const [panelSaving, setPanelSaving] = useState(false);
     const [hotkeyError, setHotkeyError] = useState<string | null>(null);
     const [captureError, setCaptureError] = useState<string | null>(null);
@@ -105,9 +106,11 @@ const ToolsCaptureSection = ({
 
     const refreshOcrEngineInfo = useCallback((forceRefresh = false) => {
         setOcrLoading(true);
+        setOcrLoadFailed(false);
         loadOcrEngineInfo(forceRefresh)
             .then(setOcrEngineInfo)
             .catch((err) => {
+                setOcrLoadFailed(true);
                 console.error("Failed to query OCR engine availability:", err);
             })
             .finally(() => setOcrLoading(false));
@@ -131,7 +134,7 @@ const ToolsCaptureSection = ({
 
     return (
         <>
-            <div className="setting-item settings-section-title"><div className="item-label-group"><span className="item-label">{t("capture_settings")}</span></div></div>
+            <CaptureSettingsHeading label={t("capture_settings")} />
             <NativeFeatureBoundary t={t}>
             <div className="setting-item">
                 <LabelWithHint label={t("screenshot_enabled")} hintKey="screenshot_enabled" />
@@ -141,14 +144,9 @@ const ToolsCaptureSection = ({
                 <>
                     <HotkeyRecorder t={t} labelKey="screenshot_hotkey" hotkey={screenshotHotkey} recording={isRecordingScreenshot} setRecording={setIsRecordingScreenshot} disabled={panelSaving} onHotkeyChange={value => { void savePanelHotkey("screenshot_hotkey", value, setScreenshotHotkey); }} />
                     <HotkeyRecorder t={t} labelKey="screenshot_full_hotkey" hotkey={screenshotFullHotkey} recording={isRecordingScreenshotFull} setRecording={setIsRecordingScreenshotFull} disabled={panelSaving} onHotkeyChange={value => { void savePanelHotkey("screenshot_full_hotkey", value, setScreenshotFullHotkey); }} />
-                    <div className="setting-item setting-item--detail">
-                        <div className="item-label-group"><span className="item-label">{t("capture_now")}</span></div>
-                        <div className="setting-btn-group">
-                            <button className="btn-icon settings-action" disabled={capturing} onClick={() => { void captureNow("show_region_selector"); }}><Camera size={14} />{t("capture_region_now")}</button>
-                            <button className="btn-icon settings-action" disabled={capturing} onClick={() => { void captureNow("capture_full_screen"); }}><Camera size={14} />{t("capture_full_now")}</button>
-                        </div>
-                    </div>
-                    {captureError && <p role="alert" className="hotkey-recording-error">{captureError}</p>}
+                    <CaptureSettingsActions label={t("capture_now")} region={t("capture_region_now")} full={t("capture_full_now")}
+                        disabled={capturing} error={captureError} onRegion={() => void captureNow("show_region_selector")}
+                        onFull={() => void captureNow("capture_full_screen")} />
                 </>
             )}
             <div className="setting-item">
@@ -163,25 +161,11 @@ const ToolsCaptureSection = ({
                 <LabelWithHint label={t("ocr_enabled")} hintKey="ocr_enabled" />
                 <SettingsToggle checked={ocrEnabled} onChange={(e) => { setOcrEnabled(e.target.checked); saveAppSetting("ocr_enabled", String(e.target.checked)); }} />
             </div>
-            <div className="setting-item">
-                <div className="item-label-group"><span className="item-label">{t("ocr_status_label")}</span></div>
-                <div className="tools-engine-status-actions">
-                    <span className={`capture-engine-badge capture-engine-badge--${ocrEngineInfo?.available ? "available" : "unavailable"}`}>
-                        <span className="capture-engine-badge__dot" />
-                        {ocrEngineInfo
-                            ? `${ocrEngineInfo.engine_name} (${t(ocrEngineInfo.available ? "ocr_engine_available" : "ocr_engine_unavailable")})`
-                            : t("common_loading")}
-                    </span>
-                    <button
-                        type="button"
-                        className="btn-icon settings-action settings-action--compact"
-                        onClick={() => refreshOcrEngineInfo(true)}
-                        disabled={ocrLoading}
-                    >
-                        {ocrLoading ? t("processing") : t("common_retry")}
-                    </button>
-                </div>
-            </div>
+            <CaptureEngineStatus label={t("ocr_status_label")} available={!ocrLoadFailed && Boolean(ocrEngineInfo?.available)}
+                status={ocrLoadFailed ? t("ocr_engine_check_failed") : ocrEngineInfo
+                    ? `${ocrEngineInfo.engine_name} (${t(ocrEngineInfo.available ? "ocr_engine_available" : "ocr_engine_unavailable")})`
+                    : t("common_loading")}
+                retry={ocrLoading ? t("processing") : t("common_retry")} disabled={ocrLoading} onRetry={() => refreshOcrEngineInfo(true)} />
         </>
     );
 };

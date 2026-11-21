@@ -59,7 +59,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 		}},
 		{uikit.SettingsSection{ID: "applications", Label: n.text("default_apps")}, func() { n.defaultAppsSettings(c) }},
 		{uikit.SettingsSection{ID: "data", Label: n.text("data_management")}, func() { n.dataSettings(c) }},
-		{uikit.SettingsSection{ID: "tools", Label: n.text("tools_settings")}, func() { n.toolsSettings(c) }},
+		{uikit.SettingsSection{ID: "tools", Label: n.text("tools_settings")}, func() { n.toolsSettings(c, kit) }},
 		{uikit.SettingsSection{ID: "about", Label: n.text("about_settings")}, func() { n.aboutSettings(c, kit) }},
 	}
 	if n.settingsSection == "" {
@@ -365,36 +365,33 @@ func (n *nativeMain) settingsHelpLabel(label string) string {
 	return n.text("settings_help") + ": " + label
 }
 
-func (n *nativeMain) toolsSettings(c *ui.Context) {
+func (n *nativeMain) toolsSettings(c *ui.Context, kit uikit.Kit) {
+	kit.CaptureSettingsHeading(c, n.text("capture_settings"))
 	enabled := n.settingEnabled("app.screenshot_enabled", true)
-	n.panelCheckbox(c, "screenshot", n.text("screenshot_enabled", "Enable screenshots"), enabled)
-	if enabled {
-		ui.Row(c).ColumnSpan(-1).Gap(6).Wrap().Children(func() {
-			for _, option := range []struct {
-				label string
-				full  bool
-			}{{n.text("capture_region_now"), false}, {n.text("capture_full_now"), true}} {
-				if n.mainKit().Button(c, uikit.ButtonOptions{Label: option.label, Disabled: n.capturing || n.mutating}).Clicked() {
-					n.captureScreenshot(option.full)
-				}
-			}
-		})
-	}
+	n.panelCheckbox(c.Key("screenshot-enabled"), kit, "screenshot", n.text("screenshot_enabled"), n.text("screenshot_enabled_hint"), enabled)
 	if enabled {
 		n.shortcutSetting(c, "app.screenshot_hotkey", n.text("screenshot_hotkey"), "Ctrl+Shift+A")
 		n.shortcutSetting(c, "app.screenshot_full_hotkey", n.text("screenshot_full_hotkey"), "Ctrl+Shift+F")
+		kit.CaptureSettingsActions(c, uikit.CaptureSettingsActionsOptions{
+			Label: n.text("capture_now"), Region: n.text("capture_region_now"), Full: n.text("capture_full_now"),
+			Disabled: n.session == nil || n.history.state.ServiceInstanceId == "" || n.capturing || n.mutating,
+			OnRegion: func() { n.captureScreenshot(false) }, OnFull: func() { n.captureScreenshot(true) },
+			Error: n.captureError,
+		})
 	}
 	quick := n.settingEnabled("app.quick_paste_enabled", true)
-	n.panelCheckbox(c, "quick-paste", n.text("quick_paste_enabled", "Enable quick paste"), quick)
+	n.panelCheckbox(c.Key("quick-paste-enabled"), kit, "quick-paste", n.text("quick_paste_enabled"), n.text("quick_paste_enabled_hint"), quick)
 	if quick {
 		n.shortcutSetting(c, "app.quick_paste_hotkey", n.text("quick_paste_hotkey_label"), "Ctrl+Shift+V")
+		kit.FixedCaptureRenderer(c, n.text("quick_paste_renderer"), "MyGo Native")
 	}
-	n.booleanSettings(c, nativeBooleanSetting{"app.ocr_enabled", n.text("ocr_enabled", "Recognize text in images"), true})
-	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() { n.drawOCREngine(c) })
+	n.booleanSettingWithHelp(c, "app.ocr_enabled", n.text("ocr_enabled"), n.text("ocr_enabled_hint"), true)
+	n.drawOCREngine(c, kit)
 }
 
-func (n *nativeMain) panelCheckbox(c *ui.Context, id, label string, enabled bool) {
-	if n.mainKit().SettingsToggle(c, &enabled, label).Disabled(n.mutating || n.capturing).Changed() {
+func (n *nativeMain) panelCheckbox(c *ui.Context, kit uikit.Kit, id, label, hint string, enabled bool) {
+	disabled := n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating || n.capturing
+	if kit.SettingsToggleField(c, &enabled, label, n.settingsHelpLabel(label), hint, disabled) {
 		n.writeSetting(func(ctx context.Context, epoch uint64) error {
 			return n.shell.SetNativePanelEnabled(ctx, id, enabled, epoch)
 		})
@@ -405,7 +402,7 @@ func (n *nativeMain) captureScreenshot(full bool) {
 	if n.session == nil || n.capturing || n.mutating || n.history.state.ServiceInstanceId == "" {
 		return
 	}
-	n.capturing, n.notice = true, ""
+	n.capturing, n.captureError, n.notice = true, "", ""
 	session, epoch := n.session, n.history.state.PrivacyEpoch
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 115*time.Second)
@@ -414,7 +411,10 @@ func (n *nativeMain) captureScreenshot(full bool) {
 		n.update(session, func() {
 			n.capturing = false
 			if err != nil {
-				n.notice = n.text("screenshot_failed", "Could not capture a screenshot.")
+				n.captureError = n.text("screenshot_failed", "Could not capture a screenshot.")
+				if !n.showSettings {
+					n.notice = n.captureError
+				}
 			}
 		})
 	}()

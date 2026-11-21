@@ -10,6 +10,12 @@ import (
 
 func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool {
 	switch name {
+	case "capture-actions":
+		g.captureActionsFixture(c, kit)
+	case "capture-engine":
+		g.captureEngineFixture(c, kit)
+	case "fixed-capture-renderer":
+		ui.Column(c).Width(330).Children(func() { kit.FixedCaptureRenderer(c, "Quick Paste interface", "MyGo Native") })
 	case "theme-manager":
 		g.themeManagerFixture(c, kit)
 	case "background-settings":

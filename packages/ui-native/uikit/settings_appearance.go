@@ -97,7 +97,13 @@ func (k Kit) SettingsBackground(c *ui.Context, options SettingsBackgroundOptions
 }
 
 func (k Kit) appearanceAction(c *ui.Context, label string, disabled, compact bool) ui.Element {
-	height := float32(36)
+	if compact {
+		return k.settingsAction(c, label, disabled, 28, &[4]float32{4, 8, 4, 8}, nil)
+	}
+	return k.settingsAction(c, label, disabled, 36, nil, nil)
+}
+
+func (k Kit) settingsAction(c *ui.Context, label string, disabled bool, height float32, padding *[4]float32, glyph *ui.SVG) ui.Element {
 	button := ui.ButtonBase(c).Label(label).Disabled(disabled).FocusRing(true).Center()
 	widget := "updateAction"
 	if disabled {
@@ -106,11 +112,21 @@ func (k Kit) appearanceAction(c *ui.Context, label string, disabled, compact boo
 		widget += "Hover"
 	}
 	style := k.style(widget)
-	if compact {
-		height = 28
-		style.Padding = [4]float32{4, 8, 4, 8}
+	if disabled {
+		// ButtonBase already reduces the opacity of disabled controls.
+		style.Opacity = 1
 	}
-	paint(button.Height(height), k.animatePaint(button, style)).
-		Children(func() { text(c, label, style).SingleLine().PassThrough() })
+	if height > 0 {
+		style.Height = height
+	}
+	if padding != nil {
+		style.Padding = *padding
+	}
+	paint(button.Height(style.Height).Gap(style.ColumnGap), k.animatePaint(button, style)).Children(func() {
+		if glyph != nil {
+			ui.Icon(c, glyph).Size(14, 14).TextColor(styleColor(style.Text)).Shrink(0).PassThrough()
+		}
+		text(c, label, style).SingleLine().PassThrough()
+	})
 	return button
 }

@@ -1,3 +1,5 @@
+import { SettingsStatusBadge } from "@deziro/ui-react/components/SettingsCapture";
+
 export interface CliInfo {
     readonly cli_path: string | null;
     readonly cli_version: string;
@@ -36,14 +38,10 @@ export const ToolsPathStatus = ({
             : cliInfo?.cli_path
                 ? t("cli_path_missing_badge")
                 : t("cli_path_not_found_badge");
-    const badgeClass = cliInfo?.cli_on_path ? "available" : "unavailable";
 
     return (
         <div className="tools-path-status-actions">
-            <span className={`capture-engine-badge capture-engine-badge--${badgeClass}`}>
-                <span className="capture-engine-badge__dot" />
-                {badgeText}
-            </span>
+            <SettingsStatusBadge label={badgeText} available={Boolean(cliInfo?.cli_on_path)} />
             {cliInfo?.cli_path && !cliInfo.cli_on_path && !cliInfo.cli_registered_for_user && (
                 <button
                     type="button"

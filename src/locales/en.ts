@@ -690,6 +690,7 @@ export const en = {
         screenshot_failed: "Screenshot failed",
         ocr_engine_available: "Available",
         ocr_engine_unavailable: "Not available",
+        ocr_engine_check_failed: "Could not check the OCR engine",
         search_mode_hint: "Fuzzy/Regex search mode",
 
         // Search mode toggles
