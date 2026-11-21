@@ -33,6 +33,9 @@ type HistoryCardOptions struct {
 	Leading  func()
 	Activate func()
 	Reorder  *HistoryReorder
+
+	FlushHorizontal bool
+	ReadOnly        bool
 }
 
 // HistoryReorder enables a local drag grip and Alt+arrow movement for a pinned card.
@@ -63,7 +66,13 @@ type HistoryCardMetaOptions struct {
 
 func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 	// Keep row actions and attachments available to assistive technology.
-	card := ui.ButtonBase(c).Role(ui.RoleGroup).Label(options.Summary)
+	var card ui.Element
+	if options.ReadOnly {
+		card = ui.Column(c)
+	} else {
+		card = ui.ButtonBase(c)
+	}
+	card.Role(ui.RoleGroup).Label(options.Summary)
 	style := k.style("historyCard")
 	hoverStyle := "historyCardHover"
 	if options.Compact {
@@ -81,13 +90,16 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 		style = k.style("historyCardSelected")
 	}
 	_, themedHover := k.widgets[hoverStyle]
-	if !options.Selected && card.Hovered() && themedHover {
+	if !options.ReadOnly && !options.Selected && card.Hovered() && themedHover {
 		style = k.style(hoverStyle)
 	}
-	if card.Pressed() || !options.Selected && card.Hovered() && !themedHover {
+	if !options.ReadOnly && (card.Pressed() || !options.Selected && card.Hovered() && !themedHover) {
 		style = k.interactive(c, card, style, false)
 	} else {
 		style = k.animatePaint(card, style)
+	}
+	if options.FlushHorizontal {
+		style.Margin[1], style.Margin[3] = 0, 0
 	}
 	paint(card, style).Margin(style.Margin[:]...)
 	if len(options.Tags) > 0 {
@@ -245,6 +257,11 @@ func (k Kit) HistoryCardTags(c *ui.Context, tags []HistoryTag, size float32, com
 // HistoryCardMeta renders the source label, available actions and timestamp.
 func (k Kit) HistoryCardMeta(c *ui.Context, options HistoryCardMetaOptions) {
 	meta := k.style("historyMeta")
+	if len(options.Actions) == 0 && options.OCR == nil {
+		if compactMeta, ok := k.widgets["historyMetaWithoutActions"]; ok {
+			meta = compactMeta
+		}
+	}
 	paint(ui.Row(c).Height(meta.Height).Margin(0, 0, meta.MarginBottom).Gap(8).AlignItems(ui.Center), meta).Children(func() {
 		source := k.style("historySource")
 		ui.Row(c).Grow(1).Gap(source.ColumnGap).AlignItems(ui.Center).Children(func() {

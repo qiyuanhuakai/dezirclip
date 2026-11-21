@@ -113,6 +113,23 @@ func (n *nativeMain) selectTagBatchMatches(batch *nativeTagBatch) {
 	batch.notice, batch.failed = "", false
 }
 
+func (n *nativeMain) navigateTagBatchRow(index int, key ui.Key) {
+	n.history.selected, n.keyboard = index, true
+	delta := 0
+	switch key {
+	case ui.KeyUp:
+		delta = -1
+	case ui.KeyDown:
+		delta = 1
+	case ui.KeyHome:
+		delta = -index
+	case ui.KeyEnd:
+		delta = len(n.history.rows) - 1 - index
+	}
+	n.navigateHistory(delta)
+	n.focusList = true
+}
+
 func (n *nativeMain) tagBatchKey(batch *nativeTagBatch, event ui.InputEvent) bool {
 	if event.Kind != ui.InputKeyDown || n.hasHistoryDialog() {
 		return false

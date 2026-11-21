@@ -240,6 +240,7 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 		Count: len(n.history.rows), Label: n.text("native_clipboard_history"), EmptyLabel: n.text("no_records", "No clipboard entries"),
 		LoadingLabel: n.text("common_loading", "Loading…"), MoreLabel: n.text("tag_load_more", "Load more…"), Loading: n.reading, HasMore: n.history.more && !n.failed,
 		Compact:    compact,
+		NoRowGap:   n.tagLibrary != nil,
 		OnLoadMore: n.loadPage,
 		Row: func(cell ui.ListRow) {
 			if generation != n.history.generation || cell.Index >= len(n.history.rows) {
@@ -296,28 +297,27 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 					Run: func() { n.rowAction(row, generation, nativeDelete) }},
 			)
 			if batch != nil {
-				activate := func() { n.toggleTagBatchRow(batch, row.Id, generation) }
-				label := n.text("tag_select_entry")
-				kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
+				focus := n.focusList && cell.Index == n.history.selected
+				kit.TagHistoryEntry(cell.Context, uikit.HistoryCardOptions{
 					Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
-					Pinned: row.IsPinned, Selected: batch.selection.includes(row.Id), Compact: compact,
-					Concealed: !contentVisible, TextSize: float32(itemSize),
-					Match: n.history.filter.query, Width: width,
+					Pinned: row.IsPinned, Compact: compact, Concealed: !contentVisible,
+					TextSize: float32(itemSize), Match: n.history.filter.query, Width: width,
 					Rich:  n.cardRichText(row, protected),
 					Media: n.cardBody(cell.Context, kit, row, protected, compact, float32(itemSize)),
-					Tags:  n.cardTags(row.Tags), TagSize: float32(tagSize), Activate: activate,
-					Leading: func() {
-						checked := batch.selection.includes(row.Id)
-						if kit.Checkbox(cell.Context, &checked, "").Label(label + ": " + summary).
-							Width(24).Shrink(0).Disabled(row.Id <= 0 || n.mutating).Changed() {
-							activate()
-						}
-					},
+					Tags:  n.cardTags(row.Tags), TagSize: float32(tagSize),
+				}, &uikit.TagHistorySelection{
+					Label:   n.text("tag_select_entry") + ": " + summary,
+					Checked: batch.selection.includes(row.Id), Disabled: row.Id <= 0 || !n.tagBatchReady(batch),
+					Focus: focus, OnToggle: func() { n.toggleTagBatchRow(batch, row.Id, generation) },
+					OnNavigate: func(key ui.Key) { n.navigateTagBatchRow(cell.Index, key) },
 				})
+				if focus {
+					n.focusList = false
+				}
 				return
 			}
 			ocrBadge, ocrResult := n.cardOCR(row, protected, generation)
-			card := kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
+			options := uikit.HistoryCardOptions{
 				Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
 				Pinned: row.IsPinned, Selected: cell.Selected(), Compact: compact, First: cell.Index == first,
 				Match:     n.history.filter.query,
@@ -339,7 +339,13 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 					n.resetPreviewSelection()
 				},
 				Actions: actions,
-			})
+			}
+			var card ui.Element
+			if n.tagLibrary != nil {
+				card = kit.TagHistoryEntry(cell.Context, options, nil)
+			} else {
+				card = kit.HistoryCard(cell.Context, options)
+			}
 			if reorderPins && row.Id > 0 && row.IsPinned {
 				draggingPin = n.pinDropTarget(cell.Context, card, row, generation) || draggingPin
 			}
@@ -371,7 +377,7 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 	} else {
 		n.hoverPreview(hovered, generation, hoverBounds)
 	}
-	if n.focusList {
+	if n.focusList && (batch == nil || n.history.selected < 0 || n.history.selected >= len(n.history.rows)) {
 		list.Focus()
 		n.focusList = false
 	}

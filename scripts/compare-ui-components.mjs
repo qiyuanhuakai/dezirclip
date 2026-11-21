@@ -38,6 +38,7 @@ const cases = {
   "privacy-rules": { states: ["default", "resized"], text: "Privacy rules" },
   "privacy-detection": { states: ["default", "narrow", "focus", "resized"], text: "Custom detection patterns" },
   "tag-toolbar": { states: ["default"], text: "Work" },
+  "tag-history-entry": { states: ["default", "compact", "browse"], text: "Release checklist" },
   "tag-batch-toolbar": { states: ["default", "selected", "narrow"], text: "selected" },
   "tag-search": { states: ["default"], text: "Work" },
   "search-select": { states: ["default", "apps-filtered", "empty", "typo", "long-options"], text: "Interface font" },
@@ -601,6 +602,27 @@ try {
             }
             if (fixture === "quick-paste-panel" && pixels.backgroundDistance > 2) {
               throw Error(`Quick Paste backdrop differs at ${state}%: ${pixels.backgroundDistance}`);
+            }
+            if (fixture === "tag-history-entry") {
+              const boxes = page.getByRole("checkbox", { name: /^Select entry:/ });
+              if (state === "browse") {
+                if (await boxes.count()) throw Error("Tag browse shows batch controls");
+              } else {
+                const first = boxes.first();
+                const second = boxes.last();
+                const card = page.locator(".tag-history-row .history-item").first();
+                const [control, body] = await Promise.all([first.boundingBox(), card.boundingBox()]);
+                if (!control || !body || control.width !== 15 || (body.x - (control.x + control.width)) !== 7 ||
+                    await first.isChecked() || !await second.isChecked()) {
+                  throw Error("Tag selection gutter or initial state differs");
+                }
+                await first.click();
+                if (!await first.isChecked()) throw Error("Checkbox click did not select its entry");
+                await first.press("Enter");
+                if (await first.isChecked()) throw Error("Enter did not clear the focused checkbox");
+                await page.mouse.click(body.x + body.width / 2, body.y + body.height / 2);
+                if (!await first.isChecked() || !await second.isChecked()) throw Error("Clicking the preview did not select only its entry");
+              }
             }
             if (fixture === "tag-batch-toolbar") {
               const selection = page.getByRole("button", { name: state === "default" ? "Select all" : state === "narrow"

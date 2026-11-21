@@ -106,6 +106,11 @@ const samples = [
     tagToolbarButtonActive: [".tag-manager-toolbar .btn-icon.active"],
     tagToolbarTitle: [".tag-manager-current > span"], tagToolbarTitleIcon: [".tag-manager-current > svg"],
   }],
+  ["tag-history-entry", "default", {
+    tagHistoryEntry: [".tag-history-row"], tagHistorySelection: [".tag-history-selection:not(:checked)"],
+    tagHistorySelectionChecked: [".tag-history-selection:checked"],
+    historyMetaWithoutActions: [".tag-history-row .history-item .item-meta"],
+  }],
   ["tag-batch-toolbar", "selected", {
     tagBatchToolbar: [".tag-manager-batch-toolbar"], tagBatchSelect: [".tag-manager-batch-toolbar > button:first-child"],
     tagBatchCount: [".tag-manager-batch-toolbar > span"], tagBatchDelete: [".tag-manager-batch-delete"],

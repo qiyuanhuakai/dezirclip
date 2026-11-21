@@ -1,3 +1,4 @@
+import { TagHistoryEntry } from "@deziro/ui-react/components/TagToolbar";
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { invoke } from '../../../shared/lib/desktopInvoke';
 import { copyHistorySelection } from '../../../shared/lib/copyHistorySelection';
@@ -245,26 +246,18 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
         }
     };
 
-    return <div className={`tag-history-row${managementMode ? ' tag-history-row--managing' : ''}`} data-entry-index={index} data-entry-id={item.id} tabIndex={0}
+    return <TagHistoryEntry data-entry-index={index} data-entry-id={item.id}
         aria-label={rendered.preview.slice(0, 100)}
-        onClick={managementMode ? () => onToggleSelection?.(item.id) : undefined}
-        onContextMenu={managementMode ? event => { event.preventDefault(); event.stopPropagation(); } : undefined}
+        selection={managementMode ? {
+            checked: selectedForDeletion,
+            label: `${t('tag_select_entry')}: ${rendered.preview.slice(0, 80)}`,
+            onToggle: () => onToggleSelection?.(item.id),
+        } : undefined}
         onKeyDown={event => {
             if (event.target !== event.currentTarget) return;
-            if (managementMode) {
-                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onToggleSelection?.(item.id); }
-                return;
-            }
             if (event.key === 'Enter') { event.preventDefault(); copy(); }
             if (event.key === 'Delete') { event.preventDefault(); onDelete(item); }
         }}>
-        {managementMode && <input type="checkbox" className="tag-history-selection" checked={selectedForDeletion}
-            aria-label={`${t('tag_select_entry')}: ${rendered.preview.slice(0, 80)}`} onClick={event => event.stopPropagation()}
-            onChange={() => onToggleSelection?.(item.id)}
-            onKeyDown={event => {
-                if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); onToggleSelection?.(item.id); }
-            }} />}
-        <div className="tag-history-row-content" inert={managementMode}>
         <ClipboardItem key={managementMode ? 'selection' : 'content'} item={rendered} isSelected={managementMode ? selectedForDeletion : selected} windowPinned={isWindowPinned}
             isSensitiveHidden={sensitive && !detail} isRevealed={revealPending || !!detail} isEditingTags={editingTags}
             previewState={needsResource ? resource?.phase ?? 'loading' : undefined}
@@ -311,6 +304,5 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
                 }).catch(() => { if (mounted.current && access.isCurrent() && detailGeneration.current === generation && !managing.current) onError(); });
             }}
             onTransformItemError={onError} />
-        </div>
-    </div>;
+    </TagHistoryEntry>;
 }

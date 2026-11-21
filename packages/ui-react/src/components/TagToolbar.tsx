@@ -1,4 +1,4 @@
-import type { ComponentPropsWithRef, ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ComponentPropsWithRef, ReactNode } from "react";
 import { ChevronDown, Search, Tag, X } from "lucide-react";
 
 export function TagToolbar({ children }: { children: ReactNode }) {
@@ -21,6 +21,38 @@ export function TagBatchToolbar({ selectLabel, countLabel, deleteLabel, allSelec
     <span role="status" aria-live="polite">{countLabel}</span>
     <button type="button" className="btn-icon tag-manager-text-button tag-manager-batch-delete"
       disabled={deleteDisabled} onClick={onDelete}>{deleteLabel}</button>
+  </div>;
+}
+
+interface TagHistorySelection {
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}
+
+export function TagHistoryEntry({ children, selection, onKeyDown, ...row }: ComponentPropsWithoutRef<"div"> & {
+  selection?: TagHistorySelection;
+}) {
+  return <div {...row} className={selection ? "tag-history-row tag-history-row--managing" : "tag-history-row"}
+    tabIndex={selection?.disabled ? -1 : 0}
+    onClick={selection ? () => { if (!selection.disabled) selection.onToggle(); } : row.onClick}
+    onContextMenu={selection ? event => { event.preventDefault(); event.stopPropagation(); } : row.onContextMenu}
+    onKeyDown={event => {
+      if (!selection) { onKeyDown?.(event); return; }
+      if (selection.disabled || event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      selection.onToggle();
+    }}>
+    {selection && <input type="checkbox" className="tag-history-selection" aria-label={selection.label}
+      checked={selection.checked} disabled={selection.disabled} onClick={event => event.stopPropagation()}
+      onChange={selection.onToggle} onKeyDown={event => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        event.stopPropagation();
+        selection.onToggle();
+      }} />}
+    <div className="tag-history-row-content" inert={Boolean(selection)}>{children}</div>
   </div>;
 }
 

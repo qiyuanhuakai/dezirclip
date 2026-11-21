@@ -184,6 +184,26 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			{Icon: "collapse", Label: "Compact view"}, {Icon: "conceal", Label: "Hide entries", Active: true},
 			{Icon: "manage", Label: "Manage"}, {Icon: "add", Label: "Add entry"}, {Icon: "more", Label: "Tag actions"},
 		}, nil)
+	case "tag-history-entry":
+		width := float32(360)
+		if g.state == "compact" {
+			width = 245
+		}
+		area := ui.Column(c).Width(width)
+		selected := ui.Local(area, "tag-entries-selected", func() [2]bool { return [2]bool{false, true} })
+		area.Children(func() {
+			for i, name := range []string{"Project notes", "Release checklist"} {
+				options := uikit.HistoryCardOptions{Source: "Editor", Time: "12:30", Summary: name,
+					Width: width, Compact: g.state == "compact",
+					Actions: []uikit.HeaderAction{{Icon: "pin", Label: "Pin"}, {Icon: "tag", Label: "Tags"}, {Icon: "hide", Label: "Delete"}}}
+				var selection *uikit.TagHistorySelection
+				if g.state != "browse" {
+					selection = &uikit.TagHistorySelection{Label: "Select entry: " + name, Checked: selected[i],
+						OnToggle: func() { selected[i] = !selected[i] }}
+				}
+				kit.TagHistoryEntry(c, options, selection)
+			}
+		})
 	case "tag-batch-toolbar":
 		width := float32(360)
 		if g.state == "narrow" {

@@ -201,16 +201,23 @@ func (n *nativeMain) historyShortcuts(c *ui.Context, queryFocused bool) {
 	if queryFocused {
 		return
 	}
-	if n.preferences["app.arrow_key_selection"] == "true" {
-		c.OnShortcut(0, ui.KeyUp, func() { n.navigateHistory(-1) })
-		c.OnShortcut(0, ui.KeyDown, func() { n.navigateHistory(1) })
+	batch := n.activeTagBatch() != nil
+	if batch || n.preferences["app.arrow_key_selection"] == "true" {
+		navigate := func(delta int) {
+			n.navigateHistory(delta)
+			if batch {
+				n.focusList = true
+			}
+		}
+		c.OnShortcut(0, ui.KeyUp, func() { navigate(-1) })
+		c.OnShortcut(0, ui.KeyDown, func() { navigate(1) })
 		c.OnShortcut(0, ui.KeyEnter, func() {
 			if n.keyboard {
 				n.activateSelectedHistory()
 			}
 		})
 	}
-	if n.activeTagBatch() == nil {
+	if !batch {
 		c.OnShortcut(ui.Ctrl, ui.KeyC, func() { n.selectedAction(nativeCopy) })
 	}
 	c.OnShortcut(0, ui.KeyEscape, func() {

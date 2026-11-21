@@ -25,6 +25,7 @@ type HistoryListOptions struct {
 	Loading      bool
 	HasMore      bool
 	Compact      bool
+	NoRowGap     bool
 	OnLoadMore   func()
 	Row          func(ui.ListRow)
 }
@@ -57,6 +58,9 @@ func (k Kit) HistoryList(c *ui.Context, state *HistoryListState, options History
 	gap := float32(4)
 	if options.Compact {
 		gap = 2
+	}
+	if options.NoRowGap {
+		gap = 0
 	}
 	list := ui.List(c, &state.List, options.Count).Grow(1).FillWidth().Gap(gap).Label(options.Label)
 	list.Rows(func(row ui.ListRow) {

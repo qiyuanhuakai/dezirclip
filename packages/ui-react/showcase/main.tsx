@@ -4,7 +4,7 @@ import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryCardTag, HistoryCardTags, HotkeyBinding, MatchHighlight,
   ProgressToast, QuickPastePanel, QuickPasteRow, QuickPasteSearch, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail, SettingsSectionCard,
-  SettingsSlider, SettingsToggle, SettingsToggleField, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
+  SettingsSlider, SettingsToggle, SettingsToggleField, TagDialog, TagHistoryEntry, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { BackgroundSettingsFixture, ThemeManagerFixture } from "./appearance-fixtures";
@@ -173,6 +173,25 @@ function HistoryTypographyFixture() {
   </div>;
 }
 
+function TagHistoryEntriesFixture() {
+  const [selected, setSelected] = useState([false, true]);
+  const managing = state !== "browse";
+  return <div style={{ width: state === "compact" ? 245 : 360 }}>
+    {["Project notes", "Release checklist"].map((name, index) => <TagHistoryEntry key={name} aria-label={name}
+      selection={managing ? { label: "Select entry: " + name, checked: selected[index],
+        onToggle: () => setSelected(row => row.map((checked, slot) => slot === index ? !checked : checked)) } : undefined}>
+      <HistoryCard compact={state === "compact"} selected={managing && selected[index]} disableLayout>
+        <HistoryCardMeta source="Editor" time="12:30" actions={<>
+          <HistoryCardAction title="Pin"><Pin size={12} /></HistoryCardAction>
+          <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
+          <HistoryCardAction title="Delete"><X size={12} /></HistoryCardAction>
+        </>} />
+        <HistoryCardContent>{name}</HistoryCardContent>
+      </HistoryCard>
+    </TagHistoryEntry>)}
+  </div>;
+}
+
 function Showcase() {
   const [activeSettings, setActiveSettings] = useState(state === "selected" ? "updates" : "appearance");
   const tagName = useRef<HTMLInputElement>(null);
@@ -207,6 +226,7 @@ function Showcase() {
     "settings-remove": <SettingsRemoveFixture />,
     "privacy-rules": <PrivacyRulesFixture resized={state === "resized"} />,
     "privacy-detection": <PrivacyDetectionFixture narrow={state === "narrow" || state === "resized"} />,
+    "tag-history-entry": <TagHistoryEntriesFixture />,
     "tag-toolbar": <TagToolbarFixture />,
     "tag-batch-toolbar": <TagBatchToolbarFixture state={state} />,
     "tag-search": <TagSearchFixture />,

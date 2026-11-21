@@ -40,11 +40,29 @@ func TestNativeTagBatchIncludesUnloadedMatchesAndPreservesExclusions(t *testing.
 	if tags.batch.selection.includes(9) || !tags.batch.selection.includes(11) {
 		t.Fatal("toggling the row checkbox did not create its exclusion")
 	}
-	n.history.selected, n.keyboard = 1, true
+	click("A tagged row")
+	if !tags.batch.selection.includes(9) {
+		t.Fatal("clicking the card did not restore its inclusion")
+	}
+	click("Select entry: A tagged row")
+	view.Key(0, ui.KeyEnter)
+	if !tags.batch.selection.includes(9) {
+		t.Fatal("Enter did not toggle the focused checkbox")
+	}
+	view.Key(0, ui.KeyEnter)
+	if tags.batch.selection.includes(9) {
+		t.Fatal("Enter toggled something other than the focused checkbox")
+	}
+	n.history.selected, n.keyboard = 0, true
+	view.Frame()
+	view.Key(0, ui.KeyDown)
+	if n.history.selected != 1 {
+		t.Fatal("Down did not move to the next tag entry")
+	}
 	view.Frame()
 	view.Key(0, ui.KeyEnter)
 	if tags.batch.selection.includes(11) {
-		t.Fatal("Enter did not toggle the selected row while managing")
+		t.Fatalf("Enter did not toggle the selected row while managing: exclusions = %v", tags.batch.selection.ids)
 	}
 	view.Key(0, ui.KeyEnter)
 	if !tags.batch.selection.includes(11) {

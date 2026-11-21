@@ -202,6 +202,14 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 	case "tagToolbar":
 		style.Height, style.ColumnGap = 30, 2
 		style.Padding = [4]float32{0, 7, 0, 3}
+	case "tagHistoryEntry":
+		style.Padding, style.ColumnGap = [4]float32{0, 7, 4, 3}, 7
+	case "tagHistorySelection", "tagHistorySelectionChecked":
+		style.Width, style.Height, style.BorderWidth, style.Radius = 15, 15, 1, 3
+		style.Fill, style.Border = panel, border
+		if widget == "tagHistorySelectionChecked" {
+			style.Fill, style.Border, style.Text = accent, accent, [4]uint8{255, 255, 255, 255}
+		}
 	case "tagBatchToolbar":
 		style.ColumnGap, style.RowGap = 6, 6
 		style.Padding = [4]float32{0, 7, 6, 3}

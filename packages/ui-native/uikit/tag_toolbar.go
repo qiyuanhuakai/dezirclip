@@ -59,6 +59,87 @@ func (k Kit) TagBatchToolbar(c *ui.Context, options TagBatchToolbarOptions) {
 	})
 }
 
+type TagHistorySelection struct {
+	Label                    string
+	Checked, Disabled, Focus bool
+	OnToggle                 func()
+	OnNavigate               func(ui.Key)
+}
+
+var tagSelectionCheck = icon("Check")
+
+// TagHistoryEntry puts batch selection in its own column and keeps the card's
+// preview visible. During batch selection the row and the checkbox both toggle
+// membership in the selection.
+func (k Kit) TagHistoryEntry(c *ui.Context, cardOptions HistoryCardOptions, selection *TagHistorySelection) ui.Element {
+	style := k.style("tagHistoryEntry")
+	options := cardOptions
+	options.FlushHorizontal = true
+	width := options.Width
+	if width <= 0 {
+		width, _ = c.Size()
+	}
+	options.Width = width - style.Padding[1] - style.Padding[3]
+	var card ui.Element
+	if selection == nil {
+		ui.Column(c).FillWidth().Padding(style.Padding[:]...).Children(func() {
+			card = k.HistoryCard(c, options).FillWidth()
+		})
+		return card
+	}
+
+	checkStyle := k.style("tagHistorySelection")
+	options.Width -= checkStyle.Width + style.ColumnGap
+	options.Selected, options.ReadOnly, options.Activate, options.Actions = selection.Checked, true, nil, nil
+	navigate := func(control ui.Element) {
+		if selection.OnNavigate == nil {
+			return
+		}
+		for _, key := range [...]ui.Key{ui.KeyUp, ui.KeyDown, ui.KeyHome, ui.KeyEnd} {
+			if control.Shortcut(0, key) {
+				selection.OnNavigate(key)
+			}
+		}
+	}
+	row := ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(style.ColumnGap).
+		Padding(style.Padding[:]...)
+	row.Children(func() {
+		checked := selection.Checked
+		box := ui.CheckboxBase(c, &checked).Size(checkStyle.Width, checkStyle.Height).Center().
+			Label(selection.Label).Cursor(ui.CursorPointer).FocusRing(true).Disabled(selection.Disabled)
+		face := checkStyle
+		if checked {
+			face = k.style("tagHistorySelectionChecked")
+		} else if box.Hovered() {
+			face.Border = k.style("tagHistorySelectionChecked").Border
+		}
+		paint(box, k.animatePaint(box, face)).Children(func() {
+			if checked {
+				ui.Icon(c, tagSelectionCheck).Size(11, 11).TextColor(styleColor(face.Text)).PassThrough()
+			}
+		})
+		if (box.Changed() || box.Shortcut(0, ui.KeyEnter)) && selection.OnToggle != nil {
+			selection.OnToggle()
+		}
+		navigate(box)
+		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+			card = k.HistoryCard(c, options).FillWidth()
+		})
+		// The row target covers the preview so clicking anywhere on the card
+		// selects the entry.
+		target := ui.ButtonBase(c).Absolute().Left(style.Padding[3] + checkStyle.Width).
+			Right(0).Top(0).Bottom(0).Label(options.Summary).Cursor(ui.CursorPointer).FocusRing(true).Disabled(selection.Disabled)
+		if selection.Focus && !selection.Disabled {
+			target.Focus()
+		}
+		navigate(target)
+		if (target.Clicked() || target.Shortcut(0, ui.KeyEnter)) && selection.OnToggle != nil {
+			selection.OnToggle()
+		}
+	})
+	return card
+}
+
 func (k Kit) tagBatchButton(c *ui.Context, widget, label string, selected, disabled bool) ui.Element {
 	style := k.style(widget)
 	button := ui.ButtonBase(c).Label(label).Height(style.Height).Shrink(0).
