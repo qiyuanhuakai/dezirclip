@@ -62,6 +62,36 @@ func (k Kit) BackupChoices(c *ui.Context, label string, selected *string, option
 	return changed
 }
 
+// BackupReplaceConfirmation is the explicit opt-in before replacing clipboard history.
+func (k Kit) BackupReplaceConfirmation(c *ui.Context, checked *bool, label string, disabled bool) ui.Element {
+	style := k.style("backupReplaceConfirmation")
+	row := ui.CheckboxBase(c, checked).Label(label).FillWidth().Disabled(disabled).FocusRing(true).
+		MinHeight(style.MinHeight).Margin(0, 0, style.MarginBottom).Gap(style.ColumnGap).AlignItems(ui.Center)
+	row.Children(func() {
+		widget := "backupReplaceMark"
+		if *checked {
+			widget += "Checked"
+		} else if row.Hovered() && !disabled {
+			widget += "Hover"
+		}
+		mark := k.style(widget)
+		if disabled {
+			mark.Opacity = .5
+		}
+		box := ui.Box(c).Size(mark.Width, mark.Height).Shrink(0).Center().PassThrough()
+		paint(box, k.animatePaint(box, mark))
+		if *checked {
+			box.Children(func() {
+				ui.Icon(c, backupConfirmationCheck).Size(12, 12).TextColor(styleColor(mark.Text)).PassThrough()
+			})
+		}
+		text(c, label, style).Grow(1).Wrap().PassThrough()
+	})
+	return row
+}
+
+var backupConfirmationCheck = icon("Check")
+
 type BackupFieldOptions struct {
 	Label, Placeholder, Error, BrowseLabel string
 	Value                                  *string

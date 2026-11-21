@@ -16,8 +16,21 @@ func (k Kit) SettingsDataPath(c *ui.Context, label, path string, actions func())
 				actions()
 			}
 		})
-		style := k.style("settingsDataPath")
-		paint(text(c, path, style).FillWidth().MinWidth(0).SingleLine().Tooltip(path), style)
+		field := ui.Text(c, path).FillWidth().MinWidth(0).SingleLine()
+		widget := "settingsDataPath"
+		if field.Hovered() {
+			widget = "settingsDataPathHover"
+		}
+		style := k.style(widget)
+		if field.Hovered() {
+			width, _ := c.MeasureText(0, ui.Span{Text: path, Font: style.Font, Size: style.Size, Weight: style.Weight,
+				LetterSpacing: style.LetterSpacing})
+			available := field.Bounds().W - style.Padding[1] - style.Padding[3] - horizontalBorders(style)
+			if available > 0 && width > available {
+				field.Tooltip(path)
+			}
+		}
+		paint(styledText(field, style), k.animatePaint(field, style))
 	})
 }
 

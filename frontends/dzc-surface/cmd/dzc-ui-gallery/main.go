@@ -28,6 +28,7 @@ type gallery struct {
 	previewOpacity                      float64
 	previewPinned                       bool
 	ocrExpanded                         bool
+	backupReplaceConfirmed              bool
 	wheelCount                          int
 	resizeDirection                     uikit.PreviewResizeDirection
 	dialog, disclosure, help, visible   bool
@@ -287,6 +288,24 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 			return err
 		}
 		tester.Move(450, 390)
+		return nil
+	}
+	if g.fixture == "backup-dialog" && g.state == "replace-confirmed" {
+		if err := tester.Click("Confirm replacing clipboard history"); err != nil {
+			return err
+		}
+		if !g.backupReplaceConfirmed {
+			return fmt.Errorf("replacement confirmation did not change")
+		}
+		tester.Move(4, 4)
+		return nil
+	}
+	if g.fixture == "settings-data" && g.state == "hover-path" {
+		bounds, ok := tester.Find("C:/Example/Documents/Clipboard/profile.db")
+		if !ok {
+			return fmt.Errorf("missing data path")
+		}
+		tester.Move(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
 		return nil
 	}
 	if g.fixture == "settings-field" && g.state == "expanded" {

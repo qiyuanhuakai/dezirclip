@@ -823,7 +823,7 @@
 }
 
 .data-panel:hover {
-  background: #ffffff;
+  background: var(--bg-element, var(--bg-input));
 }
 
 .setting-item .switch {

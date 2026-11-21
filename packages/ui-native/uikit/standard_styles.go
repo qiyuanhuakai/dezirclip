@@ -68,6 +68,7 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 	case "backupInput", "backupInputFocus":
 		surface()
 		style.Height, style.Font, style.Padding = 30, "monospace", [4]float32{6, 8, 6, 8}
+		style.UsesMonoFont = true
 		if widget == "backupInputFocus" {
 			style.Border = accent
 		}
@@ -78,6 +79,18 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.Size, style.Uppercase = 10, true
 	case "backupError":
 		style.Text = rgba(ui.LightTheme().Danger)
+	case "backupReplaceConfirmation":
+		style.MinHeight, style.MarginBottom, style.ColumnGap, style.Size = 32, 12, 8, 12
+	case "backupReplaceMark", "backupReplaceMarkChecked", "backupReplaceMarkHover":
+		surface()
+		style.Width, style.Height, style.Radius, style.Size = 17, 17, min(4, style.Radius), 12
+		style.Font, style.Text = "sans-serif", [4]uint8{255, 255, 255, 255}
+		if widget != "backupReplaceMark" {
+			style.Border = accent
+		}
+		if widget == "backupReplaceMarkChecked" {
+			style.Fill = accent
+		}
 	case "backupPreview":
 		surface()
 		style.Height = 150
@@ -175,11 +188,14 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		if widget == "tagToolbarButtonActive" {
 			style.Fill, style.Border = selected, accent
 		}
-	case "settingsDataPath", "settingsDataAction":
+	case "settingsDataPath", "settingsDataPathHover", "settingsDataAction":
 		surface()
 		style.Height, style.Padding, style.Size = 30, [4]float32{5, 9, 5, 9}, 12
-		if widget == "settingsDataPath" {
-			style.Font, style.Weight = "monospace", 700
+		if widget != "settingsDataAction" {
+			style.Font, style.Weight, style.UsesMonoFont = "monospace", 700, true
+			if widget == "settingsDataPathHover" {
+				style.Fill = selected
+			}
 		}
 	case "emojiAddTile", "emojiAddTileHover", "emojiFavoriteTile":
 		surface()

@@ -23,8 +23,8 @@ const cases = {
   "settings-choices": { states: ["default"], text: "Update channel" },
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
   "emoji-favorites": { states: ["default"], text: "Add emoji" },
-  "settings-data": { states: ["default"], text: "Data storage path" },
-  "backup-dialog": { states: ["default", "encrypted", "error", "import"], text: "File path" },
+  "settings-data": { states: ["default", "hover-path"], text: "Data storage path" },
+  "backup-dialog": { states: ["default", "encrypted", "error", "import", "replace", "replace-confirmed"], text: "File path" },
   "settings-update": { states: ["default", "unknown-size", "installing"], text: "Installed version" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
   "privacy-rules": { states: ["default"], text: "Privacy rules" },
@@ -198,6 +198,17 @@ try {
               await page.getByRole("button", { name: "Setting help: Interface font" }).click();
               await page.getByText("Use the theme font by default.", { exact: true }).waitFor();
             }
+            if (fixture === "settings-data" && state === "hover-path") await page.locator(".data-panel").hover();
+            if (fixture === "backup-dialog" && state.startsWith("replace")) {
+              const dialog = page.getByRole("dialog", { name: "Import clipboard history" });
+              const submit = dialog.getByRole("button", { name: "Import clipboard history" });
+              if (await submit.isEnabled()) throw Error("Replacement was enabled without confirmation");
+              if (state === "replace-confirmed") {
+                await dialog.getByRole("checkbox", { name: "Confirm replacing clipboard history" }).check();
+                if (!await submit.isEnabled()) throw Error("The confirmed replacement stayed disabled");
+                await page.mouse.move(4, 4);
+              }
+            }
             if (fixture === "history-ocr" && state.endsWith("expanded")) {
               await page.getByTestId("ocr-toggle").click();
               await page.getByTestId("ocr-text").waitFor();
@@ -360,7 +371,7 @@ try {
               }[state]
               : fixture === "backup-dialog" ? {
                 default: "Export format", encrypted: "Confirm passphrase", error: "Passphrase must be at least 12 characters",
-                import: "Release checklist",
+                import: "Release checklist", replace: "Confirm replacing clipboard history", "replace-confirmed": "Confirm replacing clipboard history",
               }[state]
               : state === "southeast" ? "SouthEast" : state === "scrolled" ? "1 scroll" : "";
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);

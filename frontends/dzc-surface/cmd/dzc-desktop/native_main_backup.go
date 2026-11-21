@@ -121,7 +121,7 @@ func (n *nativeMain) backupImportFields(c *ui.Context, kit uikit.Kit, form *nati
 		form.message = ""
 	}
 	if form.mode == "replace" {
-		kit.Checkbox(c, &form.replaceConfirmed, n.text("native_backup_replace_confirm")).Disabled(n.mutating)
+		kit.BackupReplaceConfirmation(c, &form.replaceConfirmed, n.text("native_backup_replace_confirm"), n.mutating)
 	}
 }
 

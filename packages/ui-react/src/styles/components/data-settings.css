@@ -122,6 +122,7 @@
 
 .data-replace-confirm {
   display: flex;
+  position: relative;
   align-items: center;
   gap: 8px;
   min-height: 32px;
@@ -130,11 +131,43 @@
 }
 
 .data-replace-confirm input {
-  flex-shrink: 0;
+  position: absolute;
   width: 17px;
   height: 17px;
   margin: 0;
-  accent-color: var(--accent-color);
+  opacity: 0;
+}
+
+.data-replace-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 17px;
+  box-sizing: border-box;
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--select-menu-border, var(--border-dark));
+  border-radius: min(4px, var(--surface-control-radius, 4px));
+  background: var(--bg-input);
+  color: white;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.data-replace-confirm:hover input:enabled + .data-replace-mark {
+  border-color: var(--accent-color);
+}
+
+.data-replace-confirm input:checked + .data-replace-mark {
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+}
+
+.data-replace-confirm input:focus-visible + .data-replace-mark {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.data-replace-confirm input:disabled + .data-replace-mark {
+  opacity: 0.5;
 }
 
 .data-input {

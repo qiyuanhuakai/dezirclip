@@ -131,10 +131,11 @@ export function SettingsDataFixture() {
 }
 
 export function BackupDialogFixture({ state }: { state: string }) {
-  const restoring = state === "import";
+  const replacing = state.startsWith("replace");
+  const restoring = state === "import" || replacing;
   const encrypted = ["encrypted", "error", "hover-submit", "hover-cancel"].includes(state);
   const [format, setFormat] = useState(encrypted ? "encrypted" : "json");
-  const [mode, setMode] = useState("merge");
+  const [mode, setMode] = useState(replacing ? "replace" : "merge");
   const [open, setOpen] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
   const title = restoring ? "Import clipboard history" : "Export clipboard history";

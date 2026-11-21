@@ -222,7 +222,8 @@ func (g *gallery) historyTypographyFixture(c *ui.Context, kit uikit.Kit) {
 }
 
 func (g *gallery) backupDialogFixture(c *ui.Context, kit uikit.Kit) {
-	open, restoring := true, g.state == "import"
+	replacing := strings.HasPrefix(g.state, "replace")
+	open, restoring := true, g.state == "import" || replacing
 	title, path := "Export clipboard history", ""
 	if restoring {
 		title, path = "Import clipboard history", "C:/Example/clipboard.json"
@@ -233,9 +234,15 @@ func (g *gallery) backupDialogFixture(c *ui.Context, kit uikit.Kit) {
 	kit.BackupDialog(c, &open, title, false, func() {
 		if restoring {
 			mode := "merge"
+			if replacing {
+				mode = "replace"
+			}
 			kit.BackupChoices(c, "Import mode", &mode, []uikit.SelectOption{
 				{Value: "merge", Label: "Merge entries"}, {Value: "replace", Label: "Replace existing entries"},
 			}, false)
+			if replacing {
+				kit.BackupReplaceConfirmation(c, &g.backupReplaceConfirmed, "Confirm replacing clipboard history", false)
+			}
 		} else {
 			format := "json"
 			if path != "" {
@@ -260,6 +267,6 @@ func (g *gallery) backupDialogFixture(c *ui.Context, kit uikit.Kit) {
 			kit.BackupPreview(c, "Preview entries", []string{"Release checklist", "Example screenshot", "Draft notes"})
 		}
 	}, func() {
-		kit.BackupActions(c, "Cancel", title, false, path == "", nil, nil)
+		kit.BackupActions(c, "Cancel", title, false, path == "" || replacing && !g.backupReplaceConfirmed, nil, nil)
 	})
 }

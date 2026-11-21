@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ComponentProps, type ReactNode } from "react";
+import { Check } from "lucide-react";
 
 export function BackupDialog({ title, busy = false, onClose, children, footer }: {
   title: string; busy?: boolean; onClose: () => void; children: ReactNode; footer: ReactNode;
@@ -70,6 +71,7 @@ export function BackupReplaceConfirmation({ label, checked, disabled, onChange }
 }) {
   return <label className="data-replace-confirm">
     <input type="checkbox" checked={checked} disabled={disabled} onChange={event => onChange(event.target.checked)} />
+    <span className="data-replace-mark" aria-hidden="true">{checked && <Check size={12} />}</span>
     <span>{label}</span>
   </label>;
 }

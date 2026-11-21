@@ -25,6 +25,7 @@ const samples = [
     settingsDataLabel: [".data-path-label"], settingsDataHeader: [".data-path-header"],
     settingsDataBlock: [".showcase-fields .setting-item"], settingsDataActions: [".data-actions-row"],
   }],
+  ["settings-data", "hover-path", { settingsDataPathHover: [".data-panel"] }],
   ["backup-dialog", "default", {
     backupBackdrop: [".data-modal-overlay", null, "::backdrop"],
     backupDialog: [".data-modal-content"], backupTitle: [".data-modal-title"],
@@ -39,6 +40,11 @@ const samples = [
   ["backup-dialog", "import", {
     backupPreview: [".data-preview-list"], backupPreviewRow: [".data-preview-item"],
   }],
+  ["backup-dialog", "replace", {
+    backupReplaceConfirmation: [".data-replace-confirm"], backupReplaceMark: [".data-replace-mark"],
+  }],
+  ["backup-dialog", "replace-confirmed", { backupReplaceMarkChecked: [".data-replace-mark"] }],
+  ["backup-dialog", "replace-hover", { backupReplaceMarkHover: [".data-replace-mark"] }],
   ["backup-dialog", "error", { backupError: [".data-error"] }],
   ["backup-dialog", "focus-password", { backupInputFocus: [".data-input"] }],
   ["backup-dialog", "hover-choice", { backupChoiceHover: [".data-radio-item:nth-child(2)"] }],
@@ -408,6 +414,8 @@ function readStyles(sample) {
       } : {}),
       ...(id.startsWith("historyRichContent") ? { maxHeight: number(style.maxHeight) } : {}),
       ...(id === "historyOCRContent" ? { maxHeight: number(style.maxHeight), usesMonoFont: true } : {}),
+      ...(/^(backupInput|settingsDataPath)(Focus|Hover)?$/.test(id) ? { usesMonoFont: true } : {}),
+      ...(id === "backupReplaceConfirmation" ? { minHeight: number(style.minHeight) } : {}),
       ...(columnGap ? { columnGap } : {}),
       ...(rowGap ? { rowGap } : {}),
       ...(switchFace ? { top: number(bounds.top - switchBounds.top), left: number(bounds.left - switchBounds.left) } : top ? { top } : {}),
@@ -535,7 +543,10 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
       if (state === "hover-choice") await page.locator(".data-radio-item").last().hover();
       if (state === "hover-cancel") await page.locator(".data-btn-cancel").hover();
       if (state === "hover-submit") await page.locator(".data-btn-primary").hover();
+      if (state === "replace-confirmed") await page.getByRole("checkbox", { name: "Confirm replacing clipboard history" }).check();
+      if (state === "replace-hover") await page.locator(".data-replace-confirm").hover();
     }
+    if (fixture === "settings-data" && state === "hover-path") await page.locator(".data-panel").hover();
     if (fixture === "text-fields" && state.startsWith("focus")) {
       await page.getByRole("textbox", { name: state === "focus-text" ? "Entry name" : "Idle timeout" }).focus();
     }
