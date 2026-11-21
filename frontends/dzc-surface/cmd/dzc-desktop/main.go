@@ -223,6 +223,12 @@ func (h *History) SendEmoji(ctx context.Context, kind, content string, epoch uin
 }
 
 func run() error {
+	if len(os.Args) == 2 && os.Args[1] == profileRelaunchArg {
+		if !acceptProfileRelaunch(os.Stdin) {
+			return nil
+		}
+		os.Args[1] = "--show"
+	}
 	if handled, err := prepareElevation(); handled || err != nil {
 		return err
 	}

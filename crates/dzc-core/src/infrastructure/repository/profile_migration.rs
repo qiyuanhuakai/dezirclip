@@ -425,6 +425,27 @@ mod path_rewrite_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "portable"))]
+    fn stale_privacy_epoch_leaves_profile_unchanged_and_allows_retry() {
+        let (root, old, new, conn) = migration_fixture();
+        drop(conn);
+        let history = crate::api::HistoryService::open(&old.join("clipboard.db")).unwrap();
+        let redirect = root.join("datapath.txt");
+        let epoch = history.runtime_snapshot(chrono::Utc::now().timestamp_millis()).unwrap().privacy_epoch;
+        let result = history.migrate_profile_at_epoch(&old, &new, &redirect, epoch + 1);
+        assert!(matches!(result, Err(MigrationError::Validation(ref message)) if message == "PrivacyEpochChanged"));
+        assert!(!redirect.exists());
+        assert!(!new.join("clipboard.db").exists());
+        assert_eq!(std::fs::read(old.join("attachments/image.png")).unwrap(), b"fixture image");
+
+        history.migrate_profile_at_epoch(&old, &new, &redirect, epoch).unwrap();
+        assert_eq!(std::fs::read_to_string(&redirect).unwrap(), new.to_string_lossy());
+        assert_eq!(std::fs::read(new.join("attachments/image.png")).unwrap(), b"fixture image");
+        drop(history);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn directory_migration_preserves_lookalike_external_paths_and_rejects_an_existing_journal() {
         let (root, old, new, mut conn) = migration_fixture();
         let image = old.join("attachments-other").join("external.png");

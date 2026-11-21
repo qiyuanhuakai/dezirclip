@@ -124,6 +124,9 @@ fn apply_webview2_gpu_switch() {
 }
 
 fn main() {
+    if !app::app_exit::accept_relaunch() {
+        return;
+    }
     dzc_platform::video_preview::dispatch();
     dzc_platform::dispatch_export_guardian();
     #[cfg(target_os = "windows")]
@@ -141,6 +144,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(app::commands::ProfileMoveState::default())
         .manage(app::updater::UpdaterState::with_host(std::sync::Arc::new(app::ipc_host::DesktopUpdateHost)))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -251,6 +255,7 @@ fn main() {
             app::commands::get_data_path,
             app::commands::open_data_folder,
             app::commands::set_data_path,
+            app::commands::get_pending_data_move,
             app::commands::toggle_autostart,
             app::commands::is_autostart_enabled,
             app::commands::set_windows_clipboard_history,
@@ -357,7 +362,7 @@ fn main() {
                             "[app-exit] Prevented runtime exit after managed webview teardown"
                         );
                         api.prevent_exit();
-                    } else {
+                    } else if !crate::app::app_exit::relaunch_prepared() {
                         use tauri::Manager;
                         if let Some(host)=app_handle.try_state::<crate::app::ipc_host::DesktopHost>() {
                             if host.shutdown().is_err() {api.prevent_exit();crate::warn!("[host] ClipboardStopUnconfirmed");}

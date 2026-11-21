@@ -149,25 +149,3 @@ func keepPreviousMyGoAppImage(target, backup string, mode os.FileMode) error {
 	}
 	return nil
 }
-
-func mygoAppImageEnvironment(inherited []string) []string {
-	environment := make([]string, 0, len(inherited))
-	mount := os.Getenv("APPDIR")
-	for _, entry := range inherited {
-		key, value, _ := strings.Cut(entry, "=")
-		switch key {
-		case "APPIMAGE", "APPDIR", "ARGV0", "OWD":
-			continue
-		case "PATH", "LD_LIBRARY_PATH", "XDG_DATA_DIRS":
-			var paths []string
-			for _, path := range filepath.SplitList(value) {
-				if mount == "" || (path != mount && !strings.HasPrefix(path, mount+"/")) {
-					paths = append(paths, path)
-				}
-			}
-			entry = key + "=" + strings.Join(paths, string(os.PathListSeparator))
-		}
-		environment = append(environment, entry)
-	}
-	return environment
-}

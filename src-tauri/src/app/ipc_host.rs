@@ -12,7 +12,7 @@ enum Mode { Starting, Embedded(Arc<Host>), Remote(String), Unavailable }
 enum RestoreMode {Embedded,Service{no_capture:bool}}
 struct Inner { mode:Mutex<Mode>, history:HistoryService, directory:PathBuf, database:PathBuf,
     session:Arc<dzc_core::api::SessionHistoryStore>, closing:AtomicBool,writer:Mutex<Option<dzc_platform::runtime::EmbeddedClipboardWriter>>,
-    server:Mutex<Option<ServerTask>>,restore:Mutex<Option<RestoreMode>> }
+    server:Mutex<Option<ServerTask>>,restore:Mutex<Option<RestoreMode>>,profile_move:tokio::sync::Mutex<()> }
 struct ServerTask {stop:tokio::sync::watch::Sender<bool>,done:std::sync::mpsc::Receiver<()>}
 #[derive(Clone)]
 pub struct DesktopHost(Arc<Inner>);
@@ -302,7 +302,7 @@ impl DesktopHost {
         }
         let directory=PathBuf::new();
         let host=Host::with_session(HostOptions{mode:HostMode::Embedded,history:history.clone(),directory:directory.clone(),actions:Arc::new(Actions)},session.clone()).unwrap();
-        Self(Arc::new(Inner{mode:Mutex::new(Mode::Embedded(host)),history,database:PathBuf::from(":memory:"),directory,session,closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None)}))
+        Self(Arc::new(Inner{mode:Mutex::new(Mode::Embedded(host)),history,database:PathBuf::from(":memory:"),directory,session,closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None),profile_move:Default::default()}))
     }
     pub(crate) async fn surface_access(&self)->Result<SurfaceAccess,String> {
         let original=self.instance()?;
@@ -324,7 +324,7 @@ impl DesktopHost {
         app.manage(crate::app::surface_supervisor::SurfaceSupervisor::default());
         let directory=app.state::<AppDataDir>().0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
         let bridge=Self(Arc::new(Inner {mode:Mutex::new(Mode::Starting),history:app.state::<DbState>().history_service(),database:directory.join("clipboard.db"),directory,
-            session:app.state::<SessionHistory>().0.clone(),closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None)}));
+            session:app.state::<SessionHistory>().0.clone(),closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None),profile_move:Default::default()}));
         app.manage(bridge.clone());
         tauri::async_runtime::spawn(async move {if bridge.initialize().await.is_err() {bridge.set_mode(Mode::Unavailable);emit("clipboard-host-unavailable",());}});
     }
@@ -347,6 +347,17 @@ impl DesktopHost {
         Mode::Embedded(host) if !host.is_stopping()=>Ok(Some(host.clone())),Mode::Remote(_)=>Ok(None),_=>Err(failed())}}
     pub fn instance(&self)->Result<String,String> {match &*self.0.mode.lock().map_err(|_|failed())? {
         Mode::Embedded(host)=>Ok(host.instance_id().into()),Mode::Remote(instance)=>Ok(instance.clone()),_=>Err(failed())}}
+    pub(crate) async fn move_remote_profile(&self, destination: &std::path::Path, instance: &str, epoch: u64)
+        -> std::io::Result<Option<dzc_host::controller::MoveRecovery>> {
+        let _move = self.0.profile_move.lock().await;
+        if self.0.closing.load(Ordering::Acquire) || self.embedded().map_err(std::io::Error::other)?.is_some() {
+            return Err(std::io::Error::other("The desktop Service changed; reopen Settings"));
+        }
+        let receipt = dzc_host::controller::move_active_profile(&self.0.database, destination, instance, epoch).await?;
+        // The disconnected listener must avoid opening a new Host on the previous profile.
+        self.0.closing.store(true, Ordering::Release);
+        Ok(receipt)
+    }
     pub(crate) fn queue_state(&self)->Result<(String,u64),String> {
         let instance=self.instance()?;
         let epoch=self.0.history.runtime_snapshot(now()).map_err(remote_error)?.privacy_epoch;
@@ -696,6 +707,7 @@ impl DesktopHost {
                 }
                 last_revision=events.state.history_revision;last_epoch=events.state.privacy_epoch;after=events.state.event_sequence;
             }
+            let _profile_move = bridge.0.profile_move.lock().await;
             if bridge.0.closing.load(Ordering::Acquire) {return;}
             // A broken transport is not proof that the previous worker stopped.
             // Kernel ownership still prevents a recovery listener from doubling it.
@@ -844,7 +856,7 @@ mod tests {
             let original=dzc_host::controller::start(&database,&executable,true).await.unwrap();
             assert!(!original.capture_owner);
             let bridge=DesktopHost(Arc::new(Inner{mode:Mutex::new(Mode::Remote(original.state.service_instance_id.clone())),history,
-                directory,database:database.clone(),session:Arc::new(dzc_core::api::SessionHistoryStore::default()),closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None)}));
+                directory,database:database.clone(),session:Arc::new(dzc_core::api::SessionHistoryStore::default()),closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None),profile_move:Default::default()}));
             bridge.prepare_update().await.unwrap();
             assert!(dzc_host::controller::status(&database).await.is_err());
             assert!(matches!(*bridge.0.restore.lock().unwrap(),Some(RestoreMode::Service{no_capture:true})));

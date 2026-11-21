@@ -6,7 +6,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { SettingsDataPath, SettingsDataAction } from "@deziro/ui-react/components/SettingsData";
 import { BackupActions, BackupChoices, BackupDialog, BackupField, BackupPreview, BackupReplaceConfirmation } from "@deziro/ui-react/components/BackupDialog";
 
-import { beginPrivacyAccess, subscribePrivacyInvalidation } from "../../../../shared/lib/privacySession";
+import { beginPrivacyAccess, getMainPageStamp, subscribePrivacyInvalidation } from "../../../../shared/lib/privacySession";
 import { usePrivacySession } from "../../../../shared/hooks/usePrivacySession";
 
 interface DataSettingsGroupProps {
@@ -31,6 +31,11 @@ interface ImportModalProps {
 interface BackupInspection {
     encrypted: boolean;
     entries: Array<{ content: string }>;
+}
+
+interface ProfileMoveReceipt {
+    path: string;
+    reconnect: boolean;
 }
 
 const ExportModal = ({ t, onClose, onComplete }: ExportModalProps) => {
@@ -259,9 +264,23 @@ const ImportModal = ({ t, onClose, onComplete }: ImportModalProps) => {
 const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGroupProps) => {
     const [backupDialog, setBackupDialog] = useState<"export" | "import" | null>(null);
     const [completed, setCompleted] = useState<"export" | "import" | null>(null);
+    const [movedProfile, setMovedProfile] = useState<ProfileMoveReceipt | null>(null);
+    const [checkingProfile, setCheckingProfile] = useState(true);
+    const [profileBusy, setProfileBusy] = useState(false);
+    const [profileError, setProfileError] = useState("");
     const privacy = usePrivacySession();
     const privateSession = privacy.snapshot?.session.active === true;
-    const backupDisabled = privacy.phase !== "ready" || privateSession;
+    const profileLocked = checkingProfile || profileBusy || movedProfile !== null;
+    const backupDisabled = privacy.phase !== "ready" || privateSession || profileLocked;
+    useEffect(() => {
+        let current = true;
+        invoke<ProfileMoveReceipt | null>("get_pending_data_move").then(receipt => {
+            if (current && receipt) setMovedProfile(receipt);
+        }).catch(() => undefined).finally(() => {
+            if (current) setCheckingProfile(false);
+        });
+        return () => { current = false; };
+    }, []);
     useEffect(() => {
         if (privateSession) setBackupDialog(null);
     }, [privateSession]);
@@ -269,6 +288,50 @@ const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGro
     const openBackup = (mode: "export" | "import") => {
         setCompleted(null);
         setBackupDialog(mode);
+    };
+
+    const restartProfile = async () => {
+        setProfileError("");
+        try {
+            await invoke("relaunch");
+        } catch (error) {
+            setProfileError(t("data_move_retry") + " " + String(error));
+        }
+    };
+
+    const changeDirectory = async () => {
+        const access = beginPrivacyAccess("list");
+        const stamp = getMainPageStamp();
+        if (!access || !stamp || stamp.sessionActive || stamp.epoch !== access.epoch) return;
+        setProfileBusy(true);
+        setProfileError("");
+        try {
+            let newPath: string;
+            try {
+                const selected = await open({ directory: true, multiple: false, title: t("change_data_path"), defaultPath: dataPath });
+                if (!selected || displayPath(selected) === displayPath(dataPath) || !access.isCurrent()) return;
+                newPath = selected;
+                const confirmed = await ask(t("data_move_confirm").replace("{path}", displayPath(newPath)), {
+                    title: t("change_data_path"), kind: "warning", okLabel: t("confirm"), cancelLabel: t("cancel"),
+                });
+                if (!confirmed || !access.isCurrent() || getMainPageStamp()?.instanceId !== stamp.instanceId) return;
+            } catch {
+                setProfileError(t("native_profile_picker_failed"));
+                return;
+            }
+            const receipt = await invoke<ProfileMoveReceipt | null>("set_data_path", {
+                newPath, expectedEpoch: access.epoch, expectedHostInstanceId: stamp.instanceId,
+            });
+            if (!receipt) return;
+            setMovedProfile(receipt);
+            await message(t(receipt.reconnect ? "data_move_reconnect" : "data_move_success"),
+                { title: t("notice"), kind: "info" }).catch(() => undefined);
+            await restartProfile();
+        } catch (error) {
+            setProfileError(t("data_move_failed").replace("{e}", String(error)));
+        } finally {
+            setProfileBusy(false);
+        }
     };
 
     return (
@@ -279,57 +342,32 @@ const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGro
             </div>
             {!collapsed && (
                 <div className="group-content">
-                    <SettingsDataPath label={t("data_path")} path={displayPath(dataPath)}>
-                                <SettingsDataAction
-                                    onClick={() => {
-                                        open({
-                                            directory: true,
-                                            multiple: false,
-                                            title: t("change_data_path"),
-                                        }).then(async (selected) => {
-                                            if (selected) {
-                                                const newPath = selected as string;
-                                                const confirm = await ask(
-                                                    t("data_move_confirm").replace("{path}", newPath),
-                                                    { title: t("change_data_path"), kind: "warning", okLabel: t("confirm"), cancelLabel: t("cancel") }
-                                                );
-
-                                                if (confirm) {
-                                                    try {
-                                                        const reconnect = await invoke<boolean | null>("set_data_path", { newPath });
-
-                                                        await message(
-                                                            t(reconnect ? "data_move_reconnect" : "data_move_success"),
-                                                            { title: t("notice"), kind: "info" }
-                                                        );
-
-                                                        try {
-                                                            await invoke("relaunch");
-                                                        } catch (error) {
-                                                            await message(t("data_move_retry") + "\n" + String(error), { title: t("notice"), kind: "warning" });
-                                                        }
-                                                    } catch (e: unknown) {
-                                                        console.error(e);
-                                                        const errorMsg = e instanceof Error ? e.message : String(e);
-                                                        await message(
-                                                            t("data_move_failed").replace("{e}", errorMsg),
-                                                            { title: t("error"), kind: "error" }
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                        });
-                                    }}
-                                >
-                                    {t("change_app")}
-                                </SettingsDataAction>
-                                <SettingsDataAction
-                                    onClick={() => invoke("open_data_folder").catch(console.error)}
-                                    title={t("open_folder") || "Open"}
-                                >
-                                    {t("open_folder")}
-                                </SettingsDataAction>
+                    <SettingsDataPath label={t("data_path")} path={displayPath(movedProfile?.path ?? dataPath)}>
+                        {movedProfile ? (
+                            <SettingsDataAction disabled={profileBusy} onClick={async () => {
+                                setProfileBusy(true);
+                                await restartProfile();
+                                setProfileBusy(false);
+                            }}>
+                                {t("common_retry")}
+                            </SettingsDataAction>
+                        ) : <>
+                            <SettingsDataAction disabled={!dataPath || backupDisabled || backupDialog !== null}
+                                onClick={changeDirectory}>
+                                {t("change_app")}
+                            </SettingsDataAction>
+                            <SettingsDataAction disabled={!dataPath || checkingProfile || profileBusy} onClick={() => {
+                                setProfileError("");
+                                void invoke("open_data_folder").catch(() => setProfileError(t("native_profile_open_failed")));
+                            }}>
+                                {t("open_folder")}
+                            </SettingsDataAction>
+                        </>}
                     </SettingsDataPath>
+                    {profileBusy && <p className="settings-value" role="status">{t("processing")}</p>}
+                    {movedProfile && !profileBusy && !profileError &&
+                        <p className="settings-value" role="status">{t("data_move_retry")}</p>}
+                    {profileError && <p className="data-error" role="alert">{profileError}</p>}
 
                     <div className="data-actions-row">
                         <SettingsDataAction icon="export" disabled={backupDisabled}

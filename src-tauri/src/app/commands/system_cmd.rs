@@ -136,13 +136,19 @@ pub async fn restart_explorer() -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn relaunch(app: AppHandle) {
-    use std::process::Command;
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = Command::new(exe).spawn();
+pub async fn relaunch(app: AppHandle, move_state: State<'_, ProfileMoveState>) -> AppResult<()> {
+    let mut state = move_state.0.lock().await;
+    let pending = state.as_mut().ok_or_else(|| AppError::Validation("No completed profile move".into()))?;
+    if let Some(recovery) = &pending.recovery {
+        recovery.reconnect().await.map_err(AppError::from)?;
+        pending.recovery = None;
     }
-    crate::app::app_exit::request_app_exit();
-    app.exit(0);
+    tauri::async_runtime::spawn_blocking(move || {
+        use crate::app::ipc_host::DesktopHost;
+        crate::app::app_exit::relaunch_after_shutdown(&app, || {
+            app.state::<DesktopHost>().shutdown().map_err(std::io::Error::other)
+        })
+    }).await.map_err(|error| AppError::Internal(error.to_string()))?.map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -223,9 +229,40 @@ pub fn check_is_admin() -> bool {
     dzc_platform::desktop_system::is_admin().unwrap_or(false)
 }
 
+#[derive(Default)]
+pub struct ProfileMoveState(tokio::sync::Mutex<Option<PendingProfileMove>>);
+
+struct PendingProfileMove {
+    path: String,
+    recovery: Option<dzc_host::controller::MoveRecovery>,
+}
+
+#[derive(serde::Serialize)]
+pub struct ProfileMoveReceipt {
+    path: String,
+    reconnect: bool,
+}
+
+impl PendingProfileMove {
+    fn receipt(&self) -> ProfileMoveReceipt {
+        ProfileMoveReceipt { path: self.path.clone(), reconnect: self.recovery.is_some() }
+    }
+}
+
 #[tauri::command]
-pub fn set_data_path(app_handle: AppHandle, new_path: String) -> AppResult<()> {
-    let new_data_path = std::path::Path::new(new_path.trim());
+pub async fn get_pending_data_move(state: State<'_, ProfileMoveState>) -> AppResult<Option<ProfileMoveReceipt>> {
+    Ok(state.0.lock().await.as_ref().map(PendingProfileMove::receipt))
+}
+
+#[tauri::command]
+pub async fn set_data_path(app_handle: AppHandle, move_state: State<'_, ProfileMoveState>,
+    new_path: String, expected_epoch: u64, expected_host_instance_id: String) -> AppResult<Option<ProfileMoveReceipt>> {
+    use crate::app::ipc_host::DesktopHost;
+    let mut state = move_state.0.lock().await;
+    if state.is_some() {
+        return Err(AppError::Validation("Data migration is complete; restart the application".into()));
+    }
+    let new_data_path = std::path::Path::new(&new_path);
     if !new_data_path.is_dir() {
         return Err(AppError::Validation("Directory does not exist".to_string()));
     }
@@ -233,20 +270,36 @@ pub fn set_data_path(app_handle: AppHandle, new_path: String) -> AppResult<()> {
     let new_data_path = std::path::absolute(new_data_path).map_err(AppError::from)?;
     let old_path_buf = app_handle.state::<AppDataDir>().0.lock().unwrap().clone();
     if old_path_buf.canonicalize().map_err(AppError::from)? == new_data_path.canonicalize().map_err(AppError::from)? {
-        return Ok(());
+        return Ok(None);
     }
     let executable = std::env::current_exe().map_err(AppError::from)?;
     if cfg!(feature = "portable") || crate::infrastructure::data_paths::portable_data_dir(executable.parent()).is_some() {
         return Err(AppError::Validation("Portable storage uses the data folder beside the executable; move the complete portable directory instead".into()));
     }
-    let config_dir = app_handle.path().app_data_dir().map_err(AppError::from)?;
-    let redirect_file = config_dir.join("datapath.txt");
-    // The live shared connection stays read-only after cutover until relaunch.
-    // Other connections cannot commit while the source write reservation is held.
-    let db = app_handle.state::<DbState>();
-    dzc_core::api::HistoryService::from_legacy_connection(db.conn.clone())
-        .migrate_profile(&old_path_buf, &new_data_path, &redirect_file)
-        .map_err(AppError::from)
+    let host = app_handle.state::<DesktopHost>();
+    if host.instance().map_err(AppError::Validation)? != expected_host_instance_id {
+        return Err(AppError::Validation("ClipboardHostInstanceChanged".into()));
+    }
+    let recovery = if let Some(embedded) = host.embedded().map_err(AppError::Validation)? {
+        if embedded.instance_id() != expected_host_instance_id {
+            return Err(AppError::Validation("ClipboardHostInstanceChanged".into()));
+        }
+        let redirect = app_handle.path().app_data_dir().map_err(AppError::from)?.join("datapath.txt");
+        let destination = new_data_path.clone();
+        let db = app_handle.state::<DbState>();
+        let history = dzc_core::api::HistoryService::from_legacy_connection(db.conn.clone());
+        tauri::async_runtime::spawn_blocking(move || {
+            history.migrate_profile_at_epoch(&old_path_buf, &destination, &redirect, expected_epoch)
+        }).await.map_err(|error| AppError::Internal(error.to_string()))?.map_err(AppError::from)?;
+        None
+    } else {
+        host.move_remote_profile(&new_data_path, &expected_host_instance_id, expected_epoch)
+            .await.map_err(AppError::from)?
+    };
+    let pending = PendingProfileMove { path: new_data_path.to_string_lossy().into_owned(), recovery };
+    let receipt = pending.receipt();
+    *state = Some(pending);
+    Ok(Some(receipt))
 }
 
 #[cfg(all(test, windows, not(feature = "portable")))]

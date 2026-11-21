@@ -37,6 +37,12 @@ pub struct MoveRecovery {
     pub detail: String,
 }
 
+impl MoveRecovery {
+    pub async fn reconnect(&self) -> io::Result<()> {
+        recover_profile(&self.target, &self.previous_directory, &self.instance, self.no_capture).await
+    }
+}
+
 pub async fn move_active_profile(database: &Path, destination: &Path, instance: &str, epoch: u64) -> io::Result<Option<MoveRecovery>> {
     let (source, target) = data::installed_move_directories(database, destination)?;
     let sibling = sibling_executable()?;

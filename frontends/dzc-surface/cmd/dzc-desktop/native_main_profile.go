@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"strings"
 	"time"
 
@@ -106,7 +107,7 @@ func (n *nativeMain) chooseProfileDirectory() {
 		return
 	}
 	n.mutating, n.notice = true, ""
-	session, window, language := n.session, n.window, n.language()
+	session, window, language, current := n.session, n.window, n.language(), n.profile.directory
 	state := n.history.state
 	n.shell.dock.dialogs.Add(1)
 	go func() {
@@ -115,7 +116,7 @@ func (n *nativeMain) chooseProfileDirectory() {
 			Parent: window, Title: title, Directory: true,
 		})
 		var directory string
-		if err == nil && len(paths) != 0 && session.Err() == nil {
+		if err == nil && len(paths) != 0 && session.Err() == nil && !sameProfileDirectory(current, paths[0]) {
 			message := strings.ReplaceAll(language.text("data_move_confirm"), "{path}", profileDisplayPath(paths[0]))
 			result, confirmError := mygo.Dialog.Message(mygo.MessageOptions{
 				Parent: window, Title: title, Message: message, Type: mygo.MessageWarning,
@@ -146,6 +147,12 @@ func (n *nativeMain) chooseProfileDirectory() {
 	}()
 }
 
+func sameProfileDirectory(current, selected string) bool {
+	from, fromErr := os.Stat(current)
+	to, toErr := os.Stat(selected)
+	return fromErr == nil && toErr == nil && os.SameFile(from, to)
+}
+
 func (n *nativeMain) moveProfile(window *mygo.Window, language nativeLanguage, directory string, epoch uint64) {
 	// The move stops the old Service. Keep the resident request alive across that cutover.
 	reconnect, err := n.shell.MoveProfile(context.Background(), directory, epoch)
@@ -170,7 +177,7 @@ func (n *nativeMain) moveProfile(window *mygo.Window, language nativeLanguage, d
 
 func (n *nativeMain) restartProfile(window *mygo.Window, language nativeLanguage) {
 	if err := n.shell.RelaunchProfile(context.Background()); err != nil {
-		message := language.text("data_move_retry")
+		message := language.text("data_move_retry") + "\n" + err.Error()
 		n.profileMessage(window, language, message, mygo.MessageWarning)
 		window.Update(func() {
 			n.profile.moving, n.profile.restartPending = false, true

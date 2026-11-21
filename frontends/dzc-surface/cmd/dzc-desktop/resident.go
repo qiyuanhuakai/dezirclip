@@ -74,6 +74,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 	}
 	relaunch := false
 	relaunchCommand := "show"
+	var profileNext *profileReplacement
 	var mainChild *exec.Cmd
 	var mainDone <-chan struct{}
 	var update *mygoUpdateHandoff
@@ -91,6 +92,9 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 		}
 	}
 	defer func() {
+		if profileNext != nil {
+			profileNext.close()
+		}
 		if update != nil {
 			update.abort()
 		}
@@ -274,6 +278,32 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 				log.Printf("Search shortcut unavailable: %v", err)
 			}
 		}
+		reportProfileFailure := func(report func(error), err error) {
+			if report != nil {
+				report(err)
+			} else {
+				_, _ = mygo.Dialog.Message(mygo.MessageOptions{Title: "DezirClip", Message: "Data moved. Reopen DezirClip from the tray or its shortcut to retry.\n" + err.Error(), Buttons: []string{"OK"}})
+			}
+		}
+		restartMovedProfile := func(report func(error)) {
+			if profileNext == nil {
+				next, err := startProfileReplacement(executable)
+				if err != nil {
+					reportProfileFailure(report, err)
+					return
+				}
+				profileNext = next
+			}
+			relaunch, closing = true, true
+			if report != nil {
+				report(nil)
+			}
+			if commands == nil {
+				mygo.App.Quit()
+			} else {
+				_, _ = io.WriteString(commands, "rebuild\n")
+			}
+		}
 		reconnect := func(report func(error)) {
 			migrating = true
 			receipt := pending
@@ -283,26 +313,12 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 				err := receipt.Reconnect(ctx)
 				mygo.RunOnMain(func() {
 					migrating = false
-					if err == nil {
-						pending = nil
-						moved = true
-					}
-					if report != nil {
-						report(err)
-					}
 					if err != nil {
-						if report == nil || commands == nil {
-							_, _ = mygo.Dialog.Message(mygo.MessageOptions{Title: "DezirClip", Message: "Data moved. Open DezirClip again to retry the Service connection.\n" + err.Error(), Buttons: []string{"OK"}})
-						}
+						reportProfileFailure(report, err)
 						return
 					}
-					relaunch = true
-					if commands == nil {
-						mygo.App.Quit()
-						return
-					}
-					closing = true
-					_, _ = io.WriteString(commands, "rebuild\n")
+					pending, moved = nil, true
+					restartMovedProfile(report)
 				})
 			}()
 		}
@@ -606,8 +622,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 												}
 												_ = json.NewEncoder(input).Encode(result)
 											} else if moved {
-												relaunch = true
-												mygo.App.Quit()
+												restartMovedProfile(nil)
 											}
 										})
 									}()
@@ -620,9 +635,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 										reply(fmt.Errorf("no completed profile move"))
 										return
 									}
-									relaunch, closing = true, true
-									reply(nil)
-									_, _ = io.WriteString(input, "rebuild\n")
+									restartMovedProfile(reply)
 								case "pin-preview":
 									err := openPinnedPreview(owner, request.Preview, func() {
 										pinnedCount--
@@ -764,9 +777,10 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 					mainVisible = false
 					refreshMemory()
 					closing = false
-					if moved || relaunch {
-						relaunch = true
+					if relaunch {
 						mygo.App.Quit()
+					} else if moved {
+						restartMovedProfile(nil)
 					} else if migrating || pending != nil {
 						return
 					} else if !stopping && reopen != "" {
@@ -780,7 +794,11 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 			}()
 		}
 		present = func(command string) {
-			if stopping || migrating || moved || relaunch {
+			if stopping || migrating || relaunch {
+				return
+			}
+			if moved {
+				restartMovedProfile(nil)
 				return
 			}
 			if pending != nil {
@@ -955,6 +973,12 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 			failUpdate("update-main-stop-failed", err)
 			return err
 		}
+	}
+	if profileNext != nil {
+		if err := grantMainFocus(profileNext.process.Pid); err != nil {
+			log.Printf("Replacement desktop activation permission unavailable: %v", err)
+		}
+		return profileNext.commit()
 	}
 	if relaunch {
 		child := exec.Command(executable, "--"+relaunchCommand)

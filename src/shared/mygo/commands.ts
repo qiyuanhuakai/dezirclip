@@ -223,12 +223,19 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
     thumbnail_dimension: Math.min(1024, Math.max(64, Number(args.maxDimension ?? 384))), include_video_frame: args.includeVideoFrame === true }),
 };
 
+let pendingDataMove: { path: string; reconnect: boolean } | null = null;
+
 export async function invokeMyGo<T>(command: string, args: Arguments = {}): Promise<T> {
   if (command === "restart_as_admin") return shellCall<T>("RestartAsAdmin");
   if (command === "reset_settings") return shellCall<T>("ResetSettings", currentEpoch());
   if (command === "get_update_support") return shellCall<T>("PackageTool", "update-support");
   if (command === "check_for_update") return shellCall<T>("CheckForUpdate", args.channel);
-  if (command === "set_data_path") return shellCall<T>("MoveProfile", args.newPath, currentEpoch());
+  if (command === "get_pending_data_move") return pendingDataMove as T;
+  if (command === "set_data_path") {
+    const reconnect = await shellCall<boolean>("MoveProfile", args.newPath, args.expectedEpoch ?? currentEpoch());
+    pendingDataMove = { path: String(args.newPath), reconnect };
+    return pendingDataMove as T;
+  }
   if (command === "relaunch") return shellCall<T>("RelaunchProfile");
   if (command === "scan_installed_apps") return shellCall<T>("PackageTool", "installed-apps");
   if (command === "get_system_default_app") {

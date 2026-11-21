@@ -489,7 +489,7 @@ export const en = {
         change_data_path: "Change Data Path",
         data_move_confirm: "Are you sure you want to move the data to {path}? The application will restart.",
         data_move_reconnect: "Data moved. Reconnect to the new Service to continue.",
-        data_move_retry: "Open DezirClip from the tray or main shortcut to retry the connection.",
+        data_move_retry: "Data moved. Select Retry to finish switching to the new directory.",
         data_move_success: "Data moved successfully.",
         data_move_failed: "Data move failed: {e}",
 
