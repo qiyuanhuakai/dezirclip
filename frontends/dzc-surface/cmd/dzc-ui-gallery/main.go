@@ -455,7 +455,7 @@ func run() error {
 					Texts []string
 					Cards map[string]ui.Rect
 				}{tester.Texts(), cards}
-			} else if g.fixture == "history-image" || g.fixture == "attachment-preview" {
+			} else if g.fixture == "history-image" || g.fixture == "attachment-preview" || g.fixture == "history-rich-text" {
 				result = inspectMediaCards(g.fixture, tester)
 			}
 			if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {

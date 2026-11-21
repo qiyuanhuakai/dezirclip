@@ -2,7 +2,10 @@ module github.com/qiyuanhuakai/dezirclip/packages/ui-native
 
 go 1.27.3
 
-require github.com/egoist/mygo v0.6.4
+require (
+	github.com/egoist/mygo v0.6.4
+	golang.org/x/net v0.59.0
+)
 
 require (
 	github.com/ebitengine/purego v0.11.1 // indirect

@@ -176,6 +176,41 @@ func TestNativeCompactChromeAndEmojiGrid(t *testing.T) {
 	}
 }
 
+func TestNativeHistoryRendersCachedRichTextOnlyForVisibleContent(t *testing.T) {
+	window := nativeMain{preferences: map[string]string{"app.language": "en"}}
+	const richText = "<p><strong>Rich clipboard sample</strong></p><p>Details from the original entry</p>"
+	row := protocol.DesktopEntry{Id: 1, Timestamp: 1, ContentType: "rich_text", SourceApp: "Editor",
+		Preview: "Short clipboard summary", Tags: []string{}}
+	window.history.rows = []protocol.DesktopEntry{row}
+	key := nativeCardKey{row.Id, row.Timestamp}
+	window.cardMedia.finish(key, nativeCardMedia{rich: uikit.ParseHistoryRichText(richText)})
+	view := ui.NewTester(window.view, 400, 350)
+	if !view.HasText("Details from the original entry") {
+		t.Fatalf("card did not draw its cached formatting: %v", view.Texts())
+	}
+	window.history.rows[0].Tags = nil
+	view.Frame()
+	hiddenLabel := nativeCardSummary(window.history.rows[0], window.language())
+	if view.HasText("Details from the original entry") || !view.HasText(hiddenLabel) {
+		t.Fatalf("card exposed rich content after concealment: %v", view.Texts())
+	}
+	authorized := row
+	markup := "<p>Details from the authorized reveal</p>"
+	authorized.HtmlContent = &markup
+	window.protectedRows = map[nativeCardKey]*nativeProtectedRow{
+		key: {cancel: func() {}, body: newProtectedBody(authorized, window.language())},
+	}
+	view.Frame()
+	if !view.HasText("Details from the authorized reveal") || view.HasText("Details from the original entry") {
+		t.Fatalf("revealed card did not use its authorized body: %v", view.Texts())
+	}
+	window.clearProtectedRows()
+	view.Frame()
+	if view.HasText("Details from the authorized reveal") {
+		t.Fatal("card retained revealed content after it was hidden again")
+	}
+}
+
 func TestNativeEmojiAutomaticallyReachesFinalChoices(t *testing.T) {
 	window := nativeMain{showEmoji: true, preferences: map[string]string{"app.language": "en"}}
 	view := ui.NewTester(window.view, 360, 330)

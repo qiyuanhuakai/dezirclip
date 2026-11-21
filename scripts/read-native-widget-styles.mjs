@@ -162,6 +162,8 @@ const samples = [
   }],
   ["history-card", "selected", { historyCardSelected: [".history-item.selected"] }],
   ["history-typography", "default", { historyConcealed: [".privacy-hidden-content"] }],
+  ["history-rich-text", "default", { historyRichContent: [".history-rich-preview"] }],
+  ["history-rich-text", "compact", { historyRichContentCompact: [".history-rich-preview"] }],
   ["history-card", "hover", { historyCardHover: [".history-item"] }],
   ["history-card", "compact", {
     historyCardCompact: [".history-item.compact"], historyContentCompact: [".content-preview"],
@@ -388,6 +390,7 @@ function readStyles(sample) {
         ...(number(style.maxHeight) ? { maxHeight: number(style.maxHeight) } : {}),
         ...(usesMonoFont ? { usesMonoFont } : {}),
       } : {}),
+      ...(id.startsWith("historyRichContent") ? { maxHeight: number(style.maxHeight) } : {}),
       ...(columnGap ? { columnGap } : {}),
       ...(rowGap ? { rowGap } : {}),
       ...(switchFace ? { top: number(bounds.top - switchBounds.top), left: number(bounds.left - switchBounds.left) } : top ? { top } : {}),

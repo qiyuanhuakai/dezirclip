@@ -88,6 +88,17 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 		})
 	case "history-typography":
 		g.historyTypographyFixture(c, kit)
+	case "history-rich-text":
+		kit.HistoryCard(c, uikit.HistoryCardOptions{
+			Source: "Editor", Time: "12:30", Summary: "Formatted clipboard card",
+			Actions: []uikit.HeaderAction{{Icon: "pin", Label: "Pin"}, {Icon: "tag", Label: "Tags"}, {Icon: "hide", Label: "Delete"}},
+			Compact: g.state == "compact",
+			Rich: uikit.ParseHistoryRichText(`<p><strong>Release checklist</strong> <em>from the editor</em></p>
+<p><u>Review notes</u> and <a href="#details">open the draft.</a></p>
+<p>Check the Windows and Linux packages.</p>
+<p>Ask for feedback after the preview.</p>
+<p>Keep the original file with the notes.</p>`),
+		})
 	case "backup-dialog":
 		g.backupDialogFixture(c, kit)
 	case "settings-update":

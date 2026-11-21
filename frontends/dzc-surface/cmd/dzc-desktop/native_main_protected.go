@@ -19,6 +19,7 @@ type nativeProtectedBody struct {
 	summary     string
 	image       ui.ImageSource
 	attachments []uikit.PreviewAttachment
+	rich        *uikit.HistoryRichText
 	ocrStatus   string
 }
 
@@ -135,6 +136,10 @@ func (n *nativeMain) toggleProtectedRow(row protocol.DesktopEntry, generation ui
 			params.ThumbnailDimension = &size
 			params.OmitOcrText = &omitText
 		}
+		if row.ContentType == "rich_text" {
+			size := uint32(historyRichImageDimension)
+			params.ThumbnailDimension = &size
+		}
 		result, err := n.library.Entry(ctx, params)
 		var body *nativeProtectedBody
 		if err == nil && ctx.Err() == nil && result.Timestamp == key.timestamp {
@@ -182,6 +187,10 @@ func newProtectedBody(row protocol.DesktopEntry, language nativeLanguage) *nativ
 			markup = *row.HtmlContent
 		}
 		body.attachments = uikit.ParsePreviewAttachments(markup, row.Preview)
+	case "rich_text":
+		if row.HtmlContent != nil {
+			body.rich = uikit.ParseHistoryRichText(*row.HtmlContent)
+		}
 	}
 	return body
 }

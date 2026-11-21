@@ -7,7 +7,7 @@ import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDia
   SettingsSlider, SettingsToggle, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
-import { AttachmentFixture, HistoryImageFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
+import { AttachmentFixture, HistoryImageFixture, HistoryRichTextFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
 import { BackupDialogFixture, ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture, SettingsUpdateFixture,
   PrivacyRulesFixture, SettingsDataFixture, SettingsFieldsFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, SearchSelectFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
 import "../src/base.css";
@@ -171,6 +171,7 @@ function Showcase() {
       sourceIcon={<Pin size={10} />} actions={<button type="button" className="btn-icon" title="Tags"><Tag size={12} /></button>} /></HistoryCard>,
     "history-list": <HistoryListFixture />,
     "history-typography": <HistoryTypographyFixture />,
+    "history-rich-text": <HistoryRichTextFixture state={state} />,
     "settings-rail": <SettingsRail t={key => key} groups={settingsGroups} activeGroup={activeSettings} onSelect={setActiveSettings} />,
     "settings-footer": <SettingsFooter t={key => footerLabels[key] ?? key} productName="DezirClip 0.2"
       compact={state === "compact"} onFeedback={() => undefined} onWebsite={() => undefined} onResetSettings={() => undefined} />,

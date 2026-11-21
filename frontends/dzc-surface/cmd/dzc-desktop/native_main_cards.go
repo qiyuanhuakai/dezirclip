@@ -50,12 +50,28 @@ func visibleCardSummary(row protocol.DesktopEntry, language nativeLanguage) stri
 type nativeCardMedia struct {
 	image       ui.ImageSource
 	attachments []uikit.PreviewAttachment
+	rich        *uikit.HistoryRichText
 }
 
 const (
-	historyImageDimension    = 384
-	historyImageEncodedLimit = 1024 * 1024
+	historyImageDimension     = 384
+	historyImageEncodedLimit  = 1024 * 1024
+	historyRichImageDimension = 480
 )
+
+func (n *nativeMain) cardRichText(row protocol.DesktopEntry, protected *nativeProtectedBody) *uikit.HistoryRichText {
+	if row.ContentType != "rich_text" {
+		return nil
+	}
+	if nativeConcealed(row) {
+		if protected != nil {
+			return protected.rich
+		}
+		return nil
+	}
+	preview, _ := n.mediaForCard(row)
+	return preview.rich
+}
 
 func (n *nativeMain) cardBody(c *ui.Context, kit uikit.Kit, row protocol.DesktopEntry, protected *nativeProtectedBody, compact bool, textSize float32, generation uint64) func(float32) {
 	if nativeConcealed(row) && protected == nil {
@@ -124,7 +140,7 @@ func (n *nativeMain) mediaForCard(row protocol.DesktopEntry) (nativeCardMedia, b
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 4*time.Second)
 		defer cancel()
-		size := uint32(480)
+		size := uint32(historyRichImageDimension)
 		if row.ContentType == "image" {
 			size = historyImageDimension
 		}
@@ -135,9 +151,13 @@ func (n *nativeMain) mediaForCard(row protocol.DesktopEntry) (nativeCardMedia, b
 		})
 		if err == nil && result.Id == key.id && result.Timestamp == key.timestamp &&
 			result.ContentType == row.ContentType && !nativeConcealed(result.DesktopEntry) {
-			if row.ContentType == "image" {
+			switch {
+			case row.ContentType == "image":
 				preview.image = decodePreviewSource(result.Content, historyImageEncodedLimit)
-			} else if result.HtmlContent != nil {
+			case result.HtmlContent == nil:
+			case row.ContentType == "rich_text":
+				preview.rich = uikit.ParseHistoryRichText(*result.HtmlContent)
+			default:
 				preview.attachments = uikit.ParsePreviewAttachments(*result.HtmlContent, result.Preview)
 			}
 		}

@@ -78,9 +78,12 @@ var historyPictures = []struct {
 
 func inspectMediaCards(fixture string, tester *ui.Tester) any {
 	cards := make(map[string]ui.Rect)
-	if fixture == "attachment-preview" {
+	switch fixture {
+	case "attachment-preview":
 		cards["Attachment card"], _ = tester.Find("Attachment card")
-	} else {
+	case "history-rich-text":
+		cards["Formatted clipboard card"], _ = tester.Find("Formatted clipboard card")
+	default:
 		for _, sample := range historyPictures {
 			if bounds, ok := tester.Find(sample.label); ok {
 				cards[sample.label] = bounds

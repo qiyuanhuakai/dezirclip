@@ -42,6 +42,7 @@ const cases = {
   "history-card-meta": { states: ["default"], text: "Editor" },
   "history-list": { states: ["default", "selected"], text: "Release checklist and verification notes" },
   "history-typography": { states: ["default", "small", "large", "compact", "compact-large", "custom"], text: "Font sample: Wm12" },
+  "history-rich-text": { states: ["default", "compact"], text: "Release checklist" },
   "settings-rail": { states: ["default", "selected"], text: "Appearance" },
   "settings-footer": { states: ["default", "compact"], text: "Reset defaults" },
   "history-card": { states: ["default", "selected", "pinned", "compact", "compact-hover", "compact-action-hover", "compact-active-hover"], text: "Copied from the active editor" },
@@ -402,6 +403,19 @@ try {
               if (state === "custom") {
                 const family = ["mica", "acrylic"].includes(theme) ? "Georgia" : "Courier New";
                 if (!measurements[0].font.includes(family)) throw Error("Unexpected theme font source: " + measurements[0].font);
+              }
+            }
+            if (fixture === "history-rich-text") {
+              const content = page.locator(".history-rich-preview");
+              const cap = state === "compact" ? 40 : 64;
+              if (await content.evaluate(element => element.clientHeight) !== cap) throw Error("Rich text preview does not use the card height limit");
+              const webCard = await page.locator("[data-test-clipboard-item]").boundingBox();
+              const nativeCard = inspection.Cards["Formatted clipboard card"];
+              if (!webCard || !nativeCard || Math.abs(webCard.height - nativeCard.H) > 2) {
+                throw Error(`Rich text card height differs: WebView ${webCard?.height}, Native ${nativeCard?.H}`);
+              }
+              if (!comparable(nativeText, "Review notes") || !comparable(nativeText, "open the draft.")) {
+                throw Error("Native rich text is missing the second paragraph");
               }
             }
             if (fixture === "attachment-preview") {

@@ -45,6 +45,8 @@ const figures = [
   ["history-typography", "small", 276, 0, "history-typography"],
   ["history-typography", "compact-large", 205, 0, "history-typography-compact"],
   ["history-typography", "custom", 292, 0, "history-typography-custom"],
+  ["history-rich-text", "default", 150, 0, "history-rich-text"],
+  ["history-rich-text", "compact", 112, 0, "history-rich-text-compact"],
   ["history-card-meta", "default", 90],
   ["search-bar", "filled", 110],
   ["search-history", "default", 135],

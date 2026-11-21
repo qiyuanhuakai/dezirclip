@@ -409,6 +409,11 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		if widget == "historyContentCompact" {
 			style.LineHeight, style.MaxLines, style.MaxHeight = 1.3, 2, 40
 		}
+	case "historyRichContent", "historyRichContentCompact":
+		style.LineHeight, style.MaxHeight, style.MarginTop = 1.4, 64, 4
+		if widget == "historyRichContentCompact" {
+			style.MaxHeight = 40
+		}
 	case "historyConcealed":
 		style.Size, style.Text, style.Padding = 12, muted, [4]float32{12, 0, 12, 0}
 	case "historyIcon":

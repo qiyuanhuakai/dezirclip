@@ -29,6 +29,12 @@ export function HistoryCardContent({ rich, concealed, className = "", children, 
   </div>;
 }
 
+export function HistoryRichTextPreview({ compact, children }: { compact?: boolean; children: ReactNode }) {
+  return <div className={compact ? "history-rich-preview history-rich-preview--compact" : "history-rich-preview"}>
+    {children}
+  </div>;
+}
+
 export function HistoryImagePreview({ source, missing, pending, unavailable, alt, ...props }: {
   source?: string | null; missing?: string; pending?: boolean; unavailable?: string; alt: string;
 } & Pick<ComponentPropsWithoutRef<"img">, "draggable" | "onError">) {

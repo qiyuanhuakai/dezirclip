@@ -6,6 +6,26 @@
   color-scheme: light dark;
 }
 
+.history-rich-preview {
+  max-height: 64px;
+  overflow: hidden;
+  margin-top: 4px;
+  font: var(--clipboard-item-font-size) / 1.4 var(--font-main);
+  color: var(--text-primary);
+  position: relative;
+  pointer-events: none;
+  mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+}
+
+.history-rich-preview--compact {
+  max-height: 40px;
+}
+
+.history-rich-preview > .rich-text-preview {
+  margin-top: 0;
+}
+
 .rich-text-preview table {
   border-collapse: collapse;
   width: 100%;

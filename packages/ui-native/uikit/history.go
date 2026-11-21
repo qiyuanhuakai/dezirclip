@@ -23,6 +23,7 @@ type HistoryCardOptions struct {
 	TextSize  float32
 	TextRows  int
 	TagSize   float32
+	Rich      *HistoryRichText
 	Body      func()
 	// Media draws using the width remaining after the card's margins, frame and leading controls.
 	Media    func(contentWidth float32)
@@ -108,7 +109,7 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 			}
 			if options.Body != nil {
 				options.Body()
-			} else if options.Media != nil {
+			} else if options.Media != nil || options.Rich != nil && !options.Concealed {
 				width := options.Width
 				if width <= 0 {
 					width, _ = c.Size()
@@ -123,7 +124,11 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 				case options.Compact && options.Pinned:
 					width -= 14
 				}
-				options.Media(max(1, width))
+				if options.Media != nil {
+					options.Media(max(1, width))
+				} else {
+					k.historyRichText(c, options, max(1, width))
+				}
 			} else {
 				k.historyCardText(c, options)
 			}

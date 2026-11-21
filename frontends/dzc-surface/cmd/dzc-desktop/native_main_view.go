@@ -298,6 +298,7 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 					Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
 					Pinned: row.IsPinned, Selected: batch.selection.includes(row.Id), Compact: compact,
 					Concealed: !contentVisible, TextSize: float32(itemSize),
+					Rich: n.cardRichText(row, protected),
 					Tags: n.cardTags(row.Tags), TagSize: float32(tagSize), Activate: activate,
 					Leading: func() {
 						checked := batch.selection.includes(row.Id)
@@ -318,6 +319,7 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 				TagSize:   float32(tagSize),
 				Tags:      n.cardTags(row.Tags),
 				Width:     width,
+				Rich:      n.cardRichText(row, protected),
 				Media:     n.cardBody(cell.Context, kit, row, protected, compact, float32(itemSize), generation),
 				Reorder:   n.pinReorderGrip(row, cell.Index, generation, reorderPins, func() { draggingPin = true }),
 				Activate: func() {

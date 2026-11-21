@@ -1,4 +1,4 @@
-import { HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryImagePreview } from "@deziro/ui-react/components/HistoryCard";
+import { HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryImagePreview, HistoryRichTextPreview } from "@deziro/ui-react/components/HistoryCard";
 import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
 import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
 import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
@@ -1093,22 +1093,14 @@ const ClipboardItem = ({
                             }}
                         />
                     ) : (
-                        <HtmlContent
-                            className="rich-text-preview"
-                            htmlContent={richTextCleanHtml || displayHtml}
-                            fallbackText={hasHistoryPreviewText(displayPreview) ? displayPreview : emptyPreviewLabel}
-                            preview={true}
-                            style={{
-                                maxHeight: `${richTextSnapshotDisplayMaxHeight}px`,
-                                overflow: 'hidden',
-                                fontSize: 'var(--clipboard-item-font-size)',
-                                lineHeight: '1.4',
-                                position: 'relative',
-                                pointerEvents: 'none', // Prevent interacting with links in the list
-                                maskImage: 'linear-gradient(to bottom, black 70%, transparent 100%)',
-                                WebkitMaskImage: 'linear-gradient(to bottom, black 70%, transparent 100%)'
-                            }}
-                        />
+                        <HistoryRichTextPreview compact={compactMode}>
+                            <HtmlContent
+                                className="rich-text-preview"
+                                htmlContent={richTextCleanHtml || displayHtml}
+                                fallbackText={hasHistoryPreviewText(displayPreview) ? displayPreview : emptyPreviewLabel}
+                                preview
+                            />
+                        </HistoryRichTextPreview>
                     )
                 ) : (
                     isSensitiveHidden

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Pin, Tag, X } from "lucide-react";
-import { AttachmentPreview, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryImagePreview, PreviewImage, PreviewResizeHandles, PreviewToolbar, WheelHotZone,
+import { AttachmentPreview, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryImagePreview, HistoryRichTextPreview, PreviewImage, PreviewResizeHandles, PreviewToolbar, WheelHotZone,
   type PreviewZoom } from "../src";
 
 const filenameList = ["Project.png", "Screenshot.png", "Notes.pdf", "Planning.xlsx", "Desktop.zip", "Summary.txt", "Log.txt"];
@@ -60,6 +60,28 @@ export function AttachmentFixture({ state }: { state: string }) {
 
 const historyPictures = [sampleImage(32, 24), picture, sampleImage(72, 230)];
 const historyPictureLabels = ["Small image", "Landscape image", "Portrait image"];
+
+export function HistoryRichTextFixture({ state }: { state: string }) {
+  const compact = state === "compact";
+  return <HistoryCard compact={compact} disableLayout>
+    <HistoryCardMeta source="Editor" time="12:30" actions={<>
+      <HistoryCardAction title="Pin"><Pin size={12} /></HistoryCardAction>
+      <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
+      <HistoryCardAction title="Delete"><X size={12} /></HistoryCardAction>
+    </>} />
+    <HistoryCardContent rich>
+      <HistoryRichTextPreview compact={compact}>
+        <div className="rich-text-preview">
+          <p><strong>Release checklist</strong> <em>from the editor</em></p>
+          <p><u>Review notes</u> and <a href="#details" tabIndex={-1}>open the draft.</a></p>
+          <p>Check the Windows and Linux packages.</p>
+          <p>Ask for feedback after the preview.</p>
+          <p>Keep the original file with the notes.</p>
+        </div>
+      </HistoryRichTextPreview>
+    </HistoryCardContent>
+  </HistoryCard>;
+}
 
 export function HistoryImageFixture({ state }: { state: string }) {
   const compact = state.startsWith("compact");
