@@ -53,7 +53,7 @@ func (k Kit) SettingsDataActions(c *ui.Context, content func()) {
 
 func (k Kit) SettingsDataAction(c *ui.Context, label, action string, disabled bool) ui.Element {
 	style := k.style("settingsDataAction")
-	button := ui.ButtonBase(c).Label(label).Tooltip(label).Disabled(disabled).
+	button := ui.ButtonBase(c).Label(label).Disabled(disabled).
 		Height(style.Height).AlignItems(ui.Center).Gap(style.ColumnGap).FocusRing(true)
 	if !disabled && (button.Hovered() || button.FocusVisible()) {
 		style = k.style("settingsDataActionHover")

@@ -49,14 +49,19 @@ func (n *nativeMain) view(c *ui.Context) {
 		return ""
 	}
 	shell := ui.Box(c).Fill().Clip()
-	if n.backup != nil {
-		shell = kit.BackupDialogBackground(shell)
-	}
 	queryFocused := false
 	shell.Children(func() {
 		n.drawBackground(c, preset.Tokens().Radius)
+		background := c.Theme().Background
+		if surfaceOpacity != nil {
+			background = preset.WindowBackground(*surfaceOpacity)
+		}
+		ui.Box(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).Background(background).PassThrough()
 		main := ui.Column(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).
-			Gap(6).Background(c.Theme().Background)
+			Gap(6)
+		if n.backup != nil {
+			main = kit.BackupDialogBackground(main)
+		}
 		if n.preferences["app.show_app_border"] != "false" {
 			main.Border(1, c.Theme().Border)
 		}
@@ -159,9 +164,6 @@ func (n *nativeMain) view(c *ui.Context) {
 				})
 			}
 		})
-		if surfaceOpacity != nil {
-			main.Background(preset.WindowBackground(*surfaceOpacity))
-		}
 	})
 	if n.menu.Active() {
 		kit.ContextMenu(c, &n.menu, n.text("common_close"))
