@@ -166,7 +166,7 @@ export function BackupDialogFixture({ state }: { state: string }) {
     <BackupField label="File path" value={path} readOnly browse="Browse" />
     {restoring && <BackupPreview label="Preview entries" entries={["Release checklist", "Example screenshot", "Draft notes"]} />}
   </BackupDialog>;
-  return state === "glass" ? <><SettingsDataFixture />{dialog}</> : dialog;
+  return state === "glass" ? <><div className="showcase-backup-underlay"><SettingsDataFixture /></div>{dialog}</> : dialog;
 }
 
 export function SettingsUpdateFixture({ state }: { state: string }) {

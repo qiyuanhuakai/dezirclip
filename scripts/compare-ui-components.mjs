@@ -261,7 +261,8 @@ try {
                     const scrim = getComputedStyle(dialog.closest(".data-modal-overlay"), "::backdrop");
                     return getComputedStyle(document.querySelector("#root")).backdropFilter === "none" &&
                       scrim.backdropFilter === "none" &&
-                      getComputedStyle(dialog).backdropFilter === "blur(1px)";
+                      scrim.backgroundColor === "rgba(0, 0, 0, 0)" &&
+                      getComputedStyle(dialog).backdropFilter === "blur(0.9px)";
                   } finally {
                     document.body.classList.remove("has-custom-bg");
                     root.style.removeProperty("--custom-bg-image");

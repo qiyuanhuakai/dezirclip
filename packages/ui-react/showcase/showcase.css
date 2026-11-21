@@ -42,6 +42,9 @@ html:root.showcase-opacity-background {
   max-width: 330px;
   font-size: 14px;
 }
+.showcase-backup-underlay {
+  padding-top: 112px;
+}
 .settings-view.showcase-background-config,
 .settings-view.showcase-capture-config {
   padding: 0;

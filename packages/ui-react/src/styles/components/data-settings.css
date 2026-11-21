@@ -311,7 +311,8 @@
 }
 
 .theme-liquid-glass .data-modal-overlay {
-  --backup-panel-bg: rgba(255, 255, 255, calc(0.54 + 0.14 * var(--surface-layer-scale, 1)));
+  --text-primary: #111217;
+  --backup-panel-bg: rgba(255, 255, 255, calc(0.50 + 0.05 * var(--surface-layer-scale, 1)));
   --backup-panel-border: var(--lg-dialog-border);
   --backup-panel-shadow: var(--lg-dialog-shadow);
   --backup-panel-radius: 16px;
@@ -327,25 +328,24 @@
   --backup-primary-hover-bg: var(--lg-dialog-button-primary-hover-bg);
 }
 
-:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay::backdrop {
+.theme-macos .data-modal-overlay::backdrop {
   background: rgba(0, 0, 0, 0.18);
   backdrop-filter: none;
 }
 
-:is(.theme-macos, .theme-liquid-glass).dark-mode .data-modal-overlay::backdrop {
+.theme-macos.dark-mode .data-modal-overlay::backdrop {
   background: rgba(0, 0, 0, 0.36);
 }
 
 .theme-liquid-glass .data-modal-overlay::backdrop {
-  background: rgba(0, 0, 0, 0.12);
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .theme-liquid-glass.dark-mode .data-modal-overlay {
-  --backup-panel-bg: rgba(38, 41, 52, calc(0.59 + 0.14 * var(--surface-layer-scale, 1)));
-}
-
-.theme-liquid-glass.dark-mode .data-modal-overlay::backdrop {
-  background: rgba(0, 0, 0, 0.18);
+  --text-primary: #f9faff;
+  --backup-panel-bg: rgba(16, 18, 24, calc(0.60 + 0.05 * var(--surface-layer-scale, 1)));
 }
 
 :is(.theme-macos, .theme-liquid-glass) .data-modal-content {
@@ -357,9 +357,9 @@
 }
 
 .theme-liquid-glass .data-modal-content {
-  /* A small radius softens edges while preserving fine detail through the glass. */
-  backdrop-filter: blur(1px);
-  -webkit-backdrop-filter: blur(1px);
+  /* Subpixel blur softens glyph edges while leaving their strokes visible. */
+  backdrop-filter: blur(0.9px);
+  -webkit-backdrop-filter: blur(0.9px);
 }
 
 :is(.theme-macos, .theme-liquid-glass) .data-modal-title {

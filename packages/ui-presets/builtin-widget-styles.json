@@ -36303,9 +36303,9 @@
         "opacity": 1
       },
       "backupBackdrop": {
-        "fill": [0, 0, 0, 31],
-        "text": [29, 29, 31, 255],
-        "border": [29, 29, 31, 255],
+        "fill": [0, 0, 0, 0],
+        "text": [17, 18, 23, 255],
+        "border": [17, 18, 23, 255],
         "borderWidth": 0,
         "radius": 0,
         "width": 560,
@@ -36319,11 +36319,11 @@
         "opacity": 1
       },
       "backupDialog": {
-        "fill": [255, 255, 255, 173],
-        "text": [29, 29, 31, 255],
+        "fill": [255, 255, 255, 140],
+        "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
-        "backdropBlur": 1,
+        "backdropBlur": 0.9,
         "radius": 16,
         "width": 500,
         "height": 237,
@@ -36360,28 +36360,28 @@
           }
         ],
         "fillRange": {
-          "clear": [255, 255, 255, 138],
-          "full": [255, 255, 255, 193],
+          "clear": [255, 255, 255, 128],
+          "full": [255, 255, 255, 147],
           "stops": [
             {
               "percent": 0,
-              "rgba": [255, 255, 255, 138]
+              "rgba": [255, 255, 255, 128]
             },
             {
               "percent": 65,
-              "rgba": [255, 255, 255, 173]
+              "rgba": [255, 255, 255, 140]
             },
             {
               "percent": 100,
-              "rgba": [255, 255, 255, 193]
+              "rgba": [255, 255, 255, 147]
             }
           ]
         }
       },
       "backupTitle": {
         "fill": [0, 0, 0, 0],
-        "text": [29, 29, 31, 255],
-        "border": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
+        "border": [17, 18, 23, 255],
         "borderWidth": 0,
         "radius": 4,
         "lineHeight": 1.35,
@@ -36398,8 +36398,8 @@
       },
       "backupField": {
         "fill": [0, 0, 0, 0],
-        "text": [29, 29, 31, 255],
-        "border": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
+        "border": [17, 18, 23, 255],
         "borderWidth": 0,
         "radius": 0,
         "marginBottom": 12,
@@ -36415,8 +36415,8 @@
       },
       "backupLabel": {
         "fill": [0, 0, 0, 0],
-        "text": [29, 29, 31, 255],
-        "border": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
+        "border": [17, 18, 23, 255],
         "borderWidth": 0,
         "radius": 0,
         "marginBottom": 4,
@@ -36432,8 +36432,8 @@
       },
       "backupChoices": {
         "fill": [0, 0, 0, 0],
-        "text": [29, 29, 31, 255],
-        "border": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
+        "border": [17, 18, 23, 255],
         "borderWidth": 0,
         "radius": 0,
         "columnGap": 12,
@@ -36450,7 +36450,7 @@
       },
       "backupChoice": {
         "fill": [255, 255, 255, 122],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
         "radius": 10,
@@ -36480,7 +36480,7 @@
       },
       "backupChoiceSelected": {
         "fill": [201, 227, 255, 138],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [15, 126, 239, 156],
         "borderWidth": 1,
         "radius": 10,
@@ -36570,7 +36570,7 @@
       },
       "backupInput": {
         "fill": [255, 255, 255, 122],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
         "radius": 10,
@@ -36599,8 +36599,8 @@
       },
       "backupPathRow": {
         "fill": [0, 0, 0, 0],
-        "text": [29, 29, 31, 255],
-        "border": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
+        "border": [17, 18, 23, 255],
         "borderWidth": 0,
         "radius": 0,
         "columnGap": 8,
@@ -36617,7 +36617,7 @@
       },
       "backupBrowse": {
         "fill": [255, 255, 255, 122],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
         "radius": 10,
@@ -36645,8 +36645,8 @@
       },
       "backupActions": {
         "fill": [0, 0, 0, 0],
-        "text": [29, 29, 31, 255],
-        "border": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
+        "border": [17, 18, 23, 255],
         "borderWidth": 0,
         "radius": 0,
         "columnGap": 8,
@@ -36663,7 +36663,7 @@
       },
       "backupCancel": {
         "fill": [255, 255, 255, 122],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
         "radius": 10,
@@ -36719,7 +36719,7 @@
       },
       "backupPreview": {
         "fill": [255, 255, 255, 122],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
         "radius": 10,
@@ -36764,7 +36764,7 @@
       },
       "backupReplaceConfirmation": {
         "fill": [255, 255, 255, 122],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
         "radius": 10,
@@ -36834,7 +36834,7 @@
       },
       "backupReplaceConfirmationChecked": {
         "fill": [201, 227, 255, 138],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [15, 126, 239, 156],
         "borderWidth": 1,
         "radius": 10,
@@ -36936,7 +36936,7 @@
       },
       "backupInputFocus": {
         "fill": [255, 255, 255, 122],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [10, 132, 255, 255],
         "borderWidth": 1,
         "radius": 10,
@@ -36959,7 +36959,7 @@
       },
       "backupChoiceHover": {
         "fill": [255, 255, 255, 189],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [60, 60, 65, 51],
         "borderWidth": 1,
         "radius": 10,
@@ -36989,7 +36989,7 @@
       },
       "backupChoiceSelectedHover": {
         "fill": [196, 225, 255, 202],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [60, 60, 65, 51],
         "borderWidth": 1,
         "radius": 10,
@@ -37019,7 +37019,7 @@
       },
       "backupBrowseHover": {
         "fill": [255, 255, 255, 189],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [60, 60, 65, 51],
         "borderWidth": 1,
         "radius": 10,
@@ -37047,7 +37047,7 @@
       },
       "backupCancelHover": {
         "fill": [255, 255, 255, 189],
-        "text": [29, 29, 31, 255],
+        "text": [17, 18, 23, 255],
         "border": [60, 60, 65, 51],
         "borderWidth": 1,
         "radius": 10,
@@ -45022,9 +45022,9 @@
         "opacity": 1
       },
       "backupBackdrop": {
-        "fill": [0, 0, 0, 46],
-        "text": [245, 245, 247, 255],
-        "border": [245, 245, 247, 255],
+        "fill": [0, 0, 0, 0],
+        "text": [249, 250, 255, 255],
+        "border": [249, 250, 255, 255],
         "borderWidth": 0,
         "radius": 0,
         "width": 560,
@@ -45038,11 +45038,11 @@
         "opacity": 1
       },
       "backupDialog": {
-        "fill": [38, 41, 52, 186],
-        "text": [245, 245, 247, 255],
+        "fill": [15, 18, 25, 166],
+        "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
-        "backdropBlur": 1,
+        "backdropBlur": 0.9,
         "radius": 16,
         "width": 500,
         "height": 237,
@@ -45079,76 +45079,48 @@
           }
         ],
         "fillRange": {
-          "clear": [37, 41, 53, 150],
-          "full": [39, 41, 52, 205],
+          "clear": [17, 18, 23, 153],
+          "full": [16, 18, 24, 173],
           "stops": [
             {
               "percent": 0,
-              "rgba": [37, 41, 53, 150]
-            },
-            {
-              "percent": 2,
-              "rgba": [39, 40, 52, 152]
-            },
-            {
-              "percent": 4,
-              "rgba": [38, 42, 52, 153]
-            },
-            {
-              "percent": 12,
-              "rgba": [37, 41, 52, 157]
+              "rgba": [17, 18, 23, 153]
             },
             {
               "percent": 13,
-              "rgba": [39, 40, 52, 158]
+              "rgba": [16, 18, 25, 156]
             },
             {
-              "percent": 16,
-              "rgba": [38, 42, 51, 159]
+              "percent": 44,
+              "rgba": [16, 17, 24, 162]
             },
             {
-              "percent": 17,
-              "rgba": [38, 41, 53, 160]
+              "percent": 58,
+              "rgba": [16, 19, 23, 164]
             },
             {
-              "percent": 24,
-              "rgba": [37, 40, 51, 164]
-            },
-            {
-              "percent": 26,
-              "rgba": [39, 42, 53, 165]
-            },
-            {
-              "percent": 42,
-              "rgba": [38, 41, 51, 174]
-            },
-            {
-              "percent": 52,
-              "rgba": [38, 41, 53, 179]
+              "percent": 59,
+              "rgba": [15, 19, 25, 165]
             },
             {
               "percent": 65,
-              "rgba": [38, 41, 52, 186]
+              "rgba": [15, 18, 25, 166]
             },
             {
-              "percent": 86,
-              "rgba": [39, 41, 52, 198]
-            },
-            {
-              "percent": 98,
-              "rgba": [37, 41, 52, 204]
+              "percent": 80,
+              "rgba": [17, 18, 24, 169]
             },
             {
               "percent": 100,
-              "rgba": [39, 41, 52, 205]
+              "rgba": [16, 18, 24, 173]
             }
           ]
         }
       },
       "backupTitle": {
         "fill": [0, 0, 0, 0],
-        "text": [245, 245, 247, 255],
-        "border": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
+        "border": [249, 250, 255, 255],
         "borderWidth": 0,
         "radius": 4,
         "lineHeight": 1.35,
@@ -45165,8 +45137,8 @@
       },
       "backupField": {
         "fill": [0, 0, 0, 0],
-        "text": [245, 245, 247, 255],
-        "border": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
+        "border": [249, 250, 255, 255],
         "borderWidth": 0,
         "radius": 0,
         "marginBottom": 12,
@@ -45182,8 +45154,8 @@
       },
       "backupLabel": {
         "fill": [0, 0, 0, 0],
-        "text": [245, 245, 247, 255],
-        "border": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
+        "border": [249, 250, 255, 255],
         "borderWidth": 0,
         "radius": 0,
         "marginBottom": 4,
@@ -45199,8 +45171,8 @@
       },
       "backupChoices": {
         "fill": [0, 0, 0, 0],
-        "text": [245, 245, 247, 255],
-        "border": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
+        "border": [249, 250, 255, 255],
         "borderWidth": 0,
         "radius": 0,
         "columnGap": 12,
@@ -45217,7 +45189,7 @@
       },
       "backupChoice": {
         "fill": [50, 54, 63, 133],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
         "radius": 10,
@@ -45247,7 +45219,7 @@
       },
       "backupChoiceSelected": {
         "fill": [41, 69, 103, 148],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [23, 139, 255, 152],
         "borderWidth": 1,
         "radius": 10,
@@ -45337,7 +45309,7 @@
       },
       "backupInput": {
         "fill": [50, 54, 63, 133],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
         "radius": 10,
@@ -45366,8 +45338,8 @@
       },
       "backupPathRow": {
         "fill": [0, 0, 0, 0],
-        "text": [245, 245, 247, 255],
-        "border": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
+        "border": [249, 250, 255, 255],
         "borderWidth": 0,
         "radius": 0,
         "columnGap": 8,
@@ -45384,7 +45356,7 @@
       },
       "backupBrowse": {
         "fill": [50, 54, 63, 133],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
         "radius": 10,
@@ -45412,8 +45384,8 @@
       },
       "backupActions": {
         "fill": [0, 0, 0, 0],
-        "text": [245, 245, 247, 255],
-        "border": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
+        "border": [249, 250, 255, 255],
         "borderWidth": 0,
         "radius": 0,
         "columnGap": 8,
@@ -45430,7 +45402,7 @@
       },
       "backupCancel": {
         "fill": [50, 54, 63, 133],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
         "radius": 10,
@@ -45486,7 +45458,7 @@
       },
       "backupPreview": {
         "fill": [50, 54, 63, 133],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
         "radius": 10,
@@ -45531,7 +45503,7 @@
       },
       "backupReplaceConfirmation": {
         "fill": [50, 54, 63, 133],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
         "radius": 10,
@@ -45601,7 +45573,7 @@
       },
       "backupReplaceConfirmationChecked": {
         "fill": [41, 69, 103, 148],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [23, 139, 255, 152],
         "borderWidth": 1,
         "radius": 10,
@@ -45703,7 +45675,7 @@
       },
       "backupInputFocus": {
         "fill": [50, 54, 63, 133],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [10, 132, 255, 255],
         "borderWidth": 1,
         "radius": 10,
@@ -45726,7 +45698,7 @@
       },
       "backupChoiceHover": {
         "fill": [67, 72, 84, 204],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 41],
         "borderWidth": 1,
         "radius": 10,
@@ -45756,7 +45728,7 @@
       },
       "backupChoiceSelectedHover": {
         "fill": [55, 86, 123, 214],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 41],
         "borderWidth": 1,
         "radius": 10,
@@ -45786,7 +45758,7 @@
       },
       "backupBrowseHover": {
         "fill": [67, 72, 84, 204],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 41],
         "borderWidth": 1,
         "radius": 10,
@@ -45814,7 +45786,7 @@
       },
       "backupCancelHover": {
         "fill": [67, 72, 84, 204],
-        "text": [245, 245, 247, 255],
+        "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 41],
         "borderWidth": 1,
         "radius": 10,
