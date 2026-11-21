@@ -241,7 +241,7 @@ func (n *nativeMain) entryMenu(card ui.Element, row protocol.DesktopEntry, gener
 	n.hover.reset()
 	n.closePreview()
 	bounds := card.Bounds()
-	if nativeTextToolEntry(row.ContentType) && !nativeConcealed(row) {
+	if nativeTextToolEntry(row.ContentType) && (!nativeConcealed(row) || n.canUseProtectedRow(row)) {
 		n.loadMenuTransforms()
 	}
 	n.menu.Open(card, func() []uikit.MenuAction { return n.entryMenuActions(row, generation, bounds) })
@@ -304,14 +304,15 @@ func (n *nativeMain) entryMenuActions(row protocol.DesktopEntry, generation uint
 		action(n.text("delete", "Delete entry"), disabled, nativeDelete),
 		action(pinLabel, disabled, nativePin),
 		action(n.text("native_share"), contentDisabled, share))
-	if textTools && !concealed {
+	if textTools && contentVisible {
+		toolsDisabled := contentDisabled || concealed && !n.canUseProtectedRow(row)
 		choices := make([]uikit.MenuAction, 0, len(n.transformKinds))
 		for _, kind := range n.transformKinds {
 			label := kind.LabelZh
 			if n.language() == "en" {
 				label = kind.LabelEn
 			}
-			choices = append(choices, uikit.MenuAction{Label: label, Disabled: disabled,
+			choices = append(choices, uikit.MenuAction{Label: label, Disabled: toolsDisabled,
 				Run: func() { n.copyMenuTransform(row, generation, kind.Id) }})
 		}
 		if len(choices) == 0 {
@@ -321,7 +322,7 @@ func (n *nativeMain) entryMenuActions(row protocol.DesktopEntry, generation uint
 			}
 			choices = append(choices, uikit.MenuAction{Label: label, Disabled: true})
 		}
-		actions = append(actions, uikit.MenuAction{Label: n.text("native_transformations"), Disabled: disabled, Children: choices})
+		actions = append(actions, uikit.MenuAction{Label: n.text("native_transformations"), Disabled: toolsDisabled, Children: choices})
 	}
 	if row.Id != 0 {
 		var privacy []uikit.MenuAction

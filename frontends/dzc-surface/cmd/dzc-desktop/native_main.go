@@ -110,7 +110,6 @@ type nativeMain struct {
 	adminRestartFailed    bool
 	tagLibrary            *nativeTagLibrary
 	editor                *nativeEntryEditor
-	transform             *nativeTransformDialog
 	transformKinds        []protocol.ToolTransformKind
 	qr                    *nativeQRDialog
 }
@@ -142,7 +141,6 @@ func (n *nativeMain) stopSession() {
 	n.background.pause()
 	n.tags = nil
 	n.closeEntryEditor()
-	n.closeTransform()
 	n.closeQR()
 	n.closeBackup()
 	n.closePrivacyDialog()

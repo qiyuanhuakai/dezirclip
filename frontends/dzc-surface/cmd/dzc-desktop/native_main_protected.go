@@ -11,6 +11,7 @@ import (
 )
 
 type nativeProtectedRow struct {
+	ctx    context.Context
 	cancel context.CancelFunc
 	body   *nativeProtectedBody
 }
@@ -118,14 +119,15 @@ func (n *nativeMain) toggleProtectedRow(row protocol.DesktopEntry, generation ui
 		return
 	}
 	session, language := n.session, n.language()
-	ctx, cancel := context.WithTimeout(session, 4*time.Second)
-	request := &nativeProtectedRow{cancel: cancel}
+	lifetime, cancel := context.WithCancel(session)
+	request := &nativeProtectedRow{ctx: lifetime, cancel: cancel}
 	if n.protectedRows == nil {
 		n.protectedRows = make(map[nativeCardKey]*nativeProtectedRow)
 	}
 	n.protectedRows[key] = request
 	n.notice = ""
 	go func() {
+		ctx, cancel := context.WithTimeout(lifetime, 4*time.Second)
 		defer cancel()
 		params := protocol.DesktopEntryParams{
 			Id: key.id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Reveal: true,

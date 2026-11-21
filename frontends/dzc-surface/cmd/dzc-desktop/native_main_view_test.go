@@ -994,9 +994,17 @@ func TestNativeCompactHistoryToolbarOpensTagsFromTheHoveredCard(t *testing.T) {
 	}
 	view.Move(fileCard.X+20, fileCard.Y+fileCard.H/2)
 	view.Advance(250 * time.Millisecond)
-	if err := view.Click("Edit tags"); err != nil {
-		t.Fatal(err)
+	tags, ok := view.Find("Edit tags")
+	if !ok || tags.Y >= fileCard.Y {
+		t.Fatalf("the second card's toolbar should extend above its edge: %+v in %+v, found=%t", tags, fileCard, ok)
 	}
+	x, y := tags.X+tags.W/2, tags.Y+(fileCard.Y-tags.Y)/2
+	view.Move(x, y)
+	view.Advance(250 * time.Millisecond)
+	if after, ok := view.Find("Edit tags"); !ok || after.Y+after.H <= fileCard.Y || after.Y >= fileCard.Y {
+		t.Fatalf("moving into the floating part changed the active toolbar: %+v, found=%t", after, ok)
+	}
+	view.ClickAt(x, y)
 	if n.tags == nil || n.tags.entry != 2 || !n.tags.open {
 		t.Fatalf("the attachment toolbar did not open its tag editor: %+v", n.tags)
 	}

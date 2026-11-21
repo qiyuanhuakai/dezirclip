@@ -187,9 +187,6 @@ func (n *nativeMain) view(c *ui.Context) {
 	if n.editor != nil {
 		n.entryEditorView(c, kit, n.editor)
 	}
-	if n.transform != nil {
-		n.transformView(c, kit, n.transform)
-	}
 	if n.qr != nil {
 		n.qrView(c, kit, n.qr)
 	}
@@ -270,20 +267,6 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 			}
 			if nativeConcealed(row) {
 				actions = append(actions, n.protectedRowAction(row, generation))
-				if protected != nil {
-					if row.ContentType == "image" && row.Id > 0 {
-						actions = append(actions, uikit.HeaderAction{Icon: "scan", Label: n.text("native_ocr_recognize"),
-							Disabled: !n.eligibleOCR(row, generation) || n.private || n.ocrJob.status == "processing" || protected.ocrStatus == "processing",
-							Run:      func() { n.recognizeOCR(row, generation) }})
-					}
-					if nativeTextToolEntry(row.ContentType) {
-						actions = append(actions,
-							uikit.HeaderAction{Icon: "qr", Label: n.text("native_qr_code"),
-								Disabled: !n.canOpenHistoryDialog(), Run: func() { n.openQR(row, generation) }},
-							uikit.HeaderAction{Icon: "transform", Label: n.text("native_transformations"),
-								Disabled: !n.canOpenHistoryDialog(), Run: func() { n.openTransform(row, generation) }})
-					}
-				}
 			}
 			actions = append(actions,
 				uikit.HeaderAction{Icon: "open", Label: n.text("open"), Disabled: n.mutating || !contentVisible || row.Id <= 0,

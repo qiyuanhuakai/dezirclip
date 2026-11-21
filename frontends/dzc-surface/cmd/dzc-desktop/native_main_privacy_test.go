@@ -205,11 +205,22 @@ func TestNativeClipboardMenuKeepsOnlyPrivacyAndTextProcessingInSubmenus(t *testi
 		n.text("delete", "Delete entry"), n.text("pin"), n.text("native_share")}, []string{n.text("native_transformations"), privacy})
 	assertMenu("rich_text", true, []string{n.text("native_paste_formatted"), n.text("unpin")}, []string{n.text("native_transformations"), privacy})
 	assertMenu("image", false, []string{n.text("native_ocr_recognize"), n.text("native_copy_base64")}, []string{privacy})
-	protected := n.entryMenuActions(protocol.DesktopEntry{Id: 18, ContentType: "text"}, 0, ui.Rect{})
+	entry := protocol.DesktopEntry{Id: 18, ContentType: "text"}
+	protected := n.entryMenuActions(entry, 0, ui.Rect{})
 	qr := slices.IndexFunc(protected, func(action uikit.MenuAction) bool {
 		return action.Label == n.text("native_qr_code")
 	})
 	if qr < 0 || !protected[qr].Disabled || len(protected[qr].Children) > 0 {
 		t.Fatalf("QR for an unrevealed entry must be a disabled root action: %v", protected)
+	}
+	transform := func(action uikit.MenuAction) bool { return action.Label == n.text("native_transformations") }
+	if slices.ContainsFunc(protected, transform) {
+		t.Fatal("the menu exposed text processing before revealing the protected entry")
+	}
+	n.protectedRows = map[nativeCardKey]*nativeProtectedRow{{id: entry.Id}: {body: &nativeProtectedBody{}}}
+	revealed := n.entryMenuActions(entry, 0, ui.Rect{})
+	index := slices.IndexFunc(revealed, transform)
+	if index < 0 || !revealed[index].Disabled || len(revealed[index].Children) == 0 {
+		t.Fatalf("text processing must remain a submenu and require the window to be focused: %v", revealed)
 	}
 }

@@ -354,10 +354,6 @@ func run() error {
 					native.closeEntryEditor()
 					concealed = true
 				}
-				if native.transform != nil && native.transform.protected {
-					native.closeTransform()
-					concealed = true
-				}
 				if native.qr != nil && native.qr.request.Reveal {
 					native.closeQR()
 					concealed = true
