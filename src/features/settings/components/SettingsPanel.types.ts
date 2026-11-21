@@ -108,11 +108,11 @@ export interface SettingsPanelProps {
     readonly saveAppSetting: (key: string, val: string) => void | Promise<boolean | void>;
     readonly setSequentialModeState: (val: boolean) => void;
     readonly setIsRecordingSequential: (val: boolean) => void;
-    readonly updateSequentialHotkey: (key: string) => void;
+    readonly updateSequentialHotkey: (key: string) => void | Promise<void>;
     readonly setIsRecordingRich: (val: boolean) => void;
-    readonly updateRichPasteHotkey: (key: string) => void;
+    readonly updateRichPasteHotkey: (key: string) => void | Promise<void>;
     readonly setIsRecordingSearch: (val: boolean) => void;
-    readonly updateSearchHotkey: (key: string) => void;
+    readonly updateSearchHotkey: (key: string) => void | Promise<void>;
     readonly setPrivacyProtection: (val: boolean) => void;
     readonly setIsRecording: (val: boolean) => void;
     readonly isRecording: boolean;

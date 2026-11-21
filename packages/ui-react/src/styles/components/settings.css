@@ -678,6 +678,9 @@
 .settings-row--wide,
 .privacy-session-section .hotkey-list-editor { grid-column: 1 / -1; }
 
+.setting-item.hotkey-recorder { flex-wrap: wrap; row-gap: 6px; }
+.hotkey-recorder > .item-label-group { min-width: min(100px, 100%); }
+
 .hotkey-list-editor > .hotkey-recorder {
   align-self: stretch;
   flex-wrap: wrap;
@@ -696,7 +699,7 @@
 
 .hotkey-recorder .key-group {
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: center;
   max-width: 100%;
 }
 

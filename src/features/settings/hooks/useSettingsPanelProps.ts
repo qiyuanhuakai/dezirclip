@@ -14,9 +14,9 @@ interface UseSettingsPanelPropsOptions {
   updateHotkey: (key: string) => void;
   addMainHotkey: (key: string, options?: { skipAvailabilityCheck?: boolean }) => Promise<boolean>;
   removeMainHotkey: (key: string) => Promise<boolean>;
-  updateSequentialHotkey: (key: string) => void;
-  updateRichPasteHotkey: (key: string) => void;
-  updateSearchHotkey: (key: string) => void;
+  updateSequentialHotkey: SettingsPanelProps["updateSequentialHotkey"];
+  updateRichPasteHotkey: SettingsPanelProps["updateRichPasteHotkey"];
+  updateSearchHotkey: SettingsPanelProps["updateSearchHotkey"];
   saveAppSetting: SettingsPanelProps["saveAppSetting"];
   saveSetting: (key: string, val: string) => void;
   handleResetSettings: () => void;

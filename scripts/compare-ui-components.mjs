@@ -83,7 +83,7 @@ const additionalExamples = {
   "settings-toggle-help": { states: ["default", "expanded"], text: "Move pasted entries to top" },
   "settings-keyboard-preview": { states: ["default", "enabled"], text: "Preview keyboard selection" },
   "settings-slider": { states: ["default", "keyboard"], text: "Opacity 72%" },
-  "hotkey-binding": { states: ["default", "recording"], text: "Quick Paste" },
+  "hotkey-binding": { states: ["default", "recording", "narrow"], text: "Quick Paste" },
   "hotkey-optional": { states: ["default", "options"], text: "Privacy session shortcut" },
   "scroll-to-top": { states: ["default", "hover"], text: "Clipboard history" },
   "emoji-tabs": { states: ["default", "favorites"], text: "Favorites" },
@@ -386,6 +386,20 @@ try {
               }
               if (state === "win-v" && await page.getByRole("button", { name: "Delete Win+V", exact: true }).count()) {
                 throw Error("The system-controlled Win+V binding can be removed");
+              }
+            }
+            if (fixture === "hotkey-binding" && state === "narrow") {
+              const preview = page.locator(".showcase-hotkey-narrow");
+              const label = await preview.locator(".item-label").boundingBox();
+              const caps = await preview.locator(".key-cap").evaluateAll(elements => elements.map(element => {
+                const bounds = element.getBoundingClientRect();
+                return { text: element.textContent, right: bounds.right, top: bounds.top };
+              }));
+              const bounds = await preview.boundingBox();
+              if (!bounds || !label || caps.map(cap => cap.text).join("+") !== "Ctrl+Alt+Shift+Win+NumpadSubtract" ||
+                  caps.some(cap => cap.right > bounds.x + bounds.width + 1) ||
+                  caps[0].top < label.y + label.height || caps[4].top <= caps[0].top) {
+                throw Error("The narrow shortcut field clipped or failed to wrap its keycaps");
               }
             }
             if (fixture === "settings-slider" && state === "keyboard") {

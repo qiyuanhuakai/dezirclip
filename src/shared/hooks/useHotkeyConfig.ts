@@ -1,7 +1,6 @@
 import { normalizeShortcutForCompare } from "../lib/shortcutKeys";
 import { useCallback, useEffect, useRef } from "react";
 import { invoke } from "../lib/desktopInvoke";
-import { useHotkeyRecording } from "./useHotkeyRecording";
 
 type HotkeyMode = "main" | "sequential" | "rich" | "search";
 
@@ -15,14 +14,7 @@ interface UseHotkeyConfigOptions {
   searchHotkey: string;
   setSearchHotkey: (val: string) => void;
   sequentialMode: boolean;
-  isRecording: boolean;
   setIsRecording: (val: boolean) => void;
-  isRecordingSequential: boolean;
-  setIsRecordingSequential: (val: boolean) => void;
-  isRecordingRich: boolean;
-  setIsRecordingRich: (val: boolean) => void;
-  isRecordingSearch: boolean;
-  setIsRecordingSearch: (val: boolean) => void;
   saveAppSetting: (type: string, value: string) => void;
   t: (key: string) => string;
   pushToast: (msg: string, duration?: number) => number;
@@ -39,12 +31,6 @@ export const useHotkeyConfig = ({
   setSearchHotkey,
   sequentialMode,
   setIsRecording,
-  isRecordingSequential,
-  setIsRecordingSequential,
-  isRecordingRich,
-  setIsRecordingRich,
-  isRecordingSearch,
-  setIsRecordingSearch,
   saveAppSetting,
   t,
   pushToast
@@ -210,158 +196,43 @@ export const useHotkeyConfig = ({
     [hotkey, parseMainHotkeys, persistMainHotkeys]
   );
 
-  const updateSequentialHotkey = useCallback(
-    async (newHotkey: string) => {
-      const hasConflict = checkHotkeyConflict(newHotkey, "sequential");
-      if (hasConflict) {
-        setIsRecordingSequential(false);
+  const saveActionHotkey = useCallback(async (
+    mode: Exclude<HotkeyMode, "main">,
+    value: string,
+    previous: string,
+    command: "set_sequential_hotkey" | "set_rich_paste_hotkey" | "set_search_hotkey",
+    apply: (value: string) => void,
+  ) => {
+    if (normalizeShortcutForCompare(value) === normalizeShortcutForCompare(previous) || checkHotkeyConflict(value, mode)) return;
+    try {
+      if (value && !await invoke<boolean>("test_hotkey_available", { hotkey: value })) {
+        pushToast(t("hotkey_unavailable"), 5000);
         return;
       }
+      await invoke(command, { hotkey: value });
+      apply(value);
+    } catch (error) {
+      pushToast(t("hotkey_register_failed") + resolveHotkeyErrorMessage(error), 5000);
+    }
+  }, [checkHotkeyConflict, pushToast, resolveHotkeyErrorMessage, t]);
 
-      if (newHotkey) {
-        try {
-          await invoke<boolean>("test_hotkey_available", { hotkey: newHotkey });
-        } catch (err) {
-          const errorMsg = `${newHotkey}: ${resolveHotkeyErrorMessage(err)}`;
-          pushToast(errorMsg, 5000);
-          setIsRecordingSequential(false);
-          return;
-        }
-      }
-
-      if (import.meta.env.MODE === "mygo") {
-        try {
-          await invoke("set_sequential_hotkey", { hotkey: newHotkey });
-          setSequentialHotkey(newHotkey);
-        } catch (error) { pushToast(resolveHotkeyErrorMessage(error), 5000); }
-        setIsRecordingSequential(false);
-        return;
-      }
-      setSequentialHotkey(newHotkey);
-      saveAppSetting("sequential_hotkey", newHotkey);
-      await invoke("set_sequential_hotkey", { hotkey: newHotkey }).catch(console.error);
-      setIsRecordingSequential(false);
-    },
-    [
-      checkHotkeyConflict,
-      pushToast,
-      saveAppSetting,
-      setSequentialHotkey,
-      setIsRecordingSequential,
-      resolveHotkeyErrorMessage
-    ]
-  );
-
-  const updateRichPasteHotkey = useCallback(
-    async (newHotkey: string) => {
-      const hasConflict = checkHotkeyConflict(newHotkey, "rich");
-      if (hasConflict) {
-        setIsRecordingRich(false);
-        return;
-      }
-
-      if (newHotkey) {
-        try {
-          await invoke<boolean>("test_hotkey_available", { hotkey: newHotkey });
-        } catch (err) {
-          const errorMsg = `${newHotkey}: ${resolveHotkeyErrorMessage(err)}`;
-          pushToast(errorMsg, 5000);
-          setIsRecordingRich(false);
-          return;
-        }
-      }
-
-      if (import.meta.env.MODE === "mygo") {
-        try {
-          await invoke("set_rich_paste_hotkey", { hotkey: newHotkey });
-          setRichPasteHotkey(newHotkey);
-        } catch (error) { pushToast(resolveHotkeyErrorMessage(error), 5000); }
-        setIsRecordingRich(false);
-        return;
-      }
-      setRichPasteHotkey(newHotkey);
-      saveAppSetting("rich_paste_hotkey", newHotkey);
-      await invoke("set_rich_paste_hotkey", { hotkey: newHotkey }).catch(console.error);
-      setIsRecordingRich(false);
-    },
-    [
-      checkHotkeyConflict,
-      pushToast,
-      saveAppSetting,
-      setRichPasteHotkey,
-      setIsRecordingRich,
-      resolveHotkeyErrorMessage
-    ]
-  );
-
-  const updateSearchHotkey = useCallback(
-    async (newHotkey: string) => {
-      const hasConflict = checkHotkeyConflict(newHotkey, "search");
-      if (hasConflict) {
-        setIsRecordingSearch(false);
-        return;
-      }
-
-      if (newHotkey) {
-        try {
-          await invoke<boolean>("test_hotkey_available", { hotkey: newHotkey });
-        } catch (err) {
-          const errorMsg = `${newHotkey}: ${resolveHotkeyErrorMessage(err)}`;
-          pushToast(errorMsg, 5000);
-          setIsRecordingSearch(false);
-          return;
-        }
-      }
-
-      if (import.meta.env.MODE === "mygo") {
-        try {
-          await invoke("set_search_hotkey", { hotkey: newHotkey });
-          setSearchHotkey(newHotkey);
-        } catch (error) { pushToast(t("hotkey_register_failed") + resolveHotkeyErrorMessage(error), 5000); }
-        setIsRecordingSearch(false);
-        return;
-      }
-      setSearchHotkey(newHotkey);
-      saveAppSetting("search_hotkey", newHotkey);
-      await invoke("set_search_hotkey", { hotkey: newHotkey }).catch(console.error);
-      setIsRecordingSearch(false);
-    },
-    [
-      checkHotkeyConflict,
-      pushToast,
-      saveAppSetting,
-      setSearchHotkey,
-      t,
-      setIsRecordingSearch,
-      resolveHotkeyErrorMessage
-    ]
-  );
-
-  // Main shortcuts use the shared editor; these inline recorders use the same native session.
-  const actionTarget = isRecordingSequential ? "sequential" : isRecordingRich ? "rich" : isRecordingSearch ? "search" : undefined;
-  const actionRecording = useHotkeyRecording({
-    recording: actionTarget !== undefined,
-    sessionKey: actionTarget,
-    onRecorded: hotkey => {
-      if (actionTarget === "sequential") void updateSequentialHotkey(hotkey);
-      else if (actionTarget === "rich") void updateRichPasteHotkey(hotkey);
-      else if (actionTarget === "search") void updateSearchHotkey(hotkey);
-    },
-    onCancelled: () => {
-      setIsRecordingSequential(false);
-      setIsRecordingRich(false);
-      setIsRecordingSearch(false);
-    },
-    onError: error => pushToast(t("hotkey_register_failed") + resolveHotkeyErrorMessage(error), 5000),
-  });
+  const updateSequentialHotkey = useCallback((value: string) =>
+    saveActionHotkey("sequential", value, sequentialHotkey, "set_sequential_hotkey", setSequentialHotkey),
+  [saveActionHotkey, sequentialHotkey, setSequentialHotkey]);
+  const updateRichPasteHotkey = useCallback((value: string) =>
+    saveActionHotkey("rich", value, richPasteHotkey, "set_rich_paste_hotkey", setRichPasteHotkey),
+  [richPasteHotkey, saveActionHotkey, setRichPasteHotkey]);
+  const updateSearchHotkey = useCallback((value: string) =>
+    saveActionHotkey("search", value, searchHotkey, "set_search_hotkey", setSearchHotkey),
+  [saveActionHotkey, searchHotkey, setSearchHotkey]);
 
   return {
     checkHotkeyConflict,
     updateHotkey,
     addMainHotkey,
     removeMainHotkey,
-    updateSequentialHotkey: isRecordingSequential ? actionRecording.record : updateSequentialHotkey,
-    updateRichPasteHotkey: isRecordingRich ? actionRecording.record : updateRichPasteHotkey,
-    updateSearchHotkey: isRecordingSearch ? actionRecording.record : updateSearchHotkey
+    updateSequentialHotkey,
+    updateRichPasteHotkey,
+    updateSearchHotkey
   };
 };

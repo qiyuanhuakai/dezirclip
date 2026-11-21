@@ -45,6 +45,9 @@ html:root.showcase-opacity-background {
 .showcase-backup-underlay {
   padding-top: 112px;
 }
+.showcase-hotkey-narrow {
+  width: 230px;
+}
 .settings-view.showcase-background-config,
 .settings-view.showcase-capture-config {
   padding: 0;

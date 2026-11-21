@@ -104,7 +104,8 @@ type HotkeyRowOptions struct {
 func (k Kit) HotkeyRowWithOptions(c *ui.Context, label string, options HotkeyRowOptions, controls func()) {
 	style := k.style("hotkeyRow")
 	ui.Column(c).FillWidth().Padding(style.Margin[:]...).Children(func() {
-		row := ui.Row(c).FillWidth().Wrap().Gap(max(6, style.ColumnGap)).AlignItems(ui.Center)
+		row := ui.Row(c).FillWidth().Wrap().
+			GapX(max(6, style.ColumnGap)).GapY(max(6, style.RowGap)).AlignItems(ui.Center)
 		paint(row, style).Children(func() {
 			var clear func()
 			if options.OnClear != nil {
@@ -121,7 +122,8 @@ func (k Kit) HotkeyRowWithOptions(c *ui.Context, label string, options HotkeyRow
 }
 
 func (k Kit) HotkeyBinding(c *ui.Context, label, value, placeholder string, recording, disabled bool) ui.Element {
-	field := ui.ButtonBase(c).Label(label).FocusRing(true).Disabled(disabled)
+	field := ui.ButtonBase(c).Label(label).FocusRing(true).Disabled(disabled).
+		MaxWidthPercent(100).Wrap()
 	return k.hotkeyCaps(c, field, value, placeholder, recording)
 }
 
@@ -219,7 +221,7 @@ func (k Kit) hotkeyCaps(c *ui.Context, field ui.Element, value, placeholder stri
 		value = ""
 	}
 	value = k.hotkeyLabel(value)
-	field.Gap(group.ColumnGap).AlignItems(ui.Center)
+	field.GapX(group.ColumnGap).GapY(group.RowGap).AlignItems(ui.Center)
 	paint(field, group).Margin(group.Margin[:]...).Children(func() {
 		for _, chord := range strings.Split(value, "+") {
 			minimum := cap.Size * 2.2

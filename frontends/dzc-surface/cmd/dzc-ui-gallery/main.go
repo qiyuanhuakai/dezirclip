@@ -184,9 +184,19 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 			kit.Slider(c, &g.previewOpacity, 0, 100, "Opacity").FillWidth().Step(1)
 		})
 	case "hotkey-binding":
-		kit.HotkeyRow(c, "Quick Paste", func() {
-			kit.HotkeyBinding(c, "Quick Paste", "Ctrl+Shift+V", "Press a shortcut", g.state == "recording", false)
-		})
+		chord := "Ctrl+Shift+V"
+		draw := func() {
+			kit.HotkeyRow(c, "Quick Paste", func() {
+				kit.HotkeyBinding(c, "Quick Paste", chord, "Press a shortcut", g.state == "recording", false)
+			})
+		}
+		if g.state == "narrow" {
+			chord = "Ctrl+Alt+Shift+Super+NumpadSubtract"
+			kit = kit.WithHotkeyPlatform("windows")
+			ui.Column(c).Width(230).Children(draw)
+		} else {
+			draw()
+		}
 	case "hotkey-optional":
 		const label = "Privacy session shortcut"
 		area := ui.Column(c).FillWidth()

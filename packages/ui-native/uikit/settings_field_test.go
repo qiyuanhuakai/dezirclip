@@ -6,6 +6,26 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestSettingsHotkeyBindingWrapsLongChords(t *testing.T) {
+	kit := Kit{}.WithHotkeyPlatform("windows")
+	view := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).FillWidth().Padding(8).Children(func() {
+			kit.HotkeyRow(c, "Search hotkey", func() {
+				kit.HotkeyBinding(c, "Search hotkey", "Ctrl+Alt+Shift+Super+NumpadSubtract", "", false, false)
+			})
+		})
+	}, 230, 180)
+	control, visible := view.Find("Search hotkey")
+	if !visible || control.X < 0 || control.X+control.W > 230 {
+		t.Fatalf("shortcut recorder escaped the narrow settings card: %+v, visible=%t", control, visible)
+	}
+	first, firstVisible := view.Find("CTRL")
+	last, lastVisible := view.Find("NUMPADSUBTRACT")
+	if !firstVisible || !lastVisible || last.W < 75 || last.X+last.W > 230 || last.Y <= first.Y {
+		t.Fatalf("long shortcut did not wrap its keycaps: first=%+v, last=%+v, visible=%t/%t, texts=%v", first, last, firstVisible, lastVisible, view.Texts())
+	}
+}
+
 func TestSettingsNumberFieldCommitsAfterFocusLeaves(t *testing.T) {
 	value := "30"
 	var commits []string

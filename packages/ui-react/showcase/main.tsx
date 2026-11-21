@@ -42,6 +42,15 @@ function OptionalShortcutFixture() {
     onClear={() => setShortcut("")} onClick={undefined} onKeyDown={undefined} onMouseDown={undefined} onBlur={undefined} />;
 }
 
+function ShortcutBindingFixture() {
+  const narrow = state === "narrow";
+  const field = <HotkeyBinding label="Quick Paste" value={narrow ? "Ctrl+Alt+Shift+Super+NumpadSubtract" : "Ctrl+Shift+V"}
+    platform={narrow ? "windows" : undefined} placeholder="Set shortcut" recordingLabel="Press a shortcut"
+    recording={state === "recording"} busy={false} disabled={false} onClick={undefined} onKeyDown={undefined}
+    onMouseDown={undefined} onBlur={undefined} />;
+  return narrow ? <div className="showcase-hotkey-narrow">{field}</div> : field;
+}
+
 const clipboardTypes = [
   { id: "text", label: "文本" }, { id: "image", label: "图片" }, { id: "file", label: "文件" },
   { id: "url", label: "URL" }, { id: "code", label: "代码" }, { id: "video", label: "视频" }, { id: "rich_text", label: "富文本" },
@@ -281,9 +290,7 @@ function Showcase() {
       <span className="item-label">Opacity {opacity}%</span>
       <SettingsSlider min={0} max={100} value={opacity} aria-label="Opacity" onChange={event => setOpacity(event.currentTarget.valueAsNumber)} />
     </div></div>,
-    "hotkey-binding": <HotkeyBinding label="Quick Paste" value="Ctrl+Shift+V" placeholder="Set shortcut" recordingLabel="Press a shortcut"
-      recording={state === "recording"} busy={false} disabled={false} onClick={undefined} onKeyDown={undefined}
-      onMouseDown={undefined} onBlur={undefined} />,
+    "hotkey-binding": <ShortcutBindingFixture />,
     "hotkey-optional": <OptionalShortcutFixture />,
     "scroll-to-top": <div className="showcase-scroll-top">Clipboard history<ScrollToTopButton label="Scroll to top" onClick={() => undefined} /></div>,
     "character-search": <CharacterSearch label="Search symbols" value={query} onChange={setQuery} />,
