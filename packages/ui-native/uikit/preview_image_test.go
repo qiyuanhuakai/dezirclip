@@ -111,3 +111,30 @@ func TestPinnedImageZoomAndPan(t *testing.T) {
 		t.Fatalf("fit did not reset image: %+v", v)
 	}
 }
+
+func TestPreviewToolbarZoomOutUsesActualSizeBeforeImageLayout(t *testing.T) {
+	const zoomOut = "Zoom out"
+	var image PreviewImage
+	tester := ui.NewTester(func(c *ui.Context) {
+		(Kit{}).PreviewToolbar(c, PreviewToolbarOptions{
+			Title: "Content preview", Pinned: true, Image: &image,
+			ImageLabels: ImageZoomLabels{Out: zoomOut, In: "Zoom in", Fit: "Fit image", FitLabel: "Fit", Actual: "Actual size"},
+		})
+	}, 560, 100)
+	if err := tester.Click(zoomOut); err != nil {
+		t.Fatal(err)
+	}
+	if scale, fitted := image.Zoom(); scale != 0.8 || fitted {
+		t.Fatalf("after zooming out: scale = %g, fitted = %t", scale, fitted)
+	}
+
+	image.SetZoom(0)
+	image.fit = 0.05
+	tester.Image()
+	if err := tester.Click(zoomOut); err != nil {
+		t.Fatal(err)
+	}
+	if scale, fitted := image.Zoom(); scale != 0.05 || !fitted {
+		t.Fatalf("below the minimum: scale = %g, fitted = %t", scale, fitted)
+	}
+}

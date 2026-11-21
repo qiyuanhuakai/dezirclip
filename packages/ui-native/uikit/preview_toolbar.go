@@ -136,6 +136,10 @@ func (k Kit) previewOpacity(c *ui.Context, options PreviewToolbarOptions) {
 func (k Kit) previewZoom(c *ui.Context, image *PreviewImage, labels ImageZoomLabels) {
 	ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 		scale, fitted := image.Zoom()
+		if scale == 0 {
+			// Use the WebView's initial scale until the viewport is measured.
+			scale = 1
+		}
 		scale = min(8, max(0.1, scale))
 		if k.previewButton(c, labels.Out, "", previewMinus, false, scale <= 0.1).Clicked() {
 			image.SetZoom(scale * 0.8)
