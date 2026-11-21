@@ -11,6 +11,19 @@ export function TagToolbarTitle({ label }: { label: string }) {
   </span>;
 }
 
+export function TagBatchToolbar({ selectLabel, countLabel, deleteLabel, allSelected, selectDisabled, deleteDisabled, onSelect, onDelete }: {
+  selectLabel: string; countLabel: string; deleteLabel: string; allSelected: boolean;
+  selectDisabled?: boolean; deleteDisabled?: boolean; onSelect: () => void; onDelete: () => void;
+}) {
+  return <div className="tag-manager-batch-toolbar">
+    <button type="button" className="btn-icon tag-manager-text-button" aria-pressed={allSelected}
+      disabled={selectDisabled} onClick={onSelect}>{selectLabel}</button>
+    <span role="status" aria-live="polite">{countLabel}</span>
+    <button type="button" className="btn-icon tag-manager-text-button tag-manager-batch-delete"
+      disabled={deleteDisabled} onClick={onDelete}>{deleteLabel}</button>
+  </div>;
+}
+
 interface TagSearchFieldProps extends ComponentPropsWithRef<"input"> {
   variant: "contents" | "rail" | "picker";
   onClear?: () => void;

@@ -38,6 +38,37 @@ func (k Kit) TagToolbarTitle(c *ui.Context, label string) {
 	})
 }
 
+type TagBatchToolbarOptions struct {
+	SelectLabel, CountLabel, DeleteLabel        string
+	AllSelected, SelectDisabled, DeleteDisabled bool
+	OnSelect, OnDelete                          func()
+}
+
+// TagBatchToolbar separates the selection state from the destructive action.
+func (k Kit) TagBatchToolbar(c *ui.Context, options TagBatchToolbarOptions) {
+	style := k.style("tagBatchToolbar")
+	row := ui.Row(c).FillWidth().Wrap().GapX(style.ColumnGap).GapY(style.RowGap).AlignItems(ui.Center)
+	paint(row, style).Children(func() {
+		if k.tagBatchButton(c, "tagBatchSelect", options.SelectLabel, options.AllSelected, options.SelectDisabled).Clicked() && options.OnSelect != nil {
+			options.OnSelect()
+		}
+		text(c, options.CountLabel, k.style("tagBatchCount")).Grow(1).MinWidth(56).SingleLine().Role(ui.RoleStatus)
+		if k.tagBatchButton(c, "tagBatchDelete", options.DeleteLabel, false, options.DeleteDisabled).Clicked() && options.OnDelete != nil {
+			options.OnDelete()
+		}
+	})
+}
+
+func (k Kit) tagBatchButton(c *ui.Context, widget, label string, selected, disabled bool) ui.Element {
+	style := k.style(widget)
+	button := ui.ButtonBase(c).Label(label).Height(style.Height).Shrink(0).
+		Selected(selected).Disabled(disabled).Center().FocusRing(true)
+	paint(button, k.interactive(c, button, style, false)).Children(func() {
+		text(c, label, style).SingleLine().PassThrough()
+	})
+	return button
+}
+
 func (k Kit) TagToolbarButton(c *ui.Context, action HeaderAction) ui.Element {
 	style := k.style("tagToolbarButton")
 	if action.Active {

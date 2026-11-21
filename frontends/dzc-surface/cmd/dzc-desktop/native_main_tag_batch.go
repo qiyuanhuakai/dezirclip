@@ -137,35 +137,30 @@ func (n *nativeMain) tagBatchToolbar(c *ui.Context, kit uikit.Kit, tags *nativeT
 		}
 		batch.selection, batch.generation = nativeTagSelection{}, generation
 	}
-	ui.Column(c).FillWidth().Padding(0, 8).Gap(4).Children(func() {
-		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Wrap().Children(func() {
-			if !batch.enabled {
-				return
-			}
-			ready := n.tagBatchReady(batch) && !n.reading
-			count := batch.selection.count(n.history.total)
-			allLabel := n.text("tag_select_all")
-			if batch.selection.all && len(batch.selection.ids) == 0 {
-				allLabel = n.text("tag_clear_selection")
-			} else if n.history.filter.query != "" {
-				allLabel = n.text("tag_select_all_matches")
-			}
-			if kit.Button(c, uikit.ButtonOptions{Label: allLabel, Disabled: !ready || n.history.total == 0}).Clicked() {
-				n.selectTagBatchMatches(batch)
-			}
-			kit.SettingsLabel(c, strings.ReplaceAll(n.text("tag_selected_count"), "{count}", strconv.FormatUint(count, 10)))
-			if kit.Button(c, uikit.ButtonOptions{Label: n.text("common_delete"), Disabled: !ready || count == 0}).Clicked() {
-				n.confirmTagBatch(batch)
-			}
-		})
-		if batch.notice != "" {
-			color := c.Theme().TextMuted
-			if batch.failed {
-				color = c.Theme().Danger
-			}
-			ui.Text(c, batch.notice).Wrap().TextColor(color)
+	if batch.enabled {
+		ready := n.tagBatchReady(batch) && !n.reading
+		count := batch.selection.count(n.history.total)
+		allSelected := batch.selection.all && len(batch.selection.ids) == 0
+		allLabel := n.text("tag_select_all")
+		if allSelected {
+			allLabel = n.text("tag_clear_selection")
+		} else if n.history.filter.query != "" {
+			allLabel = n.text("tag_select_all_matches")
 		}
-	})
+		kit.TagBatchToolbar(c, uikit.TagBatchToolbarOptions{
+			SelectLabel: allLabel, CountLabel: strings.ReplaceAll(n.text("tag_selected_count"), "{count}", strconv.FormatUint(count, 10)),
+			DeleteLabel: n.text("common_delete"), AllSelected: allSelected,
+			SelectDisabled: !ready || n.history.total == 0, DeleteDisabled: !ready || count == 0,
+			OnSelect: func() { n.selectTagBatchMatches(batch) }, OnDelete: func() { n.confirmTagBatch(batch) },
+		})
+	}
+	if batch.notice != "" {
+		color := c.Theme().TextMuted
+		if batch.failed {
+			color = c.Theme().Danger
+		}
+		ui.Text(c, batch.notice).Padding(0, 7, 6, 3).Wrap().TextColor(color)
+	}
 }
 
 func (n *nativeMain) confirmTagBatch(batch *nativeTagBatch) {

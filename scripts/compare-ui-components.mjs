@@ -31,6 +31,7 @@ const cases = {
   "privacy-rules": { states: ["default", "resized"], text: "Privacy rules" },
   "privacy-detection": { states: ["default", "narrow", "focus", "resized"], text: "Custom detection patterns" },
   "tag-toolbar": { states: ["default"], text: "Work" },
+  "tag-batch-toolbar": { states: ["default", "selected", "narrow"], text: "selected" },
   "tag-search": { states: ["default"], text: "Work" },
   "search-select": { states: ["default", "apps-filtered", "empty", "typo"], text: "Interface font" },
   "text-fields": { states: ["default"], text: "Idle timeout" },
@@ -462,6 +463,20 @@ try {
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
             const dialog = fixture === "backup-dialog" ? await page.locator(".data-modal-content").boundingBox() : undefined;
             const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64"), dialog });
+            if (fixture === "tag-batch-toolbar") {
+              const selection = page.getByRole("button", { name: state === "default" ? "Select all" : state === "narrow"
+                ? "Clear all matching entries" : "Clear selection" });
+              const deletion = page.getByRole("button", { name: "Delete", exact: true });
+              if ((await deletion.isDisabled()) !== (state === "default")) throw Error("Delete availability ignored the current selection");
+              if (state === "narrow") {
+                const button = await deletion.boundingBox();
+                const toolbar = await page.locator(".tag-manager-batch-toolbar").boundingBox();
+                if (!button || !toolbar || button.x + button.width > toolbar.x + toolbar.width) throw Error("Delete is clipped");
+              }
+              await selection.press("Enter");
+              await page.getByText(state === "default" ? "32 selected" : "0 selected", { exact: true }).waitFor();
+              if ((await deletion.isDisabled()) === (state === "default")) throw Error("Delete did not update after changing the selection");
+            }
             if (fixture === "settings-update-actions") {
               const check = page.getByRole("button", { name: "Check now" });
               const install = page.getByRole("button", { name: "Install update" });

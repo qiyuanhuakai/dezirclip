@@ -202,6 +202,18 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 	case "tagToolbar":
 		style.Height, style.ColumnGap = 30, 2
 		style.Padding = [4]float32{0, 7, 0, 3}
+	case "tagBatchToolbar":
+		style.ColumnGap, style.RowGap = 6, 6
+		style.Padding = [4]float32{0, 7, 6, 3}
+	case "tagBatchSelect", "tagBatchDelete":
+		surface()
+		style.Height, style.Size, style.Weight = 27, 12, 500
+		style.Padding = [4]float32{3, 7, 3, 7}
+		if widget == "tagBatchDelete" {
+			style.Text = rgba(ui.LightTheme().Danger)
+		}
+	case "tagBatchCount":
+		style.Size = 12
 	case "tagToolbarTitle":
 		style.Size, style.Weight = 12, 600
 	case "tagToolbarTitleIcon":

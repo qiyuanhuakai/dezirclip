@@ -46,7 +46,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
     managementMode = false, selectedForDeletion = false, onToggleSelection, revealAll = false,
     bulkRevealExcluded = false, onExcludeBulkReveal }: TagHistoryRowProps) {
     const [detailState, setDetailState] = useState<{ source: ClipboardEntry; value: ClipboardEntry; bulkReveal: boolean } | null>(null);
-    const detail = detailState?.source === item && detailState.bulkReveal === revealAll ? detailState.value : null;
+    const detail = !managementMode && detailState?.source === item && detailState.bulkReveal === revealAll ? detailState.value : null;
     const setDetail = (value: ClipboardEntry | null) => setDetailState(value ? { source: item, value, bulkReveal: revealAll } : null);
     const privacy = usePrivacySession();
     const [resourceState, setResourceState] = useState<{ source: ClipboardEntry; epoch: number; phase: HistoryPreviewPhase; value: HistoryPreviewContent | null } | null>(null);

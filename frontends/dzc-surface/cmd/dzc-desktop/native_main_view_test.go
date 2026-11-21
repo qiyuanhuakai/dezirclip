@@ -318,6 +318,67 @@ func TestNativeNarrowTagPickerFiltersChoices(t *testing.T) {
 	}
 }
 
+func TestNativeTagActionAvailabilityFollowsTheSelectedTag(t *testing.T) {
+	n := nativeMain{tagLibrary: &nativeTagLibrary{sort: "time"}, preferences: map[string]string{"app.language": "en"}}
+	n.tagCatalog.names, n.tagCatalog.fresh = []string{"Work"}, true
+	view := ui.NewTester(n.view, 740, 360)
+	actions := n.text("tag_actions")
+	click := func(label string) {
+		t.Helper()
+		if err := view.Click(label); err != nil {
+			t.Fatal(err)
+		}
+	}
+	click(actions)
+	if n.menu.Active() {
+		t.Fatal("tag actions were enabled without a selected tag")
+	}
+	click("Work")
+	click(actions)
+	if !n.menu.Active() {
+		t.Fatal("selected tag did not enable its action menu")
+	}
+	click(n.text("sort_usage"))
+	if n.menu.Active() || n.tagLibrary.sort != "count" {
+		t.Fatal("sort action did not update the selected tag and close the menu")
+	}
+	click(n.text("tag_manage"))
+	click(actions)
+	if !n.tagLibrary.batch.enabled || n.menu.Active() {
+		t.Fatal("tag actions should be disabled during batch selection")
+	}
+}
+
+func TestNativeTagBatchPreservesVisiblePreviews(t *testing.T) {
+	n := nativeMain{tagLibrary: &nativeTagLibrary{selected: "Work", sort: "time"}, preferences: map[string]string{"app.language": "en"}}
+	n.tagCatalog.names, n.tagCatalog.fresh = []string{"Work"}, true
+	n.history.rows = []protocol.DesktopEntry{
+		{Id: 1, Timestamp: 1, ContentType: "files", Preview: "Example attachment", Tags: []string{"Work"}},
+	}
+	bitmap := ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 160, 96)))
+	n.cardMedia.finish(nativeCardKey{1, 1}, nativeCardMedia{attachments: []uikit.PreviewAttachment{
+		{Name: "Picture.png", Bitmap: bitmap}, {Name: "Notes.pdf"},
+	}})
+	for _, width := range []int{360, 740} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			n.tagLibrary.batch.enabled = false
+			n.history.rows[0].Tags = []string{"Work"}
+			view := ui.NewTester(n.view, width, 400)
+			if err := view.Click(n.text("tag_manage")); err != nil || !n.tagLibrary.batch.enabled {
+				t.Fatalf("could not enter batch selection: %v", err)
+			}
+			if _, visible := view.Find("Picture.png"); !visible {
+				t.Fatal("entering batch selection dropped the attachment preview")
+			}
+			n.history.rows[0].Tags = nil
+			view.Frame()
+			if _, visible := view.Find("Picture.png"); visible {
+				t.Fatal("batch selection exposed a concealed attachment")
+			}
+		})
+	}
+}
+
 func TestNativeMainUsesSavedInterfaceFont(t *testing.T) {
 	window := nativeMain{theme: "macos", mode: "dark", preferences: map[string]string{"app.font_main": " Custom UI "}}
 	var font string

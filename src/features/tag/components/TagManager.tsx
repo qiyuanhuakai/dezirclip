@@ -18,7 +18,7 @@ import { hideCompactPreviewGlobal } from '../../clipboard/components/ClipboardIt
 import { clearRichTextSnapshots } from '../../../shared/lib/richTextSnapshot';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 
-import { TagPickerTrigger, TagSearchField, TagToolbar, TagToolbarTitle } from "@deziro/ui-react/components/TagToolbar";
+import { TagBatchToolbar, TagPickerTrigger, TagSearchField, TagToolbar, TagToolbarTitle } from "@deziro/ui-react/components/TagToolbar";
 
 const QrCodeDialog = lazy(() => import('../../clipboard/components/QrCodeDialog'));
 
@@ -66,6 +66,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const [entrySelection, setEntrySelection] = useState(() => ({ context: selectionContext, scope: selectionScope, selection: emptyTagSelection() as TagBatchSelection }));
     const selection = entrySelection.scope === selectionScope ? entrySelection.selection : emptyTagSelection();
     const selectedCount = tagSelectionCount(selection, library.total);
+    const allSelected = selection.mode === 'all' && selection.excludedIds.length === 0;
     const [batchFeedback, setBatchFeedback] = useState<{ message: string; error: boolean } | null>(null);
     const [menuOpen, setMenuOpen] = useState(false);
     const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -171,6 +172,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const toggleManagement = () => {
         detailSequence.current += 1;
         setManagementMode(current => !current); clearSelection(); setBatchFeedback(null); setMenuOpen(false); setPickerOpen(false);
+        setRevealedScope(null);
     };
 
     const openDialog = useCallback((next: Dialog) => {
@@ -411,7 +413,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     {compactMode ? <List size={16} /> : <ListCollapse size={16} />}
                 </button>
                 <button type="button" className={`btn-icon${revealAll ? ' active' : ''}`}
-                    disabled={busy || !selectedTag || library.loading || library.error || library.total === 0 || privacy.phase !== 'ready'}
+                    disabled={busy || !selectedTag || managementMode || library.loading || library.error || library.total === 0 || privacy.phase !== 'ready'}
                     aria-pressed={revealAll} title={t(revealAll ? 'tag_hide_all' : 'tag_reveal_all')} aria-label={t(revealAll ? 'tag_hide_all' : 'tag_reveal_all')}
                     onClick={() => {
                         clearRevealError();
@@ -456,15 +458,14 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                         if (event.key === 'Escape' && library.query) { event.stopPropagation(); library.setQuery(''); }
                     }}
                 clearLabel={t('tag_clear_search')} onClear={() => library.setQuery('')} />
-            {managementMode && <div className="tag-manager-batch-toolbar">
-                <button type="button" className="btn-icon tag-manager-text-button" disabled={busy || library.loading || library.error || library.total === 0} onClick={selectAll}
-                    aria-pressed={selection.mode === 'all' && selection.excludedIds.length === 0}>
-                    {t(selection.mode === 'all' && selection.excludedIds.length === 0 ? 'tag_clear_selection' : library.query ? 'tag_select_all_matches' : 'tag_select_all')}
-                </button>
-                <span role="status" aria-live="polite">{t('tag_selected_count').replace('{count}', String(selectedCount))}</span>
-                <button type="button" className="btn-icon tag-manager-text-button tag-manager-batch-delete" disabled={busy || selectedCount === 0 || !selectedTag}
-                    onClick={() => { if (selectedTag) openDialog({ kind: 'deleteSelection', tag: selectedTag, selection, count: selectedCount, scope: selectionScope }); }}>{t('common_delete')}</button>
-            </div>}
+            {managementMode && <TagBatchToolbar
+                selectLabel={t(allSelected ? 'tag_clear_selection' : library.query ? 'tag_select_all_matches' : 'tag_select_all')}
+                countLabel={t('tag_selected_count').replace('{count}', String(selectedCount))}
+                deleteLabel={t('common_delete')} allSelected={allSelected}
+                selectDisabled={busy || library.loading || library.error || library.total === 0}
+                deleteDisabled={busy || selectedCount === 0 || !selectedTag}
+                onSelect={selectAll}
+                onDelete={() => { if (selectedTag) openDialog({ kind: 'deleteSelection', tag: selectedTag, selection, count: selectedCount, scope: selectionScope }); }} />}
             <div className="history-list-container tag-manager-results" aria-busy={library.loading}>
                 {library.loading || (library.metadataLoading && library.tags.length === 0) ? <div className="tag-manager-empty" role="status"><LoaderCircle className="tag-manager-spinner" size={22} /></div>
                     : library.items.length ? <div className="virtual-list-wrapper"><Virtuoso ref={list} key={`${selectedTag}:${library.query}:${library.sortBy}`} data={library.items}

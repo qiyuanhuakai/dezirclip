@@ -224,19 +224,19 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 		{Icon: "add", Label: n.text("add_item", "Add entry"), Disabled: !selected || n.mutating || tags.batch.enabled,
 			Run: func() { n.addHistoryEntry(tags.selected) }},
 	}, func() {
-		more := kit.TagToolbarButton(c, uikit.HeaderAction{Icon: "more", Label: n.text("tag_actions", "Tag actions"), Disabled: n.mutating})
+		more := kit.TagToolbarButton(c, uikit.HeaderAction{Icon: "more", Label: n.text("tag_actions", "Tag actions"),
+			Disabled: !selected || tags.batch.enabled || n.mutating})
 		if more.Clicked() {
 			n.menu.Open(more, func() []uikit.MenuAction {
-				sort, sortLabel := "count", n.text("sort_usage", "Most used")
+				sort, sortLabel := "count", n.text("sort_usage")
 				if tags.sort == "count" {
 					sort, sortLabel = "time", n.text("sort_time")
 				}
-				edit := tags.selected != "" && !nativeProtectedTag(tags.selected) && !tags.batch.enabled
+				edit := !nativeProtectedTag(tags.selected)
 				return []uikit.MenuAction{
-					{Label: n.text("tag_create", "New tag"), Run: func() { n.startTagDialog(tags, "create") }},
-					{Label: sortLabel, Disabled: tags.selected == "", Run: func() { tags.sort = sort; n.editQuery(false) }},
-					{Label: n.text("tag_rename", "Rename"), Disabled: !edit, Run: func() { n.startTagDialog(tags, "rename") }},
-					{Label: n.text("tag_remove", "Remove"), Disabled: !edit, Run: func() { n.startTagDialog(tags, "remove") }},
+					{Label: sortLabel, Run: func() { tags.sort = sort; n.editQuery(false) }},
+					{Label: n.text("tag_rename"), Disabled: !edit, Run: func() { n.startTagDialog(tags, "rename") }},
+					{Label: n.text("tag_remove"), Disabled: !edit, Run: func() { n.startTagDialog(tags, "remove") }},
 				}
 			})
 		}

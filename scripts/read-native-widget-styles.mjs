@@ -96,6 +96,10 @@ const samples = [
     tagToolbarButtonActive: [".tag-manager-toolbar .btn-icon.active"],
     tagToolbarTitle: [".tag-manager-current > span"], tagToolbarTitleIcon: [".tag-manager-current > svg"],
   }],
+  ["tag-batch-toolbar", "selected", {
+    tagBatchToolbar: [".tag-manager-batch-toolbar"], tagBatchSelect: [".tag-manager-batch-toolbar > button:first-child"],
+    tagBatchCount: [".tag-manager-batch-toolbar > span"], tagBatchDelete: [".tag-manager-batch-delete"],
+  }],
   ["tag-search", "default", {
     tagPickerTrigger: [".tag-manager-picker-trigger", ".tag-manager-picker-trigger > span"],
     tagSearchInput: [".tag-manager-search .search-input"],

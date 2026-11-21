@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import ThemedSelect from "../src/components/ThemedSelect";
 import { BackupActions, BackupChoices, BackupDialog, BackupField, BackupPreview, BackupReplaceConfirmation, ContextMenuItem, ContextMenuSurface, EmojiAddTile, EmojiFavoriteTile, HotkeyBinding, HotkeyList, HotkeyListLayout, NumberField,
-  PrivacyDetectionOptions, PrivacyPatternsField, PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField, SettingHelp, SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsField, SettingsRemoveButton, SettingsSectionCard, TagPickerTrigger, TagSearchField, TagToolbar, TagToolbarTitle, TextArea, TextField } from "../src";
+  PrivacyDetectionOptions, PrivacyPatternsField, PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField, SettingHelp, SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsField, SettingsRemoveButton, SettingsSectionCard, TagBatchToolbar, TagPickerTrigger, TagSearchField, TagToolbar, TagToolbarTitle, TextArea, TextField } from "../src";
 import { Ellipsis, EyeOff, ListChecks, ListCollapse, Plus } from "lucide-react";
 import { settingsPaneColumns } from "../src/components/SettingsSectionCard";
 import { UpdateAction, UpdateActions, UpdateProgress, UpdateVersionRow } from "../src/components/SettingsUpdate";
@@ -212,6 +212,16 @@ export function TagToolbarFixture() {
       <button className="btn-icon" type="button" aria-label="Add entry"><Plus size={16} /></button>
       <button className="btn-icon" type="button" aria-label="Tag actions"><Ellipsis size={16} /></button>
     </TagToolbar>
+  </div>;
+}
+
+export function TagBatchToolbarFixture({ state }: { state: string }) {
+  const [selected, setSelected] = useState(state !== "default");
+  const narrow = state === "narrow";
+  return <div style={{ width: narrow ? 205 : 360 }}>
+    <TagBatchToolbar selectLabel={selected ? (narrow ? "Clear all matching entries" : "Clear selection") : "Select all"}
+      countLabel={selected ? "32 selected" : "0 selected"} deleteLabel="Delete" allSelected={selected}
+      deleteDisabled={!selected} onSelect={() => setSelected(value => !value)} onDelete={() => undefined} />
   </div>;
 }
 

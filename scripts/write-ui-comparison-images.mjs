@@ -44,6 +44,7 @@ const figures = [
   ["privacy-rules", "default", 390],
   ["privacy-detection", "resized", 340],
   ["tag-toolbar", "default", 85],
+  ["tag-batch-toolbar", "selected", 85],
   ["tag-search", "default", 180],
   ["search-select", "apps-filtered", 218],
   ["search-select", "empty", 218, 0, "search-select-empty"],

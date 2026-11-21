@@ -165,6 +165,26 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			{Icon: "collapse", Label: "Compact view"}, {Icon: "conceal", Label: "Hide entries", Active: true},
 			{Icon: "manage", Label: "Manage"}, {Icon: "add", Label: "Add entry"}, {Icon: "more", Label: "Tag actions"},
 		}, nil)
+	case "tag-batch-toolbar":
+		width := float32(360)
+		if g.state == "narrow" {
+			width = 205
+		}
+		area := ui.Column(c).Width(width)
+		selected := ui.Local(area, "batch-selected", func() bool { return g.state != "default" })
+		area.Children(func() {
+			label, count := "Select all", "0 selected"
+			if *selected {
+				label, count = "Clear selection", "32 selected"
+				if g.state == "narrow" {
+					label = "Clear all matching entries"
+				}
+			}
+			kit.TagBatchToolbar(c, uikit.TagBatchToolbarOptions{
+				SelectLabel: label, CountLabel: count, DeleteLabel: "Delete",
+				AllSelected: *selected, DeleteDisabled: !*selected, OnSelect: func() { *selected = !*selected },
+			})
+		})
 	case "privacy-rules":
 		ui.Column(c).Width(490).Children(func() {
 			drawExclusions := func() {

@@ -301,8 +301,10 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 					Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
 					Pinned: row.IsPinned, Selected: batch.selection.includes(row.Id), Compact: compact,
 					Concealed: !contentVisible, TextSize: float32(itemSize),
-					Rich: n.cardRichText(row, protected),
-					Tags: n.cardTags(row.Tags), TagSize: float32(tagSize), Activate: activate,
+					Match: n.history.filter.query, Width: width,
+					Rich:  n.cardRichText(row, protected),
+					Media: n.cardBody(cell.Context, kit, row, protected, compact, float32(itemSize)),
+					Tags:  n.cardTags(row.Tags), TagSize: float32(tagSize), Activate: activate,
 					Leading: func() {
 						checked := batch.selection.includes(row.Id)
 						if kit.Checkbox(cell.Context, &checked, "").Label(label + ": " + summary).
