@@ -370,7 +370,11 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 				return fmt.Errorf("no-results notice did not appear")
 			}
 		} else {
-			tester.Type("viewer")
+			query := "viewer"
+			if g.state == "typo" {
+				query = "Photo Veiwer"
+			}
+			tester.Type(query)
 			if _, found := tester.Find("Photo Viewer"); !found {
 				return fmt.Errorf("filtered application did not appear")
 			}

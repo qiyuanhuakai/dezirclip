@@ -30,7 +30,7 @@ const cases = {
   "privacy-rules": { states: ["default"], text: "Privacy rules" },
   "tag-toolbar": { states: ["default"], text: "Work" },
   "tag-search": { states: ["default"], text: "Work" },
-  "search-select": { states: ["default", "apps-filtered", "empty"], text: "Interface font" },
+  "search-select": { states: ["default", "apps-filtered", "empty", "typo"], text: "Interface font" },
   "text-fields": { states: ["default"], text: "Idle timeout" },
   "context-menu": { states: ["default", "text", "privacy"], text: "Clipboard entry" },
   "attachment-preview": { states: ["default", "compact", "media", "expanded", "narrow", "narrow-media", "compact-media"], text: "" },
@@ -314,7 +314,7 @@ try {
             if (fixture === "search-select" && state !== "default") {
               const input = page.getByRole("combobox", { name: "Images" });
               await input.click();
-              await input.fill(state === "empty" ? "zzzz0000" : "viewer");
+              await input.fill(({ empty: "zzzz0000", typo: "Photo Veiwer" })[state] ?? "viewer");
               if (state === "empty") {
                 await page.getByText("No matching applications", { exact: true }).waitFor();
               } else {

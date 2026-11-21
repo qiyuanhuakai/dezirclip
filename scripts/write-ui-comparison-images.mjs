@@ -43,6 +43,7 @@ const figures = [
   ["tag-search", "default", 180],
   ["search-select", "apps-filtered", 218],
   ["search-select", "empty", 218, 0, "search-select-empty"],
+  ["search-select", "typo", 218, 0, "search-select-typo"],
   ["app-header", "pinned", 185],
   ["history-list", "selected", 245],
   ["history-card", "selected", 110],

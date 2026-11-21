@@ -49,10 +49,12 @@ const DefaultAppsSettingsGroup = ({
                     opts.push({ value: app.value, label: app.label });
                 }
             }
+            const saved = appSettings[`app.${type}`];
+            if (saved && !seen.has(saved)) opts.push({ value: saved, label: stripExe(saved) });
             map[type] = opts;
         }
         return map;
-    }, [installedApps, defaultApps, t]);
+    }, [installedApps, defaultApps, appSettings, t]);
 
     const currentValue = (type: string) => {
         const path = appSettings[`app.${type}`];

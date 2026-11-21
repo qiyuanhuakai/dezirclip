@@ -51,10 +51,7 @@ const ThemedSelect = ({
     [options]
   );
 
-  const allowCacheRef = useRef<{ input: string; values: Set<string> | null }>({
-    input: "",
-    values: null
-  });
+  const allowCacheRef = useRef<{ input: string; index: FuzzyIndex<ThemedSelectOption>; values: Set<string> } | null>(null);
 
   const filterOption = useMemo(
     () =>
@@ -63,14 +60,10 @@ const ThemedSelect = ({
             const input = rawInput ?? "";
             if (!input) return true;
             const cached = allowCacheRef.current;
-            if (cached.input !== input) {
-              const matches = index.search(input, options.length);
-              cached.input = input;
-              cached.values = new Set(
-                matches.map((m) => (m.item as ThemedSelectOption).value)
-              );
-            }
-            return cached.values!.has(option.value);
+            if (cached?.index === index && cached.input === input) return cached.values.has(option.value);
+            const values = new Set(index.search(input, options.length).map(match => match.item.value));
+            allowCacheRef.current = { input, index, values };
+            return values.has(option.value);
           }
         : undefined,
     [searchable, index, options]

@@ -37,7 +37,10 @@ func (n *nativeMain) typographySettings(c *ui.Context) {
 	n.rangeSetting(c, nativeItemSize, n.text("clipboard_item_font_size", "Item font size"), n.text("clipboard_item_font_size_hint"), nativeItemSize.value(n.preferences))
 	n.rangeSetting(c, nativeTagSize, n.text("clipboard_tag_font_size", "Tag font size"), n.text("clipboard_tag_font_size_hint"), nativeTagSize.value(n.preferences))
 
-	if n.fontChoices == nil {
+	var fonts nativeFontChoices
+	if n.fontChoices != nil {
+		fonts = *n.fontChoices
+	} else {
 		if n.fontsFailed {
 			ui.Row(c).ColumnSpan(-1).Gap(8).Wrap().Children(func() {
 				ui.Text(c, n.text("common_error")).TextColor(c.Theme().TextMuted)
@@ -47,12 +50,11 @@ func (n *nativeMain) typographySettings(c *ui.Context) {
 			})
 		} else {
 			n.findFonts()
-			ui.Text(c, n.text("native_loading_fonts")).TextColor(c.Theme().TextMuted)
+			ui.Text(c, n.text("native_loading_fonts")).TextColor(c.Theme().TextMuted).ColumnSpan(-1)
 		}
-		return
 	}
-	n.fontSetting(c, "app.font_main", n.text("font_main", "Interface font"), n.text("font_main_hint"), n.fontChoices.main)
-	n.fontSetting(c, "app.font_mono", n.text("font_mono", "Monospace font"), n.text("font_mono_hint"), n.fontChoices.mono)
+	n.fontSetting(c, "app.font_main", n.text("font_main", "Interface font"), n.text("font_main_hint"), fonts.main)
+	n.fontSetting(c, "app.font_mono", n.text("font_mono", "Monospace font"), n.text("font_mono_hint"), fonts.mono)
 }
 
 func (n *nativeMain) findFonts() {

@@ -377,6 +377,30 @@ func TestNativeMainShellOpacity(t *testing.T) {
 	}
 }
 
+func TestNativeFontSelectionsStayVisibleBeforeAndAfterDiscovery(t *testing.T) {
+	window := nativeMain{
+		theme: "macos", mode: "dark", readingFonts: true,
+		preferences: map[string]string{
+			"app.language": "en", "app.font_main": "Saved Interface", "app.font_mono": "Saved Monospace",
+		},
+	}
+	view := ui.NewTester(window.typographySettings, 365, 380)
+	verify := func() {
+		t.Helper()
+		if !view.HasText("Saved Interface") || !view.HasText("Saved Monospace") {
+			t.Fatalf("the selected fonts were hidden: %v", view.Texts())
+		}
+	}
+	verify()
+	window.readingFonts, window.fontsFailed = false, true
+	view.Frame()
+	verify()
+	window.fontsFailed = false
+	window.fontChoices = &nativeFontChoices{main: []string{"Installed Sans"}, mono: []string{"Installed Mono"}}
+	view.Frame()
+	verify()
+}
+
 func TestNativeApplicationSelectsFitTheirSettingsColumns(t *testing.T) {
 	window := nativeMain{
 		showSettings: true, settingsSection: "applications",

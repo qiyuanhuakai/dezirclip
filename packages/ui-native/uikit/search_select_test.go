@@ -38,7 +38,29 @@ func TestSearchSelectFiltersByPathAndCommitsOnlyAListedValue(t *testing.T) {
 	if _, ok := view.Find("No matching applications"); !ok {
 		t.Fatal("expected an explicit empty state for the search")
 	}
+	view.Key(0, ui.KeyEnter)
 	if value != "/second/viewer" {
 		t.Fatal("no-results search discarded the committed choice")
+	}
+	view.Key(0, ui.KeyEscape)
+	if err := view.Click("Images"); err != nil {
+		t.Fatal(err)
+	}
+	view.Type("first veiwer")
+	if _, ok := view.Find("Image Viewer"); !ok {
+		t.Fatal("a transposed letter hid the matching application")
+	}
+	view.Key(0, ui.KeyEnter)
+	if value != "/first/viewer" {
+		t.Fatalf("Enter committed %q instead of the matching application's path", value)
+	}
+	if err := view.Click("Images"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Click("System default"); err != nil {
+		t.Fatal(err)
+	}
+	if value != "" {
+		t.Fatal("choosing the system default did not clear the path")
 	}
 }

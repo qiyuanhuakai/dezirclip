@@ -1,11 +1,15 @@
 package uikit
 
 import (
-	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/searchtext"
 )
+
+const searchSelectChoicePrefix = "choice:"
 
 type SearchSelectOptions struct {
 	Label, Placeholder, NoMatches string
@@ -64,13 +68,12 @@ func (k Kit) SearchSelect(c *ui.Context, options SearchSelectOptions) (ui.Elemen
 			_, viewportHeight := c.Size()
 			ui.Scroll(c).FillWidth().MaxHeight(max(40, min(300, viewportHeight-64))).Children(func() {
 				ui.Column(c).FillWidth().Padding(list.Padding[:]...).Children(func() {
-					tokens := strings.Fields(strings.ToLower(*query))
-					matches, selectable := 0, 0
-					for index, choice := range options.Choices {
-						if parts.Filtering() && !matchesSelectOption(choice, tokens) {
-							continue
-						}
-						matches++
+					choices := options.Choices
+					if parts.Filtering() {
+						choices = filterSearchChoices(choices, *query)
+					}
+					selectable := 0
+					for _, choice := range choices {
 						var row ui.Element
 						widget := "selectOption"
 						if choice.Disabled {
@@ -78,7 +81,7 @@ func (k Kit) SearchSelect(c *ui.Context, options SearchSelectOptions) (ui.Elemen
 							widget = "selectOptionDisabled"
 						} else {
 							selectable++
-							row = parts.Item(strconv.Itoa(index)).Label(choice.Label).FillWidth()
+							row = parts.Item(searchSelectChoicePrefix + choice.Value).Label(choice.Label).FillWidth()
 							switch {
 							case choice.Value == *options.Value:
 								widget = "selectSelected"
@@ -90,10 +93,10 @@ func (k Kit) SearchSelect(c *ui.Context, options SearchSelectOptions) (ui.Elemen
 						paint(row.MinWidth(0).Height(rowStyle.Height).AlignItems(ui.Center), rowStyle).
 							Children(func() { text(c, choice.Label, rowStyle).MinWidth(0).SingleLine().PassThrough() })
 					}
-					if matches > 0 && selectable == 0 {
+					if len(choices) > 0 && selectable == 0 {
 						parts.Item("").Disabled(true).Size(0, 0).PassThrough()
 					}
-					if matches == 0 {
+					if len(choices) == 0 {
 						// ComboboxBase needs one item for the popup to remain visible.
 						// Its empty token cannot select a setting.
 						empty := k.style("selectOptionDisabled")
@@ -104,10 +107,14 @@ func (k Kit) SearchSelect(c *ui.Context, options SearchSelectOptions) (ui.Elemen
 			})
 		})
 		if token, ok := parts.Chosen(); ok && !options.Disabled {
-			if index, err := strconv.Atoi(token); err == nil && index >= 0 && index < len(options.Choices) {
-				value := options.Choices[index].Value
-				changed = value != *options.Value
-				*options.Value = value
+			if value, found := strings.CutPrefix(token, searchSelectChoicePrefix); found {
+				for _, choice := range options.Choices {
+					if choice.Value == value && !choice.Disabled {
+						changed = value != *options.Value
+						*options.Value = value
+						break
+					}
+				}
 			}
 		}
 		if !parts.Open() {
@@ -117,12 +124,48 @@ func (k Kit) SearchSelect(c *ui.Context, options SearchSelectOptions) (ui.Elemen
 	return box, changed
 }
 
-func matchesSelectOption(option SelectOption, terms []string) bool {
-	haystack := strings.ToLower(option.Label + " " + option.Value)
-	for _, term := range terms {
-		if !strings.Contains(haystack, term) {
-			return false
+func filterSearchChoices(choices []SelectOption, query string) []SelectOption {
+	terms := strings.Fields(strings.ToLower(query))
+	if len(terms) == 0 {
+		return choices
+	}
+	var matches []SelectOption
+	for _, choice := range choices {
+		if matchesSelectOption(choice, terms, false) {
+			matches = append(matches, choice)
 		}
 	}
-	return true
+	if len(matches) == 0 {
+		for _, choice := range choices {
+			if matchesSelectOption(choice, terms, true) {
+				matches = append(matches, choice)
+			}
+		}
+	}
+	return matches
+}
+
+func matchesSelectOption(option SelectOption, terms []string, allowTypo bool) bool {
+	haystack := strings.ToLower(option.Label + " " + option.Value)
+	missing := ""
+	for _, term := range terms {
+		if strings.Contains(haystack, term) {
+			continue
+		}
+		if !allowTypo || missing != "" || utf8.RuneCountInString(term) < 4 {
+			return false
+		}
+		missing = term
+	}
+	if missing == "" {
+		return true
+	}
+	for _, word := range strings.FieldsFunc(haystack, func(char rune) bool {
+		return !unicode.IsLetter(char) && !unicode.IsNumber(char)
+	}) {
+		if searchtext.WithinOneEdit(missing, word) {
+			return true
+		}
+	}
+	return false
 }

@@ -59,6 +59,15 @@ interface AppearanceSettingsGroupProps {
 
 type SystemFont = { family: string; is_mono: boolean; path: string };
 
+function fontOptions(fonts: SystemFont[], monospace: boolean, selected: string, defaultOption: { value: string; label: string }) {
+    const options = [defaultOption, ...fonts.filter(font => font.is_mono === monospace)
+        .map(font => ({ value: font.family, label: font.family }))];
+    if (selected && !options.some(option => option.value === selected)) {
+        options.push({ value: selected, label: selected });
+    }
+    return options;
+}
+
 // `list_system_fonts` enumerates every installed font and loads each one on the
 // Rust side, with no shared cache there. This group remounts whenever the rail
 // moves to another section, so a component-local `systemFontsLoaded` restarted
@@ -139,14 +148,8 @@ const AppearanceSettingsGroup = ({
     }, [collapsed, systemFontsLoaded]);
 
     const defaultOption = useMemo(() => ({ value: "", label: t("font_default_option") }), [t]);
-    const fontMainOptions = useMemo(() => [
-        defaultOption,
-        ...systemFonts.filter(f => !f.is_mono).map(f => ({ value: f.family, label: f.family }))
-    ], [defaultOption, systemFonts]);
-    const fontMonoOptions = useMemo(() => [
-        defaultOption,
-        ...systemFonts.filter(f => f.is_mono).map(f => ({ value: f.family, label: f.family }))
-    ], [defaultOption, systemFonts]);
+    const fontMainOptions = useMemo(() => fontOptions(systemFonts, false, fontMain, defaultOption), [defaultOption, systemFonts, fontMain]);
+    const fontMonoOptions = useMemo(() => fontOptions(systemFonts, true, fontMono, defaultOption), [defaultOption, systemFonts, fontMono]);
 
     return (
     <div className={`settings-group ${collapsed ? 'collapsed' : ''}`}>

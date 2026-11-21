@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/searchtext"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 	"golang.org/x/text/unicode/norm"
 )
@@ -98,28 +99,6 @@ var emojiCatalog = sync.OnceValue(func() characterCatalog {
 })
 
 // A typo may insert, delete, replace or transpose one character.
-func oneEditApart(a, b string) bool {
-	left, right := []rune(a), []rune(b)
-	if len(left) > len(right) {
-		left, right = right, left
-	}
-	if len(right)-len(left) > 1 {
-		return false
-	}
-	i := 0
-	for i < len(left) && left[i] == right[i] {
-		i++
-	}
-	if len(left) != len(right) {
-		return slices.Equal(left[i:], right[i+1:])
-	}
-	if i == len(left) || slices.Equal(left[i+1:], right[i+1:]) {
-		return true
-	}
-	return i+1 < len(left) && left[i] == right[i+1] && left[i+1] == right[i] &&
-		slices.Equal(left[i+2:], right[i+2:])
-}
-
 type characterVocabulary uint8
 
 const (
@@ -223,7 +202,7 @@ func characterMatchRank(entry catalogCharacter, literal, phrase string, terms []
 		words = entry.chineseNames
 	}
 	for _, word := range words {
-		if oneEditApart(missing, word) {
+		if searchtext.WithinOneEdit(missing, word) {
 			return 4
 		}
 	}
