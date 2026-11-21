@@ -510,6 +510,19 @@ func run() error {
 					Texts []string
 					Cards map[string]ui.Rect
 				}{tester.Texts(), cards}
+			} else if g.fixture == "privacy-detection" {
+				options := make(map[string]ui.Rect, 5)
+				for _, label := range []string{"Phone numbers", "Identity numbers", "Email addresses", "Secrets", "Strong passwords", "Patterns"} {
+					bounds, ok := tester.Find(label)
+					if !ok {
+						return fmt.Errorf("no privacy detection control named %s", label)
+					}
+					options[label] = bounds
+				}
+				result = struct {
+					Texts   []string
+					Options map[string]ui.Rect
+				}{tester.Texts(), options}
 			} else if g.fixture == "history-image" || g.fixture == "attachment-preview" || g.fixture == "history-rich-text" {
 				result = inspectMediaCards(g.fixture, tester)
 			}

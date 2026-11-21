@@ -74,6 +74,15 @@ const samples = [
     privacyRuleSource: [".privacy-rule-source"], privacyRuleScope: [".privacy-rule-scope"],
     privacySourceExclusion: [".source-exclusion-input"],
   }],
+  ["privacy-detection", "default", {
+    privacyDetectionOptions: [".privacy-detection-options"],
+    privacyDetectionOption: [".privacy-kind-option"], privacyDetectionLabel: [".privacy-kind-label"],
+    privacyPatternsContainer: [".privacy-patterns-field"],
+    privacyPatternsField: [".privacy-patterns-input"],
+  }],
+  ["privacy-detection", "focus", {
+    privacyPatternsFieldFocus: [".privacy-patterns-input"],
+  }],
   ["tag-toolbar", "default", {
     tagToolbar: [".tag-manager-toolbar"], tagToolbarButton: [".tag-manager-toolbar .btn-icon:not(.active)"],
     tagToolbarButtonActive: [".tag-manager-toolbar .btn-icon.active"],
@@ -368,7 +377,9 @@ function readStyles(sample) {
     const borderSide = sides[borderWidths.findIndex(width => width > 0)] ?? "Top";
     const outlineWidth = style.outlineStyle === "solid" ? number(style.outlineWidth) : 0;
     const backgroundImage = style.backgroundImage.replace(/(?:, none)+$/, "");
-    const gradient = backgroundImage.match(/^linear-gradient\(([\d.]+)deg, (rgba?\([^)]*\)) 0%, (rgba?\([^)]*\)) 100%\)$/);
+    const gradient = backgroundImage.match(/^linear-gradient\(([\d.]+)deg, (rgba?\([^)]*\)) 0%, (rgba?\([^)]*\)) 100%\)$/)
+      ?? (id.startsWith("settingsSwitch") && backgroundImage.match(
+        /^linear-gradient\((?:([\d.]+)deg, )?((?:rgba?|color|oklch)\([^)]*\))(?: 0%)?, ((?:rgba?|color|oklch)\([^)]*\))(?: 100%)?\)$/));
     // Some glass surfaces layer a uniform tint over their background color.
     const tint = backgroundImage.match(/^linear-gradient\((rgba?\([^)]*\)), \1\)$/)?.[1];
     const letterSpacing = number(text.letterSpacing);
@@ -400,7 +411,7 @@ function readStyles(sample) {
       ...(outlineWidth > 0 && (id === "settingsRangeFocus" || number(style.outlineOffset) === -outlineWidth)
         ? { outline: { width: outlineWidth, color: color(style.outlineColor),
             ...(id === "settingsRangeFocus" ? { offset: number(style.outlineOffset) } : {}) } } : {}),
-      ...(gradient ? { gradient: { angle: Number(gradient[1]), from: color(gradient[2]), to: color(gradient[3]) } } : {}),
+      ...(gradient ? { gradient: { angle: Number(gradient[1] ?? 180), from: color(gradient[2]), to: color(gradient[3]) } } : {}),
       ...(letterSpacing ? { letterSpacing } : {}),
       ...(lineHeight ? { lineHeight: Math.round(lineHeight * 1000) / 1000 } : {}),
       ...(id.startsWith("attachmentImage") ? {
@@ -415,7 +426,7 @@ function readStyles(sample) {
       ...(id.startsWith("historyRichContent") ? { maxHeight: number(style.maxHeight) } : {}),
       ...(id === "historyOCRContent" ? { maxHeight: number(style.maxHeight), usesMonoFont: true } : {}),
       ...(/^(backupInput|settingsDataPath)(Focus|Hover)?$/.test(id) ? { usesMonoFont: true } : {}),
-      ...(id === "backupReplaceConfirmation" ? { minHeight: number(style.minHeight) } : {}),
+      ...(id === "backupReplaceConfirmation" || id.startsWith("privacyPatternsField") ? { minHeight: number(style.minHeight) } : {}),
       ...(columnGap ? { columnGap } : {}),
       ...(rowGap ? { rowGap } : {}),
       ...(switchFace ? { top: number(bounds.top - switchBounds.top), left: number(bounds.left - switchBounds.left) } : top ? { top } : {}),
@@ -427,7 +438,8 @@ function readStyles(sample) {
       ...(id.endsWith("InputIcon") ? { left } : {}),
       ...(content.startsWith('"') ? { caption: JSON.parse(content) } : {}),
       ...(marginBottom ? { marginBottom } : {}),
-      ...(id.startsWith("historyCard") || id.startsWith("hotkey") || id === "settingsDataActions"
+      ...(id.startsWith("historyCard") || id.startsWith("hotkey") || id === "settingsDataActions" ||
+        id === "privacyDetectionOptions"
         ? { margin: sides.map(side => number(style["margin" + side])) } : {}),
       width: switchFace ? number(bounds.width) : pseudo && pseudo !== "::backdrop" ? number(style.width) : element.offsetWidth ?? bounds.width,
       height: id === "backupPreview" ? number(style.maxHeight)
@@ -586,6 +598,9 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
       if (state === "hover") await input.hover();
       if (state === "focus") await input.focus();
       if (state === "popup") await input.click();
+    }
+    if (fixture === "privacy-detection" && state === "focus") {
+      await page.getByRole("textbox", { name: "Patterns" }).focus();
     }
     if (fixture === "disclosure" && state === "expanded") {
       await page.getByRole("button", { name: "Software updates" }).click();

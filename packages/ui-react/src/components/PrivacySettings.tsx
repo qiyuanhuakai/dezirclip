@@ -1,7 +1,8 @@
 import "../styles/components/privacy.css";
-import type { ComponentPropsWithRef, ReactNode } from "react";
+import { useId, type ComponentPropsWithRef, type ReactNode } from "react";
 import { TextArea } from "./TextField";
 import { SettingsRemoveButton } from "./RemoveButton";
+import { SettingsToggle } from "./SettingsToggle";
 
 export function PrivacyRulesHeading({ label, count, id }: { label: string; count?: number; id?: string }) {
   return <div className="setting-item settings-section-title">
@@ -53,4 +54,30 @@ export function PrivacyRuleCard({ title, source, scope, identifier, created, rem
 
 export function SourceExclusionField({ className = "", ...props }: ComponentPropsWithRef<"textarea">) {
   return <TextArea className={["search-input source-exclusion-input", className].filter(Boolean).join(" ")} {...props} />;
+}
+
+export type PrivacyDetectionOption = { value: string; label: string; checked: boolean };
+
+export function PrivacyDetectionOptions({ options, disabled, onChange }: {
+  options: readonly PrivacyDetectionOption[];
+  disabled?: boolean;
+  onChange: (value: string, checked: boolean) => void;
+}) {
+  const id = useId();
+  return <div className="privacy-detection-options">
+    {options.map(option => {
+      const inputId = `${id}-${option.value}`;
+      return <div className="privacy-kind-option" key={option.value}>
+        <SettingsToggle id={inputId} aria-label={option.label} checked={option.checked} disabled={disabled}
+          onChange={event => onChange(option.value, event.currentTarget.checked)} />
+        <label htmlFor={inputId} className="privacy-kind-label">{option.label}</label>
+      </div>;
+    })}
+  </div>;
+}
+
+export function PrivacyPatternsField({ className = "", ...props }: ComponentPropsWithRef<"textarea">) {
+  return <div className="privacy-patterns-field">
+    <TextArea className={["search-input privacy-patterns-input", className].filter(Boolean).join(" ")} {...props} />
+  </div>;
 }

@@ -59,6 +59,21 @@
 .privacy-rule-confirm .setting-btn-group { flex-wrap: wrap; }
 .privacy-rule-manager .privacy-action-error { color: var(--color-error); font-size: var(--font-size-sm); }
 .privacy-rule-manager:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 4px; }
+.privacy-detection-options { display: flex; flex-wrap: wrap; gap: 8px; margin-inline-start: 30px; }
+.privacy-kind-option { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.privacy-kind-label { color: var(--text-primary); font-size: 12px; cursor: pointer; }
+.privacy-kind-option .switch { flex: none; }
+.privacy-kind-option .switch:has(input:focus-visible) { outline: 2px solid var(--accent-color); outline-offset: 4px; }
+.privacy-patterns-field { min-width: 0; padding-inline-start: 30px; }
+.search-input.privacy-patterns-input {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: 80px;
+  padding: 8px;
+  border-radius: 0;
+}
 .main-resume-content { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; width: 100%; position: relative; }
 .main-resume-page { display: contents; }
 .main-resume-content[data-pending="true"] > .main-resume-page { visibility: hidden; pointer-events: none; }

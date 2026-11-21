@@ -459,38 +459,40 @@ func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
 				selected = append(selected, id)
 			}
 		}
-		for _, kind := range []struct{ id, label string }{
+		labels := []struct{ id, label string }{
 			{"phone", n.text("privacy_kind_phone")},
 			{"idcard", n.text("privacy_kind_idcard")},
 			{"email", n.text("privacy_kind_email")},
 			{"secret", n.text("privacy_kind_secret")},
 			{"password", n.text("privacy_kind_password")},
-		} {
-			checked := slices.Contains(selected, kind.id)
-			if kit.SettingsToggle(c, &checked, kind.label).Disabled(n.mutating).Changed() {
-				next := slices.DeleteFunc(slices.Clone(selected), func(id string) bool { return id == kind.id })
-				if checked {
-					next = append(next, kind.id)
-				}
-				n.saveSetting(key, strings.Join(next, ","))
-			}
 		}
+		options := make([]uikit.PrivacyDetectionOption, 0, len(labels))
+		for _, kind := range labels {
+			options = append(options, uikit.PrivacyDetectionOption{Value: kind.id, Label: kind.label, Checked: slices.Contains(selected, kind.id)})
+		}
+		kit.PrivacyDetectionOptions(c, options, n.mutating, func(value string, checked bool) {
+			next := slices.DeleteFunc(slices.Clone(selected), func(id string) bool { return id == value })
+			if checked {
+				next = append(next, value)
+			}
+			n.saveSetting(key, strings.Join(next, ","))
+		})
 	})
 	n.drawCustomPrivacyRules(c, kit)
 }
 
 func (n *nativeMain) drawCustomPrivacyRules(c *ui.Context, kit uikit.Kit) {
 	label := n.text("privacy_protection_custom_rules")
-	row := ui.Column(c.Key(customPrivacySetting)).ColumnSpan(-1).FillWidth().Gap(5)
+	row := ui.Column(c.Key(customPrivacySetting)).ColumnSpan(-1).FillWidth().MinWidth(0).Gap(5)
 	draft := &n.customPrivacyRules
 	saved := n.privacyText(draft, customPrivacySetting)
 	disabled := n.session == nil || draft.instance == "" || n.mutating
 	row.Children(func() {
 		kit.SettingsDisclosure(c, label, &n.privacyCustomOpen, func() {
-			ui.Column(c).FillWidth().Padding(0, 0, 0, 30).Gap(5).Children(func() {
+			ui.Column(c).FillWidth().Gap(5).Children(func() {
 				previous := draft.value
-				field := kit.TextArea(c, &draft.value, label).FillWidth().Height(80).ReadOnly(disabled).
-					Placeholder(n.text("privacy_protection_custom_rules_placeholder")).Tooltip(n.text("privacy_rules_custom_patterns_hint"))
+				field := kit.PrivacyPatternsField(c, &draft.value, label, n.text("privacy_protection_custom_rules_placeholder")).
+					ReadOnly(disabled).Tooltip(n.text("privacy_rules_custom_patterns_hint"))
 				n.observePrivacyText(draft, field, previous, saved, privacyTextDelay)
 				n.drawPrivacyTextRetry(c, kit, draft, disabled)
 			})

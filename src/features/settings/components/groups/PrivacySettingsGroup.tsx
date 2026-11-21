@@ -1,5 +1,4 @@
-import { TextArea } from "@deziro/ui-react/components/TextField";
-import { SourceExclusionField } from "@deziro/ui-react/components/PrivacySettings";
+import { PrivacyDetectionOptions, PrivacyPatternsField, SourceExclusionField } from "@deziro/ui-react/components/PrivacySettings";
 import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
@@ -126,37 +125,20 @@ export default function PrivacySettingsGroup(props: PrivacySettingsGroupProps) {
                             <span className="item-label" style={{ fontWeight: 400 }}>{props.t('privacy_protection_kinds')}</span>
                         </div>
                         {props.privacyKindsOpen && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginLeft: '30px' }}>
-                                {[
-                                    { id: 'phone', label: props.t('privacy_kind_phone') },
-                                    { id: 'idcard', label: props.t('privacy_kind_idcard') },
-                                    { id: 'email', label: props.t('privacy_kind_email') },
-                                    { id: 'secret', label: props.t('privacy_kind_secret') },
-                                    { id: 'password', label: props.t('privacy_kind_password') || "Strong Password" },
-                                ].map(opt => {
-                                    const checked = props.privacyProtectionKinds.includes(opt.id);
-                                    return (
-                                        <label key={opt.id} className="privacy-kind-option">
-                                            <span className="switch">
-                                            <input
-                                                className="cb"
-                                                type="checkbox"
-                                                checked={checked}
-                                                onChange={(e) => {
-                                                    const next = e.target.checked
-                                                        ? [...props.privacyProtectionKinds, opt.id]
-                                                        : props.privacyProtectionKinds.filter(t => t !== opt.id);
-                                                    props.setPrivacyProtectionKinds(next);
-                                                    invoke('set_privacy_protection_kinds', { kinds: next }).catch(console.error);
-                                                }}
-                                            />
-                                            <span className="toggle"><span className="left" /><span className="right" /></span>
-                                            </span>
-                                            <span>{opt.label}</span>
-                                        </label>
-                                    );
-                                })}
-                            </div>
+                            <PrivacyDetectionOptions options={[
+                                { value: 'phone', label: props.t('privacy_kind_phone') },
+                                { value: 'idcard', label: props.t('privacy_kind_idcard') },
+                                { value: 'email', label: props.t('privacy_kind_email') },
+                                { value: 'secret', label: props.t('privacy_kind_secret') },
+                                { value: 'password', label: props.t('privacy_kind_password') || "Strong Password" },
+                            ].map(option => ({ ...option, checked: props.privacyProtectionKinds.includes(option.value) }))}
+                                onChange={(value, checked) => {
+                                    const next = checked
+                                        ? [...props.privacyProtectionKinds, value]
+                                        : props.privacyProtectionKinds.filter(kind => kind !== value);
+                                    props.setPrivacyProtectionKinds(next);
+                                    invoke('set_privacy_protection_kinds', { kinds: next }).catch(console.error);
+                                }} />
                         )}
                     </div>
 
@@ -179,9 +161,7 @@ export default function PrivacySettingsGroup(props: PrivacySettingsGroupProps) {
                             />
                         </div>
                         {props.privacyRulesOpen && (
-                            <TextArea
-                                className="search-input"
-                                style={{ width: 'calc(100% - 30px)', maxWidth: '100%', minHeight: '80px', padding: '8px', borderRadius: '0', marginLeft: '30px', boxSizing: 'border-box' }}
+                            <PrivacyPatternsField
                                 aria-label={props.t("privacy_protection_custom_rules")}
                                 placeholder={props.t('privacy_protection_custom_rules_placeholder')}
                                 value={rulesDraft ?? props.privacyProtectionCustomRules}

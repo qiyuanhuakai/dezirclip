@@ -1366,6 +1366,123 @@
           }
         ]
       },
+      "privacyDetectionOptions": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "margin": [0, 0, 0, 30],
+        "width": 460,
+        "height": 112,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOption": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "width": 163,
+        "height": 32,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionLabel": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 91,
+        "height": 14,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsContainer": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 490,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 30],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsField": {
+        "fill": [243, 243, 243, 255],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 3,
+        "radius": 0,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 26],
+            "values": [4, 4, 0, 0],
+            "inset": true
+          }
+        ]
+      },
+      "privacyPatternsFieldFocus": {
+        "fill": [255, 255, 255, 255],
+        "text": [55, 55, 55, 255],
+        "border": [72, 123, 219, 255],
+        "borderWidth": 3,
+        "radius": 0,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 26],
+            "values": [4, 4, 0, 0],
+            "inset": true
+          }
+        ]
+      },
       "tagToolbar": {
         "fill": [0, 0, 0, 0],
         "text": [55, 55, 55, 255],
@@ -6452,6 +6569,123 @@
           }
         ]
       },
+      "privacyDetectionOptions": {
+        "fill": [0, 0, 0, 0],
+        "text": [237, 237, 237, 255],
+        "border": [237, 237, 237, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "margin": [0, 0, 0, 30],
+        "width": 460,
+        "height": 112,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOption": {
+        "fill": [0, 0, 0, 0],
+        "text": [237, 237, 237, 255],
+        "border": [237, 237, 237, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "width": 163,
+        "height": 32,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionLabel": {
+        "fill": [0, 0, 0, 0],
+        "text": [237, 237, 237, 255],
+        "border": [237, 237, 237, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 91,
+        "height": 14,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsContainer": {
+        "fill": [0, 0, 0, 0],
+        "text": [237, 237, 237, 255],
+        "border": [237, 237, 237, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 490,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 30],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsField": {
+        "fill": [44, 44, 44, 255],
+        "text": [237, 237, 237, 255],
+        "border": [0, 0, 0, 255],
+        "borderWidth": 3,
+        "radius": 0,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 26],
+            "values": [4, 4, 0, 0],
+            "inset": true
+          }
+        ]
+      },
+      "privacyPatternsFieldFocus": {
+        "fill": [32, 32, 32, 255],
+        "text": [237, 237, 237, 255],
+        "border": [72, 123, 219, 255],
+        "borderWidth": 3,
+        "radius": 0,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Cascadia Mono, JetBrains Mono, Noto Sans Mono, Courier New, Courier, monospace, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [0, 0, 0, 26],
+            "values": [4, 4, 0, 0],
+            "inset": true
+          }
+        ]
+      },
       "tagToolbar": {
         "fill": [0, 0, 0, 0],
         "text": [237, 237, 237, 255],
@@ -11523,6 +11757,109 @@
         "uppercase": false,
         "opacity": 1
       },
+      "privacyDetectionOptions": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "margin": [0, 0, 0, 30],
+        "width": 460,
+        "height": 52,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOption": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "width": 135,
+        "height": 22,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionLabel": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 83,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsContainer": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 490,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 30],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsField": {
+        "fill": [255, 255, 255, 191],
+        "text": [55, 55, 55, 255],
+        "border": [130, 130, 130, 51],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsFieldFocus": {
+        "fill": [255, 255, 255, 217],
+        "text": [55, 55, 55, 255],
+        "border": [72, 123, 219, 255],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1
+      },
       "tagToolbar": {
         "fill": [0, 0, 0, 0],
         "text": [55, 55, 55, 255],
@@ -16432,6 +16769,109 @@
         "radius": 10,
         "width": 490,
         "height": 88,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOptions": {
+        "fill": [0, 0, 0, 0],
+        "text": [246, 247, 251, 255],
+        "border": [246, 247, 251, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "margin": [0, 0, 0, 30],
+        "width": 460,
+        "height": 52,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOption": {
+        "fill": [0, 0, 0, 0],
+        "text": [246, 247, 251, 255],
+        "border": [246, 247, 251, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "width": 135,
+        "height": 22,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionLabel": {
+        "fill": [0, 0, 0, 0],
+        "text": [246, 247, 251, 255],
+        "border": [246, 247, 251, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 83,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsContainer": {
+        "fill": [0, 0, 0, 0],
+        "text": [246, 247, 251, 255],
+        "border": [246, 247, 251, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 490,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 30],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsField": {
+        "fill": [255, 255, 255, 46],
+        "text": [232, 232, 232, 255],
+        "border": [255, 255, 255, 26],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsFieldFocus": {
+        "fill": [255, 255, 255, 61],
+        "text": [232, 232, 232, 255],
+        "border": [72, 123, 219, 255],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
         "marginTop": 0,
         "padding": [8, 8, 8, 8],
         "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
@@ -21372,6 +21812,109 @@
         "uppercase": false,
         "opacity": 1
       },
+      "privacyDetectionOptions": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "margin": [0, 0, 0, 30],
+        "width": 460,
+        "height": 52,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOption": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "width": 135,
+        "height": 22,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionLabel": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 83,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsContainer": {
+        "fill": [0, 0, 0, 0],
+        "text": [55, 55, 55, 255],
+        "border": [55, 55, 55, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 490,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 30],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsField": {
+        "fill": [255, 255, 255, 166],
+        "text": [55, 55, 55, 255],
+        "border": [130, 130, 130, 51],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsFieldFocus": {
+        "fill": [255, 255, 255, 199],
+        "text": [55, 55, 55, 255],
+        "border": [72, 123, 219, 255],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1
+      },
       "tagToolbar": {
         "fill": [0, 0, 0, 0],
         "text": [55, 55, 55, 255],
@@ -26281,6 +26824,109 @@
         "radius": 10,
         "width": 490,
         "height": 88,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOptions": {
+        "fill": [0, 0, 0, 0],
+        "text": [246, 247, 251, 255],
+        "border": [246, 247, 251, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "margin": [0, 0, 0, 30],
+        "width": 460,
+        "height": 52,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOption": {
+        "fill": [0, 0, 0, 0],
+        "text": [246, 247, 251, 255],
+        "border": [246, 247, 251, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "width": 135,
+        "height": 22,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionLabel": {
+        "fill": [0, 0, 0, 0],
+        "text": [246, 247, 251, 255],
+        "border": [246, 247, 251, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 83,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsContainer": {
+        "fill": [0, 0, 0, 0],
+        "text": [246, 247, 251, 255],
+        "border": [246, 247, 251, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 490,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 30],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsField": {
+        "fill": [255, 255, 255, 36],
+        "text": [232, 232, 232, 255],
+        "border": [255, 255, 255, 26],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsFieldFocus": {
+        "fill": [255, 255, 255, 51],
+        "text": [232, 232, 232, 255],
+        "border": [72, 123, 219, 255],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
         "marginTop": 0,
         "padding": [8, 8, 8, 8],
         "font": "Segoe UI Variable Text, Segoe UI, Inter, Noto Sans, Noto Sans CJK SC, Microsoft YaHei, sans-serif",
@@ -31834,6 +32480,163 @@
             "color": [26, 26, 51, 10],
             "values": [0, 1, 2, 0],
             "inset": true
+          }
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
+        }
+      },
+      "privacyDetectionOptions": {
+        "fill": [0, 0, 0, 0],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "margin": [0, 0, 0, 30],
+        "width": 460,
+        "height": 52,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOption": {
+        "fill": [0, 0, 0, 0],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "width": 129,
+        "height": 22,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionLabel": {
+        "fill": [0, 0, 0, 0],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 83,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsContainer": {
+        "fill": [0, 0, 0, 0],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 490,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 30],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsField": {
+        "fill": [255, 255, 255, 140],
+        "text": [29, 29, 31, 255],
+        "border": [58, 58, 66, 31],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [255, 255, 255, 77],
+            "values": [0, 1, 0, 0],
+            "inset": true
+          },
+          {
+            "color": [26, 26, 51, 10],
+            "values": [0, 1, 2, 0],
+            "inset": true
+          }
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [255, 255, 255, 216],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 65,
+              "rgba": [255, 255, 255, 140]
+            },
+            {
+              "percent": 100,
+              "rgba": [255, 255, 255, 216]
+            }
+          ]
+        }
+      },
+      "privacyPatternsFieldFocus": {
+        "fill": [255, 255, 255, 140],
+        "text": [29, 29, 31, 255],
+        "border": [11, 132, 255, 143],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [12, 131, 255, 41],
+            "values": [0, 0, 0, 3]
           }
         ],
         "fillRange": {
@@ -39370,6 +40173,235 @@
           ]
         }
       },
+      "privacyDetectionOptions": {
+        "fill": [0, 0, 0, 0],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "margin": [0, 0, 0, 30],
+        "width": 460,
+        "height": 52,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOption": {
+        "fill": [0, 0, 0, 0],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "width": 129,
+        "height": 22,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionLabel": {
+        "fill": [0, 0, 0, 0],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 83,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsContainer": {
+        "fill": [0, 0, 0, 0],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 490,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 30],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsField": {
+        "fill": [46, 48, 58, 224],
+        "text": [245, 245, 247, 255],
+        "border": [255, 255, 255, 20],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [255, 255, 255, 8],
+            "values": [0, 1, 0, 0],
+            "inset": true
+          },
+          {
+            "color": [0, 0, 0, 31],
+            "values": [0, 1, 2, 0],
+            "inset": true
+          }
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 32,
+              "rgba": [44, 49, 58, 110]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 48, 58, 128]
+            },
+            {
+              "percent": 45,
+              "rgba": [44, 48, 58, 155]
+            },
+            {
+              "percent": 47,
+              "rgba": [46, 47, 58, 162]
+            },
+            {
+              "percent": 50,
+              "rgba": [46, 49, 57, 173]
+            },
+            {
+              "percent": 53,
+              "rgba": [45, 47, 59, 183]
+            },
+            {
+              "percent": 59,
+              "rgba": [45, 47, 57, 204]
+            },
+            {
+              "percent": 65,
+              "rgba": [46, 48, 58, 224]
+            },
+            {
+              "percent": 68,
+              "rgba": [44, 48, 58, 235]
+            },
+            {
+              "percent": 74,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
+        }
+      },
+      "privacyPatternsFieldFocus": {
+        "fill": [46, 48, 58, 224],
+        "text": [245, 245, 247, 255],
+        "border": [11, 132, 255, 143],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [10, 130, 255, 51],
+            "values": [0, 0, 0, 3]
+          }
+        ],
+        "fillRange": {
+          "clear": [0, 0, 0, 0],
+          "full": [45, 48, 58, 255],
+          "stops": [
+            {
+              "percent": 0,
+              "rgba": [0, 0, 0, 0]
+            },
+            {
+              "percent": 32,
+              "rgba": [44, 49, 58, 110]
+            },
+            {
+              "percent": 37,
+              "rgba": [46, 48, 58, 128]
+            },
+            {
+              "percent": 45,
+              "rgba": [44, 48, 58, 155]
+            },
+            {
+              "percent": 47,
+              "rgba": [46, 47, 58, 162]
+            },
+            {
+              "percent": 50,
+              "rgba": [46, 49, 57, 173]
+            },
+            {
+              "percent": 53,
+              "rgba": [45, 47, 59, 183]
+            },
+            {
+              "percent": 59,
+              "rgba": [45, 47, 57, 204]
+            },
+            {
+              "percent": 65,
+              "rgba": [46, 48, 58, 224]
+            },
+            {
+              "percent": 68,
+              "rgba": [44, 48, 58, 235]
+            },
+            {
+              "percent": 74,
+              "rgba": [45, 48, 58, 255]
+            },
+            {
+              "percent": 100,
+              "rgba": [45, 48, 58, 255]
+            }
+          ]
+        }
+      },
       "tagToolbar": {
         "fill": [0, 0, 0, 0],
         "text": [245, 245, 247, 255],
@@ -46747,6 +47779,122 @@
           }
         ]
       },
+      "privacyDetectionOptions": {
+        "fill": [0, 0, 0, 0],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "margin": [0, 0, 0, 30],
+        "width": 460,
+        "height": 52,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOption": {
+        "fill": [0, 0, 0, 0],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "width": 129,
+        "height": 22,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionLabel": {
+        "fill": [0, 0, 0, 0],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 83,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsContainer": {
+        "fill": [0, 0, 0, 0],
+        "text": [29, 29, 31, 255],
+        "border": [29, 29, 31, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 490,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 30],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsField": {
+        "fill": [255, 255, 255, 230],
+        "text": [29, 29, 31, 255],
+        "border": [59, 59, 67, 61],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [255, 255, 255, 184],
+            "values": [0, 1, 0, 0],
+            "inset": true
+          }
+        ]
+      },
+      "privacyPatternsFieldFocus": {
+        "fill": [255, 255, 255, 230],
+        "text": [29, 29, 31, 255],
+        "border": [10, 132, 255, 153],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [10, 130, 255, 51],
+            "values": [0, 0, 0, 3]
+          }
+        ]
+      },
       "tagToolbar": {
         "fill": [0, 0, 0, 0],
         "text": [29, 29, 31, 255],
@@ -51664,6 +52812,122 @@
           }
         ]
       },
+      "privacyDetectionOptions": {
+        "fill": [0, 0, 0, 0],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "margin": [0, 0, 0, 30],
+        "width": 460,
+        "height": 52,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOption": {
+        "fill": [0, 0, 0, 0],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "width": 129,
+        "height": 22,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionLabel": {
+        "fill": [0, 0, 0, 0],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 83,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsContainer": {
+        "fill": [0, 0, 0, 0],
+        "text": [245, 245, 247, 255],
+        "border": [245, 245, 247, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 490,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 30],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsField": {
+        "fill": [58, 60, 68, 179],
+        "text": [245, 245, 247, 255],
+        "border": [255, 255, 255, 41],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [255, 255, 255, 20],
+            "values": [0, 1, 0, 0],
+            "inset": true
+          }
+        ]
+      },
+      "privacyPatternsFieldFocus": {
+        "fill": [58, 60, 68, 179],
+        "text": [245, 245, 247, 255],
+        "border": [10, 132, 255, 153],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [10, 130, 255, 51],
+            "values": [0, 0, 0, 3]
+          }
+        ]
+      },
       "tagToolbar": {
         "fill": [0, 0, 0, 0],
         "text": [245, 245, 247, 255],
@@ -56538,6 +57802,126 @@
           }
         ]
       },
+      "privacyDetectionOptions": {
+        "fill": [0, 0, 0, 0],
+        "text": [10, 39, 70, 255],
+        "border": [10, 39, 70, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "margin": [0, 0, 0, 30],
+        "width": 460,
+        "height": 68,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOption": {
+        "fill": [0, 0, 0, 0],
+        "text": [10, 39, 70, 255],
+        "border": [10, 39, 70, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "width": 153,
+        "height": 30,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionLabel": {
+        "fill": [0, 0, 0, 0],
+        "text": [10, 39, 70, 255],
+        "border": [10, 39, 70, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 83,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsContainer": {
+        "fill": [0, 0, 0, 0],
+        "text": [10, 39, 70, 255],
+        "border": [10, 39, 70, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 490,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 30],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsField": {
+        "fill": [255, 255, 255, 217],
+        "text": [10, 39, 70, 255],
+        "border": [44, 232, 185, 87],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [136, 255, 221, 15],
+            "values": [0, 0, 0, 1],
+            "inset": true
+          }
+        ]
+      },
+      "privacyPatternsFieldFocus": {
+        "fill": [255, 255, 255, 217],
+        "text": [10, 39, 70, 255],
+        "border": [104, 239, 204, 255],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [46, 232, 182, 56],
+            "values": [0, 0, 18, 0]
+          },
+          {
+            "color": [46, 232, 182, 56],
+            "values": [0, 0, 0, 2]
+          }
+        ]
+      },
       "tagToolbar": {
         "fill": [0, 0, 0, 0],
         "text": [10, 39, 70, 255],
@@ -57608,6 +58992,11 @@
         "border": [45, 233, 185, 80],
         "borderWidth": 1,
         "radius": 999,
+        "gradient": {
+          "angle": 180,
+          "from": [222, 239, 255, 223],
+          "to": [236, 245, 255, 230]
+        },
         "width": 62,
         "height": 30,
         "marginTop": 0,
@@ -57635,6 +59024,11 @@
         "border": [175, 247, 228, 255],
         "borderWidth": 1,
         "radius": 999,
+        "gradient": {
+          "angle": 180,
+          "from": [255, 255, 255, 255],
+          "to": [194, 253, 245, 255]
+        },
         "top": 3,
         "left": 3,
         "width": 22,
@@ -57699,6 +59093,11 @@
         "border": [104, 239, 204, 255],
         "borderWidth": 1,
         "radius": 999,
+        "gradient": {
+          "angle": 180,
+          "from": [140, 236, 222, 248],
+          "to": [171, 241, 231, 255]
+        },
         "width": 62,
         "height": 30,
         "marginTop": 0,
@@ -57726,6 +59125,11 @@
         "border": [146, 244, 218, 255],
         "borderWidth": 1,
         "radius": 999,
+        "gradient": {
+          "angle": 180,
+          "from": [255, 255, 255, 255],
+          "to": [194, 253, 245, 255]
+        },
         "top": 3,
         "left": 33,
         "width": 22,
@@ -61526,6 +62930,126 @@
           }
         ]
       },
+      "privacyDetectionOptions": {
+        "fill": [0, 0, 0, 0],
+        "text": [220, 251, 255, 255],
+        "border": [220, 251, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "margin": [0, 0, 0, 30],
+        "width": 460,
+        "height": 68,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionOption": {
+        "fill": [0, 0, 0, 0],
+        "text": [220, 251, 255, 255],
+        "border": [220, 251, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "columnGap": 8,
+        "rowGap": 8,
+        "width": 153,
+        "height": 30,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyDetectionLabel": {
+        "fill": [0, 0, 0, 0],
+        "text": [220, 251, 255, 255],
+        "border": [220, 251, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 83,
+        "height": 16,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 0],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 12,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsContainer": {
+        "fill": [0, 0, 0, 0],
+        "text": [220, 251, 255, 255],
+        "border": [220, 251, 255, 255],
+        "borderWidth": 0,
+        "radius": 0,
+        "width": 490,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [0, 0, 0, 30],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 16,
+        "weight": 400,
+        "uppercase": false,
+        "opacity": 1
+      },
+      "privacyPatternsField": {
+        "fill": [9, 16, 34, 207],
+        "text": [220, 251, 255, 255],
+        "border": [44, 233, 255, 82],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [128, 255, 255, 10],
+            "values": [0, 0, 0, 1],
+            "inset": true
+          }
+        ]
+      },
+      "privacyPatternsFieldFocus": {
+        "fill": [9, 16, 34, 207],
+        "text": [220, 251, 255, 255],
+        "border": [104, 239, 255, 255],
+        "borderWidth": 1,
+        "radius": 10,
+        "minHeight": 80,
+        "width": 460,
+        "height": 80,
+        "marginTop": 0,
+        "padding": [8, 8, 8, 8],
+        "font": "Orbitron, Rajdhani, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
+        "size": 14,
+        "weight": 700,
+        "uppercase": false,
+        "opacity": 1,
+        "shadows": [
+          {
+            "color": [46, 232, 255, 56],
+            "values": [0, 0, 18, 0]
+          },
+          {
+            "color": [46, 232, 255, 56],
+            "values": [0, 0, 0, 2]
+          }
+        ]
+      },
       "tagToolbar": {
         "fill": [0, 0, 0, 0],
         "text": [220, 251, 255, 255],
@@ -62596,6 +64120,11 @@
         "border": [44, 232, 255, 76],
         "borderWidth": 1,
         "radius": 999,
+        "gradient": {
+          "angle": 180,
+          "from": [24, 39, 80, 201],
+          "to": [13, 21, 48, 230]
+        },
         "width": 62,
         "height": 30,
         "marginTop": 0,
@@ -62623,6 +64152,11 @@
         "border": [175, 247, 255, 255],
         "borderWidth": 1,
         "radius": 999,
+        "gradient": {
+          "angle": 180,
+          "from": [255, 255, 255, 255],
+          "to": [195, 250, 255, 255]
+        },
         "top": 3,
         "left": 3,
         "width": 22,
@@ -62687,6 +64221,11 @@
         "border": [104, 239, 255, 255],
         "borderWidth": 1,
         "radius": 999,
+        "gradient": {
+          "angle": 180,
+          "from": [34, 133, 165, 235],
+          "to": [24, 93, 118, 255]
+        },
         "width": 62,
         "height": 30,
         "marginTop": 0,
@@ -62714,6 +64253,11 @@
         "border": [146, 244, 255, 255],
         "borderWidth": 1,
         "radius": 999,
+        "gradient": {
+          "angle": 180,
+          "from": [255, 255, 255, 255],
+          "to": [195, 250, 255, 255]
+        },
         "top": 3,
         "left": 33,
         "width": 22,

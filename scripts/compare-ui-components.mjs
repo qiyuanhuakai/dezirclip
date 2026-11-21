@@ -28,6 +28,7 @@ const cases = {
   "settings-update": { states: ["default", "unknown-size", "installing"], text: "Installed version" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
   "privacy-rules": { states: ["default"], text: "Privacy rules" },
+  "privacy-detection": { states: ["default", "narrow"], text: "Custom detection patterns" },
   "tag-toolbar": { states: ["default"], text: "Work" },
   "tag-search": { states: ["default"], text: "Work" },
   "search-select": { states: ["default", "apps-filtered", "empty", "typo"], text: "Interface font" },
@@ -338,6 +339,31 @@ try {
                 || await excluded.inputValue() !== "Example Editor\nExample Browser") {
                 throw Error("Privacy confirmation or source exclusions are missing");
               }
+            }
+            if (fixture === "privacy-detection") {
+              const webRows = await page.locator(".privacy-kind-option").evaluateAll(options =>
+                options.map(option => ({ label: option.textContent.trim(), y: Math.round(option.getBoundingClientRect().y) })));
+              const nativeRows = webRows.map(({ label }) => inspection.Options[label]?.Y);
+              const rows = offsets => offsets.map(y => Math.round(y - offsets[0]));
+              const relative = rows(webRows.map(({ y }) => y));
+              if (webRows.length !== 5 || nativeRows.some(y => typeof y !== "number") ||
+                  rows(nativeRows).some((y, i) => Math.abs(y - relative[i]) > 3)) {
+                throw Error(`Privacy switches wrap differently: WebView ${relative}, Native ${rows(nativeRows)}`);
+              }
+              const patterns = page.getByRole("textbox", { name: "Patterns" });
+              if (await patterns.inputValue() !== "EXAMPLE-[0-9]+\nproject_[a-z]+") {
+                throw Error("Custom patterns did not load the multiline text");
+              }
+              const bounds = await patterns.boundingBox();
+              const counterpart = inspection.Options.Patterns;
+              if (!bounds || !counterpart || Math.abs(bounds.width - counterpart.W) > 2 ||
+                  Math.abs(bounds.height - counterpart.H) > 2 || Math.abs(bounds.x - counterpart.X) > 2) {
+                throw Error(`Privacy patterns field WebView ${bounds?.width}×${bounds?.height}, Native ${counterpart?.W}×${counterpart?.H}`);
+              }
+              const identity = page.getByRole("checkbox", { name: "Identity numbers" });
+              if (await identity.isChecked()) throw Error("Identity detection starts enabled");
+              await page.getByText("Identity numbers", { exact: true }).click();
+              if (!await identity.isChecked()) throw Error("The detection label did not toggle its switch");
             }
             if (fixture === "tag-search") {
               const field = page.getByRole("textbox", { name: "Search tagged entries", exact: true });

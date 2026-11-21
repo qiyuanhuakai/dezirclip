@@ -39,6 +39,7 @@ const figures = [
   ["settings-update", "installing", 175, 0, "settings-update-installing"],
   ["settings-remove", "default", 115],
   ["privacy-rules", "default", 390],
+  ["privacy-detection", "narrow", 290],
   ["tag-toolbar", "default", 85],
   ["tag-search", "default", 180],
   ["search-select", "apps-filtered", 218],

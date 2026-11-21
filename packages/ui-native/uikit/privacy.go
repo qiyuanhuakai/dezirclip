@@ -75,3 +75,47 @@ func (k Kit) SourceExclusionField(c *ui.Context, value *string, label, placehold
 	field := ui.TextAreaBase(c, value).Label(label).Placeholder(placeholder)
 	return k.styleField(c, field.FillWidth(), "privacySourceExclusion").MinHeight(88)
 }
+
+type PrivacyDetectionOption struct {
+	Value, Label string
+	Checked      bool
+}
+
+// PrivacyDetectionOptions lays out labeled switches that wrap as a group.
+func (k Kit) PrivacyDetectionOptions(c *ui.Context, options []PrivacyDetectionOption, disabled bool, change func(string, bool)) {
+	group, optionStyle, labelStyle := k.style("privacyDetectionOptions"), k.style("privacyDetectionOption"), k.style("privacyDetectionLabel")
+	switchStyle := k.style("settingsSwitch")
+	ui.Column(c).FillWidth().MinWidth(0).Padding(group.Margin[:]...).Children(func() {
+		ui.Row(c).FillWidth().MinWidth(0).Wrap().GapX(group.ColumnGap).GapY(group.RowGap).Children(func() {
+			for _, option := range options {
+				checked := option.Checked
+				control := ui.CheckboxBase(c.Key(option.Value), &checked).Label(option.Label).
+					AlignItems(ui.Center).Gap(optionStyle.ColumnGap).FocusRing(true).Disabled(disabled)
+				control.Children(func() {
+					track := ui.Box(c).Size(switchStyle.Width, switchStyle.Height).Shrink(0).PassThrough()
+					if disabled {
+						track.Opacity(k.style("settingsSwitchDisabled").Opacity)
+					}
+					k.paintSettingsSwitch(c, track, checked)
+					text(c, option.Label, labelStyle).Wrap().PassThrough()
+				})
+				if control.Changed() && change != nil {
+					change(option.Value, checked)
+				}
+			}
+		})
+	})
+}
+
+// PrivacyPatternsField draws the indented multiline input for custom detection patterns.
+func (k Kit) PrivacyPatternsField(c *ui.Context, value *string, label, placeholder string) ui.Element {
+	style := k.style("privacyPatternsField")
+	var field ui.Element
+	padding := k.style("privacyPatternsContainer").Padding
+	ui.Column(c).FillWidth().MinWidth(0).Padding(padding[:]...).Children(func() {
+		input := ui.TextAreaBase(c, value).Label(label).Placeholder(placeholder).
+			FillWidth().MinHeight(style.MinHeight)
+		field = k.styleField(c, input, "privacyPatternsField")
+	})
+	return field
+}

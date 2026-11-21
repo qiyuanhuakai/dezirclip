@@ -30,3 +30,25 @@ func TestSettingsToggleFieldDoesNotChangeTheValueWhenHelpOpens(t *testing.T) {
 		t.Fatalf("switch click set enabled=%t changes=%d", enabled, changes)
 	}
 }
+
+func TestPrivacyDetectionSwitchesKeepTheirValuesWhenWrapping(t *testing.T) {
+	options := []PrivacyDetectionOption{
+		{Value: "phone", Label: "Phone numbers", Checked: true},
+		{Value: "identity", Label: "Identity numbers"},
+	}
+	tester := ui.NewTester(func(c *ui.Context) {
+		(Kit{}).PrivacyDetectionOptions(c, options, false, func(value string, checked bool) {
+			if value == options[1].Value {
+				options[1].Checked = checked
+			}
+		})
+	}, 150, 110)
+	phone, foundPhone := tester.Find(options[0].Label)
+	identity, foundIdentity := tester.Find(options[1].Label)
+	if !foundPhone || !foundIdentity || identity.Y <= phone.Y {
+		t.Fatalf("privacy detection controls did not wrap: %+v %+v", phone, identity)
+	}
+	if err := tester.Click(options[1].Label); err != nil || !options[1].Checked || !options[0].Checked {
+		t.Fatalf("wrapped control did not toggle only its setting: %+v, %v", options, err)
+	}
+}

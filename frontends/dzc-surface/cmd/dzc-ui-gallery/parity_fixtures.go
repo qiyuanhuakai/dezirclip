@@ -172,6 +172,34 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 				kit.SourceExclusionField(c, &value, "Excluded applications", "").ReadOnly(true)
 			})
 		})
+	case "privacy-detection":
+		width := float32(490)
+		if g.state == "narrow" {
+			width = 290
+		}
+		panel := ui.Column(c).Width(width).Gap(8)
+		options := ui.Local(panel, "detection", func() []uikit.PrivacyDetectionOption {
+			return []uikit.PrivacyDetectionOption{
+				{Value: "phone", Label: "Phone numbers", Checked: true},
+				{Value: "id", Label: "Identity numbers"},
+				{Value: "email", Label: "Email addresses", Checked: true},
+				{Value: "secrets", Label: "Secrets"},
+				{Value: "password", Label: "Strong passwords", Checked: true},
+			}
+		})
+		patterns := ui.Local(panel, "patterns", func() string { return "EXAMPLE-[0-9]+\nproject_[a-z]+" })
+		panel.Children(func() {
+			kit.SettingsLabel(c, "Privacy detection")
+			kit.PrivacyDetectionOptions(c, *options, false, func(value string, checked bool) {
+				for index, option := range *options {
+					if option.Value == value {
+						(*options)[index].Checked = checked
+					}
+				}
+			})
+			kit.SettingsLabel(c, "Custom detection patterns")
+			kit.PrivacyPatternsField(c, patterns, "Patterns", "One pattern per line")
+		})
 	case "settings-remove":
 		ui.Column(c).Width(330).Gap(8).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {

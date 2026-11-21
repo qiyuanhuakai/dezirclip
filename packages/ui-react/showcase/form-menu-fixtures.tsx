@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import ThemedSelect from "../src/components/ThemedSelect";
 import { BackupActions, BackupChoices, BackupDialog, BackupField, BackupPreview, BackupReplaceConfirmation, ContextMenuItem, ContextMenuSurface, EmojiAddTile, EmojiFavoriteTile, HotkeyBinding, HotkeyList, HotkeyListLayout, NumberField,
-  PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField, SettingHelp, SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsField, SettingsRemoveButton, SettingsSectionCard, TagPickerTrigger, TagSearchField, TagToolbar, TagToolbarTitle, TextArea, TextField } from "../src";
+  PrivacyDetectionOptions, PrivacyPatternsField, PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField, SettingHelp, SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsField, SettingsRemoveButton, SettingsSectionCard, TagPickerTrigger, TagSearchField, TagToolbar, TagToolbarTitle, TextArea, TextField } from "../src";
 import { Ellipsis, EyeOff, ListChecks, ListCollapse, Plus } from "lucide-react";
 import { settingsPaneColumns } from "../src/components/SettingsSectionCard";
 import { UpdateProgress, UpdateVersionRow } from "../src/components/SettingsUpdate";
@@ -236,6 +236,22 @@ export function PrivacyRulesFixture() {
       <span className="item-label">Excluded applications</span>
       <SourceExclusionField aria-label="Excluded applications" defaultValue={"Example Editor\nExample Browser"} readOnly />
     </div>
+  </div>;
+}
+
+export function PrivacyDetectionFixture({ narrow }: { narrow: boolean }) {
+  const [checked, setChecked] = useState(["phone", "email", "password"]);
+  return <div style={{ width: narrow ? 290 : 490, display: "grid", gap: 8 }}>
+    <div className="setting-item" style={{ display: "contents" }}><span className="item-label">Privacy detection</span></div>
+    <PrivacyDetectionOptions options={[
+      { value: "phone", label: "Phone numbers" }, { value: "id", label: "Identity numbers" },
+      { value: "email", label: "Email addresses" }, { value: "secrets", label: "Secrets" },
+      { value: "password", label: "Strong passwords" },
+    ].map(option => ({ ...option, checked: checked.includes(option.value) }))}
+      onChange={(value, enabled) => setChecked(values => enabled ? [...values, value] : values.filter(item => item !== value))} />
+    <div className="setting-item" style={{ display: "contents" }}><span className="item-label">Custom detection patterns</span></div>
+    <PrivacyPatternsField aria-label="Patterns" defaultValue={"EXAMPLE-[0-9]+\nproject_[a-z]+"}
+      placeholder="One pattern per line" />
   </div>;
 }
 

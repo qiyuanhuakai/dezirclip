@@ -164,6 +164,22 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.Weight = palette.EmphasisWeight
 	case "privacyRuleSource", "privacyRuleScope":
 		style.Text, style.Size = muted, 12
+	case "privacyDetectionOptions":
+		style.ColumnGap, style.RowGap, style.Margin[3] = 8, 8, 30
+	case "privacyDetectionOption":
+		style.ColumnGap = 8
+	case "privacyDetectionLabel":
+		style.Size = 12
+	case "privacyPatternsContainer":
+		style.Padding[3] = 30
+	case "privacyPatternsField", "privacyPatternsFieldFocus":
+		base := "textField"
+		if widget == "privacyPatternsFieldFocus" {
+			base = "textFieldFocus"
+		}
+		style = DefaultWidgetStyle(base, palette)
+		style.Height, style.MinHeight, style.Radius = 80, 80, 0
+		style.Padding = [4]float32{8, 8, 8, 8}
 	case "privacySourceExclusion", "privacySourceExclusionFocus":
 		base := "textField"
 		if widget == "privacySourceExclusionFocus" {
@@ -270,6 +286,8 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.Fill, style.Border, style.BorderWidth = accent, border, 1
 	case "settingsSwitch":
 		style.Width, style.Height = 44, 22
+	case "settingsSwitchDisabled":
+		style.Opacity = 0.56
 	case "settingsSwitchTrack", "settingsSwitchTrackOn":
 		style.Radius, style.Fill = 11, rgba(ui.Hex(palette.Muted).Alpha(.34))
 		if widget == "settingsSwitchTrackOn" {
