@@ -48,6 +48,31 @@ func TestResidentInstallRequiresTheCheckedVersionAndChannel(t *testing.T) {
 	}
 }
 
+func TestResidentCheckEventsKeepTheSelectedChannelAndNewestResult(t *testing.T) {
+	u := nativeUpdater{channel: "preview", checking: true}
+	u.result.installSupport = "updater_support_nsis"
+	now := time.Now()
+	preview := &nativeUpdateCheck{
+		Result:  nativeUpdateResult{Channel: "preview", ChannelVersion: "2.0.0-beta.1"},
+		Checked: now,
+	}
+	u.applyCheckEvent(residentReply{UpdateChannel: "stable", Error: "update_check_failed"})
+	if !u.checking || u.err != nil {
+		t.Fatal("a different channel interrupted the pending check")
+	}
+	u.applyCheckEvent(residentReply{UpdateChannel: "preview", UpdateCheck: preview})
+	if u.checking || u.result.ChannelVersion != "2.0.0-beta.1" || u.result.installSupport != "updater_support_nsis" {
+		t.Fatalf("unexpected resident update result: %+v", u.result)
+	}
+	older := *preview
+	older.Result.ChannelVersion = "1.9.0"
+	older.Checked = now.Add(-time.Minute)
+	u.applyCheck(&older)
+	if u.result.ChannelVersion != "2.0.0-beta.1" {
+		t.Fatal("an older result returned by the status request replaced a newer event")
+	}
+}
+
 func (r indexResponse) RoundTrip(*http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: r.status, Body: io.NopCloser(strings.NewReader(r.body))}, nil
 }

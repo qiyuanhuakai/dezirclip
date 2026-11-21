@@ -24,8 +24,7 @@ type nativeUpdater struct {
 	automatic, notesOpen   bool
 	confirm, installFailed bool
 	startingInstall        bool
-	timer                  *time.Timer
-	cancel                 context.CancelFunc
+	checking               bool
 	generation             uint64
 	result                 nativeUpdateResult
 	err                    error
@@ -70,7 +69,7 @@ type nativeUpdateCheck struct {
 const nativeUpdateInterval = 24 * time.Hour
 
 func (u *nativeUpdater) keepWindow() bool {
-	return u.timer != nil || u.cancel != nil || u.startingInstall
+	return u.startingInstall
 }
 
 func (u *nativeUpdater) installing() bool {
@@ -106,17 +105,6 @@ func (n *nativeMain) configureUpdater(saved string, automatic bool) {
 		n.restoreUpdateCheck(channel, u.generation)
 	}
 	u.channel, u.automatic = channel, automatic
-	if automatic {
-		generation := u.generation
-		u.timer = time.AfterFunc(15*time.Second, func() {
-			n.window.Update(func() {
-				if !n.window.IsDestroyed() && n.updater.generation == generation {
-					u.timer = nil
-					n.checkForUpdates(true)
-				}
-			})
-		})
-	}
 }
 
 func (n *nativeMain) restoreUpdateCheck(channel string, generation uint64) {
@@ -135,11 +123,10 @@ func (n *nativeMain) restoreUpdateCheck(channel string, generation uint64) {
 		}
 		n.window.Update(func() {
 			u := &n.updater
-			if n.window.IsDestroyed() || u.generation != generation || !u.checked.IsZero() {
+			if n.window.IsDestroyed() || u.generation != generation {
 				return
 			}
-			check.Result.installTarget, check.Result.installSupport = u.result.installTarget, u.result.installSupport
-			u.result, u.checked = check.Result, check.Checked
+			u.applyCheck(check)
 		})
 	}()
 }
@@ -153,76 +140,57 @@ func (n *nativeMain) stopUpdater() {
 	u := &n.updater
 	u.generation++
 	u.confirm = false
-	if u.timer != nil {
-		u.timer.Stop()
-		u.timer = nil
-	}
-	if u.cancel != nil {
-		u.cancel()
-		u.cancel = nil
-	}
+	u.checking = false
 }
 
-func (n *nativeMain) checkForUpdates(automatic bool) {
+func (u *nativeUpdater) applyCheck(check *nativeUpdateCheck) {
+	if check.Result.Channel != u.channel || !check.Checked.After(u.checked) {
+		return
+	}
+	result := check.Result
+	result.installTarget, result.installSupport = u.result.installTarget, u.result.installSupport
+	u.result, u.err, u.checked, u.notesOpen = result, nil, check.Checked, false
+}
+
+func (n *nativeMain) checkForUpdates() {
 	u := &n.updater
-	if u.channel == "" || u.cancel != nil || u.installing() || automatic && !u.automatic {
+	if u.channel == "" || u.checking || u.installing() {
 		return
 	}
 	n.stopUpdater()
-	u.installFailed = false
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-	u.cancel = cancel
-	channel, generation := u.channel, u.generation
+	u.checking, u.installFailed = true, false
+	request := residentRequest{Operation: "update-check", UpdateChannel: u.channel, UpdateNow: true}
+	generation := u.generation
 	go func() {
-		defer cancel()
-		result, attempted, err := n.fetchUpdate(ctx, channel, automatic)
-		checked := time.Now()
-		if attempted && err == nil {
-			request := residentRequest{Operation: "update-check", UpdateChannel: channel,
-				UpdateCheck: &nativeUpdateCheck{Result: result, Checked: checked}}
-			if publishErr := n.shell.resident.send(ctx, request, 4*time.Second); publishErr != nil && result.Available != nil {
-				err = errors.New("update_busy")
-			}
+		err := n.shell.resident.send(context.Background(), request, 5*time.Second)
+		if err == nil {
+			return
 		}
 		n.window.Update(func() {
 			if n.window.IsDestroyed() || n.updater.generation != generation {
 				return
 			}
-			u.cancel = nil
-			if err != nil {
-				u.err = err
-			} else if attempted {
-				u.result, u.err, u.checked, u.notesOpen = result, nil, checked, false
-			}
+			u.checking, u.err = false, err
 		})
 	}()
 }
 
-func (n *nativeMain) fetchUpdate(ctx context.Context, channel string, automatic bool) (nativeUpdateResult, bool, error) {
-	var result nativeUpdateResult
-	database, err := n.library.owner.DesktopDatabase()
-	due := true
-	if err == nil {
-		due, err = recordNativeUpdateAttempt(database, channel, automatic, time.Now())
+func (u *nativeUpdater) applyCheckEvent(reply residentReply) {
+	if reply.UpdateChannel != u.channel || u.installing() {
+		return
 	}
-	if automatic && (err != nil || !due) {
-		if err != nil {
-			err = errUpdateSchedule
-		}
-		return result, false, err
+	u.checking = false
+	if reply.Error != "" {
+		u.err = errors.New(reply.Error)
+	} else if reply.UpdateCheck != nil {
+		u.applyCheck(reply.UpdateCheck)
 	}
-	raw, err := n.shell.CheckForUpdate(ctx, channel)
-	if err == nil {
-		result, err = parseNativeUpdate(raw, channel)
-		result.installTarget, result.installSupport = mygoUpdateTarget()
-	}
-	return result, true, err
 }
 
 func (n *nativeMain) installUpdate() {
 	u := &n.updater
 	available := u.result.Available
-	if u.cancel != nil || u.installing() || available == nil || available.Artifact == nil || u.result.installTarget == "" {
+	if u.checking || u.installing() || available == nil || available.Artifact == nil || u.result.installTarget == "" {
 		return
 	}
 	u.startingInstall, u.installFailed, u.err = true, false, nil
@@ -251,7 +219,7 @@ func (u *nativeUpdater) applyInstallStatus(status residentUpdateStatus) {
 	}
 }
 
-// Record external requests before they run so a restarted main window preserves the interval.
+// Record external requests before they run so a restarted desktop preserves the interval.
 func recordNativeUpdateAttempt(database, channel string, automatic bool, now time.Time) (bool, error) {
 	if (channel != "stable" && channel != "preview") || !filepath.IsAbs(database) {
 		return false, client.ErrProtocol
@@ -354,7 +322,7 @@ func (n *nativeMain) aboutValue(c *ui.Context, label, value string) {
 
 func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	u := &n.updater
-	busy := u.cancel != nil || u.installing()
+	busy := u.checking || u.installing()
 	disabled := u.channel == "" || busy || n.mutating || n.session == nil || n.history.state.ServiceInstanceId == ""
 	auto := u.automatic
 	autoLabel := n.text("updater_auto_check")
@@ -382,12 +350,12 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		kit.UpdateVersionRow(c, n.text("updater_channel_version"), u.result.ChannelVersion)
 	}
 	check := n.text("updater_check_now")
-	if u.cancel != nil {
+	if u.checking {
 		check = n.text("updater_checking")
 	}
 	ui.Row(c).Gap(6).Wrap().Children(func() {
 		if n.mainKit().Button(c, uikit.ButtonOptions{Label: check, Disabled: disabled}).Clicked() {
-			n.checkForUpdates(false)
+			n.checkForUpdates()
 		}
 		label, target := n.text("updater_all_releases"), desktopReleasesURL
 		if available := u.result.Available; available != nil {

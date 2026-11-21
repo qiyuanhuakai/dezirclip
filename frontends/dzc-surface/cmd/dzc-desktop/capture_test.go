@@ -127,7 +127,7 @@ func TestResidentUpdateReplyRestoresCachedResult(t *testing.T) {
 	if err := json.NewDecoder(input).Decode(&request); err != nil {
 		t.Fatal(err)
 	}
-	if request.UpdateChannel != "preview" || request.UpdateCheck != nil {
+	if request.UpdateChannel != "preview" || request.UpdateNow {
 		t.Fatalf("incorrect update read request: %+v", request)
 	}
 	now := time.Now()
@@ -141,7 +141,7 @@ func TestResidentUpdateReplyRestoresCachedResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	var reopened nativeUpdater
-	status := bridge.accept(string(payload))
+	status := bridge.accept(string(payload)).UpdateStatus
 	if status == nil {
 		t.Fatal("a reopened main window did not receive the resident install status")
 	}
@@ -165,7 +165,7 @@ func TestResidentUpdateReplyRestoresCachedResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status = bridge.accept(string(event)); status == nil {
+	if status = bridge.accept(string(event)).UpdateStatus; status == nil {
 		t.Fatal("the resident lost a failure after the original request disconnected")
 	}
 	reopened.applyInstallStatus(*status)

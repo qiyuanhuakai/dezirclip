@@ -62,6 +62,10 @@ func fetchUpdateIndex(ctx context.Context, transport *http.Client, endpoint stri
 }
 
 func (*DesktopShell) CheckForUpdate(ctx context.Context, channel string) (json.RawMessage, error) {
+	return checkDesktopUpdate(ctx, channel)
+}
+
+func checkDesktopUpdate(ctx context.Context, channel string) (json.RawMessage, error) {
 	return checkManualUpdate(ctx, channel, &http.Client{Timeout: 15 * time.Second, CheckRedirect: updateRedirect})
 }
 

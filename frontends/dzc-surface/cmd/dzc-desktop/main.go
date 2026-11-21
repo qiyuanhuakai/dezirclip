@@ -511,8 +511,16 @@ func run() error {
 					if acceptRecordingEvent(win, command, native) {
 						continue
 					}
-					if status := shell.resident.accept(command); status != nil && native != nil {
-						win.Update(func() { native.updater.applyInstallStatus(*status) })
+					reply := shell.resident.accept(command)
+					if native != nil && (reply.UpdateStatus != nil || reply.ID == 0 && reply.UpdateChannel != "") {
+						win.Update(func() {
+							if reply.UpdateStatus != nil {
+								native.updater.applyInstallStatus(*reply.UpdateStatus)
+							}
+							if reply.ID == 0 && reply.UpdateChannel != "" {
+								native.updater.applyCheckEvent(reply)
+							}
+						})
 					}
 					continue
 				}

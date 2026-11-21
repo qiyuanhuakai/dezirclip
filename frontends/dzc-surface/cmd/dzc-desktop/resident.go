@@ -16,6 +16,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/quickpaste"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/screenshot"
 )
@@ -159,6 +160,77 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 		var present func(string)
 		activationContext, cancelActivation := context.WithCancel(context.Background())
 		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { cancelActivation() })
+		updateDatabase, _ := owner.DesktopDatabase()
+		checkingUpdates := make(map[string]bool)
+		checkUpdate := func(channel string, automatic bool) bool {
+			if stopping || migrating || moved || pending != nil || relaunch || updateInProgress() || checkingUpdates[channel] {
+				return false
+			}
+			checkingUpdates[channel] = true
+			go func() {
+				ctx, cancel := context.WithTimeout(activationContext, 50*time.Second)
+				defer cancel()
+				check, err := checkResidentUpdate(ctx, updateDatabase, channel, automatic)
+				mygo.RunOnMain(func() {
+					delete(checkingUpdates, channel)
+					if stopping || check == nil && err == nil {
+						return
+					}
+					reply := residentReply{UpdateCheck: check, UpdateChannel: channel}
+					if err != nil {
+						reply.Error = err.Error()
+					} else {
+						updateChecks[channel] = check
+					}
+					if automatic {
+						diagnostics.record("automatic-update-checked", 0, err)
+					}
+					if commands != nil {
+						_ = json.NewEncoder(commands).Encode(reply)
+					}
+				})
+			}()
+			return true
+		}
+		var updateTimer *time.Timer
+		var automaticChannel string
+		var updateGeneration uint64
+		var scheduleUpdate func(time.Duration)
+		scheduleUpdate = func(delay time.Duration) {
+			generation := updateGeneration
+			updateTimer = time.AfterFunc(delay, func() {
+				mygo.RunOnMain(func() {
+					if stopping || generation != updateGeneration {
+						return
+					}
+					checkUpdate(automaticChannel, true)
+					scheduleUpdate(time.Hour)
+				})
+			})
+		}
+		configureAutomaticUpdate := func(settings map[string]string) {
+			channel := ""
+			if useNativeMain && settings["app.update_auto_check"] == "true" {
+				channel = nativeUpdateChannel(buildinfo.Version, settings["app.update_channel"])
+			}
+			if channel == automaticChannel {
+				return
+			}
+			automaticChannel = channel
+			updateGeneration++
+			if updateTimer != nil {
+				updateTimer.Stop()
+				updateTimer = nil
+			}
+			if channel != "" {
+				scheduleUpdate(nativeUpdateStartupDelay)
+			}
+		}
+		mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
+			if updateTimer != nil {
+				updateTimer.Stop()
+			}
+		})
 		activating := false
 		activationCommand := ""
 		activationStarted := time.Time{}
@@ -316,13 +388,12 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 										reply(fmt.Errorf("update_invalid_endpoint"))
 										break
 									}
-									if check := request.UpdateCheck; check != nil {
-										if check.Result.Channel != channel || check.Checked.IsZero() {
-											reply(fmt.Errorf("update_invalid_manifest"))
-											break
+									if request.UpdateNow {
+										if !useNativeMain || !checkUpdate(channel, false) {
+											reply(errors.New("update_busy"))
+										} else {
+											reply(nil)
 										}
-										updateChecks[channel] = check
-										reply(nil)
 										break
 									}
 									response := residentReply{ID: request.ID, Success: true, UpdateCheck: updateChecks[channel], UpdateStatus: updateStatus}
@@ -749,7 +820,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 		}
 		startupSettings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
 		updateLanguage = mainLanguage(startupSettings["app.language"])
-		refreshAppearance := bindResidentAppearance(activationContext, owner, panel, startupSettings, useNativeMain)
+		refreshAppearance := bindResidentAppearance(activationContext, owner, panel, startupSettings, useNativeMain, configureAutomaticUpdate)
 		refreshSearch(startupSettings)
 		refreshPaste(startupSettings)
 		setTrayVisible = func(visible bool) error {

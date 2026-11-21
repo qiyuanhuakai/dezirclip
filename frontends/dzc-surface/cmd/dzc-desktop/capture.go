@@ -28,9 +28,9 @@ type residentRequest struct {
 	Full       bool               `json:"full,omitempty"`
 	Visible    bool               `json:"visible,omitempty"`
 
-	UpdateCheck   *nativeUpdateCheck `json:"update_check,omitempty"`
-	UpdateChannel string             `json:"update_channel,omitempty"`
-	UpdateVersion string             `json:"update_version,omitempty"`
+	UpdateNow     bool   `json:"update_now,omitempty"`
+	UpdateChannel string `json:"update_channel,omitempty"`
+	UpdateVersion string `json:"update_version,omitempty"`
 }
 type residentReply struct {
 	ID        uint64 `json:"request_id"`
@@ -38,8 +38,9 @@ type residentReply struct {
 	Success   bool   `json:"success"`
 	Error     string `json:"error,omitempty"`
 
-	UpdateCheck  *nativeUpdateCheck    `json:"update_check,omitempty"`
-	UpdateStatus *residentUpdateStatus `json:"update_status,omitempty"`
+	UpdateCheck   *nativeUpdateCheck    `json:"update_check,omitempty"`
+	UpdateChannel string                `json:"update_channel,omitempty"`
+	UpdateStatus  *residentUpdateStatus `json:"update_status,omitempty"`
 }
 type residentBridge struct {
 	output     io.Writer
@@ -181,7 +182,7 @@ func (c *residentBridge) exchange(ctx context.Context, request residentRequest, 
 			if request.Operation == "webview-gpu" {
 				return errors.New("WebViewRebuildUnavailable")
 			}
-			if request.Operation == "install-update" && reply.Error != "" {
+			if (request.Operation == "install-update" || request.Operation == "update-check") && reply.Error != "" {
 				return errors.New(reply.Error)
 			}
 			return errors.New("TrayUnavailable")
@@ -199,10 +200,10 @@ func residentBackgroundRequest(operation string) bool {
 	return operation == "appearance" || operation == "update-check"
 }
 
-func (c *residentBridge) accept(line string) *residentUpdateStatus {
+func (c *residentBridge) accept(line string) residentReply {
 	var reply residentReply
 	if json.Unmarshal([]byte(line), &reply) != nil {
-		return nil
+		return residentReply{}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -212,5 +213,5 @@ func (c *residentBridge) accept(line string) *residentUpdateStatus {
 		default:
 		}
 	}
-	return reply.UpdateStatus
+	return reply
 }

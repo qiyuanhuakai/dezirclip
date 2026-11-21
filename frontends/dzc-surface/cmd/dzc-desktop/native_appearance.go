@@ -109,7 +109,7 @@ func resolveNativeSurfaceAppearance(settings map[string]string, systemDark bool)
 	return nativeSurfaceAppearance{base: base, quickPaste: a, preview: preview}
 }
 
-func bindResidentAppearance(ctx context.Context, owner *client.Client, panel *quickpaste.Panel, startup map[string]string, native bool) func() {
+func bindResidentAppearance(ctx context.Context, owner *client.Client, panel *quickpaste.Panel, startup map[string]string, native bool, settingsChanged func(map[string]string)) func() {
 	var latest map[string]string
 	var previousKey string
 	applied := false
@@ -130,6 +130,7 @@ func bindResidentAppearance(ctx context.Context, owner *client.Client, panel *qu
 		refreshPinnedAppearance(owner, resolved.preview, resolved.base, true)
 	}
 	apply(startup)
+	settingsChanged(startup)
 	if native {
 		unsubscribe := mygo.Theme.OnUpdated(func() { apply(latest) })
 		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { unsubscribe() })
@@ -164,6 +165,7 @@ func bindResidentAppearance(ctx context.Context, owner *client.Client, panel *qu
 					refresh()
 				} else if err == nil {
 					apply(values)
+					settingsChanged(values)
 				}
 			})
 		}()

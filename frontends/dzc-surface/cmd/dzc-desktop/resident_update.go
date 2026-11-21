@@ -10,6 +10,29 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
 )
 
+const nativeUpdateStartupDelay = 15 * time.Second
+
+func checkResidentUpdate(ctx context.Context, database, channel string, automatic bool) (*nativeUpdateCheck, error) {
+	due, err := recordNativeUpdateAttempt(database, channel, automatic, time.Now())
+	if automatic {
+		if err != nil {
+			return nil, errUpdateSchedule
+		}
+		if !due {
+			return nil, nil
+		}
+	}
+	raw, err := checkDesktopUpdate(ctx, channel)
+	if err != nil {
+		return nil, err
+	}
+	result, err := parseNativeUpdate(raw, channel)
+	if err != nil {
+		return nil, err
+	}
+	return &nativeUpdateCheck{Result: result, Checked: time.Now()}, nil
+}
+
 func residentUpdateArtifact(check *nativeUpdateCheck, channel, version string) (mygoArtifact, error) {
 	if !check.validFor(channel, buildinfo.Version, time.Now()) || check.Result.Status != "available" ||
 		check.Result.Available == nil || check.Result.Available.Version != version ||
