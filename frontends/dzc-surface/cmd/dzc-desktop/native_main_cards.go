@@ -172,13 +172,16 @@ func (n *nativeMain) cardTags(labels []string) []uikit.HistoryTag {
 	}
 	results := make([]uikit.HistoryTag, 0, len(labels))
 	for _, name := range labels {
-		color := nativeTagColor(name, n.themeBase() == "retro")
-		if custom, err := hex.DecodeString(strings.TrimPrefix(n.cardTagColors[name], "#")); err == nil && len(custom) == 3 {
-			color = ui.RGB(custom[0], custom[1], custom[2])
-		}
-		results = append(results, uikit.HistoryTag{Name: name, Color: color})
+		results = append(results, uikit.HistoryTag{Name: name, Color: n.cardTagColor(name)})
 	}
 	return results
+}
+
+func (n *nativeMain) cardTagColor(name string) ui.Color {
+	if custom, err := hex.DecodeString(strings.TrimPrefix(n.cardTagColors[name], "#")); err == nil && len(custom) == 3 {
+		return ui.RGB(custom[0], custom[1], custom[2])
+	}
+	return nativeTagColor(name, n.themeBase() == "retro")
 }
 
 func (n *nativeMain) loadCardTagColors() {

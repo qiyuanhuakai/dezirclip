@@ -10,6 +10,7 @@ export { SearchHistory, type SearchHistoryProps } from "./components/SearchHisto
 export { TagDialog, type TagDialogProps } from "./components/TagDialog";
 export { default as ToastContainer, type ToastItem } from "./components/ToastContainer";
 export { default as AppHeader, type AppHeaderProps, type HeaderTagFilter } from "./components/AppHeader";
+export { TagSuggestion, TagSuggestions, TagSuggestionRetry, TagSuggestionStatus } from "./components/TagSuggestions";
 export { ClipboardSearch, type ClipboardSearchProps } from "./components/ClipboardSearch";
 export { QuickPastePanel, QuickPasteSearch, QuickPasteRow } from "./components/QuickPastePanel";
 export { WheelHotZone } from "./components/WheelHotZone";

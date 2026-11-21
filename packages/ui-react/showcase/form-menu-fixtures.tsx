@@ -281,10 +281,11 @@ export function PrivacyDetectionFixture({ narrow }: { narrow: boolean }) {
   </div>;
 }
 
-export function SearchSelectFixture() {
+export function SearchSelectFixture({ state }: { state: string }) {
   const [font, setFont] = useState("Example Sans");
   const [app, setApp] = useState("");
-  return <div style={{ width: 385, display: "grid", gap: 12 }}>
+  const narrow = state === "long-options";
+  return <div style={{ width: narrow ? 260 : 385, marginInlineStart: narrow ? 150 : 0, display: "grid", gap: 12 }}>
     <div className="setting-item column">
       <span className="item-label">Interface font</span>
       <ThemedSelect options={[{ value: "", label: "Default font" }, { value: "Example Sans", label: "Example Sans" },
@@ -294,6 +295,7 @@ export function SearchSelectFixture() {
     <div className="setting-item column">
       <span className="item-label" style={{ textTransform: "uppercase", fontSize: "11px", opacity: 0.8 }}>Images</span>
       <ThemedSelect options={[{ value: "", label: "System default (Example Browser)" },
+        ...(narrow ? [{ value: "/example/long", label: "Example Windows application with a very long display name for editing and browsing images" }] : []),
         { value: "/example/photo-viewer", label: "Photo Viewer" }, { value: "/example/archive", label: "Archive Manager" }]}
         value={app} onChange={setApp} width="100%" searchable ariaLabel="Images" noOptionsMessage="No matching applications" />
     </div>

@@ -64,9 +64,21 @@ func (k Kit) SearchSelect(c *ui.Context, options SearchSelectOptions) (ui.Elemen
 		}
 		parts.Popup(func(panel ui.Element) {
 			menu, list := k.style("selectMenu"), k.style("selectMenuList")
-			paint(panel.Translate(0, menu.MarginTop), menu)
 			_, viewportHeight := c.Size()
-			ui.Scroll(c).FillWidth().MaxHeight(max(40, min(300, viewportHeight-64))).Children(func() {
+			anchor := input.Bounds()
+			maxHeight := min(300, max(0, viewportHeight-64))
+			if anchor.W > 0 && anchor.H > 0 {
+				panel.Width(anchor.W)
+				room := max(anchor.Y, viewportHeight-anchor.Y-anchor.H)
+				border := 2 * menu.BorderWidth
+				if menu.BorderWidths != nil {
+					border = menu.BorderWidths[0] + menu.BorderWidths[2]
+				}
+				// Leave the same gap when the toolkit flips the menu above the field.
+				maxHeight = min(300, max(0, room-menu.MarginTop-4-border-menu.Padding[0]-menu.Padding[2]))
+			}
+			paint(panel.Margin(menu.MarginTop, 0, 0), menu)
+			ui.Scroll(c).FillWidth().MaxHeight(maxHeight).Children(func() {
 				ui.Column(c).FillWidth().Padding(list.Padding[:]...).Children(func() {
 					choices := options.Choices
 					if parts.Filtering() {
@@ -90,8 +102,8 @@ func (k Kit) SearchSelect(c *ui.Context, options SearchSelectOptions) (ui.Elemen
 							}
 						}
 						rowStyle := k.style(widget)
-						paint(row.MinWidth(0).Height(rowStyle.Height).AlignItems(ui.Center), rowStyle).
-							Children(func() { text(c, choice.Label, rowStyle).MinWidth(0).SingleLine().PassThrough() })
+						paint(row.MinWidth(0).MinHeight(rowStyle.Height).AlignItems(ui.Center), rowStyle).
+							Children(func() { text(c, choice.Label, rowStyle).MinWidth(0).Grow(1).Wrap().PassThrough() })
 					}
 					if len(choices) > 0 && selectable == 0 {
 						parts.Item("").Disabled(true).Size(0, 0).PassThrough()

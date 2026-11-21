@@ -1,6 +1,6 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref, type RefObject } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { Tag } from 'lucide-react';
+import { TagSuggestion, TagSuggestions, TagSuggestionRetry, TagSuggestionStatus } from '@deziro/ui-react/components/TagSuggestions';
 import { getTagColor } from '../../../shared/lib/utils';
 import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
 import { invokePrivacyBound, privacyListGeneration, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
@@ -78,23 +78,22 @@ export default function TagFilterPicker({ ref, id, tags, colors, query, isCompos
         },
     }), [active, filtered, id, onClose, onSelect]);
 
-    return <div className="dc-tag-filter-picker" onBlur={event => {
+    return <TagSuggestions label={t('tags')} count={filtered.length} onBlur={event => {
         if (event.relatedTarget !== inputRef.current && !event.currentTarget.contains(event.relatedTarget)) onClose();
     }} onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); inputRef.current?.focus(); onClose(); }
     }}>
-        <div className="dc-tag-filter-heading"><span><Tag size={13} aria-hidden="true" />{t('tags')}</span><small>{filtered.length}</small></div>
-        {catalogError && <button type="button" className="dc-tag-filter-retry" onMouseDown={event => event.preventDefault()} onClick={() => { setRevision(value => value + 1); inputRef.current?.focus(); }}>{t('tag_load_failed')} · {t('common_retry')}</button>}
+        {catalogError && <TagSuggestionRetry onMouseDown={event => event.preventDefault()}
+            onClick={() => { setRevision(value => value + 1); inputRef.current?.focus(); }}>
+            {t('tag_load_failed')} · {t('common_retry')}
+        </TagSuggestionRetry>}
         {filtered.length ? <div className={`dc-tag-filter-size-${Math.min(filtered.length, 6)}`}>
             <Virtuoso ref={list} id={id} role="listbox" tabIndex={-1} aria-label={t('tags')} className="dc-tag-virtual-list" data={filtered} fixedItemHeight={36}
-                computeItemKey={(_, tag) => tag} itemContent={(index, tag) => <div className="dc-tag-filter-row">
-                    <button type="button" id={`${id}-${index}`} role="option" aria-selected={active === index} tabIndex={-1}
-                        className={`dc-tag-filter-option${active === index ? ' dc-tag-filter-active' : ''}`} data-tag={tag}
-                        onMouseDown={event => event.preventDefault()} onClick={() => onSelect(tag)}>
-                        <span className="dc-tag-dot" style={{ backgroundColor: colors[tag] || getTagColor(tag, theme) }} />
-                        <span>{tag}</span>
-                    </button>
-                </div>} />
-        </div> : <div id={id} className="dc-tag-filter-empty" role="listbox" aria-label={t('tags')}>{t(catalog === null && !catalogError ? 'common_loading' : 'tag_no_matching_tags')}</div>}
-    </div>;
+                computeItemKey={(_, tag) => tag} itemContent={(index, tag) => <TagSuggestion id={`${id}-${index}`}
+                    tag={tag} color={colors[tag] || getTagColor(tag, theme)} active={active === index}
+                    onMouseDown={event => event.preventDefault()} onClick={() => onSelect(tag)} />} />
+        </div> : <TagSuggestionStatus id={id} role="listbox" aria-label={t('tags')}>
+            {t(catalog === null && !catalogError ? 'common_loading' : 'tag_no_matching_tags')}
+        </TagSuggestionStatus>}
+    </TagSuggestions>;
 }

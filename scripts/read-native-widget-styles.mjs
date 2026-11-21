@@ -26,6 +26,16 @@ const samples = [
     settingsDataBlock: [".showcase-fields .setting-item"], settingsDataActions: [".data-actions-row"],
   }],
   ["settings-data", "hover-path", { settingsDataPathHover: [".data-panel"] }],
+  ["settings-data", "hover-action", { settingsDataActionHover: [".data-actions-row .btn-icon"] }],
+  ["tag-suggestions", "active", {
+    tagSuggestions: [".dc-tag-filter-picker"], tagSuggestionHeading: [".dc-tag-filter-heading"],
+    tagSuggestionCount: [".dc-tag-filter-heading small"], tagSuggestionRow: [".dc-tag-filter-row"],
+    tagSuggestionOption: [".dc-tag-filter-option:not(.dc-tag-filter-active)"],
+    tagSuggestionOptionActive: [".dc-tag-filter-active"], tagSuggestionDot: [".dc-tag-dot"],
+  }],
+  ["tag-suggestions", "empty", {
+    tagSuggestionStatus: [".dc-tag-filter-empty"], tagSuggestionRetry: [".dc-tag-filter-retry"],
+  }],
   ["backup-dialog", "default", {
     backupBackdrop: [".data-modal-overlay", null, "::backdrop"],
     backupDialog: [".data-modal-content"], backupTitle: [".data-modal-title"],
@@ -573,6 +583,7 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
       if (state === "replace-hover") await page.locator(".data-replace-confirm").hover();
     }
     if (fixture === "settings-data" && state === "hover-path") await page.locator(".data-panel").hover();
+    if (fixture === "settings-data" && state === "hover-action") await page.locator(".data-actions-row .btn-icon").first().hover();
     if (fixture === "settings-update-actions" && state === "hover") await page.getByRole("button", { name: "Check now" }).hover();
     if (fixture === "text-fields" && state.startsWith("focus")) {
       await page.getByRole("textbox", { name: state === "focus-text" ? "Entry name" : "Idle timeout" }).focus();

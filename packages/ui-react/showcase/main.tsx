@@ -9,6 +9,7 @@ import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { BackgroundSettingsFixture, ThemeManagerFixture } from "./appearance-fixtures";
 import { CaptureActionsFixture, CaptureEngineFixture, FixedCaptureRendererFixture } from "./capture-fixtures";
+import { TagSuggestion, TagSuggestions, TagSuggestionRetry, TagSuggestionStatus } from "../src/components/TagSuggestions";
 import { CLISettingsFixture } from "./cli-fixture";
 import { AttachmentFixture, HistoryImageFixture, HistoryOCRFixture, HistoryRichTextFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
 import { BackupDialogFixture, ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture, SettingsUpdateFixture,
@@ -59,6 +60,28 @@ function ClipboardSearchFixture() {
     setEditingTagsId={() => undefined} typeFilter={typeFilter} setTypeFilter={setTypeFilter} />;
 }
 
+const suggestionTags = [
+  { tag: "Design", color: "#ed7841" },
+  { tag: "Documents", color: "#687ee2" },
+  { tag: "Work", color: "#25a58b" },
+];
+
+function TagSuggestionsFixture() {
+  const [selected, setSelected] = useState(state === "active" ? "Documents" : "");
+  const tags = state === "empty" ? [] : suggestionTags;
+  return <div className="showcase-tag-suggestions">
+    <input className="search-input" aria-label="Search clipboard" readOnly value={selected ? "tag:" + selected : ""} />
+    <TagSuggestions label="Tags" count={tags.length}>
+      {state === "empty" && <TagSuggestionRetry>Retry loading tags</TagSuggestionRetry>}
+      {tags.length === 0 ? <TagSuggestionStatus role="listbox" aria-label="Tags">No matching tags</TagSuggestionStatus>
+        : <div role="listbox" aria-label="Tags">
+          {tags.map(({ tag, color }) => <TagSuggestion key={tag} tag={tag} color={color} active={tag === selected}
+            onClick={() => setSelected(tag)} />)}
+        </div>}
+    </TagSuggestions>
+  </div>;
+}
+
 function HeaderFixture() {
   const [settings, setSettings] = useState(state === "settings");
   const [tags, setTags] = useState(false);
@@ -89,6 +112,7 @@ const settingsGroups = [
   { id: "appearance", labelKey: "Appearance" },
   { id: "general", labelKey: "General" },
   { id: "updates", labelKey: "Software updates" },
+  ...(state === "long-label" ? [{ id: "applications", labelKey: "Default Applications and File Associations" }] : []),
 ];
 const footerLabels: Record<string, string> = {
   feedback: "Feedback", reset_defaults: "Reset defaults", official_website: "Official website",
@@ -180,7 +204,8 @@ function Showcase() {
     "tag-toolbar": <TagToolbarFixture />,
     "tag-batch-toolbar": <TagBatchToolbarFixture state={state} />,
     "tag-search": <TagSearchFixture />,
-    "search-select": <SearchSelectFixture />,
+    "tag-suggestions": <TagSuggestionsFixture />,
+    "search-select": <SearchSelectFixture state={state} />,
     "attachment-preview": <AttachmentFixture state={state} />,
     "history-image": <HistoryImageFixture state={state} />,
     "history-ocr": <HistoryOCRFixture state={state} />,

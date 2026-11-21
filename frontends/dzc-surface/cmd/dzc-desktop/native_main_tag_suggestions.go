@@ -166,45 +166,26 @@ func (n *nativeMain) tagSuggestionsView(c *ui.Context, input ui.Element) {
 		return
 	}
 	picker.visible = true
-	width, height := c.Size()
-	panel := ui.PopoverBase(c, input, &picker.open, func(panel ui.Element) {
-		panel.Width(min(width-20, 440)).Background(c.Theme().Surface).
-			Border(1, c.Theme().Border).Radius(c.Theme().Radius).Padding(5)
-		ui.Column(c).FillWidth().Gap(4).Children(func() {
-			ui.Text(c, n.text("tags")).FontSize(11).FontWeight(600)
-			switch {
-			case catalog.failed:
-				if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("tag_load_failed")}).FillWidth().Clicked() {
-					n.loadTagCatalog()
-					n.focusSearch = true
-				}
-			case catalog.loading && len(picker.matches) == 0:
-				ui.Text(c, n.text("common_loading")).TextColor(c.Theme().TextMuted)
-			case len(picker.matches) == 0:
-				ui.Text(c, n.text("tag_no_matching_tags")).TextColor(c.Theme().TextMuted)
-			default:
-				n.tagSuggestionRows(c, min(28*float32(len(picker.matches)), max(56, min(168, height-145))))
-			}
-		})
-	})
+	options := uikit.TagSuggestionsOptions{
+		Label: n.text("tags"), Names: picker.matches, List: &picker.list, Active: &picker.active,
+		Color: n.cardTagColor, OnSelect: n.selectSuggestedTag,
+	}
+	if catalog.failed {
+		options.Retry = n.text("tag_load_failed") + " · " + n.text("common_retry")
+		options.OnRetry = func() { n.loadTagCatalog(); n.focusSearch = true }
+	}
+	if len(picker.matches) == 0 {
+		options.Status = n.text("tag_no_matching_tags")
+		if catalog.loading && !catalog.failed {
+			options.Status = n.text("common_loading")
+		}
+	} else if n.library != nil && n.cardTagColors == nil && !n.readingTagColors {
+		n.loadCardTagColors()
+	}
+	panel := n.mainKit().TagSuggestions(c, input, &picker.open, options)
 	if !focused && !panel.FocusWithin() && !panel.Hovered() {
 		picker.dismiss()
 	}
-}
-
-func (n *nativeMain) tagSuggestionRows(c *ui.Context, height float32) {
-	picker := &n.tagSuggestions
-	names := picker.matches
-	picker.list.Key = func(index int) any { return names[index] }
-	picker.list.Label = func(index int) string { return names[index] }
-	picker.list.Selected = &picker.active
-	ui.List(c, &picker.list, len(names)).Height(height).FillWidth().Label(n.text("tags")).Rows(func(cell ui.ListRow) {
-		name := names[cell.Index]
-		button := uikit.Button(cell.Context, uikit.ButtonOptions{Label: name, Selected: cell.Selected()})
-		if button.FillWidth().Height(28).Clicked() {
-			n.selectSuggestedTag(name)
-		}
-	})
 }
 
 func (n *nativeMain) selectSuggestedTag(name string) {

@@ -54,8 +54,11 @@ func (k Kit) SettingsDataActions(c *ui.Context, content func()) {
 func (k Kit) SettingsDataAction(c *ui.Context, label, action string, disabled bool) ui.Element {
 	style := k.style("settingsDataAction")
 	button := ui.ButtonBase(c).Label(label).Tooltip(label).Disabled(disabled).
-		Height(style.Height).AlignItems(ui.Center).Gap(6)
-	style = k.interactive(c, button, style, false)
+		Height(style.Height).AlignItems(ui.Center).Gap(style.ColumnGap).FocusRing(true)
+	if !disabled && (button.Hovered() || button.FocusVisible()) {
+		style = k.style("settingsDataActionHover")
+	}
+	style = k.animatePaint(button, style)
 	paint(button, style).Children(func() {
 		var symbol *ui.SVG
 		switch action {
@@ -203,11 +206,11 @@ func (k Kit) SettingsRail(c *ui.Context, label, active string, sections []Settin
 			if section.ID == active {
 				style = k.style("settingsRailActive")
 			}
-			button := ui.ButtonBase(c).FillWidth().Height(style.Height).Label(section.Label)
+			button := ui.ButtonBase(c).FillWidth().MinHeight(style.Height).Label(section.Label)
 			style = k.interactive(c, button, style, section.ID == active)
 			paint(button, style)
 			button.Children(func() {
-				ui.Row(c).FillWidth().Children(func() { text(c, section.Label, style).SingleLine() })
+				ui.Row(c).FillWidth().Children(func() { text(c, section.Label, style).MinWidth(0).Wrap().PassThrough() })
 			})
 			if onSelect != nil && button.Clicked() {
 				onSelect(section.ID)

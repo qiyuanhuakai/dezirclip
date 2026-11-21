@@ -142,7 +142,15 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			}
 		})
 	case "search-select":
-		ui.Column(c).Width(385).Gap(12).Children(func() {
+		scope := ui.Column(c).Width(385).Gap(12)
+		choices := []uikit.SelectOption{{Label: "System default (Example Browser)"}}
+		if g.state == "long-options" {
+			scope.Width(260).Margin(0, 0, 0, 150)
+			choices = append(choices, uikit.SelectOption{Value: "/example/long", Label: longApplicationLabel})
+		}
+		choices = append(choices, uikit.SelectOption{Value: "/example/photo-viewer", Label: "Photo Viewer"},
+			uikit.SelectOption{Value: "/example/archive", Label: "Archive Manager"})
+		scope.Children(func() {
 			ui.Column(c).FillWidth().Gap(6).Padding(6, 0).Children(func() {
 				kit.SettingsLabel(c, "Interface font")
 				font := "Example Sans"
@@ -152,8 +160,7 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			ui.Column(c).FillWidth().Gap(6).Padding(6, 0).Children(func() {
 				kit.SettingsLabel(c, "IMAGES").FontSize(11).Opacity(0.8)
 				kit.SearchSelect(c, uikit.SearchSelectOptions{Label: "Images", NoMatches: "No matching applications", Value: &g.choice,
-					Choices: []uikit.SelectOption{{Label: "System default (Example Browser)"}, {Value: "/example/photo-viewer", Label: "Photo Viewer"},
-						{Value: "/example/archive", Label: "Archive Manager"}}})
+					Choices: choices})
 			})
 		})
 	case "tag-search":

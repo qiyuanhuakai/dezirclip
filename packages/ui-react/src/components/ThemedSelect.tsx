@@ -146,6 +146,7 @@ const ThemedSelect = ({
           option: (base, state) => ({
             ...base,
             fontSize: "12px",
+            overflowWrap: "anywhere",
             cursor: "pointer",
             background: state.isSelected
               ? "var(--select-option-selected-bg)"

@@ -466,3 +466,42 @@
   padding-top: 12px;
   border-top: 2px solid var(--border-light);
 }
+
+.theme-macos .btn-icon-data-action {
+  --data-action-radius: 8px;
+  --data-action-bg: var(--macos-dialog-button-bg);
+  --data-action-border: var(--macos-dialog-button-border);
+  --data-action-hover-bg: var(--macos-dialog-button-hover-bg);
+  --data-action-hover-border: var(--macos-dialog-button-hover-border);
+  --data-action-shadow: none;
+}
+
+.theme-liquid-glass .btn-icon-data-action {
+  --data-action-radius: 10px;
+  --data-action-bg: var(--lg-dialog-button-bg);
+  --data-action-border: var(--lg-dialog-button-border);
+  --data-action-hover-bg: var(--lg-dialog-button-hover-bg);
+  --data-action-hover-border: var(--lg-dialog-button-hover-border);
+  --data-action-shadow: inset 0 1px 0 var(--glass-edge-top), inset 0 -1px 0 var(--glass-edge-bottom);
+}
+
+:is(.theme-macos, .theme-liquid-glass) .btn-icon.btn-icon-data-action {
+  height: 26px;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--data-action-border) !important;
+  border-radius: var(--data-action-radius) !important;
+  background: var(--data-action-bg) !important;
+  box-shadow: var(--data-action-shadow) !important;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  transform: none !important;
+}
+
+:is(.theme-macos, .theme-liquid-glass) .btn-icon.btn-icon-data-action:enabled:is(:hover, :focus-visible) {
+  border-color: var(--data-action-hover-border) !important;
+  background: var(--data-action-hover-bg) !important;
+}

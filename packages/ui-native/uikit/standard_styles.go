@@ -228,10 +228,34 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		if widget == "tagToolbarButtonActive" {
 			style.Fill, style.Border = selected, accent
 		}
-	case "settingsDataPath", "settingsDataPathHover", "settingsDataAction":
+	case "tagSuggestions":
+		surface()
+		style.Padding, style.MarginTop = [4]float32{6, 6, 6, 6}, 5
+	case "tagSuggestionHeading":
+		style.Size, style.Text, style.Padding = 11, muted, [4]float32{3, 7, 7, 7}
+	case "tagSuggestionCount":
+		style.Size, style.Text = 10, muted
+	case "tagSuggestionRow":
+		style.Height, style.Padding = 36, [4]float32{1, 0, 1, 0}
+	case "tagSuggestionOption", "tagSuggestionOptionActive":
+		style.Size, style.Height, style.ColumnGap = 12, 34, 9
+		style.Radius, style.BorderWidth, style.Padding = min(8, float32(palette.Radius)), 1, [4]float32{0, 9, 0, 9}
+		if widget == "tagSuggestionOptionActive" {
+			style.Fill, style.Border = selected, accent
+		}
+	case "tagSuggestionDot":
+		style.Width, style.Height, style.Radius = 8, 8, 4
+	case "tagSuggestionStatus":
+		style.Size, style.Text, style.Padding = 12, muted, [4]float32{15, 8, 15, 8}
+	case "tagSuggestionRetry":
+		style.Size, style.Text, style.Padding = 11, rgba(ui.Hex("#c22d38")), [4]float32{5, 7, 5, 7}
+	case "settingsDataPath", "settingsDataPathHover", "settingsDataAction", "settingsDataActionHover":
 		surface()
 		style.Height, style.Padding, style.Size = 30, [4]float32{5, 9, 5, 9}, 12
-		if widget != "settingsDataAction" {
+		style.ColumnGap = 6
+		if widget == "settingsDataActionHover" {
+			style.Fill, style.Border = selected, accent
+		} else if widget != "settingsDataAction" {
 			style.Font, style.Weight, style.UsesMonoFont = "monospace", 700, true
 			if widget == "settingsDataPathHover" {
 				style.Fill = selected

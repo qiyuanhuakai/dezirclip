@@ -63,6 +63,15 @@ html:root.showcase-opacity-background {
   position: relative;
   width: 320px;
 }
+.showcase-tag-suggestions {
+  position: relative;
+  width: 330px;
+}
+.showcase-tag-suggestions > input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+}
 .showcase-history-list {
   height: 320px;
 }
