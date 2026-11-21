@@ -94,6 +94,16 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 		var setTrayVisible func(bool) error
 		pinnedCount := 0
 		var commands io.WriteCloser
+		var updateStatus *residentUpdateStatus
+		updateInProgress := func() bool {
+			return updateStatus != nil && updateStatus.Progress.Phase != updateNotInstalling
+		}
+		publishUpdate := func(status residentUpdateStatus) {
+			updateStatus = &status
+			if commands != nil {
+				_ = json.NewEncoder(commands).Encode(residentReply{UpdateStatus: updateStatus})
+			}
+		}
 		mainPID := 0
 		recorder := &shortcutRecording{post: mygo.RunOnMain}
 		panel.SetShortcutRecorder(recorder.offer)
@@ -315,41 +325,66 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 										reply(nil)
 										break
 									}
-									response := residentReply{ID: request.ID, Success: true, UpdateCheck: updateChecks[channel]}
+									response := residentReply{ID: request.ID, Success: true, UpdateCheck: updateChecks[channel], UpdateStatus: updateStatus}
 									_ = json.NewEncoder(input).Encode(response)
 								case "install-update":
-									if request.Update == nil || pasteBusy || closing || relaunch {
-										reply(fmt.Errorf("update_busy"))
+									if !useNativeMain || pasteBusy || closing || relaunch || updateInProgress() {
+										reply(errors.New("update_busy"))
 										break
 									}
-									if target, _ := mygoUpdateTarget(); target == "" {
-										reply(fmt.Errorf("update_installation_unsupported"))
+									target, _ := mygoUpdateTarget()
+									if target == "" {
+										reply(errors.New("update_installation_unsupported"))
 										break
 									}
-									migrating = true
+									version := request.UpdateVersion
+									artifact, err := residentUpdateArtifact(updateChecks[request.UpdateChannel], request.UpdateChannel, version)
+									if err != nil {
+										reply(err)
+										break
+									}
+									publishUpdate(residentUpdateStatus{Progress: nativeInstallProgress{Phase: updateDownloading, Total: -1}})
+									reply(nil)
 									go func() {
-										err := request.Update.validate()
-										var handoff *mygoUpdateHandoff
-										if err == nil {
-											handoff, err = prepareMyGoUpdate(*request.Update)
-											if err != nil {
-												diagnostics.record("update-handoff-failed", 0, err)
-												err = errors.New("update_install_failed")
+										install, err := downloadResidentUpdate(activationContext, artifact, version, target, func(progress nativeInstallProgress) {
+											mygo.RunOnMain(func() {
+												if !stopping {
+													publishUpdate(residentUpdateStatus{Progress: progress})
+												}
+											})
+										})
+										if activationContext.Err() != nil {
+											if install.Path != "" {
+												discardResidentUpdate(install.Path)
 											}
+											return
 										}
 										mygo.RunOnMain(func() {
-											migrating = false
-											if commands != input {
-												if handoff != nil {
-													handoff.abort()
-												}
+											if err != nil {
+												publishUpdate(residentUpdateStatus{Failure: errUpdateVerification.Error()})
 												return
 											}
-											reply(err)
-											if err == nil {
-												update = handoff
-												mygo.App.Quit()
+											if stopping || migrating || moved || pending != nil || relaunch || pasteBusy {
+												discardResidentUpdate(install.Path)
+												publishUpdate(residentUpdateStatus{Failure: "update_busy"})
+												return
 											}
+											publishUpdate(residentUpdateStatus{Progress: nativeInstallProgress{Phase: updateVerified}})
+											handoff, err := prepareMyGoUpdate(install)
+											if err != nil {
+												diagnostics.record("update-handoff-failed", 0, err)
+												discardResidentUpdate(install.Path)
+												publishUpdate(residentUpdateStatus{Failure: "update_install_failed"})
+												return
+											}
+											abort := handoff.abort
+											handoff.abort = func() {
+												abort()
+												discardResidentUpdate(install.Path)
+											}
+											update = handoff
+											publishUpdate(residentUpdateStatus{Progress: nativeInstallProgress{Phase: updateInstalling}})
+											mygo.App.Quit()
 										})
 									}()
 								case "restart-admin":
@@ -639,7 +674,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 						command := reopen
 						reopen = ""
 						present(command)
-					} else if !stopping && pinnedCount == 0 && !panel.HasShortcut() && !selector.HasShortcut() && !reachable() {
+					} else if !stopping && !updateInProgress() && pinnedCount == 0 && !panel.HasShortcut() && !selector.HasShortcut() && !reachable() {
 						mygo.App.Quit()
 					}
 				})

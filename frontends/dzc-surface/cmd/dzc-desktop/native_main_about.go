@@ -23,6 +23,7 @@ type nativeUpdater struct {
 	channel                string
 	automatic, notesOpen   bool
 	confirm, installFailed bool
+	startingInstall        bool
 	timer                  *time.Timer
 	cancel                 context.CancelFunc
 	generation             uint64
@@ -42,8 +43,13 @@ const (
 )
 
 type nativeInstallProgress struct {
-	phase             nativeInstallPhase
-	downloaded, total int64
+	Phase             nativeInstallPhase
+	Downloaded, Total int64
+}
+
+type residentUpdateStatus struct {
+	Progress nativeInstallProgress
+	Failure  string
 }
 
 type nativeUpdateResult struct {
@@ -63,8 +69,12 @@ type nativeUpdateCheck struct {
 
 const nativeUpdateInterval = 24 * time.Hour
 
-func (u *nativeUpdater) pending() bool {
-	return u.timer != nil || u.cancel != nil
+func (u *nativeUpdater) keepWindow() bool {
+	return u.timer != nil || u.cancel != nil || u.startingInstall
+}
+
+func (u *nativeUpdater) installing() bool {
+	return u.startingInstall || u.install.Phase != updateNotInstalling
 }
 
 var (
@@ -142,8 +152,7 @@ func (check *nativeUpdateCheck) validFor(channel, version string, now time.Time)
 func (n *nativeMain) stopUpdater() {
 	u := &n.updater
 	u.generation++
-	u.confirm, u.installFailed = false, false
-	u.install = nativeInstallProgress{}
+	u.confirm = false
 	if u.timer != nil {
 		u.timer.Stop()
 		u.timer = nil
@@ -156,10 +165,11 @@ func (n *nativeMain) stopUpdater() {
 
 func (n *nativeMain) checkForUpdates(automatic bool) {
 	u := &n.updater
-	if u.channel == "" || u.cancel != nil || automatic && !u.automatic {
+	if u.channel == "" || u.cancel != nil || u.installing() || automatic && !u.automatic {
 		return
 	}
 	n.stopUpdater()
+	u.installFailed = false
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	u.cancel = cancel
 	channel, generation := u.channel, u.generation
@@ -170,7 +180,9 @@ func (n *nativeMain) checkForUpdates(automatic bool) {
 		if attempted && err == nil {
 			request := residentRequest{Operation: "update-check", UpdateChannel: channel,
 				UpdateCheck: &nativeUpdateCheck{Result: result, Checked: checked}}
-			_ = n.shell.resident.send(ctx, request, 4*time.Second)
+			if publishErr := n.shell.resident.send(ctx, request, 4*time.Second); publishErr != nil && result.Available != nil {
+				err = errors.New("update_busy")
+			}
 		}
 		n.window.Update(func() {
 			if n.window.IsDestroyed() || n.updater.generation != generation {
@@ -210,44 +222,33 @@ func (n *nativeMain) fetchUpdate(ctx context.Context, channel string, automatic 
 func (n *nativeMain) installUpdate() {
 	u := &n.updater
 	available := u.result.Available
-	if u.cancel != nil || available == nil || available.Artifact == nil || u.result.installTarget == "" {
+	if u.cancel != nil || u.installing() || available == nil || available.Artifact == nil || u.result.installTarget == "" {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
-	u.cancel, u.installFailed = cancel, false
-	u.install = nativeInstallProgress{phase: updateDownloading}
-	u.err = nil
-	generation, target := u.generation, u.result.installTarget
-	postProgress := func(status nativeInstallProgress) {
-		n.window.Update(func() {
-			if !n.window.IsDestroyed() && u.generation == generation {
-				u.install = status
-			}
-		})
-	}
+	u.startingInstall, u.installFailed, u.err = true, false, nil
+	request := residentRequest{Operation: "install-update", UpdateChannel: u.channel, UpdateVersion: available.Version}
 	go func() {
-		defer cancel()
-		version, artifact := available.Version, *available.Artifact
-		path, err := downloadMyGoUpdate(ctx, artifact, version, target, func(downloaded, total int64) {
-			postProgress(nativeInstallProgress{phase: updateDownloading, downloaded: downloaded, total: total})
-		})
-		if err == nil {
-			postProgress(nativeInstallProgress{phase: updateVerified})
-			request := mygoInstallRequest{Path: path, Version: version, Signature: artifact.Signature}
-			err = n.shell.resident.send(ctx, residentRequest{Operation: "install-update", Update: &request}, 30*time.Second)
-			if err == nil {
-				postProgress(nativeInstallProgress{phase: updateInstalling})
-				return
-			}
-		}
+		err := n.shell.resident.send(context.Background(), request, 5*time.Second)
 		n.window.Update(func() {
-			if n.window.IsDestroyed() || u.generation != generation {
+			if n.window.IsDestroyed() {
 				return
 			}
-			u.cancel, u.installFailed, u.err = nil, true, err
-			u.install = nativeInstallProgress{}
+			u.startingInstall = false
+			if err != nil && !u.installing() {
+				u.installFailed, u.err = true, err
+			}
 		})
 	}()
+}
+
+func (u *nativeUpdater) applyInstallStatus(status residentUpdateStatus) {
+	u.startingInstall = false
+	u.install = status.Progress
+	u.installFailed = status.Failure != ""
+	u.err = nil
+	if u.installFailed {
+		u.err = errors.New(status.Failure)
+	}
 }
 
 // Record external requests before they run so a restarted main window preserves the interval.
@@ -353,7 +354,7 @@ func (n *nativeMain) aboutValue(c *ui.Context, label, value string) {
 
 func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	u := &n.updater
-	busy := u.cancel != nil
+	busy := u.cancel != nil || u.installing()
 	disabled := u.channel == "" || busy || n.mutating || n.session == nil || n.history.state.ServiceInstanceId == ""
 	auto := u.automatic
 	autoLabel := n.text("updater_auto_check")
@@ -381,7 +382,7 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		kit.UpdateVersionRow(c, n.text("updater_channel_version"), u.result.ChannelVersion)
 	}
 	check := n.text("updater_check_now")
-	if busy && u.install.phase == updateNotInstalling {
+	if u.cancel != nil {
 		check = n.text("updater_checking")
 	}
 	ui.Row(c).Gap(6).Wrap().Children(func() {
@@ -458,20 +459,20 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 func (n *nativeMain) drawUpdateProgress(c *ui.Context, kit uikit.Kit) {
 	progress := n.updater.install
 	options := uikit.UpdateProgressOptions{Amount: "100%", Fraction: 1, Label: n.text("updater_download_progress")}
-	switch progress.phase {
+	switch progress.Phase {
 	case updateDownloading:
 		options.Status = n.text("updater_downloading")
-		if progress.total > 0 {
-			options.Fraction = min(1, float64(progress.downloaded)/float64(progress.total))
-			options.Amount = fmt.Sprintf("%d%%", min(100, progress.downloaded*100/progress.total))
+		if progress.Total > 0 {
+			options.Fraction = min(1, float64(progress.Downloaded)/float64(progress.Total))
+			options.Amount = fmt.Sprintf("%d%%", min(100, progress.Downloaded*100/progress.Total))
 		} else {
 			options.Fraction = -1
-			options.Amount = fmt.Sprintf("%.1f MiB", float64(progress.downloaded)/(1024*1024))
+			options.Amount = fmt.Sprintf("%.1f MiB", float64(progress.Downloaded)/(1024*1024))
 		}
 	case updateVerified, updateInstalling:
 		options.Verified = n.text("updater_verified")
 		options.Status = options.Verified
-		if progress.phase == updateInstalling {
+		if progress.Phase == updateInstalling {
 			options.Status = n.text("updater_installing")
 		}
 	default:
@@ -482,7 +483,7 @@ func (n *nativeMain) drawUpdateProgress(c *ui.Context, kit uikit.Kit) {
 
 func (n *nativeMain) drawBackgroundUpdate(c *ui.Context, kit uikit.Kit) {
 	u := &n.updater
-	if u.install.phase == updateNotInstalling && !u.installFailed {
+	if u.install.Phase == updateNotInstalling && !u.installFailed {
 		return
 	}
 	ui.Column(c).FillWidth().Padding(4, 8).Children(func() {

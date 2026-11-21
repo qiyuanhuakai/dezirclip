@@ -328,7 +328,7 @@ func run() error {
 		if native != nil {
 			native.window = win
 			shell.nativePrepare = native.prepare
-			shell.keepMainAlive = func() bool { return native.updater.pending() || native.winV.changing || native.restartingAdmin }
+			shell.keepMainAlive = func() bool { return native.updater.keepWindow() || native.winV.changing || native.restartingAdmin }
 			win.OnClosed(mygo.Theme.OnUpdated(native.systemAppearanceChanged))
 		}
 		if err := win.SetIcon(trayIcon); err != nil {
@@ -421,7 +421,7 @@ func run() error {
 			installNativeFileDrop(win)
 		}
 		win.OnClose(func(event *mygo.CloseEvent) {
-			if native != nil && native.winV.changing {
+			if native != nil && (native.winV.changing || native.updater.startingInstall) {
 				event.PreventDefault()
 				shell.hideMain(win)
 				return
@@ -511,7 +511,9 @@ func run() error {
 					if acceptRecordingEvent(win, command, native) {
 						continue
 					}
-					shell.resident.accept(command)
+					if status := shell.resident.accept(command); status != nil && native != nil {
+						win.Update(func() { native.updater.applyInstallStatus(*status) })
+					}
 					continue
 				}
 				if command == "tray-toggle" {

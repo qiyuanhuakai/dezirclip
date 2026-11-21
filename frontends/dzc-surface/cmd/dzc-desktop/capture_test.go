@@ -135,11 +135,20 @@ func TestResidentUpdateReplyRestoresCachedResult(t *testing.T) {
 		Result:  nativeUpdateResult{Channel: "preview", CurrentVersion: "1.0.1-beta.1", ChannelVersion: "1.0.1", Status: "available"},
 		Checked: now,
 	}
-	payload, err := json.Marshal(residentReply{ID: request.ID, Success: true, UpdateCheck: want})
+	progress := residentUpdateStatus{Progress: nativeInstallProgress{Phase: updateDownloading, Downloaded: 42, Total: 100}}
+	payload, err := json.Marshal(residentReply{ID: request.ID, Success: true, UpdateCheck: want, UpdateStatus: &progress})
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridge.accept(string(payload))
+	var reopened nativeUpdater
+	status := bridge.accept(string(payload))
+	if status == nil {
+		t.Fatal("a reopened main window did not receive the resident install status")
+	}
+	reopened.applyInstallStatus(*status)
+	if !reopened.installing() || reopened.install.Downloaded != 42 || reopened.install.Total != 100 {
+		t.Fatal("resident installation progress was not restored")
+	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
@@ -151,5 +160,16 @@ func TestResidentUpdateReplyRestoresCachedResult(t *testing.T) {
 		got.validFor("preview", "1.0.1-beta.1", now.Add(nativeUpdateInterval)) ||
 		got.validFor("preview", "1.0.1-beta.1", now.Add(-time.Second)) {
 		t.Fatal("restored a check outside its version, channel or time window")
+	}
+	event, err := json.Marshal(residentReply{UpdateStatus: &residentUpdateStatus{Failure: "update_install_failed"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status = bridge.accept(string(event)); status == nil {
+		t.Fatal("the resident lost a failure after the original request disconnected")
+	}
+	reopened.applyInstallStatus(*status)
+	if reopened.installing() || !reopened.installFailed || reopened.err == nil || reopened.err.Error() != "update_install_failed" {
+		t.Fatal("the reopened window did not clear progress and report the failure")
 	}
 }

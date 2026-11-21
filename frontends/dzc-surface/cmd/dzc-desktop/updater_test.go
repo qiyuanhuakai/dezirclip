@@ -13,11 +13,39 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
 )
 
 type indexResponse struct {
 	status int
 	body   string
+}
+
+func TestResidentInstallRequiresTheCheckedVersionAndChannel(t *testing.T) {
+	result, err := parseNativeUpdate(json.RawMessage(`{
+		"channel":"preview","currentVersion":"old","status":"available",
+		"available":{"version":"2.0.0","releaseURL":"release","artifact":{"url":"package","signature":"signature"}}
+	}`), "preview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.CurrentVersion = buildinfo.Version
+	check := &nativeUpdateCheck{Result: result, Checked: time.Now()}
+	artifact, err := residentUpdateArtifact(check, "preview", "2.0.0")
+	if err != nil || artifact.URL != "package" {
+		t.Fatalf("accepted release was lost: %v", err)
+	}
+	if _, err := residentUpdateArtifact(check, "stable", "2.0.0"); err == nil {
+		t.Fatal("a different channel was allowed to install")
+	}
+	if _, err := residentUpdateArtifact(check, "preview", "3.0.0"); err == nil {
+		t.Fatal("a different version was allowed to install")
+	}
+	check.Checked = check.Checked.Add(-nativeUpdateInterval)
+	if _, err := residentUpdateArtifact(check, "preview", "2.0.0"); err == nil {
+		t.Fatal("an expired release check was allowed to install")
+	}
 }
 
 func (r indexResponse) RoundTrip(*http.Request) (*http.Response, error) {

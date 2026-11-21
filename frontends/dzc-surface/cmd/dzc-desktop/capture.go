@@ -16,21 +16,21 @@ const residentFrameLimit = 2 * 1024 * 1024
 
 // The resident owns the tray and native selector. Only its main child has these pipes.
 type residentRequest struct {
-	Update     *mygoInstallRequest `json:"update,omitempty"`
-	Appearance *theme.Appearance   `json:"appearance,omitempty"`
-	Preview    *pinPreviewRequest  `json:"preview,omitempty"`
-	ID         uint64              `json:"request_id"`
-	Epoch      uint64              `json:"epoch"`
-	Operation  string              `json:"operation"`
-	Directory  string              `json:"directory,omitempty"`
-	Panel      string              `json:"panel,omitempty"`
-	Hotkey     string              `json:"hotkey,omitempty"`
-	Disabled   bool                `json:"disabled,omitempty"`
-	Full       bool                `json:"full,omitempty"`
-	Visible    bool                `json:"visible,omitempty"`
+	Appearance *theme.Appearance  `json:"appearance,omitempty"`
+	Preview    *pinPreviewRequest `json:"preview,omitempty"`
+	ID         uint64             `json:"request_id"`
+	Epoch      uint64             `json:"epoch"`
+	Operation  string             `json:"operation"`
+	Directory  string             `json:"directory,omitempty"`
+	Panel      string             `json:"panel,omitempty"`
+	Hotkey     string             `json:"hotkey,omitempty"`
+	Disabled   bool               `json:"disabled,omitempty"`
+	Full       bool               `json:"full,omitempty"`
+	Visible    bool               `json:"visible,omitempty"`
 
 	UpdateCheck   *nativeUpdateCheck `json:"update_check,omitempty"`
 	UpdateChannel string             `json:"update_channel,omitempty"`
+	UpdateVersion string             `json:"update_version,omitempty"`
 }
 type residentReply struct {
 	ID        uint64 `json:"request_id"`
@@ -38,7 +38,8 @@ type residentReply struct {
 	Success   bool   `json:"success"`
 	Error     string `json:"error,omitempty"`
 
-	UpdateCheck *nativeUpdateCheck `json:"update_check,omitempty"`
+	UpdateCheck  *nativeUpdateCheck    `json:"update_check,omitempty"`
+	UpdateStatus *residentUpdateStatus `json:"update_status,omitempty"`
 }
 type residentBridge struct {
 	output     io.Writer
@@ -198,10 +199,10 @@ func residentBackgroundRequest(operation string) bool {
 	return operation == "appearance" || operation == "update-check"
 }
 
-func (c *residentBridge) accept(line string) {
+func (c *residentBridge) accept(line string) *residentUpdateStatus {
 	var reply residentReply
 	if json.Unmarshal([]byte(line), &reply) != nil {
-		return
+		return nil
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -211,4 +212,5 @@ func (c *residentBridge) accept(line string) {
 		default:
 		}
 	}
+	return reply.UpdateStatus
 }
