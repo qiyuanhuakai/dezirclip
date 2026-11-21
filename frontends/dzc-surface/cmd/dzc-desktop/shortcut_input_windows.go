@@ -78,8 +78,9 @@ func windowsExtendedShortcutKey(key uintptr) string {
 		return map[uintptr]string{
 			0x13: "Pause", 0x14: "CapsLock", 0x2c: "PrintScreen", 0x5d: "ContextMenu",
 			0x90: "NumLock", 0x91: "ScrollLock",
-			0x6a: "NumpadMultiply", 0x6b: "NumpadAdd", 0x6d: "NumpadSubtract",
+			0x6a: "NumpadMultiply", 0x6b: "NumpadAdd", 0x6c: "NumpadSeparator", 0x6d: "NumpadSubtract",
 			0x6e: "NumpadDecimal", 0x6f: "NumpadDivide",
+			0x92: "NumpadEqual", 0xe2: "IntlBackslash",
 			0xad: "VolumeMute", 0xae: "VolumeDown", 0xaf: "VolumeUp", 0xb0: "MediaTrackNext",
 			0xb1: "MediaTrackPrevious", 0xb2: "MediaStop", 0xb3: "MediaPlayPause",
 		}[key]

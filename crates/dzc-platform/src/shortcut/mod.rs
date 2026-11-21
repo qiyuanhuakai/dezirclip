@@ -75,6 +75,7 @@ const NAMED_KEYS: &[(&str, u32, u32, &[&str])] = &[
     ("BracketLeft", 0xdb, 0x5b, &["["]),
     ("BracketRight", 0xdd, 0x5d, &["]"]),
     ("Backslash", 0xdc, 0x5c, &["\\"]),
+    ("IntlBackslash", 0xe2, 0x3c, &["Oem102"]),
     ("Semicolon", 0xba, 0x3b, &[";"]),
     ("Quote", 0xde, 0x27, &["'"]),
     ("Comma", 0xbc, 0x2c, &[","]),
@@ -105,9 +106,10 @@ const NAMED_KEYS: &[(&str, u32, u32, &[&str])] = &[
     ("NumpadSubtract", 0x6d, 0xffad, &["NumSub", "NumSubtract"]),
     ("NumpadMultiply", 0x6a, 0xffaa, &["NumMult", "NumMultiply"]),
     ("NumpadDivide", 0x6f, 0xffaf, &["NumDiv", "NumDivide"]),
+    ("NumpadSeparator", 0x6c, 0xffac, &["NumpadComma", "NumSeparator"]),
     ("NumpadDecimal", 0x6e, 0xffae, &["NumDec", "NumDecimal"]),
     ("NumpadEnter", 0x00, 0xff8d, &["NumEnter"]),
-    ("NumpadEqual", 0x00, 0xffbd, &["NumEqual"]),
+    ("NumpadEqual", 0x92, 0xffbd, &["NumEqual"]),
     ("VolumeMute", 0xad, 0x1008ff12, &["AudioVolumeMute"]),
     ("VolumeDown", 0xae, 0x1008ff11, &["AudioVolumeDown"]),
     ("VolumeUp", 0xaf, 0x1008ff13, &["AudioVolumeUp"]),
@@ -529,6 +531,9 @@ mod tests {
             "Ctrl+ContextMenu",
             "Ctrl+PrintScreen",
             "Alt+MediaTrackNext",
+            "Ctrl+IntlBackslash",
+            "Alt+NumpadEqual",
+            "Shift+NumpadSeparator",
         ] {
             assert_eq!(normalize_shortcut(chord).unwrap(), chord);
         }
@@ -538,6 +543,8 @@ mod tests {
             ("Ctrl+1", "Ctrl+1"),
             ("Alt+NumEnter", "Alt+NumpadEnter"),
             ("Shift+Plus", "Shift+Equal"),
+            ("Alt+Oem102", "Alt+IntlBackslash"),
+            ("Ctrl+NumpadComma", "Ctrl+NumpadSeparator"),
         ] {
             assert_eq!(normalize_shortcut(raw).unwrap(), expected);
         }
@@ -547,6 +554,9 @@ mod tests {
             (0x31, "1"),
             (0xbb, "Equal"),
             (0x5d, "ContextMenu"),
+            (0xe2, "IntlBackslash"),
+            (0x92, "NumpadEqual"),
+            (0x6c, "NumpadSeparator"),
         ] {
             assert_eq!(windows_key_name(code), Some(expected));
         }
@@ -557,6 +567,8 @@ mod tests {
             (&[0x3d, 0x2b], "Equal"),
             (&[0xff7f, 0], "NumLock"),
             (&[0xff67, 0], "ContextMenu"),
+            (&[0x3c, 0x3e], "IntlBackslash"),
+            (&[0xffac, 0], "NumpadSeparator"),
         ] {
             assert_eq!(x11_key_name(symbols), Some(expected));
         }

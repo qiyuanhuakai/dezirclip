@@ -27,6 +27,12 @@ func extraWindowsKey(name string) uintptr {
 		return 0x13
 	case "ContextMenu":
 		return 0x5d
+	case "NumpadSeparator":
+		return 0x6c
+	case "NumpadEqual":
+		return 0x92
+	case "IntlBackslash":
+		return 0xe2
 	default:
 		return 0
 	}

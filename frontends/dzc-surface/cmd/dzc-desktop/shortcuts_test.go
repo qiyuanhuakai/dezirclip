@@ -78,6 +78,9 @@ func TestExtendedShortcutNamesKeepKeypadSeparate(t *testing.T) {
 		{"Ctrl+;", "Ctrl+Semicolon", "Ctrl+;"},
 		{"Alt+MediaNextTrack", "Alt+MediaTrackNext", "Alt+MediaNextTrack"},
 		{"Ctrl+PrintScreen", "Ctrl+PrintScreen", "Ctrl+PrintScreen"},
+		{"Alt+OEM102", "Alt+IntlBackslash", "Alt+IntlBackslash"},
+		{"Ctrl+NumEqual", "Ctrl+NumpadEqual", "Ctrl+NumpadEqual"},
+		{"Ctrl+NumpadComma", "Ctrl+NumpadSeparator", "Ctrl+NumpadSeparator"},
 	} {
 		if got := mainShortcutName(tt.raw); got != tt.canonical {
 			t.Errorf("%q canonicalizes to %q, want %q", tt.raw, got, tt.canonical)

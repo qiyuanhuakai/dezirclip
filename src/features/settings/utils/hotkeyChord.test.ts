@@ -24,6 +24,8 @@ describe("extended keyboard shortcuts", () => {
   it.each([
     ["+", "Equal", "Shift+Equal"], ["!", "Digit1", "Shift+1"],
     [":", "Semicolon", "Shift+Semicolon"],
+    [">", "IntlBackslash", "Shift+IntlBackslash"], [",", "NumpadComma", "Shift+NumpadSeparator"],
+    ["=", "NumpadEqual", "Shift+NumpadEqual"],
     ["1", "Numpad1", "Shift+Numpad1"], ["End", "Numpad1", "Shift+Numpad1"],
     ["+", "NumpadAdd", "Shift+NumpadAdd"], [".", "NumpadDecimal", "Shift+NumpadDecimal"],
     ["PrintScreen", "PrintScreen", "Shift+PrintScreen"], ["Pause", "Pause", "Shift+Pause"],
@@ -31,6 +33,12 @@ describe("extended keyboard shortcuts", () => {
     ["AudioVolumeUp", "AudioVolumeUp", "Shift+VolumeUp"], ["Escape", "Escape", "Shift+Escape"],
   ])("records %s from %s as %s", (key, code, expected) => {
     expect(hotkeyChord(event(key, { code, shiftKey: true }))).toBe(expected);
+  });
+
+  it("uses Windows Enter identity for both physical Enter keys", () => {
+    const keypad = event("Enter", { code: "NumpadEnter", ctrlKey: true });
+    expect(hotkeyChord(keypad, "Win32")).toBe("Ctrl+Enter");
+    expect(hotkeyChord(keypad, "Linux x86_64")).toBe("Ctrl+NumpadEnter");
   });
 
   it("ignores IME composition and unknown keys", () => {

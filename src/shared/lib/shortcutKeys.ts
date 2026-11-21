@@ -7,6 +7,7 @@ const names = [
   "Space", "Enter", "Tab", "Backspace", "Delete", "Insert", "Escape", "PageUp", "PageDown", "Home", "End",
   "Left", "Right", "Up", "Down", "CapsLock", "NumLock", "ScrollLock", "PrintScreen", "Pause", "ContextMenu",
   "NumpadAdd", "NumpadSubtract", "NumpadMultiply", "NumpadDivide", "NumpadDecimal", "NumpadEnter", "NumpadEqual",
+  "NumpadSeparator", "IntlBackslash",
   "VolumeMute", "VolumeDown", "VolumeUp", "MediaTrackNext", "MediaTrackPrevious", "MediaStop", "MediaPlayPause",
   "MouseMiddle", ...Object.keys(PUNCTUATION),
 ];
@@ -19,6 +20,7 @@ for (const [alias, name] of Object.entries({
   NumAdd: "NumpadAdd", NumSub: "NumpadSubtract", NumSubtract: "NumpadSubtract",
   NumMult: "NumpadMultiply", NumMultiply: "NumpadMultiply", NumDiv: "NumpadDivide", NumDivide: "NumpadDivide",
   NumDec: "NumpadDecimal", NumDecimal: "NumpadDecimal", NumEnter: "NumpadEnter", NumEqual: "NumpadEqual",
+  NumpadComma: "NumpadSeparator", NumSeparator: "NumpadSeparator", Oem102: "IntlBackslash",
   AudioVolumeMute: "VolumeMute", AudioVolumeDown: "VolumeDown", AudioVolumeUp: "VolumeUp",
   MediaNextTrack: "MediaTrackNext", MediaPreviousTrack: "MediaTrackPrevious", MediaTrackPrev: "MediaTrackPrevious",
   PauseBreak: "Pause", Apps: "ContextMenu", MButton: "MouseMiddle",
@@ -32,7 +34,10 @@ export function canonicalShortcutKey(key: string): string | undefined {
   return namesAndAliases.get(upper);
 }
 
-export function shortcutKeyFromEvent({ key, code = "" }: { key: string; code?: string }): string | undefined {
+export function shortcutKeyFromEvent({ key, code = "" }: { key: string; code?: string }, platform = globalThis.navigator?.platform ?? ""): string | undefined {
+  // Windows global hotkeys identify both Enter keys by VK_RETURN.
+  if (code === "NumpadEnter" && /^win/i.test(platform)) return "Enter";
+  if (code === "IntlBackslash") return code;
   if (code.startsWith("Numpad") || Object.prototype.hasOwnProperty.call(PUNCTUATION, code) || /^Digit[0-9]$/.test(code)) {
     return canonicalShortcutKey(code);
   }
