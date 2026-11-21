@@ -406,7 +406,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 		if event.Event == protocol.EventKindServiceStateChanged && event.Data.Status != nil {
 			n.queueCount.observe(*event.Data.Status)
 			switch *event.Data.Status {
-			case "view_settings_changed", "custom_themes_changed":
+			case "view_settings_changed", "custom_themes_changed", "PrivacyHotkeyChanged":
 				if n.winV.changing {
 					continue
 				}

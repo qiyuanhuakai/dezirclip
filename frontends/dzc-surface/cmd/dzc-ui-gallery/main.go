@@ -158,6 +158,20 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 		kit.HotkeyRow(c, "Quick Paste", func() {
 			kit.HotkeyBinding(c, "Quick Paste", "Ctrl+Shift+V", "Press a shortcut", g.state == "recording", false)
 		})
+	case "hotkey-optional":
+		const label = "Privacy session shortcut"
+		area := ui.Column(c).FillWidth()
+		value := ui.Local(area, "optional-shortcut", func() string { return "Ctrl+Alt+P" })
+		area.Children(func() {
+			options := uikit.HotkeyRowOptions{HelpLabel: "Setting help: " + label,
+				Description: "Leave empty to keep this shortcut disabled.", ClearLabel: "Clear shortcut"}
+			if *value != "" {
+				options.OnClear = func() { *value = "" }
+			}
+			kit.HotkeyRowWithOptions(c, label, options, func() {
+				kit.HotkeyBinding(c, label, *value, "Not set", false, false)
+			})
+		})
 	case "scroll-to-top":
 		ui.Column(c).FillWidth().Height(136).Children(func() {
 			ui.Text(c, "Clipboard history").FontSize(16)
@@ -273,6 +287,17 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 }
 
 func (g *gallery) prepare(tester *ui.Tester) error {
+	if g.fixture == "hotkey-optional" {
+		if _, visible := tester.Find("Clear shortcut"); visible {
+			return fmt.Errorf("the optional shortcut shows a clear action before opening help")
+		}
+		if g.state == "options" {
+			if err := tester.Click("Setting help: Privacy session shortcut"); err != nil {
+				return err
+			}
+			tester.Move(450, 390)
+		}
+	}
 	if g.state == "resized" && (g.fixture == "privacy-detection" || g.fixture == "privacy-rules") {
 		label := "Patterns"
 		if g.fixture == "privacy-rules" {

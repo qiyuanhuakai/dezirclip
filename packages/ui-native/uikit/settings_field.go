@@ -29,7 +29,11 @@ func (k Kit) SettingsField(c *ui.Context, options SettingsFieldOptions) ui.Eleme
 
 // SettingsFieldLabel shows a setting name and an optional expandable description.
 func (k Kit) SettingsFieldLabel(c *ui.Context, label, helpLabel, description string) ui.Element {
-	if description == "" {
+	return k.settingsFieldLabel(c, label, helpLabel, description, nil)
+}
+
+func (k Kit) settingsFieldLabel(c *ui.Context, label, helpLabel, description string, action func()) ui.Element {
+	if description == "" && action == nil {
 		return k.SettingsLabel(c, label).MinWidth(0).Wrap()
 	}
 	column := ui.Column(c).MinWidth(0).Gap(4)
@@ -44,7 +48,12 @@ func (k Kit) SettingsFieldLabel(c *ui.Context, label, helpLabel, description str
 			if _, themed := k.widgets["settingsFieldHelpText"]; themed {
 				widget = "settingsFieldHelpText"
 			}
-			text(c, description, k.style(widget)).FillWidth().MinWidth(0).Wrap()
+			if description != "" {
+				text(c, description, k.style(widget)).FillWidth().MinWidth(0).Wrap()
+			}
+			if action != nil {
+				action()
+			}
 		}
 	})
 	return column

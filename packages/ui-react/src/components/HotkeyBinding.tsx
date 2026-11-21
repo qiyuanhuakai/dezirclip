@@ -1,5 +1,7 @@
 import type { ComponentProps, ReactNode } from "react";
 import { HotkeyRemoveButton } from "./RemoveButton";
+import { SettingHelp } from "./SettingHelp";
+import { SettingsDataAction } from "./SettingsData";
 
 function hotkeyKeys(value: string, platform = globalThis.navigator?.platform ?? ""): string[] {
   const modifier = /^win/i.test(platform) ? "Win" : /^linux/i.test(platform) ? "Super" : undefined;
@@ -19,6 +21,8 @@ export interface HotkeyBindingProps {
   recording: boolean;
   busy: boolean;
   disabled: boolean;
+  helpLabel?: string;
+  description?: string;
   clearLabel?: string;
   clearTitle?: string;
   error?: string | null;
@@ -64,8 +68,18 @@ export function HotkeyList({ platform, values, emptyLabel, removeLabel, disabled
 export function HotkeyBinding(props: HotkeyBindingProps) {
   const active = props.recording && !props.disabled;
   const keys = props.value ? hotkeyKeys(props.value, props.platform) : [];
+  const canClear = Boolean(props.onClear && props.value);
   return <div className="setting-item setting-item--detail hotkey-recorder">
-    <div className="item-label-group"><span className="item-label">{props.label}</span></div>
+    <div className="item-label-group">
+      <div className="settings-label-line">
+        <span className="item-label">{props.label}</span>
+        {(props.description || canClear) && <SettingHelp label={props.label} helpLabel={props.helpLabel ?? "Shortcut options"}>
+          {props.description}
+          {canClear && <SettingsDataAction className="hotkey-clear-action" disabled={props.disabled || props.recording}
+            onClick={props.onClear} title={props.clearTitle}>{props.clearLabel ?? "Clear shortcut"}</SettingsDataAction>}
+        </SettingHelp>}
+      </div>
+    </div>
     <div className="hotkey-binding">
       <div className={`key-group ${active ? "recording" : ""}`} role="button" aria-label={props.label}
         aria-pressed={active} aria-busy={props.busy} aria-disabled={props.disabled} tabIndex={props.disabled ? -1 : 0}
@@ -76,8 +90,6 @@ export function HotkeyBinding(props: HotkeyBindingProps) {
           </div>
           : keys.map((key, index) => <div key={`${key}-${index}`} className="key-cap">{key}</div>)}
       </div>
-      {props.onClear && props.value && !props.recording && <HotkeyRemoveButton disabled={props.disabled}
-        onClick={props.onClear} label={props.clearLabel ?? props.label} title={props.clearTitle} />}
     </div>
     {props.error && <p className="hotkey-recording-error" role="alert">{props.error}</p>}
   </div>;

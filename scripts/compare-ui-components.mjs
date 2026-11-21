@@ -70,6 +70,7 @@ const additionalExamples = {
   "settings-keyboard-preview": { states: ["default", "enabled"], text: "Preview keyboard selection" },
   "settings-slider": { states: ["default", "keyboard"], text: "Opacity 72%" },
   "hotkey-binding": { states: ["default", "recording"], text: "Quick Paste" },
+  "hotkey-optional": { states: ["default", "options"], text: "Privacy session shortcut" },
   "scroll-to-top": { states: ["default", "hover"], text: "Clipboard history" },
   "emoji-tabs": { states: ["default", "favorites"], text: "Favorites" },
   "emoji-grid": { states: ["default"], text: "Frequently used" },
@@ -162,6 +163,15 @@ try {
             await page.mouse.move(450, 390);
             await page.goto(url.href);
             await page.locator("main[data-fixture]").waitFor();
+            if (fixture === "hotkey-optional") {
+              if (await page.getByRole("button", { name: "Clear shortcut" }).count()) {
+                throw Error("The optional shortcut exposes a clear action before opening help");
+              }
+              if (state === "options") {
+                await page.getByRole("button", { name: "Setting help: Privacy session shortcut" }).click();
+                await page.mouse.move(450, 390);
+              }
+            }
             if (fixture === "settings-toggle-help" && state === "expanded") {
               await page.getByRole("button", { name: "Setting help: Move pasted entries to top" }).click();
               await page.getByText("After pasting, move the item to the top of the list.").waitFor();
@@ -409,6 +419,7 @@ try {
               ? ["Clipboard", "history"].every(word => comparable(webText, word) && comparable(nativeText, word))
               : comparable(webText, marker) && comparable(nativeText, marker);
             const extra = state === "popup" || fixture === "surface-opacity" ? "Light"
+              : fixture === "hotkey-optional" && state === "options" ? "Clear shortcut"
               : fixture === "settings-toggle-help" && state === "expanded" ? "After pasting, move the item to the top of the list."
               : fixture === "character-panel" ? state === "after-scroll" ? "Mathematics" : "Arrows"
               : fixture === "settings-field" && state === "expanded" ? "Use the theme font by default."
@@ -424,6 +435,12 @@ try {
               : state === "southeast" ? "SouthEast" : state === "scrolled" ? "1 scroll" : "";
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
             const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64") });
+            if (fixture === "hotkey-optional" && state === "options") {
+              const clear = page.getByRole("button", { name: "Clear shortcut" });
+              await clear.click();
+              await page.getByText("Not set", { exact: true }).waitFor();
+              if (await clear.count()) throw Error("Clearing the binding left the action available");
+            }
             if (fixture === "tag-dialog") {
               const dialog = page.getByRole("dialog", { name: "Create tag" });
               const input = dialog.getByRole("textbox", { name: "Name" });

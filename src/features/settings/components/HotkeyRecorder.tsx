@@ -12,10 +12,12 @@ interface HotkeyRecorderProps {
     readonly setRecording: (val: boolean) => void;
     readonly onHotkeyChange: (val: string) => void;
     readonly onClear?: () => void;
+    readonly clearLabel?: string;
+    readonly description?: string;
     readonly disabled?: boolean;
     readonly placeholder?: string;
 }
-const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkeyChange, onClear, disabled = false, placeholder }: HotkeyRecorderProps) => {
+const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkeyChange, onClear, clearLabel, description, disabled = false, placeholder }: HotkeyRecorderProps) => {
     const [recordingError, setRecordingError] = useState<string | null>(null);
     const { record, cancel, nativeReady } = useHotkeyRecording({ recording: recording && !disabled, onRecorded: onHotkeyChange,
         onCancelled: () => setRecording(false),
@@ -50,7 +52,7 @@ const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkey
 
     return <HotkeyBinding label={t(labelKey)} value={hotkey} placeholder={placeholder || t("not_set")} unset={!placeholder}
         recordingLabel={t("waiting_for_input")} recording={recording} busy={recording && !nativeReady} disabled={disabled}
-        onClear={onClear} error={recordingError} clearLabel={`${t("delete")} ${t(labelKey)}`} clearTitle={`${t("delete")} ${hotkey}`}
+        onClear={onClear} error={recordingError} helpLabel={t("settings_help")} description={description} clearLabel={clearLabel}
         onClick={event => { startRecording(); event.currentTarget.focus(); }} onKeyDown={handleKeyDown}
         onMouseDown={event => { if (recording && !disabled && event.button === 1) { event.preventDefault(); record("MouseMiddle"); } }}
         onBlur={() => setRecording(false)} />;

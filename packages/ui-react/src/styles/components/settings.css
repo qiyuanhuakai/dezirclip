@@ -690,6 +690,7 @@
 .hotkey-binding-value { cursor: default; flex-wrap: wrap; min-width: 0; }
 .hotkey-list-editor .hotkey-binding-value .key-cap { cursor: default; }
 .hotkey-recording-error { flex-basis: 100%; margin: 4px 0; color: var(--color-error); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
+.hotkey-recorder .hotkey-clear-action { display: flex; margin-top: 4px; }
 
 .hotkey-recorder .key-group {
   flex-wrap: wrap;

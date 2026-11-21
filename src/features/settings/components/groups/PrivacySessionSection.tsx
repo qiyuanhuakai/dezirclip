@@ -70,6 +70,7 @@ export function PrivacySessionSection({ t, appSettings }: {
     </div>}
     <HotkeyRecorder t={t} labelKey="privacy_session_hotkey" hotkey={hotkey}
       recording={recording} setRecording={setRecording} disabled={disabled}
+      description={t("privacy_session_hotkey_hint")} clearLabel={t("privacy_session_hotkey_clear")}
       onHotkeyChange={value => { void saveHotkey(value); }} onClear={() => { void saveHotkey(""); }} />
 
     {error && <p role="alert" className="privacy-action-error">{error}</p>}

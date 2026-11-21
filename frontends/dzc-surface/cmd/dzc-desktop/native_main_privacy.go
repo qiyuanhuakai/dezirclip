@@ -29,7 +29,13 @@ func (n *nativeMain) drawPrivacySession(c *ui.Context, kit uikit.Kit) {
 			until := time.UnixMilli(*n.privateUntil).Local().Format(layout)
 			ui.Text(c, n.text("privacy_session_until")+" "+until).TextColor(c.Theme().TextMuted).Wrap()
 		}
-		n.shortcutSetting(c, "app.privacy_session_hotkey", n.text("privacy_session_hotkey"), "")
+		const key = "app.privacy_session_hotkey"
+		shortcut := n.text("privacy_session_hotkey")
+		n.shortcutSettingWithOptions(c, key, shortcut, "", uikit.HotkeyRowOptions{
+			HelpLabel: n.settingsHelpLabel(shortcut), Description: n.text("privacy_session_hotkey_hint"),
+			ClearLabel: n.text("privacy_session_hotkey_clear"),
+			OnClear:    func() { n.saveNativeShortcut(key, "") },
+		})
 	})
 }
 

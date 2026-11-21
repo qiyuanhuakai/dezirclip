@@ -7,6 +7,41 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestOptionalHotkeyClearRequiresExpandedHelp(t *testing.T) {
+	const label, clear = "Privacy session shortcut", "Clear shortcut"
+	const help, description = "Setting help: " + label, "Leave empty to disable the shortcut."
+	value := "Ctrl+Alt+P"
+	disabled := true
+	tester := ui.NewTester(func(c *ui.Context) {
+		kit := Kit{}
+		options := HotkeyRowOptions{HelpLabel: help, Description: description, ClearLabel: clear, Disabled: disabled}
+		if value != "" {
+			options.OnClear = func() { value = "" }
+		}
+		kit.HotkeyRowWithOptions(c, label, options, func() {
+			kit.HotkeyBinding(c, label, value, "Not set", false, disabled)
+		})
+	}, 330, 200)
+	if tester.HasText(clear) || tester.HasText(description) {
+		t.Fatal("optional shortcut help starts open")
+	}
+	if err := tester.Click(help); err != nil || !tester.HasText(description) {
+		t.Fatalf("help did not open: %v", err)
+	}
+	if err := tester.Click(clear); err != nil || value != "Ctrl+Alt+P" {
+		t.Fatalf("disabled clear changed the binding: %v, value %q", err, value)
+	}
+	disabled = false
+	tester.Frame()
+	if err := tester.Click(clear); err != nil || value != "" {
+		t.Fatalf("clear did not empty the optional binding: %v, value %q", err, value)
+	}
+	tester.Frame()
+	if tester.HasText(clear) || !tester.HasText("NOT SET") {
+		t.Fatalf("unexpected shortcut controls after clear: %v", tester.Texts())
+	}
+}
+
 func TestPrivacyTextAreasResizeVerticallyWithoutChangingTheText(t *testing.T) {
 	for _, fixture := range []struct {
 		name string

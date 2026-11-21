@@ -30,6 +30,14 @@ const mode = params.get("mode") === "dark" ? "dark" : "light";
 const fixture = params.get("fixture") ?? "gallery";
 const state = params.get("state") ?? "default";
 
+function OptionalShortcutFixture() {
+  const [shortcut, setShortcut] = useState("Ctrl+Alt+P");
+  return <HotkeyBinding label="Privacy session shortcut" value={shortcut} placeholder="Not set" unset
+    recordingLabel="Press a shortcut" recording={false} busy={false} disabled={false}
+    helpLabel="Setting help" description="Leave empty to keep this shortcut disabled." clearLabel="Clear shortcut"
+    onClear={() => setShortcut("")} onClick={undefined} onKeyDown={undefined} onMouseDown={undefined} onBlur={undefined} />;
+}
+
 const clipboardTypes = [
   { id: "text", label: "文本" }, { id: "image", label: "图片" }, { id: "file", label: "文件" },
   { id: "url", label: "URL" }, { id: "code", label: "代码" }, { id: "video", label: "视频" }, { id: "rich_text", label: "富文本" },
@@ -200,6 +208,7 @@ function Showcase() {
     "hotkey-binding": <HotkeyBinding label="Quick Paste" value="Ctrl+Shift+V" placeholder="Set shortcut" recordingLabel="Press a shortcut"
       recording={state === "recording"} busy={false} disabled={false} onClick={undefined} onKeyDown={undefined}
       onMouseDown={undefined} onBlur={undefined} />,
+    "hotkey-optional": <OptionalShortcutFixture />,
     "scroll-to-top": <div className="showcase-scroll-top">Clipboard history<ScrollToTopButton label="Scroll to top" onClick={() => undefined} /></div>,
     "character-search": <CharacterSearch label="Search symbols" value={query} onChange={setQuery} />,
     "emoji-tabs": <EmojiTabs active={tab} labels={{ emoji: "Emoji", favorites: "Favorites" }} onChange={setTab} />,

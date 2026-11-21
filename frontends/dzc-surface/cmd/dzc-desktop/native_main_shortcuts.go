@@ -70,11 +70,18 @@ func nativeMainChords(raw string) []string {
 }
 
 func (n *nativeMain) shortcutSetting(c *ui.Context, key, label, fallback string) {
+	n.shortcutSettingWithOptions(c, key, label, fallback, uikit.HotkeyRowOptions{})
+}
+
+func (n *nativeMain) shortcutSettingWithOptions(c *ui.Context, key, label, fallback string, options uikit.HotkeyRowOptions) {
 	value := n.shortcutValue(key, fallback)
-	disabled := !n.shortcutAvailable()
+	options.Disabled = !n.shortcutAvailable()
+	if value == "" {
+		options.OnClear = nil
+	}
 	kit := n.mainKit()
-	kit.HotkeyRow(c, label, func() {
-		control := kit.HotkeyBinding(c, label, value, n.text("not_set"), false, disabled).
+	kit.HotkeyRowWithOptions(c, label, options, func() {
+		control := kit.HotkeyBinding(c, label, value, n.text("not_set"), false, options.Disabled).
 			Tooltip(n.text("hotkey_click_hint"))
 		if control.Clicked() {
 			n.openShortcut(key, label)

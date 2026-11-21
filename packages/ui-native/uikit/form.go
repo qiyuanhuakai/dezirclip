@@ -90,11 +90,31 @@ func (k Kit) SettingsLabel(c *ui.Context, label string) ui.Element {
 }
 
 func (k Kit) HotkeyRow(c *ui.Context, label string, controls func()) {
+	k.HotkeyRowWithOptions(c, label, HotkeyRowOptions{}, controls)
+}
+
+type HotkeyRowOptions struct {
+	HelpLabel, Description string
+	ClearLabel             string
+	Disabled               bool
+	OnClear                func()
+}
+
+// HotkeyRowWithOptions places the clear action for an optional binding inside its help.
+func (k Kit) HotkeyRowWithOptions(c *ui.Context, label string, options HotkeyRowOptions, controls func()) {
 	style := k.style("hotkeyRow")
 	ui.Column(c).FillWidth().Padding(style.Margin[:]...).Children(func() {
 		row := ui.Row(c).FillWidth().Wrap().Gap(max(6, style.ColumnGap)).AlignItems(ui.Center)
 		paint(row, style).Children(func() {
-			k.SettingsLabel(c, label).Grow(1).MinWidth(100).Wrap()
+			var clear func()
+			if options.OnClear != nil {
+				clear = func() {
+					if k.SettingsDataAction(c, options.ClearLabel, "", options.Disabled).AlignSelf(ui.Start).FocusRing(true).Clicked() {
+						options.OnClear()
+					}
+				}
+			}
+			k.settingsFieldLabel(c, label, options.HelpLabel, options.Description, clear).Grow(1).MinWidth(100)
 			controls()
 		})
 	})
