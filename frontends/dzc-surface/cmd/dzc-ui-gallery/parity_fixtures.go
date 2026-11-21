@@ -115,6 +115,20 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			}
 			kit.UpdateProgress(c, options)
 		})
+	case "settings-update-actions":
+		ui.Column(c).Width(330).Gap(8).Children(func() {
+			busy := g.state == "busy"
+			kit.UpdateActions(c, func() {
+				kit.UpdateAction(c, uikit.UpdateCheck, "Check now", busy)
+				kit.UpdateAction(c, uikit.UpdateInstall, "Install update", busy)
+				kit.UpdateAction(c, uikit.UpdateReleases, "Open release page", false)
+			})
+			if busy {
+				kit.UpdateProgress(c, uikit.UpdateProgressOptions{
+					Label: "Update download progress", Status: "Downloading update…", Amount: "42%", Fraction: 0.42,
+				})
+			}
+		})
 	case "search-select":
 		ui.Column(c).Width(385).Gap(12).Children(func() {
 			ui.Column(c).FillWidth().Gap(6).Padding(6, 0).Children(func() {

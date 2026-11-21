@@ -148,6 +148,11 @@ func (u *nativeUpdater) applyCheck(check *nativeUpdateCheck) {
 		return
 	}
 	result := check.Result
+	if u.confirm {
+		previous, candidate := u.result.Available, result.Available
+		u.confirm = previous != nil && candidate != nil && previous.Version == candidate.Version &&
+			previous.Artifact != nil && candidate.Artifact != nil && *previous.Artifact == *candidate.Artifact
+	}
 	result.installTarget, result.installSupport = u.result.installTarget, u.result.installSupport
 	u.result, u.err, u.checked, u.notesOpen = result, nil, check.Checked, false
 }
@@ -277,7 +282,6 @@ func (n *nativeMain) aboutSettings(c *ui.Context, kit uikit.Kit) {
 	kit.SettingsDisclosure(c, n.text("build_details"), &n.buildDetailsOpen, func() {
 		ui.Column(c).Gap(6).FillWidth().Padding(6).Children(func() { n.aboutBuildDetails(c) })
 	})
-	ui.Text(c, n.text("updater_title")).FontWeight(600)
 	n.updateSettings(c, kit)
 }
 
@@ -324,6 +328,12 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	u := &n.updater
 	busy := u.checking || u.installing()
 	disabled := u.channel == "" || busy || n.mutating || n.session == nil || n.history.state.ServiceInstanceId == ""
+	title := n.text("updater_title")
+	support := n.updaterSupportDescription(u.result.installSupport)
+	if !busy && u.result.Status == "" && u.err == nil {
+		support += "\n" + n.text("updater_not_checked")
+	}
+	kit.SettingsFieldLabel(c, title, n.settingsHelpLabel(title), support)
 	auto := u.automatic
 	autoLabel := n.text("updater_auto_check")
 	if kit.SettingsToggleField(c, &auto, autoLabel, n.settingsHelpLabel(autoLabel), n.text("updater_auto_hint"), disabled) {
@@ -346,26 +356,30 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		current = u.result.CurrentVersion
 	}
 	kit.UpdateVersionRow(c, n.text("updater_current_version"), current)
-	if u.result.ChannelVersion != "" {
-		kit.UpdateVersionRow(c, n.text("updater_channel_version"), u.result.ChannelVersion)
+	channelVersion := u.result.ChannelVersion
+	if channelVersion == "" && u.result.Available != nil {
+		channelVersion = u.result.Available.Version
+	}
+	if channelVersion != "" {
+		kit.UpdateVersionRow(c, n.text("updater_channel_version"), channelVersion)
 	}
 	check := n.text("updater_check_now")
 	if u.checking {
 		check = n.text("updater_checking")
 	}
-	ui.Row(c).Gap(6).Wrap().Children(func() {
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: check, Disabled: disabled}).Clicked() {
+	kit.UpdateActions(c, func() {
+		if kit.UpdateAction(c, uikit.UpdateCheck, check, disabled).Clicked() {
 			n.checkForUpdates()
 		}
 		label, target := n.text("updater_all_releases"), desktopReleasesURL
 		if available := u.result.Available; available != nil {
 			label, target = n.text("updater_open_release"), available.ReleaseURL
 			if available.Artifact != nil && u.result.installTarget != "" &&
-				n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("updater_install"), Disabled: disabled}).Clicked() {
+				kit.UpdateAction(c, uikit.UpdateInstall, n.text("updater_install"), disabled).Clicked() {
 				u.confirm = true
 			}
 		}
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: label}).Clicked() {
+		if kit.UpdateAction(c, uikit.UpdateReleases, label, false).Clicked() {
 			if err := n.shell.OpenURL(target); err != nil {
 				u.err = errUpdateLink
 			} else if errors.Is(u.err, errUpdateLink) {
@@ -374,23 +388,7 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		}
 	})
 	n.drawUpdateProgress(c, kit)
-	if u.result.installSupport != "" {
-		support := n.text("updater_support_unavailable")
-		switch u.result.installSupport {
-		case "updater_support_nsis":
-			support = n.text("updater_support_nsis")
-		case "updater_support_appimage":
-			support = n.text("updater_support_appimage")
-		case "updater_support_readonly":
-			support = n.text("updater_support_readonly")
-		case "updater_support_package":
-			support = n.text("updater_support_package")
-		case "updater_support_portable":
-			support = n.text("updater_support_portable")
-		}
-		ui.Text(c, support).Wrap()
-	}
-	status := n.text("updater_not_checked")
+	status := ""
 	switch u.result.Status {
 	case "current":
 		status = n.text("updater_current")
@@ -401,7 +399,7 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	case "unpublished":
 		status = n.text("updater_unpublished")
 	}
-	if !busy {
+	if !busy && status != "" {
 		ui.Text(c, status).Wrap()
 	}
 	if !u.checked.IsZero() {
@@ -421,6 +419,23 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 			}
 			ui.Text(c, notes).Wrap().Selectable()
 		})
+	}
+}
+
+func (n *nativeMain) updaterSupportDescription(reason string) string {
+	switch reason {
+	case "updater_support_nsis":
+		return n.text("updater_support_nsis")
+	case "updater_support_appimage":
+		return n.text("updater_support_appimage")
+	case "updater_support_readonly":
+		return n.text("updater_support_readonly")
+	case "updater_support_package":
+		return n.text("updater_support_package")
+	case "updater_support_portable":
+		return n.text("updater_support_portable")
+	default:
+		return n.text("updater_support_unavailable")
 	}
 }
 

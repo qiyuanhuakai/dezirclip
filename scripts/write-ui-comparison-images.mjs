@@ -38,6 +38,8 @@ const figures = [
   ["backup-dialog", "replace-confirmed", 407, 6, "backup-dialog-replace"],
   ["settings-update", "default", 155, 0, "settings-update"],
   ["settings-update", "installing", 175, 0, "settings-update-installing"],
+  ["settings-update-actions", "default", 112],
+  ["settings-update-actions", "busy", 150, 0, "settings-update-actions-busy"],
   ["settings-remove", "default", 115],
   ["privacy-rules", "default", 390],
   ["privacy-detection", "resized", 340],

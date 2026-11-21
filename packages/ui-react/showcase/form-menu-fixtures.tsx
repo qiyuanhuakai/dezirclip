@@ -4,7 +4,7 @@ import { BackupActions, BackupChoices, BackupDialog, BackupField, BackupPreview,
   PrivacyDetectionOptions, PrivacyPatternsField, PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField, SettingHelp, SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsField, SettingsRemoveButton, SettingsSectionCard, TagPickerTrigger, TagSearchField, TagToolbar, TagToolbarTitle, TextArea, TextField } from "../src";
 import { Ellipsis, EyeOff, ListChecks, ListCollapse, Plus } from "lucide-react";
 import { settingsPaneColumns } from "../src/components/SettingsSectionCard";
-import { UpdateProgress, UpdateVersionRow } from "../src/components/SettingsUpdate";
+import { UpdateAction, UpdateActions, UpdateProgress, UpdateVersionRow } from "../src/components/SettingsUpdate";
 
 export function TextFieldsFixture() {
   return <div className="showcase-fields">
@@ -172,6 +172,20 @@ export function SettingsUpdateFixture({ state }: { state: string }) {
     <UpdateProgress label="Update download progress" status={installing ? "Installing and restarting…" : "Downloading update…"}
       amount={installing ? "100%" : unknown ? "2.5 MiB" : "42%"} percent={installing ? 100 : unknown ? null : 42}
       verified={installing ? "Official update signature verified" : undefined} />
+  </div>;
+}
+
+export function UpdateActionsFixture({ state }: { state: string }) {
+  const busy = state === "busy";
+  const [clicked, setClicked] = useState("");
+  return <div className="showcase-fields">
+    <UpdateActions>
+      <UpdateAction action="check" disabled={busy} onClick={() => setClicked("Checked")}>Check now</UpdateAction>
+      <UpdateAction action="install" disabled={busy} onClick={() => setClicked("Install chosen")}>Install update</UpdateAction>
+      <UpdateAction action="releases" onClick={() => setClicked("Release opened")}>Open release page</UpdateAction>
+    </UpdateActions>
+    {busy && <UpdateProgress label="Update download progress" status="Downloading update…" amount="42%" percent={42} />}
+    {clicked && <span role="status">{clicked}</span>}
   </div>;
 }
 

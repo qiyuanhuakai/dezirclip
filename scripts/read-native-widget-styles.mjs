@@ -55,6 +55,9 @@ const samples = [
     updateProgressText: [".settings-range-header"], updateProgressTrack: [".update-progress"],
     updateProgressFill: [".update-progress-fill"], updateProgressVerified: [".update-verified"],
   }],
+  ["settings-update-actions", "default", { updateActions: [".update-actions"], updateAction: [".update-actions button"] }],
+  ["settings-update-actions", "hover", { updateActionHover: [".update-actions button"] }],
+  ["settings-update-actions", "busy", { updateActionDisabled: [".update-actions button"] }],
   ["hotkey-list", "multiple", {
     hotkeyEditor: [".hotkey-list-editor"],
     hotkeyEditorHeader: [".hotkey-list-editor > .hotkey-recorder", ".hotkey-list-editor .item-label"],
@@ -559,6 +562,7 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
       if (state === "replace-hover") await page.locator(".data-replace-confirm").hover();
     }
     if (fixture === "settings-data" && state === "hover-path") await page.locator(".data-panel").hover();
+    if (fixture === "settings-update-actions" && state === "hover") await page.getByRole("button", { name: "Check now" }).hover();
     if (fixture === "text-fields" && state.startsWith("focus")) {
       await page.getByRole("textbox", { name: state === "focus-text" ? "Entry name" : "Idle timeout" }).focus();
     }

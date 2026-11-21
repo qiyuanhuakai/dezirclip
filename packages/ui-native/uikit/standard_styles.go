@@ -28,6 +28,18 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.BorderWidth, style.Radius = 1, float32(palette.Radius)
 	}
 	switch widget {
+	case "updateActions":
+		style.ColumnGap, style.RowGap, style.MarginTop, style.MarginBottom = 8, 8, 10, 10
+	case "updateAction", "updateActionHover", "updateActionDisabled":
+		surface()
+		style.Height, style.ColumnGap, style.Weight = 30, 6, 600
+		style.Padding = [4]float32{4, 12, 4, 12}
+		if widget == "updateActionHover" {
+			style.Fill, style.Border = selected, accent
+		}
+		if widget == "updateActionDisabled" {
+			style.Opacity = 0.6
+		}
 	case "updateVersion", "updateVersionValue":
 		style.ColumnGap, style.MarginTop, style.MarginBottom = 8, 8, 8
 		if widget == "updateVersionValue" {

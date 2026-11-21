@@ -206,9 +206,9 @@ func (n *nativeMain) view(c *ui.Context) {
 		kit.ConfirmDialog(c, &n.winV.confirm, n.text("restart_explorer_title"), n.text("restart_explorer_confirm"),
 			n.text("common_cancel"), n.text("common_confirm"), n.confirmWinV)
 	}
-	if n.showSettings && n.updater.confirm {
-		kit.ConfirmDialog(c, &n.updater.confirm, n.text("updater_confirm_title"), n.text("updater_confirm_message"),
-			n.text("common_cancel"), n.text("updater_confirm_install"), n.installUpdate)
+	if available := n.updater.result.Available; n.showSettings && n.updater.confirm && available != nil {
+		kit.ConfirmDialog(c, &n.updater.confirm, n.text("updater_confirm_title")+" v"+available.Version, n.text("updater_confirm_message"),
+			n.text("updater_cancel"), n.text("updater_confirm_install"), n.installUpdate)
 	}
 }
 

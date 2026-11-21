@@ -1,4 +1,20 @@
-import { ShieldCheck } from "lucide-react";
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import { Download, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
+
+const actionIcons = { check: RefreshCw, install: Download, releases: ExternalLink };
+
+export function UpdateActions({ children }: { children: ReactNode }) {
+  return <div className="setting-btn-group update-actions">{children}</div>;
+}
+
+export function UpdateAction({ action, children, className = "", ...props }: ComponentPropsWithoutRef<"button"> & {
+  action: keyof typeof actionIcons;
+}) {
+  const Icon = actionIcons[action];
+  return <button type="button" {...props} className={["btn-icon settings-action", className].filter(Boolean).join(" ")}>
+    <Icon size={14} aria-hidden="true" />{children}
+  </button>;
+}
 
 export function UpdateVersionRow({ label, version }: { label: string; version?: string }) {
   return <div className="update-version-row">

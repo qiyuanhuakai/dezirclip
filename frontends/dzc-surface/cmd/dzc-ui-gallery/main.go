@@ -287,6 +287,14 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 }
 
 func (g *gallery) prepare(tester *ui.Tester) error {
+	if g.fixture == "settings-update-actions" && g.state == "hover" {
+		bounds, ok := tester.Find("Check now")
+		if !ok {
+			return fmt.Errorf("missing update check action")
+		}
+		tester.Move(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
+		return nil
+	}
 	if g.fixture == "hotkey-optional" {
 		if _, visible := tester.Find("Clear shortcut"); visible {
 			return fmt.Errorf("the optional shortcut shows a clear action before opening help")

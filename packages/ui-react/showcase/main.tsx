@@ -9,7 +9,7 @@ import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { AttachmentFixture, HistoryImageFixture, HistoryOCRFixture, HistoryRichTextFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
 import { BackupDialogFixture, ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture, SettingsUpdateFixture,
-  PrivacyDetectionFixture, PrivacyRulesFixture, SettingsDataFixture, SettingsFieldsFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, SearchSelectFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
+  PrivacyDetectionFixture, PrivacyRulesFixture, SettingsDataFixture, SettingsFieldsFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, SearchSelectFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture, UpdateActionsFixture } from "./form-menu-fixtures";
 import "../src/base.css";
 import "../src/styles/components/index.css";
 import "./showcase.css";
@@ -164,6 +164,7 @@ function Showcase() {
     "settings-data": <SettingsDataFixture />,
     "backup-dialog": <BackupDialogFixture state={state} />,
     "settings-update": <SettingsUpdateFixture state={state} />,
+    "settings-update-actions": <UpdateActionsFixture state={state} />,
     "settings-remove": <SettingsRemoveFixture />,
     "privacy-rules": <PrivacyRulesFixture resized={state === "resized"} />,
     "privacy-detection": <PrivacyDetectionFixture narrow={state === "narrow" || state === "resized"} />,

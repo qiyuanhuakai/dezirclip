@@ -4,8 +4,7 @@ import { SettingsChoices } from "@deziro/ui-react/components/SettingsChoices";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { SettingHelp, SettingsLabel } from "../SettingHelp";
 import SettingsDisclosure from "../SettingsDisclosure";
-import { Download, ExternalLink, RefreshCw } from "lucide-react";
-import { UpdateProgress, UpdateVersionRow } from "@deziro/ui-react/components/SettingsUpdate";
+import { UpdateAction, UpdateActions, UpdateProgress, UpdateVersionRow } from "@deziro/ui-react/components/SettingsUpdate";
 import { checkForUpdate, getUpdaterSnapshot, installAvailableUpdate, openUpdateRelease, saveUpdatePreference, subscribeUpdater } from "../../utils/updaterClient";
 
 const supportKey = (reason: string | undefined): string => {
@@ -57,25 +56,25 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
             </SettingsField>
             <UpdateVersionRow label={t("updater_current_version")} version={state.currentVersion} />
             {channelVersion && <UpdateVersionRow label={t("updater_channel_version")} version={channelVersion} />}
-            <div className="setting-btn-group update-actions">
-                <button type="button" className="btn-icon settings-action" disabled={disabled}
+            <UpdateActions>
+                <UpdateAction action="check" disabled={disabled}
                     onClick={() => { setConfirmationId(null); void checkForUpdate(); }}>
-                    <RefreshCw size={14} />{t(state.phase === "checking" ? "updater_checking" : "updater_check_now")}
-                </button>
+                    {t(state.phase === "checking" ? "updater_checking" : "updater_check_now")}
+                </UpdateAction>
                 {available && state.support?.canInstall && (
-                    <button type="button" className="btn-icon settings-action" disabled={disabled} onClick={() => setConfirmationId(available.id)}>
-                        <Download size={14} />{t("updater_install")}
-                    </button>
+                    <UpdateAction action="install" disabled={disabled} onClick={() => setConfirmationId(available.id)}>
+                        {t("updater_install")}
+                    </UpdateAction>
                 )}
-                {installPhase && <UpdateProgress
-                    status={t(state.phase === "downloading" ? "updater_downloading" : state.phase === "verified" ? "updater_verified" : "updater_installing")}
-                    amount={state.phase === "downloading" ? percent === null ? `${(state.downloaded / 1048576).toFixed(1)} MiB` : `${percent}%` : "100%"}
-                    percent={state.phase === "downloading" ? percent : 100}
-                    label={t("updater_download_progress")} verified={state.verified ? t("updater_verified") : undefined} />}
-                <button type="button" className="btn-icon settings-action" onClick={() => void openUpdateRelease()}>
-                    <ExternalLink size={14} />{t(available ? "updater_open_release" : "updater_all_releases")}
-                </button>
-            </div>
+                <UpdateAction action="releases" onClick={() => void openUpdateRelease()}>
+                    {t(available ? "updater_open_release" : "updater_all_releases")}
+                </UpdateAction>
+            </UpdateActions>
+            {installPhase && <UpdateProgress
+                status={t(state.phase === "downloading" ? "updater_downloading" : state.phase === "verified" ? "updater_verified" : "updater_installing")}
+                amount={state.phase === "downloading" ? percent === null ? `${(state.downloaded / 1048576).toFixed(1)} MiB` : `${percent}%` : "100%"}
+                percent={state.phase === "downloading" ? percent : 100}
+                label={t("updater_download_progress")} verified={state.verified ? t("updater_verified") : undefined} />}
             <div className="update-status" role="status" aria-live="polite">
                 {state.phase === "current" && <p>{t("updater_current")}</p>}
                 {state.phase === "ahead" && <p>{t("updater_ahead")}</p>}

@@ -2,6 +2,43 @@ package uikit
 
 import "github.com/egoist/mygo/ui"
 
+type UpdateAction uint8
+
+const (
+	UpdateCheck UpdateAction = iota
+	UpdateInstall
+	UpdateReleases
+)
+
+var updateActionIcons = map[UpdateAction]*ui.SVG{
+	UpdateCheck: icon("RefreshCw"), UpdateInstall: settingsExportIcon, UpdateReleases: headerIcons["open"],
+}
+
+func (k Kit) UpdateActions(c *ui.Context, draw func()) {
+	style := k.style("updateActions")
+	ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).GapX(style.ColumnGap).GapY(style.RowGap).
+		Margin(style.MarginTop, 0, style.MarginBottom).Children(draw)
+}
+
+func (k Kit) UpdateAction(c *ui.Context, action UpdateAction, label string, disabled bool) ui.Element {
+	button := ui.ButtonBase(c).Label(label).Disabled(disabled).FocusRing(true).AlignItems(ui.Center)
+	widget := "updateAction"
+	switch {
+	case disabled:
+		widget = "updateActionDisabled"
+	case button.Hovered():
+		widget = "updateActionHover"
+	}
+	style := k.style(widget)
+	paint(button.Height(style.Height).Gap(style.ColumnGap), k.animatePaint(button, style)).Children(func() {
+		if symbol := updateActionIcons[action]; symbol != nil {
+			ui.Icon(c, symbol).Size(14, 14).TextColor(styleColor(style.Text)).Shrink(0).PassThrough()
+		}
+		text(c, label, style).SingleLine().PassThrough()
+	})
+	return button
+}
+
 // UpdateProgressOptions describes a download or an update being installed.
 // A negative fraction represents a download of unknown size.
 type UpdateProgressOptions struct {

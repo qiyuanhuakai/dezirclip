@@ -636,6 +636,34 @@ func TestNativeBackupFormatsAndReplaceConfirmation(t *testing.T) {
 	}
 }
 
+func TestNativeAboutShowsTheUpdateCandidateInConfirmation(t *testing.T) {
+	window := nativeMain{showSettings: true, settingsSection: "about", session: context.Background(),
+		preferences: map[string]string{"app.language": "en"}}
+	window.history.state.ServiceInstanceId = "fixture"
+	window.updater.channel = "preview"
+	if err := json.Unmarshal([]byte(`{"channel":"preview","status":"available","available":{"version":"2.0.0","artifact":{"url":"package","signature":"signature"}}}`), &window.updater.result); err != nil {
+		t.Fatal(err)
+	}
+	window.updater.result.installTarget, window.updater.result.installSupport = "fixture-installer", "updater_support_nsis"
+	view := ui.NewTester(window.view, 760, 690)
+	support := window.text("updater_support_nsis")
+	if view.HasText(support) {
+		t.Fatal("installation support help should start closed")
+	}
+	if err := view.Click(window.settingsHelpLabel(window.text("updater_title"))); err != nil || !view.HasText(support) {
+		t.Fatalf("installation support help did not open: %v", err)
+	}
+	title := window.text("updater_confirm_title") + " v2.0.0"
+	if err := view.Click(window.text("updater_install")); err != nil || !view.HasText(title) {
+		t.Fatalf("install confirmation should name the chosen release: %v", err)
+	}
+	window.updater.applyCheck(&nativeUpdateCheck{Result: nativeUpdateResult{Channel: "preview", Status: "current"}, Checked: time.Now()})
+	view.Frame()
+	if window.updater.confirm || view.HasText(title) {
+		t.Fatal("confirmation stayed open after the release became unavailable")
+	}
+}
+
 func TestNativeUpdateProgressSurvivesClosingSettings(t *testing.T) {
 	window := nativeMain{showSettings: true, settingsSection: "about", preferences: map[string]string{"app.language": "en"}}
 	window.updater.applyInstallStatus(residentUpdateStatus{

@@ -73,6 +73,34 @@ func TestResidentCheckEventsKeepTheSelectedChannelAndNewestResult(t *testing.T) 
 	}
 }
 
+func TestUpdateConfirmationKeepsOnlyTheSelectedCandidate(t *testing.T) {
+	for _, test := range []struct {
+		name, candidate string
+		keep            bool
+	}{
+		{"same release", `{"version":"2.0.0","artifact":{"url":"package","signature":"first"}}`, true},
+		{"new version", `{"version":"2.0.1","artifact":{"url":"package","signature":"first"}}`, false},
+		{"new package signature", `{"version":"2.0.0","artifact":{"url":"package","signature":"changed"}}`, false},
+		{"removed release", `null`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			now := time.Now()
+			u := nativeUpdater{channel: "preview", confirm: true, checked: now}
+			if err := json.Unmarshal([]byte(`{"available":{"version":"2.0.0","artifact":{"url":"package","signature":"first"}}}`), &u.result); err != nil {
+				t.Fatal(err)
+			}
+			result := nativeUpdateResult{Channel: "preview"}
+			if err := json.Unmarshal([]byte(`{"available":`+test.candidate+`}`), &result); err != nil {
+				t.Fatal(err)
+			}
+			u.applyCheck(&nativeUpdateCheck{Checked: now.Add(time.Second), Result: result})
+			if u.confirm != test.keep {
+				t.Fatalf("confirmation is %t, want %t", u.confirm, test.keep)
+			}
+		})
+	}
+}
+
 func (r indexResponse) RoundTrip(*http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: r.status, Body: io.NopCloser(strings.NewReader(r.body))}, nil
 }

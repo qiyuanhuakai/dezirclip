@@ -36,6 +36,7 @@ func (n *nativeMain) openSettings() {
 func (n *nativeMain) closeSettings() {
 	if !n.profile.moving && !n.profile.restartPending {
 		n.showSettings = false
+		n.updater.confirm = false
 		n.surfaceOpacityDraft = nil
 	}
 }

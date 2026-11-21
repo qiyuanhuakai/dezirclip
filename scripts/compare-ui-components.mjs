@@ -26,6 +26,7 @@ const cases = {
   "settings-data": { states: ["default", "hover-path"], text: "Data storage path" },
   "backup-dialog": { states: ["default", "encrypted", "error", "import", "replace", "replace-confirmed"], text: "File path" },
   "settings-update": { states: ["default", "unknown-size", "installing"], text: "Installed version" },
+  "settings-update-actions": { states: ["default", "busy", "hover"], text: "Check now" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
   "privacy-rules": { states: ["default", "resized"], text: "Privacy rules" },
   "privacy-detection": { states: ["default", "narrow", "focus", "resized"], text: "Custom detection patterns" },
@@ -298,6 +299,7 @@ try {
             const combo = page.getByRole("combobox", { name: "Color mode" });
             if (state === "hover") {
               if (fixture === "scroll-to-top") await page.getByRole("button", { name: "Scroll to top" }).hover();
+              else if (fixture === "settings-update-actions") await page.getByRole("button", { name: "Check now" }).hover();
               else await combo.hover();
             }
             if (fixture === "select" && state === "focus") await combo.focus();
@@ -428,6 +430,7 @@ try {
               : fixture === "settings-update" ? {
                 default: "42%", "unknown-size": "2.5 MiB", installing: "Official update signature verified",
               }[state]
+              : fixture === "settings-update-actions" ? state === "busy" ? "42%" : "Install update"
               : fixture === "backup-dialog" ? {
                 default: "Export format", encrypted: "Confirm passphrase", error: "Passphrase must be at least 12 characters",
                 import: "Release checklist", replace: "Confirm replacing clipboard history", "replace-confirmed": "Confirm replacing clipboard history",
@@ -435,6 +438,23 @@ try {
               : state === "southeast" ? "SouthEast" : state === "scrolled" ? "1 scroll" : "";
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
             const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64") });
+            if (fixture === "settings-update-actions") {
+              const check = page.getByRole("button", { name: "Check now" });
+              const install = page.getByRole("button", { name: "Install update" });
+              const releases = page.getByRole("button", { name: "Open release page" });
+              if ((await check.isDisabled()) !== (state === "busy") ||
+                  (await install.isDisabled()) !== (state === "busy") || !await releases.isEnabled()) {
+                throw Error("Update action availability differs from the update state");
+              }
+              if (await page.locator(".update-actions button svg").count() !== 3) throw Error("Update action icons are missing");
+              if (state === "busy") {
+                await releases.click();
+                await page.getByText("Release opened", { exact: true }).waitFor();
+              } else {
+                await install.click();
+                await page.getByText("Install chosen", { exact: true }).waitFor();
+              }
+            }
             if (fixture === "hotkey-optional" && state === "options") {
               const clear = page.getByRole("button", { name: "Clear shortcut" });
               await clear.click();
