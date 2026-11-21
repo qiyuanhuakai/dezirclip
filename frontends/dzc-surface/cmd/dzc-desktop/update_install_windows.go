@@ -33,14 +33,27 @@ func mygoUpdateTarget() (path, support string) {
 	return dir, "updater_support_nsis"
 }
 
-func installMyGoUpdate(request mygoInstallRequest) error {
+func prepareMyGoUpdate(request mygoInstallRequest) (*mygoUpdateHandoff, error) {
 	if target, _ := mygoUpdateTarget(); target == "" {
-		return errors.New("update_installation_unsupported")
+		return nil, errors.New("update_installation_unsupported")
 	}
+	// NSIS waits for this resident to exit before opening the installed files.
+	// Start it while the main window can still display a launch error.
 	child := exec.Command(request.Path, "/S", "/UPDATEPARENT="+strconv.Itoa(os.Getpid()))
 	child.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS}
 	if err := child.Start(); err != nil {
-		return err
+		return nil, err
 	}
-	return child.Process.Release()
+	return &mygoUpdateHandoff{
+		finish: child.Process.Release,
+		abort: func() {
+			_ = child.Process.Kill()
+			_ = child.Wait()
+		},
+		reportFailure: func(message string) {
+			text := windows.StringToUTF16Ptr(message)
+			title := windows.StringToUTF16Ptr("DezirClip MyGo")
+			_, _ = windows.MessageBox(0, text, title, windows.MB_ICONERROR|windows.MB_SETFOREGROUND)
+		},
+	}, nil
 }

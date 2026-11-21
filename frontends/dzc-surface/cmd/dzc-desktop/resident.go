@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -74,7 +75,13 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 	relaunchCommand := "show"
 	var mainChild *exec.Cmd
 	var mainDone <-chan struct{}
-	var update *mygoInstallRequest
+	var update *mygoUpdateHandoff
+	var updateLanguage nativeLanguage
+	defer func() {
+		if update != nil {
+			update.abort()
+		}
+	}()
 	mygo.App.WhenReady(func() {
 		mygo.App.OnWindowAllClosed(func() {})
 		updateChecks := make(map[string]*nativeUpdateCheck)
@@ -322,14 +329,25 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 									migrating = true
 									go func() {
 										err := request.Update.validate()
+										var handoff *mygoUpdateHandoff
+										if err == nil {
+											handoff, err = prepareMyGoUpdate(*request.Update)
+											if err != nil {
+												diagnostics.record("update-handoff-failed", 0, err)
+												err = errors.New("update_install_failed")
+											}
+										}
 										mygo.RunOnMain(func() {
 											migrating = false
 											if commands != input {
+												if handoff != nil {
+													handoff.abort()
+												}
 												return
 											}
 											reply(err)
 											if err == nil {
-												update = request.Update
+												update = handoff
 												mygo.App.Quit()
 											}
 										})
@@ -695,6 +713,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 			}
 		}
 		startupSettings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
+		updateLanguage = mainLanguage(startupSettings["app.language"])
 		restoreNativeAppearance(owner, panel, startupSettings)
 		panel.SetAppearanceRefresher(func() {
 			go func() {
@@ -818,10 +837,21 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 	defer cancel()
 	log.Print("Desktop main process stopped; stopping authenticated Service")
 	if err := owner.StopDesktopService(ctx); err != nil {
+		if update != nil {
+			diagnostics.record("update-service-stop-failed", 0, err)
+			handoff := update
+			update = nil
+			handoff.abort()
+			if handoff.reportFailure != nil {
+				handoff.reportFailure(updateLanguage.text("updater_error_install"))
+			}
+		}
 		return err
 	}
 	if update != nil {
-		return installMyGoUpdate(*update)
+		handoff := update
+		update = nil
+		return handoff.finish()
 	}
 	return nil
 }

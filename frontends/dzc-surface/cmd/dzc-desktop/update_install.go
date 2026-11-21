@@ -191,6 +191,12 @@ type mygoInstallRequest struct {
 	Path, Version, Signature string
 }
 
+type mygoUpdateHandoff struct {
+	finish        func() error
+	abort         func()
+	reportFailure func(string)
+}
+
 func (r mygoInstallRequest) validate() error {
 	filename := mygoUpdateName(r.Version)
 	if filename == "" || nativeUpdaterPublicKey == "" || !filepath.IsAbs(r.Path) || filepath.Base(r.Path) != filename ||

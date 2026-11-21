@@ -504,6 +504,8 @@ func (n *nativeMain) updateError(err error) string {
 		return n.text("updater_error_download_verify")
 	case "update_busy":
 		return n.text("updater_error_busy")
+	case "update_install_failed":
+		return n.text("updater_error_install")
 	case "update_installation_unsupported":
 		return n.text("updater_support_unavailable")
 	case errUpdateSchedule.Error():

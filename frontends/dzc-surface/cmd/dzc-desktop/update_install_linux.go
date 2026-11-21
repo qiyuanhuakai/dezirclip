@@ -49,6 +49,13 @@ func mygoAppImage(path string) bool {
 	return err == nil && bytes.Equal(header[:4], []byte("\x7fELF")) && bytes.Equal(header[8:], []byte("AI\x02"))
 }
 
+func prepareMyGoUpdate(request mygoInstallRequest) (*mygoUpdateHandoff, error) {
+	return &mygoUpdateHandoff{
+		finish: func() error { return installMyGoUpdate(request) },
+		abort:  func() {},
+	}, nil
+}
+
 func installMyGoUpdate(request mygoInstallRequest) error {
 	target, _ := mygoUpdateTarget()
 	directory := filepath.Dir(request.Path)
