@@ -41,7 +41,10 @@ func (k Kit) BackupChoices(c *ui.Context, label string, selected *string, option
 				radio := ui.RadioBase(c, selected, option.Value).Label(option.Label).
 					Disabled(disabled || option.Disabled).FocusRing(true).AlignItems(ui.Center)
 				widget := "backupChoice"
-				if radio.Hovered() {
+				if *selected == option.Value {
+					widget += "Selected"
+				}
+				if radio.Hovered() && !disabled && !option.Disabled {
 					widget += "Hover"
 				}
 				choice := k.style(widget)
@@ -64,10 +67,14 @@ func (k Kit) BackupChoices(c *ui.Context, label string, selected *string, option
 
 // BackupReplaceConfirmation is the explicit opt-in before replacing clipboard history.
 func (k Kit) BackupReplaceConfirmation(c *ui.Context, checked *bool, label string, disabled bool) ui.Element {
-	style := k.style("backupReplaceConfirmation")
+	widget := "backupReplaceConfirmation"
+	if *checked {
+		widget += "Checked"
+	}
+	style := k.style(widget)
 	row := ui.CheckboxBase(c, checked).Label(label).FillWidth().Disabled(disabled).FocusRing(true).
 		MinHeight(style.MinHeight).Margin(0, 0, style.MarginBottom).Gap(style.ColumnGap).AlignItems(ui.Center)
-	row.Children(func() {
+	paint(row, k.animatePaint(row, style)).Children(func() {
 		widget := "backupReplaceMark"
 		if *checked {
 			widget += "Checked"
@@ -75,9 +82,6 @@ func (k Kit) BackupReplaceConfirmation(c *ui.Context, checked *bool, label strin
 			widget += "Hover"
 		}
 		mark := k.style(widget)
-		if disabled {
-			mark.Opacity = .5
-		}
 		box := ui.Box(c).Size(mark.Width, mark.Height).Shrink(0).Center().PassThrough()
 		paint(box, k.animatePaint(box, mark))
 		if *checked {
@@ -170,8 +174,12 @@ func (k Kit) backupButton(c *ui.Context, widget, label string, disabled bool) ui
 	button := ui.ButtonBase(c).Label(label).Disabled(disabled).AlignItems(ui.Center).FocusRing(true)
 	style := k.style(widget)
 	if disabled {
-		style.Opacity = 0.5
-	} else if button.Hovered() && widget != "backupBrowse" {
+		if disabledStyle, themed := k.widgets[widget+"Disabled"]; themed {
+			style = disabledStyle
+		}
+		// MyGo's disabled state already paints the control at half opacity.
+		style.Opacity = 1
+	} else if button.Hovered() {
 		style = k.style(widget + "Hover")
 	}
 	style = k.animatePaint(button, style)

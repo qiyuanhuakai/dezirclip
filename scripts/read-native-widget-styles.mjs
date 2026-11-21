@@ -30,7 +30,8 @@ const samples = [
     backupBackdrop: [".data-modal-overlay", null, "::backdrop"],
     backupDialog: [".data-modal-content"], backupTitle: [".data-modal-title"],
     backupField: [".data-form-group"], backupLabel: [".data-label"],
-    backupChoices: [".data-radio-group"], backupChoice: [".data-radio-item"],
+    backupChoices: [".data-radio-group"], backupChoice: [".data-radio-item:has(input:not(:checked))"],
+    backupChoiceSelected: [".data-radio-item:has(input:checked)"], backupSubmitDisabled: [".data-btn-primary"],
     backupRadio: [".data-radio-item input:not(:checked)"], backupRadioChecked: [".data-radio-item input:checked"],
     backupInput: [".data-input"], backupPathRow: [".data-path-row"], backupBrowse: [".btn-icon-export-browse"],
   }],
@@ -43,11 +44,15 @@ const samples = [
   ["backup-dialog", "replace", {
     backupReplaceConfirmation: [".data-replace-confirm"], backupReplaceMark: [".data-replace-mark"],
   }],
-  ["backup-dialog", "replace-confirmed", { backupReplaceMarkChecked: [".data-replace-mark"] }],
+  ["backup-dialog", "replace-confirmed", {
+    backupReplaceConfirmationChecked: [".data-replace-confirm"], backupReplaceMarkChecked: [".data-replace-mark"],
+  }],
   ["backup-dialog", "replace-hover", { backupReplaceMarkHover: [".data-replace-mark"] }],
   ["backup-dialog", "error", { backupError: [".data-error"] }],
   ["backup-dialog", "focus-password", { backupInputFocus: [".data-input"] }],
   ["backup-dialog", "hover-choice", { backupChoiceHover: [".data-radio-item:nth-child(2)"] }],
+  ["backup-dialog", "hover-selected-choice", { backupChoiceSelectedHover: [".data-radio-item:has(input:checked)"] }],
+  ["backup-dialog", "hover-browse", { backupBrowseHover: [".btn-icon-export-browse"] }],
   ["backup-dialog", "hover-cancel", { backupCancelHover: [".data-btn-cancel"] }],
   ["backup-dialog", "hover-submit", { backupSubmitHover: [".data-btn-primary"] }],
   ["settings-update", "installing", {
@@ -429,7 +434,7 @@ function readStyles(sample) {
       ...(id.startsWith("historyRichContent") ? { maxHeight: number(style.maxHeight) } : {}),
       ...(id === "historyOCRContent" ? { maxHeight: number(style.maxHeight), usesMonoFont: true } : {}),
       ...(/^(backupInput|settingsDataPath)(Focus|Hover)?$/.test(id) ? { usesMonoFont: true } : {}),
-      ...(id === "backupReplaceConfirmation" || id.startsWith("privacyPatternsField") ? { minHeight: number(style.minHeight) } : {}),
+      ...(id.startsWith("backupReplaceConfirmation") || id.startsWith("privacyPatternsField") ? { minHeight: number(style.minHeight) } : {}),
       ...(columnGap ? { columnGap } : {}),
       ...(rowGap ? { rowGap } : {}),
       ...(switchFace ? { top: number(bounds.top - switchBounds.top), left: number(bounds.left - switchBounds.left) } : top ? { top } : {}),
@@ -556,6 +561,8 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
         await page.getByLabel("Encryption passphrase").focus();
       }
       if (state === "hover-choice") await page.locator(".data-radio-item").last().hover();
+      if (state === "hover-selected-choice") await page.locator(".data-radio-item:has(input:checked)").hover();
+      if (state === "hover-browse") await page.locator(".btn-icon-export-browse").hover();
       if (state === "hover-cancel") await page.locator(".data-btn-cancel").hover();
       if (state === "hover-submit") await page.locator(".data-btn-primary").hover();
       if (state === "replace-confirmed") await page.getByRole("checkbox", { name: "Confirm replacing clipboard history" }).check();

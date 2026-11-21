@@ -58,6 +58,8 @@
   border-radius: var(--radius-sm, 4px);
 }
 
+.data-modal-title:focus { outline: none; }
+
 .data-form-group {
   margin-bottom: 12px;
 }
@@ -166,7 +168,7 @@
   outline-offset: 2px;
 }
 
-.data-replace-confirm input:disabled + .data-replace-mark {
+.data-replace-confirm:has(input:disabled) {
   opacity: 0.5;
 }
 
@@ -289,6 +291,137 @@
   cursor: not-allowed;
   transform: none;
   box-shadow: 2px 2px 0 var(--shadow-color);
+}
+
+.theme-macos .data-modal-overlay {
+  --backup-panel-bg: var(--macos-sheet-bg);
+  --backup-panel-border: var(--macos-sheet-border);
+  --backup-panel-shadow: var(--macos-sheet-shadow);
+  --backup-panel-radius: 14px;
+  --backup-control-radius: 8px;
+  --backup-control-bg: var(--macos-dialog-button-bg);
+  --backup-control-border: var(--macos-dialog-button-border);
+  --backup-control-hover-bg: var(--macos-dialog-button-hover-bg);
+  --backup-control-hover-border: var(--macos-dialog-button-hover-border);
+  --backup-control-shadow: none;
+  --backup-primary-bg: var(--macos-dialog-button-primary-bg);
+  --backup-primary-border: var(--macos-dialog-button-primary-border);
+  --backup-primary-text: var(--macos-dialog-button-primary-text);
+  --backup-primary-hover-bg: var(--accent-hover);
+}
+
+.theme-liquid-glass .data-modal-overlay {
+  --backup-panel-bg: var(--lg-dialog-bg);
+  --backup-panel-border: var(--lg-dialog-border);
+  --backup-panel-shadow: var(--lg-dialog-shadow);
+  --backup-panel-radius: 16px;
+  --backup-control-radius: 10px;
+  --backup-control-bg: var(--lg-dialog-button-bg);
+  --backup-control-border: var(--lg-dialog-button-border);
+  --backup-control-hover-bg: var(--lg-dialog-button-hover-bg);
+  --backup-control-hover-border: var(--lg-dialog-button-hover-border);
+  --backup-control-shadow: inset 0 1px 0 var(--glass-edge-top), inset 0 -1px 0 var(--glass-edge-bottom);
+  --backup-primary-bg: var(--lg-dialog-button-primary-bg);
+  --backup-primary-border: var(--lg-dialog-button-primary-border);
+  --backup-primary-text: var(--lg-dialog-button-primary-text);
+  --backup-primary-hover-bg: var(--lg-dialog-button-primary-hover-bg);
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay::backdrop {
+  background: rgba(0, 0, 0, 0.18);
+  backdrop-filter: none;
+}
+
+:is(.theme-macos, .theme-liquid-glass).dark-mode .data-modal-overlay::backdrop {
+  background: rgba(0, 0, 0, 0.36);
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-content {
+  background: var(--backup-panel-bg);
+  border: 1px solid var(--backup-panel-border);
+  border-radius: var(--backup-panel-radius);
+  box-shadow: var(--backup-panel-shadow);
+  padding: 18px 20px;
+}
+
+.theme-liquid-glass .data-modal-content {
+  backdrop-filter: var(--lg-dialog-blur);
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-title {
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.35;
+  margin-bottom: 14px;
+  padding: 0;
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay :is(.data-modal-title, .data-label, .data-btn, .btn-icon-export-browse) {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay :is(.data-input, .data-radio-item, .data-preview-list, .data-btn, .btn-icon-export-browse) {
+  border: 1px solid var(--backup-control-border);
+  border-radius: var(--backup-control-radius);
+  background: var(--backup-control-bg);
+  box-shadow: var(--backup-control-shadow);
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay .data-input:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 24%, transparent);
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay :is(.data-btn, .btn-icon-export-browse) {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  transform: none;
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay :is(.data-btn-cancel, .btn-icon-export-browse):enabled:hover,
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay .data-radio-item:hover:has(input:enabled) {
+  background: var(--backup-control-hover-bg);
+  border-color: var(--backup-control-hover-border);
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay .data-btn-primary {
+  background: var(--backup-primary-bg);
+  border-color: var(--backup-primary-border);
+  color: var(--backup-primary-text);
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay .data-btn-primary:enabled:hover {
+  background: var(--backup-primary-hover-bg);
+  opacity: 1;
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay .data-radio-item:has(input:checked),
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay .data-replace-confirm:has(input:checked) {
+  background: color-mix(in srgb, var(--accent-color) 12%, var(--backup-control-bg));
+  border-color: color-mix(in srgb, var(--accent-color) 56%, var(--backup-control-border));
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay .data-radio-item:has(input:checked):hover:has(input:enabled) {
+  background: color-mix(in srgb, var(--accent-color) 19%, var(--backup-control-hover-bg));
+}
+
+:is(.theme-macos, .theme-liquid-glass) .data-modal-overlay .data-replace-confirm {
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid var(--backup-control-border);
+  border-radius: var(--backup-control-radius);
+  background: var(--backup-control-bg);
+  box-shadow: var(--backup-control-shadow);
+}
+
+.theme-liquid-glass .data-replace-confirm input:checked + .data-replace-mark {
+  background: var(--backup-primary-bg);
+  border-color: var(--backup-primary-border);
+  color: var(--backup-primary-text);
 }
 
 .data-path-header {

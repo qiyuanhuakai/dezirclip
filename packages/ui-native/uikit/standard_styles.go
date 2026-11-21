@@ -66,10 +66,10 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.Weight, style.Uppercase, style.MarginBottom = 700, true, 4
 	case "backupChoices":
 		style.ColumnGap = 12
-	case "backupChoice", "backupChoiceHover":
+	case "backupChoice", "backupChoiceHover", "backupChoiceSelected", "backupChoiceSelectedHover":
 		surface()
 		style.Padding, style.ColumnGap = [4]float32{6, 10, 6, 10}, 6
-		if widget == "backupChoiceHover" {
+		if strings.HasSuffix(widget, "Hover") {
 			style.Border, style.Fill = accent, selected
 		}
 	case "backupRadio", "backupRadioChecked":
@@ -86,12 +86,12 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		}
 	case "backupPathRow":
 		style.ColumnGap = 8
-	case "backupBrowse":
+	case "backupBrowse", "backupBrowseHover":
 		style = DefaultWidgetStyle("settingsDataAction", palette)
 		style.Size, style.Uppercase = 10, true
 	case "backupError":
 		style.Text = rgba(ui.LightTheme().Danger)
-	case "backupReplaceConfirmation":
+	case "backupReplaceConfirmation", "backupReplaceConfirmationChecked":
 		style.MinHeight, style.MarginBottom, style.ColumnGap, style.Size = 32, 12, 8, 12
 	case "backupReplaceMark", "backupReplaceMarkChecked", "backupReplaceMarkHover":
 		surface()

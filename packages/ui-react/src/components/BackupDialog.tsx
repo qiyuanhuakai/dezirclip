@@ -5,19 +5,21 @@ export function BackupDialog({ title, busy = false, onClose, children, footer }:
   title: string; busy?: boolean; onClose: () => void; children: ReactNode; footer: ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
     if (element.showModal) element.showModal();
     else element.open = true;
+    heading.current?.focus({ preventScroll: true });
     return () => { if (element.close) element.close(); else element.open = false; };
   }, []);
   return <dialog ref={dialog} className="data-modal-overlay" aria-labelledby={titleId} aria-busy={busy}
     onClick={event => { if (!busy && event.target === event.currentTarget) onClose(); }}
     onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
     <div className="data-modal-content">
-      <h2 className="data-modal-title" id={titleId}>{title}</h2>
+      <h2 ref={heading} className="data-modal-title" id={titleId} tabIndex={-1}>{title}</h2>
       <div className="data-modal-body">{children}</div>
       {footer}
     </div>

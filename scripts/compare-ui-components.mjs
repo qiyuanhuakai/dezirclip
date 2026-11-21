@@ -89,7 +89,7 @@ const output = await mkdtemp(join(tmpdir(), "deziro-ui-parity-"));
 const size = { width: 560, height: 420 };
 const reportPath = join(output, "results.json");
 
-function comparePixels({ web, native }) {
+function comparePixels({ web, native, dialog }) {
   const decode = async base64 => {
     const image = new Image();
     image.src = "data:image/png;base64," + base64;
@@ -113,13 +113,20 @@ function comparePixels({ web, native }) {
     // inside the lower-left edge and ignore a narrow region round the viewport.
     const width = 560;
     const height = 420;
-    const sample = (width * (height - 18) + 18) * 4;
+    const backdrop = (width * (height - 18) + 18) * 4;
+    // In translucent dialogs, compare controls against the panel material.
+    // The outer shadow can otherwise dominate the count of visible controls.
+    const area = dialog ? {
+      left: Math.ceil(dialog.x + 7), top: Math.ceil(dialog.y + 7),
+      right: Math.floor(dialog.x + dialog.width - 7), bottom: Math.floor(dialog.y + dialog.height - 7),
+    } : { left: 9, top: 9, right: width - 9, bottom: height - 9 };
+    const sample = dialog ? (width * (area.top + 5) + area.right - 5) * 4 : backdrop;
     let pixels = 0;
     let colorDistance = 0;
     let inkWeb = 0;
     let inkNative = 0;
-    for (let y = 9; y < height - 9; y++) {
-      for (let x = 9; x < width - 9; x++) {
+    for (let y = area.top; y < area.bottom; y++) {
+      for (let x = area.left; x < area.right; x++) {
         const index = (y * width + x) * 4;
         const webVisible = distance(a, index, a, sample) > 7;
         const nativeVisible = distance(b, index, b, sample) > 7;
@@ -131,7 +138,7 @@ function comparePixels({ web, native }) {
       }
     }
     return {
-      backgroundDistance: distance(a, sample, b, sample),
+      backgroundDistance: Math.max(distance(a, sample, b, sample), distance(a, backdrop, b, backdrop)),
       foregroundDistance: pixels ? colorDistance / pixels : 255,
       inkWeb,
       inkNative,
@@ -211,6 +218,22 @@ try {
               await page.getByText("Use the theme font by default.", { exact: true }).waitFor();
             }
             if (fixture === "settings-data" && state === "hover-path") await page.locator(".data-panel").hover();
+            if (fixture === "backup-dialog" && ["macos", "liquid-glass"].includes(theme)) {
+              const styled = await page.locator(".data-modal-content").evaluate(dialog => {
+                const panel = getComputedStyle(dialog);
+                const title = getComputedStyle(dialog.querySelector(".data-modal-title"));
+                const submit = getComputedStyle(dialog.querySelector(".data-btn-primary"));
+                const chosen = getComputedStyle(dialog.querySelector(".data-radio-item:has(input:checked)"));
+                const other = getComputedStyle(dialog.querySelector(".data-radio-item:has(input:not(:checked))"));
+                const confirmation = dialog.querySelector(".data-replace-confirm");
+                return panel.borderTopWidth === "1px" && parseFloat(panel.borderTopLeftRadius) >= 14
+                  && title.backgroundColor === "rgba(0, 0, 0, 0)" && title.textTransform === "none"
+                  && submit.textTransform === "none" && parseFloat(submit.borderTopLeftRadius) >= 8
+                  && chosen.borderTopColor !== other.borderTopColor
+                  && (!confirmation || parseFloat(getComputedStyle(confirmation).borderTopLeftRadius) >= 8);
+              });
+              if (!styled) throw Error("Backup dialog lost its themed panel, typography or control states");
+            }
             if (fixture === "backup-dialog" && state.startsWith("replace")) {
               const dialog = page.getByRole("dialog", { name: "Import clipboard history" });
               const submit = dialog.getByRole("button", { name: "Import clipboard history" });
@@ -437,7 +460,8 @@ try {
               }[state]
               : state === "southeast" ? "SouthEast" : state === "scrolled" ? "1 scroll" : "";
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
-            const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64") });
+            const dialog = fixture === "backup-dialog" ? await page.locator(".data-modal-content").boundingBox() : undefined;
+            const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64"), dialog });
             if (fixture === "settings-update-actions") {
               const check = page.getByRole("button", { name: "Check now" });
               const install = page.getByRole("button", { name: "Install update" });
