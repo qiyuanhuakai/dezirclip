@@ -152,13 +152,13 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       if (isImage) {
         items.push({ key: "ocr", label: ocrRunning ? "OCR 识别中..." : "OCR 识别" });
         if (ocrText) {
-          items.push({ key: "pasteOcr", label: "粘贴 OCR 文本" });
+          items.push({ key: "pasteOcr", label: translations[language].native_ocr_copy });
         }
         items.push({ key: "imageBase64", label: "转为 Base64" });
       }
       items.push({ key: "delete", label: "删除" });
       items.push({ key: "pin", label: entry?.is_pinned ? "取消固定" : "固定" });
-      items.push({ key: "share", label: "分享" });
+      items.push({ key: "share", label: translations[language].native_share });
       if (isTransformable) {
         items.push({ key: "transforms", label: "文本转换 →", hasSubmenu: true });
       }

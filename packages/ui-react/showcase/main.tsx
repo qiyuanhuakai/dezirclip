@@ -234,7 +234,7 @@ function Showcase() {
     "settings-update": <SettingsUpdateFixture state={state} />,
     "settings-update-actions": <UpdateActionsFixture state={state} />,
     "settings-remove": <SettingsRemoveFixture />,
-    "privacy-rules": <PrivacyRulesFixture resized={state === "resized"} />,
+    "privacy-rules": <PrivacyRulesFixture resized={state === "resized" || state === "focus-exclusions"} />,
     "privacy-detection": <PrivacyDetectionFixture narrow={state === "narrow" || state === "resized"} />,
     "tag-history-entry": <TagHistoryEntriesFixture />,
     "tag-toolbar": <TagToolbarFixture />,

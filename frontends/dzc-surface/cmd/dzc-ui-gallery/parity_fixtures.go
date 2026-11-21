@@ -244,6 +244,7 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			})
 		})
 	case "privacy-rules":
+		exclusionsFirst := g.state == "resized" || g.state == "focus-exclusions"
 		ui.Column(c).Width(490).Children(func() {
 			drawExclusions := func() {
 				ui.Column(c).FillWidth().Gap(6).Padding(8, 0).Children(func() {
@@ -254,7 +255,7 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			}
 			count := 2
 			kit.PrivacyRulesHeading(c, "Privacy rules", &count)
-			if g.state == "resized" {
+			if exclusionsFirst {
 				drawExclusions()
 			}
 			kit.PrivacyRuleGrid(c, 2, func() {
@@ -268,7 +269,7 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 					Confirming: true, ConfirmLabel: "Remove privacy rule", Prompt: "Remove the rule for Example Browser?", CancelLabel: "Cancel",
 				})
 			})
-			if g.state != "resized" {
+			if !exclusionsFirst {
 				drawExclusions()
 			}
 		})

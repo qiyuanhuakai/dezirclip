@@ -366,6 +366,9 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 			return fmt.Errorf("privacy textarea %s did not resize vertically: before %+v, after %+v", label, before, after)
 		}
 	}
+	if g.fixture == "privacy-rules" && g.state == "focus-exclusions" {
+		return tester.Click("Excluded applications")
+	}
 	if g.fixture == "privacy-detection" && g.state == "focus" {
 		return tester.Click("Patterns")
 	}

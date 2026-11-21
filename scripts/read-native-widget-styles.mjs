@@ -92,6 +92,9 @@ const samples = [
     privacyRuleSource: [".privacy-rule-source"], privacyRuleScope: [".privacy-rule-scope"],
     privacySourceExclusion: [".source-exclusion-input"],
   }],
+  ["privacy-rules", "focus-exclusions", {
+    privacySourceExclusionFocus: [".source-exclusion-input"],
+  }],
   ["privacy-detection", "default", {
     privacyDetectionOptions: [".privacy-detection-options"],
     privacyDetectionOption: [".privacy-kind-option"], privacyDetectionLabel: [".privacy-kind-label"],
@@ -642,6 +645,9 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
       if (state === "hover") await input.hover();
       if (state === "focus") await input.focus();
       if (state === "popup") await input.click();
+    }
+    if (fixture === "privacy-rules" && state === "focus-exclusions") {
+      await page.getByRole("textbox", { name: "Excluded applications" }).focus();
     }
     if (fixture === "privacy-detection" && state === "focus") {
       await page.getByRole("textbox", { name: "Patterns" }).focus();

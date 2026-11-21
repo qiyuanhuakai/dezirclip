@@ -42,6 +42,7 @@ export const tw = {
         native_preview_failed: "預覽操作失敗",
         native_paste_formatted: "保留格式貼上",
         native_copy_base64: "將圖片複製為 Base64",
+        native_share: "分享",
         native_edit_tags: "編輯標籤",
         native_reveal_sensitive: "顯示敏感項目",
         native_hide_sensitive: "隱藏敏感項目",

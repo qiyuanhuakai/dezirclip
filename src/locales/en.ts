@@ -42,6 +42,7 @@ export const en = {
         native_preview_failed: "Preview action failed",
         native_paste_formatted: "Paste with formatting",
         native_copy_base64: "Copy image as Base64",
+        native_share: "Share",
         native_edit_tags: "Edit tags",
         native_reveal_sensitive: "Reveal sensitive entry",
         native_hide_sensitive: "Hide sensitive entry",

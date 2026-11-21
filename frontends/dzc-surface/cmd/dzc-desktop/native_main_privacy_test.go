@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
 func TestNativePrivacyRuleConfirmationStaysInItsCard(t *testing.T) {
@@ -173,5 +175,41 @@ func TestNativeCustomPrivacyPatternsUseAnInlineAutosaveDraft(t *testing.T) {
 	}
 	if view.HasText(n.text("common_save")) {
 		t.Fatal("custom patterns should save without a separate button")
+	}
+}
+
+func TestNativeClipboardMenuKeepsOnlyPrivacyAndTextProcessingInSubmenus(t *testing.T) {
+	n := nativeMain{preferences: map[string]string{"app.language": "en"}}
+	assertMenu := func(kind string, pinned bool, requiredRoot, requiredSubmenu []string) {
+		t.Helper()
+		actions := n.entryMenuActions(protocol.DesktopEntry{Id: 17, ContentType: kind, IsPinned: pinned, Tags: []string{}}, 0, ui.Rect{})
+		var root, submenu []string
+		for _, action := range actions {
+			if len(action.Children) == 0 {
+				root = append(root, action.Label)
+			} else {
+				submenu = append(submenu, action.Label)
+			}
+		}
+		for _, label := range requiredRoot {
+			if !slices.Contains(root, label) {
+				t.Errorf("%s: %q must be a direct menu action, got %v", kind, label, root)
+			}
+		}
+		if !slices.Equal(submenu, requiredSubmenu) {
+			t.Errorf("%s: submenus = %v, want %v", kind, submenu, requiredSubmenu)
+		}
+	}
+	privacy := n.text("privacy_management")
+	assertMenu("text", false, []string{n.text("common_copy"), n.text("native_edit_tags"), n.text("native_qr_code"),
+		n.text("delete", "Delete entry"), n.text("pin"), n.text("native_share")}, []string{n.text("native_transformations"), privacy})
+	assertMenu("rich_text", true, []string{n.text("native_paste_formatted"), n.text("unpin")}, []string{n.text("native_transformations"), privacy})
+	assertMenu("image", false, []string{n.text("native_ocr_recognize"), n.text("native_copy_base64")}, []string{privacy})
+	protected := n.entryMenuActions(protocol.DesktopEntry{Id: 18, ContentType: "text"}, 0, ui.Rect{})
+	qr := slices.IndexFunc(protected, func(action uikit.MenuAction) bool {
+		return action.Label == n.text("native_qr_code")
+	})
+	if qr < 0 || !protected[qr].Disabled || len(protected[qr].Children) > 0 {
+		t.Fatalf("QR for an unrevealed entry must be a disabled root action: %v", protected)
 	}
 }

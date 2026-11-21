@@ -35,7 +35,7 @@ const cases = {
   "settings-update": { states: ["default", "unknown-size", "installing"], text: "Installed version" },
   "settings-update-actions": { states: ["default", "busy", "hover"], text: "Check now" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
-  "privacy-rules": { states: ["default", "resized"], text: "Privacy rules" },
+  "privacy-rules": { states: ["default", "resized", "focus-exclusions"], text: "Privacy rules" },
   "privacy-detection": { states: ["default", "narrow", "focus", "resized"], text: "Custom detection patterns" },
   "tag-toolbar": { states: ["default"], text: "Work" },
   "tag-history-entry": { states: ["default", "compact", "browse"], text: "Release checklist" },
@@ -383,6 +383,9 @@ try {
               }
             }
 
+            if (fixture === "privacy-rules" && state === "focus-exclusions") {
+              await page.getByRole("textbox", { name: "Excluded applications" }).focus();
+            }
             if (fixture === "privacy-detection" && state === "focus") {
               await page.getByRole("textbox", { name: "Patterns" }).focus();
             }

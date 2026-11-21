@@ -13,6 +13,7 @@ type nativeRowAction string
 
 const (
 	nativeCopy      nativeRowAction = "copy"
+	nativeRichCopy  nativeRowAction = "rich-copy"
 	nativePaste     nativeRowAction = "paste"
 	nativeRichPaste nativeRowAction = "rich-paste"
 	nativeBase64    nativeRowAction = "base64"
@@ -133,7 +134,7 @@ func (n *nativeMain) transferRow(ctx context.Context, id int64, state protocol.R
 		}
 		params.Paste = paste
 	}
-	if action == nativeRichPaste {
+	if action == nativeRichPaste || action == nativeRichCopy {
 		withFormat := true
 		params.WithFormat = &withFormat
 	}

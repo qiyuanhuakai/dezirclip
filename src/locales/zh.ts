@@ -53,6 +53,7 @@ export const zh = {
         native_preview_failed: "预览操作失败",
         native_paste_formatted: "带格式粘贴",
         native_copy_base64: "将图片复制为 Base64",
+        native_share: "分享",
         native_edit_tags: "编辑标签",
         native_reveal_sensitive: "显示敏感条目",
         native_hide_sensitive: "隐藏敏感条目",

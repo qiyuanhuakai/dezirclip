@@ -249,36 +249,62 @@ func (n *nativeMain) entryMenu(card ui.Element, row protocol.DesktopEntry, gener
 
 func (n *nativeMain) entryMenuActions(row protocol.DesktopEntry, generation uint64, bounds ui.Rect) []uikit.MenuAction {
 	disabled := n.mutating || n.failed || n.history.generation != generation
-	contentDisabled := disabled || nativeConcealed(row) && n.protectedBody(row) == nil
-	actions := []uikit.MenuAction{}
-	if editableHistoryKind(row.ContentType) {
-		actions = append(actions, uikit.MenuAction{Label: n.text("edit_item"), Disabled: contentDisabled, Run: func() { n.editHistoryEntry(row, generation) }})
+	concealed, protected := nativeConcealed(row), n.protectedBody(row)
+	contentVisible := !concealed || protected != nil
+	contentDisabled := disabled || !contentVisible
+	action := func(label string, unavailable bool, kind nativeRowAction) uikit.MenuAction {
+		return uikit.MenuAction{Label: label, Disabled: unavailable, Run: func() { n.rowAction(row, generation, kind) }}
 	}
-	actions = append(actions,
-		uikit.MenuAction{Label: n.text("preview_toolbar_title"), Disabled: contentDisabled, Run: func() { n.showPreview(row, generation, bounds) }},
-		uikit.MenuAction{Label: n.text("common_copy"), Disabled: contentDisabled, Run: func() { n.rowAction(row, generation, nativeCopy) }},
-		uikit.MenuAction{Label: n.text("common_paste"), Disabled: contentDisabled, Run: func() { n.rowAction(row, generation, nativePaste) }})
-	tools := []uikit.MenuAction{
-		{Label: n.text("native_paste_formatted"), Disabled: contentDisabled, Run: func() { n.rowAction(row, generation, nativeRichPaste) }},
+	actions := []uikit.MenuAction{action(n.text("common_copy"), contentDisabled, nativeCopy)}
+	if editableHistoryKind(row.ContentType) {
+		actions = append(actions, uikit.MenuAction{Label: n.text("edit_item"), Disabled: contentDisabled,
+			Run: func() { n.editHistoryEntry(row, generation) }})
+	}
+	actions = append(actions, uikit.MenuAction{Label: n.text("native_edit_tags"), Disabled: disabled,
+		Run: func() { n.editTags(row, generation) }})
+	if row.ContentType == "rich_text" {
+		actions = append(actions, action(n.text("native_paste_formatted"), contentDisabled, nativeRichPaste))
+	}
+	textTools := nativeTextToolEntry(row.ContentType)
+	if textTools {
+		actions = append(actions, uikit.MenuAction{Label: n.text("native_qr_code"), Disabled: contentDisabled,
+			Run: func() { n.openQR(row, generation) }})
 	}
 	if row.ContentType == "image" {
-		tools = append(tools, uikit.MenuAction{Label: n.text("native_copy_base64"), Disabled: contentDisabled, Run: func() { n.rowAction(row, generation, nativeBase64) }})
-		if row.Id > 0 && !nativeConcealed(row) {
-			status := n.ocrStatus(row, nil)
+		if row.Id > 0 && contentVisible {
+			status := n.ocrStatus(row, protected)
 			label := n.text("native_ocr_recognize")
 			if status == "processing" {
 				label = n.text("ocr_processing")
 			}
-			tools = append(tools, uikit.MenuAction{Label: label, Disabled: !n.eligibleOCR(row, generation) || n.private ||
+			actions = append(actions, uikit.MenuAction{Label: label, Disabled: !n.eligibleOCR(row, generation) || n.private ||
 				n.ocrJob.status == "processing" || status == "processing", Run: func() { n.recognizeOCR(row, generation) }})
 			if status == "done" {
-				tools = append(tools, uikit.MenuAction{Label: n.text("native_ocr_copy"), Disabled: !n.eligibleOCR(row, generation), Run: func() { n.copyOCR(row, generation) }})
+				actions = append(actions, uikit.MenuAction{Label: n.text("native_ocr_copy"), Disabled: !n.eligibleOCR(row, generation),
+					Run: func() { n.copyOCR(row, generation) }})
 			}
 		}
+		actions = append(actions, action(n.text("native_copy_base64"), contentDisabled, nativeBase64))
 	}
-	if nativeTextToolEntry(row.ContentType) && !nativeConcealed(row) {
-		tools = append(tools,
-			uikit.MenuAction{Label: n.text("native_qr_code"), Disabled: disabled, Run: func() { n.openQR(row, generation) }})
+	actions = append(actions,
+		uikit.MenuAction{Label: n.text("preview_toolbar_title"), Disabled: contentDisabled, Run: func() { n.showPreview(row, generation, bounds) }},
+		action(n.text("common_paste"), contentDisabled, nativePaste))
+	if row.Id > 0 {
+		actions = append(actions, action(n.text("open"), contentDisabled, nativeOpen))
+	}
+	pinLabel := n.text("pin")
+	if row.IsPinned {
+		pinLabel = n.text("unpin")
+	}
+	share := nativeCopy
+	if row.ContentType == "rich_text" {
+		share = nativeRichCopy
+	}
+	actions = append(actions,
+		action(n.text("delete", "Delete entry"), disabled, nativeDelete),
+		action(pinLabel, disabled, nativePin),
+		action(n.text("native_share"), contentDisabled, share))
+	if textTools && !concealed {
 		choices := make([]uikit.MenuAction, 0, len(n.transformKinds))
 		for _, kind := range n.transformKinds {
 			label := kind.LabelZh
@@ -297,11 +323,6 @@ func (n *nativeMain) entryMenuActions(row protocol.DesktopEntry, generation uint
 		}
 		actions = append(actions, uikit.MenuAction{Label: n.text("native_transformations"), Disabled: disabled, Children: choices})
 	}
-	actions = append(actions, uikit.MenuAction{Label: n.text("tools_settings"), Disabled: disabled, Children: tools})
-	if row.Id > 0 {
-		actions = append(actions, uikit.MenuAction{Label: n.text("open"), Disabled: contentDisabled, Run: func() { n.rowAction(row, generation, nativeOpen) }})
-	}
-	actions = append(actions, uikit.MenuAction{Label: n.text("native_edit_tags"), Disabled: disabled, Run: func() { n.editTags(row, generation) }})
 	if row.Id != 0 {
 		var privacy []uikit.MenuAction
 		for _, action := range n.privacyFeedbackActions() {

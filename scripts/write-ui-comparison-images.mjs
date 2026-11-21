@@ -52,6 +52,7 @@ const figures = [
   ["settings-update-actions", "busy", 150, 0, "settings-update-actions-busy"],
   ["settings-remove", "default", 115],
   ["privacy-rules", "default", 390],
+  ["privacy-rules", "focus-exclusions", 198, 0, "privacy-source-exclusion-focus"],
   ["privacy-detection", "resized", 340],
   ["tag-toolbar", "default", 85],
   ["tag-history-entry", "default", 178, 0, "tag-history-selection"],
