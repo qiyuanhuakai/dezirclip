@@ -140,7 +140,7 @@ func TestResidentUpdateReplyRestoresCachedResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var reopened nativeUpdater
+	reopened := nativeUpdater{channel: "preview"}
 	status := bridge.accept(string(payload)).UpdateStatus
 	if status == nil {
 		t.Fatal("a reopened main window did not receive the resident install status")
@@ -169,7 +169,11 @@ func TestResidentUpdateReplyRestoresCachedResult(t *testing.T) {
 		t.Fatal("the resident lost a failure after the original request disconnected")
 	}
 	reopened.applyInstallStatus(*status)
-	if reopened.installing() || !reopened.installFailed || reopened.err == nil || reopened.err.Error() != "update_install_failed" {
+	// Both messages are scheduled on the main window when it reopens.
+	// The cached version check can arrive after the failed install.
+	reopened.applyCheck(got)
+	if reopened.result.ChannelVersion != "1.0.1" || reopened.installing() ||
+		reopened.installErr == nil || reopened.installErr.Error() != "update_install_failed" {
 		t.Fatal("the reopened window did not clear progress and report the failure")
 	}
 }

@@ -727,6 +727,7 @@ func TestNativeAboutShowsTheUpdateCandidateInConfirmation(t *testing.T) {
 
 func TestNativeUpdateProgressSurvivesClosingSettings(t *testing.T) {
 	window := nativeMain{showSettings: true, settingsSection: "about", preferences: map[string]string{"app.language": "en"}}
+	window.updater.channel = "preview"
 	window.updater.applyInstallStatus(residentUpdateStatus{
 		Progress: nativeInstallProgress{Phase: updateDownloading, Downloaded: 42, Total: 100},
 	})
@@ -746,6 +747,7 @@ func TestNativeUpdateProgressSurvivesClosingSettings(t *testing.T) {
 		t.Fatal("install handoff is missing from the main view")
 	}
 	window.updater.applyInstallStatus(residentUpdateStatus{Failure: errUpdateVerification.Error()})
+	window.updater.applyCheck(&nativeUpdateCheck{Result: nativeUpdateResult{Channel: "preview", Status: "available"}, Checked: time.Now()})
 	tester.Frame()
 	if !tester.HasText(window.text("updater_error_download_verify")) {
 		t.Fatal("the failure was hidden after settings were closed")

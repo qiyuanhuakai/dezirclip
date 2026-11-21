@@ -20,16 +20,16 @@ import (
 )
 
 type nativeUpdater struct {
-	channel                string
-	automatic, notesOpen   bool
-	confirm, installFailed bool
-	startingInstall        bool
-	checking               bool
-	generation             uint64
-	result                 nativeUpdateResult
-	err                    error
-	checked                time.Time
-	install                nativeInstallProgress
+	channel              string
+	automatic, notesOpen bool
+	confirm              bool
+	startingInstall      bool
+	checking             bool
+	generation           uint64
+	result               nativeUpdateResult
+	err, installErr      error
+	checked              time.Time
+	install              nativeInstallProgress
 }
 
 type nativeInstallPhase uint8
@@ -163,7 +163,7 @@ func (n *nativeMain) checkForUpdates() {
 		return
 	}
 	n.stopUpdater()
-	u.checking, u.installFailed = true, false
+	u.checking, u.installErr = true, nil
 	request := residentRequest{Operation: "update-check", UpdateChannel: u.channel, UpdateNow: true}
 	generation := u.generation
 	go func() {
@@ -198,7 +198,7 @@ func (n *nativeMain) installUpdate() {
 	if u.checking || u.installing() || available == nil || available.Artifact == nil || u.result.installTarget == "" {
 		return
 	}
-	u.startingInstall, u.installFailed, u.err = true, false, nil
+	u.startingInstall, u.installErr, u.err = true, nil, nil
 	request := residentRequest{Operation: "install-update", UpdateChannel: u.channel, UpdateVersion: available.Version}
 	go func() {
 		err := n.shell.resident.send(context.Background(), request, 5*time.Second)
@@ -208,7 +208,7 @@ func (n *nativeMain) installUpdate() {
 			}
 			u.startingInstall = false
 			if err != nil && !u.installing() {
-				u.installFailed, u.err = true, err
+				u.installErr = err
 			}
 		})
 	}()
@@ -217,10 +217,9 @@ func (n *nativeMain) installUpdate() {
 func (u *nativeUpdater) applyInstallStatus(status residentUpdateStatus) {
 	u.startingInstall = false
 	u.install = status.Progress
-	u.installFailed = status.Failure != ""
-	u.err = nil
-	if u.installFailed {
-		u.err = errors.New(status.Failure)
+	u.installErr = nil
+	if status.Failure != "" {
+		u.installErr = errors.New(status.Failure)
 	}
 }
 
@@ -327,10 +326,14 @@ func (n *nativeMain) aboutValue(c *ui.Context, label, value string) {
 func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	u := &n.updater
 	busy := u.checking || u.installing()
+	updateErr := u.err
+	if u.installErr != nil {
+		updateErr = u.installErr
+	}
 	disabled := u.channel == "" || busy || n.mutating || n.session == nil || n.history.state.ServiceInstanceId == ""
 	title := n.text("updater_title")
 	support := n.updaterSupportDescription(u.result.installSupport)
-	if !busy && u.result.Status == "" && u.err == nil {
+	if !busy && u.result.Status == "" && updateErr == nil {
 		support += "\n" + n.text("updater_not_checked")
 	}
 	kit.SettingsFieldLabel(c, title, n.settingsHelpLabel(title), support)
@@ -405,8 +408,8 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	if !u.checked.IsZero() {
 		ui.Text(c, n.text("updater_checked_at")+" "+u.checked.Format("15:04:05")).Wrap()
 	}
-	if !busy && u.err != nil {
-		ui.Text(c, n.updateError(u.err)).TextColor(c.Theme().Danger).Wrap()
+	if !busy && updateErr != nil {
+		ui.Text(c, n.updateError(updateErr)).TextColor(c.Theme().Danger).Wrap()
 	}
 	if u.channel == "preview" && u.result.Status != "unpublished" && slices.Contains(u.result.UnpublishedChannels, "preview") {
 		ui.Text(c, n.text("updater_preview_index_missing")).Wrap()
@@ -466,16 +469,16 @@ func (n *nativeMain) drawUpdateProgress(c *ui.Context, kit uikit.Kit) {
 
 func (n *nativeMain) drawBackgroundUpdate(c *ui.Context, kit uikit.Kit) {
 	u := &n.updater
-	if u.install.Phase == updateNotInstalling && !u.installFailed {
+	if u.install.Phase == updateNotInstalling && u.installErr == nil {
 		return
 	}
 	ui.Column(c).FillWidth().Padding(4, 8).Children(func() {
 		n.drawUpdateProgress(c, kit)
-		if u.installFailed && u.err != nil {
+		if u.installErr != nil {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Role(ui.RoleStatus).Children(func() {
-				ui.Text(c, n.updateError(u.err)).Grow(1).Wrap().TextColor(c.Theme().Danger)
+				ui.Text(c, n.updateError(u.installErr)).Grow(1).Wrap().TextColor(c.Theme().Danger)
 				if kit.Button(c, uikit.ButtonOptions{Label: n.text("common_close")}).Clicked() {
-					u.installFailed = false
+					u.installErr = nil
 				}
 			})
 		}
