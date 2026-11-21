@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$NativeMain, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$QuickPasteFollowPointer, [switch]$FileDrag, [switch]$Lifecycle, [switch]$WakeTiming, [switch]$WakeBackground, [switch]$TrayPaste, [switch]$LegacyCloseAfterPaste, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
+param([Parameter(Mandatory)][string]$Desktop, [string]$UpdateInstaller, [switch]$NativeMain, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste, [switch]$DisabledPanels, [switch]$Quit, [switch]$RecoverService, [switch]$QuickPasteInput, [switch]$QuickPasteFollowPointer, [switch]$FileDrag, [switch]$Lifecycle, [switch]$WakeTiming, [switch]$WakeBackground, [switch]$TrayPaste, [switch]$LegacyCloseAfterPaste, [ValidateSet(5, 16)][int]$ExpectedPointerMargin = 16)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -841,7 +841,18 @@ function Get-DesktopProcesses([int[]]$RootIds, [datetime]$Since = [datetime]::Mi
     $processes | Where-Object { $owned.Contains([int]$_.ProcessId) }
 }
 
+function Invoke-ResidentTrayExit($Resident) {
+    if (![MyGoInput]::OpenResidentTrayMenu($Resident.Id)) { throw 'Cannot open the resident tray menu' }
+    $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($Resident.Id) } 'Resident tray menu did not open'
+    # Use the owner-drawn Exit item without depending on keyboard foreground permission.
+    $exitRect = [MyGoInput+Rect]::new()
+    $popup = [MyGoInput]::ResidentTrayExit($Resident.Id, [ref]$exitRect)
+    if ($popup -eq [IntPtr]::Zero) { throw 'Cannot locate the actual tray Exit item' }
+    Click-WindowPoint $popup ([Drawing.Point]::new(($exitRect.left + $exitRect.right) / 2, ($exitRect.top + $exitRect.bottom) / 2))
+}
+
 $exe = (Resolve-Path -LiteralPath $Desktop).Path
+$installer = if ($UpdateInstaller) { (Resolve-Path -LiteralPath $UpdateInstaller).Path }
 $cli = Join-Path (Split-Path $exe) 'dzc.exe'
 $dir = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString()))
 $env:DEZIRCLIP_DB_PATH = Join-Path $dir.FullName 'clipboard.db'
@@ -855,6 +866,7 @@ $form.Text = 'Independent MyGo paste target'
 $edit = New-Object MyGoPasteTargetTextBox
 $form.Controls.Add($edit)
 $resident = $null
+$update = $null
 $startedService = $null
 $startedServiceProcess = $null
 $serviceCrashReceipt = $null
@@ -1149,6 +1161,41 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         [Windows.Forms.SendKeys]::SendWait('{ESC}')
         $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } 'Quick Paste opened from the native main window but did not dismiss'
         Write-Host 'Verified Quick Paste from the native main window'
+        if ($installer) {
+            $guide = Join-Path (Split-Path $exe) 'skills/dzc-cli/SKILL.md'
+            $guideHash = (Get-FileHash -LiteralPath $guide).Hash
+            Add-Content -LiteralPath $guide -Value 'Synthetic pre-update package marker'
+            $oldEndpoint = & $cli service desktop-endpoint | ConvertFrom-Json
+            if ($LASTEXITCODE -or !$oldEndpoint.instance) { throw 'Cannot identify the original Service' }
+            $update = Start-Process -FilePath $installer -ArgumentList @('/S', "/UPDATEPARENT=$($resident.Id)") -WindowStyle Hidden -PassThru
+            $updateStarted = $update.StartTime
+            if ($update.WaitForExit(500)) { throw "Installer exited before the resident ($($update.ExitCode))" }
+            if ((Get-FileHash -LiteralPath $guide).Hash -eq $guideHash) { throw 'Installer replaced files before the resident exited' }
+            Invoke-ResidentTrayExit $resident
+            $null = Wait-Until { $resident.HasExited -and $main.HasExited } 'Original desktop did not exit for the update'
+            if ($resident.ExitCode -ne 0 -or $main.ExitCode -ne 0) { throw 'Original desktop failed to close cleanly for the update' }
+            if (!$update.WaitForExit(30000) -or $update.ExitCode -ne 0) { throw 'Silent installer handoff failed' }
+            $resident = Wait-Until {
+                Get-DesktopProcesses @($update.Id) -Since $updateStarted | Where-Object {
+                    $_.Name -eq 'dzc-desktop.exe' -and $_.ParentProcessId -eq $update.Id
+                } | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue } |
+                    Where-Object Path -eq $exe | Select-Object -First 1
+            } 'Installer did not relaunch the installed resident'
+            $main = Wait-Until {
+                Get-DesktopProcesses @($resident.Id) -Since $resident.StartTime | Where-Object {
+                    $_.Name -eq 'dzc-desktop.exe' -and $_.ParentProcessId -eq $resident.Id
+                } | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue } |
+                    Where-Object { $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip' } | Select-Object -First 1
+            } 'Relaunched resident did not open the native window'
+            $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+            $null = Get-ControlPoint $root $marker
+            $newEndpoint = & $cli service desktop-endpoint | ConvertFrom-Json
+            if ($LASTEXITCODE -or $newEndpoint.database -cne $oldEndpoint.database -or !$newEndpoint.instance -or $newEndpoint.instance -eq $oldEndpoint.instance) {
+                throw 'Updated desktop did not open the original history with a new Service'
+            }
+            if ((Get-FileHash -LiteralPath $guide).Hash -ne $guideHash) { throw 'Installer did not replace the staged payload' }
+            Write-Host 'Verified the installer waits for native desktop exit, replaces the payload and reopens the original history'
+        }
         return
     }
     if ($TrayPaste) {
@@ -1475,14 +1522,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             if ($process) { $null = $process.Handle; $process }
         })
         try {
-            if (![MyGoInput]::OpenResidentTrayMenu($resident.Id)) { throw 'Cannot open the resident tray menu' }
-            $null = Wait-Until { [MyGoInput]::ResidentTrayMenuVisible($resident.Id) } 'Resident tray menu did not open'
-            # Click the real owner-drawn Exit item without relying on keyboard
-            # foreground permission for the synthetic notification callback.
-            $exitRect = [MyGoInput+Rect]::new()
-            $popup = [MyGoInput]::ResidentTrayExit($resident.Id, [ref]$exitRect)
-            if ($popup -eq [IntPtr]::Zero) { throw 'Cannot locate the actual tray Exit item' }
-            Click-WindowPoint $popup ([Drawing.Point]::new(($exitRect.left + $exitRect.right) / 2, ($exitRect.top + $exitRect.bottom) / 2))
+            Invoke-ResidentTrayExit $resident
             $null = Wait-Until { $resident.HasExited -and $serviceProcess.HasExited -and
                 @($children | Where-Object { !$_.HasExited }).Count -eq 0 } 'Tray Exit left Desktop, WebView or Service processes running'
             Write-Output "Exit codes: resident=$($resident.ExitCode), main=$($main.ExitCode), service=$($serviceProcess.ExitCode)"
@@ -1716,6 +1756,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     }
     try { Update-RecordedServiceExit $startedServiceProcess $serviceCrashReceipt }
     catch { Write-Host ("Service exit receipt failed before cleanup: " + $_.Exception.Message) }
+    if ($update -and !$update.HasExited) { $update.Kill(); $update.WaitForExit(5000) | Out-Null }
     if ($resident -and !$resident.HasExited) { $resident.Kill(); $resident.WaitForExit() }
     if ($main -and !$main.HasExited) { $main.Kill(); $main.WaitForExit() }
     if (!$quitVerified) { & $cli service stop | Out-Null }

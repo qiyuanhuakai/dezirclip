@@ -45,15 +45,17 @@ def verify(installer, stage, unicode_path_fixture=False, pointer_margin=16, foll
     assert (root / 'mygo-installation.ini').read_bytes().startswith(b'\xff\xfe')
     shortcut = Path(os.environ['APPDATA']) / 'Microsoft/Windows/Start Menu/Programs/DezirClip MyGo/DezirClip MyGo.lnk'
     assert shortcut.is_file()
+    preserved = root / 'user-preserved.txt'
+    preserved.write_text('Keep user data', encoding='utf-8')
     subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-STA', '-File',
                     str(Path(__file__).with_name('mygo-desktop-windows.ps1')),
                     '-Desktop', str(root / 'dzc-desktop.exe'), '-ExpectedPointerMargin', str(pointer_margin)]
                    + (['-QuickPasteFollowPointer'] if follow_pointer else [])
                    + (['-NativeMain'] if native_main else [])
+                   + (['-UpdateInstaller', str(installer)] if focused and native_main else [])
                    + (['-LegacyCloseAfterPaste'] if legacy_close_after_paste else []), check=True, timeout=240)
-    preserved = root / 'user-preserved.txt'
-    preserved.write_text('Keep user data', encoding='utf-8')
-    subprocess.run([str(installer), '/S'], check=True, timeout=90)
+    if not (focused and native_main):
+        subprocess.run([str(installer), '/S'], check=True, timeout=90)
     assert_payload()
     uninstaller = root / 'uninstall.exe'
     if not focused:
