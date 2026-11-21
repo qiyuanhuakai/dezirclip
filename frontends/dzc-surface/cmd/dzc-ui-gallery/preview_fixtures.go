@@ -128,6 +128,39 @@ func (g *gallery) historyImages(c *ui.Context, kit uikit.Kit) {
 	})
 }
 
+func (g *gallery) historyOCR(c *ui.Context, kit uikit.Kit) {
+	const width = 330
+	compact := g.state == "compact-expanded"
+	badge := uikit.HistoryOCRBadgeOptions{Label: "OCR text", Status: "done"}
+	result := &uikit.HistoryOCRResultOptions{Label: "OCR text", ToggleLabel: "Toggle OCR text",
+		Text: "Invoice 0842\nTotal: 86.40", Expanded: g.ocrExpanded,
+		OnToggle: func() { g.ocrExpanded = !g.ocrExpanded }}
+	if g.state == "processing" {
+		badge = uikit.HistoryOCRBadgeOptions{Label: "Recognizing text…", Status: "processing"}
+		result = nil
+	}
+	if g.state == "failed" {
+		badge = uikit.HistoryOCRBadgeOptions{Label: "OCR failed", Status: "failed"}
+		result = nil
+	}
+	if g.state == "unsupported" {
+		badge = uikit.HistoryOCRBadgeOptions{Label: "OCR unavailable", Status: "unsupported"}
+		result = nil
+	}
+	ui.Column(c).Width(width).AlignItems(ui.Stretch).Children(func() {
+		kit.HistoryCard(c, uikit.HistoryCardOptions{
+			Source: "Editor", Time: "12:30", Summary: "Invoice image", Width: width, Compact: compact,
+			OCRBadge: &badge, OCRResult: result,
+			Actions: []uikit.HeaderAction{{Icon: "pin", Label: "Pin"}, {Icon: "tag", Label: "Tags"}, {Icon: "hide", Label: "Delete"}},
+			Media: func(contentWidth float32) {
+				kit.HistoryImage(c, uikit.HistoryImageOptions{
+					Width: contentWidth, Compact: compact, Source: picture, Label: "Invoice image",
+				})
+			},
+		})
+	})
+}
+
 func (g *gallery) inputRegion(c *ui.Context, wheel bool) {
 	panel := ui.Column(c).Size(320, 144).Padding(12).Border(1, c.Theme().Accent).Radius(8).Label("Input target")
 	panel.Children(func() {

@@ -73,7 +73,7 @@ func (n *nativeMain) cardRichText(row protocol.DesktopEntry, protected *nativePr
 	return preview.rich
 }
 
-func (n *nativeMain) cardBody(c *ui.Context, kit uikit.Kit, row protocol.DesktopEntry, protected *nativeProtectedBody, compact bool, textSize float32, generation uint64) func(float32) {
+func (n *nativeMain) cardBody(c *ui.Context, kit uikit.Kit, row protocol.DesktopEntry, protected *nativeProtectedBody, compact bool, textSize float32) func(float32) {
 	if nativeConcealed(row) && protected == nil {
 		return nil
 	}
@@ -82,7 +82,7 @@ func (n *nativeMain) cardBody(c *ui.Context, kit uikit.Kit, row protocol.Desktop
 	}
 	return func(width float32) {
 		if row.ContentType == "image" {
-			n.imageCardBody(c, kit, row, protected, width, compact, generation)
+			n.imageCardBody(c, kit, row, protected, width, compact)
 			return
 		}
 		var files []uikit.PreviewAttachment
@@ -107,26 +107,23 @@ func (n *nativeMain) cardBody(c *ui.Context, kit uikit.Kit, row protocol.Desktop
 	}
 }
 
-func (n *nativeMain) imageCardBody(c *ui.Context, kit uikit.Kit, row protocol.DesktopEntry, protected *nativeProtectedBody, width float32, compact bool, generation uint64) {
-	ui.Column(c).FillWidth().Gap(4).Children(func() {
-		options := uikit.HistoryImageOptions{Width: width, Compact: compact, Label: n.text("native_image_thumbnail")}
-		if row.IsExternal && !row.FilePreviewExists {
-			options.Missing = n.text("image_deleted")
+func (n *nativeMain) imageCardBody(c *ui.Context, kit uikit.Kit, row protocol.DesktopEntry, protected *nativeProtectedBody, width float32, compact bool) {
+	options := uikit.HistoryImageOptions{Width: width, Compact: compact, Label: n.text("native_image_thumbnail")}
+	if row.IsExternal && !row.FilePreviewExists {
+		options.Missing = n.text("image_deleted")
+	} else {
+		var loaded bool
+		if protected != nil {
+			options.Source, loaded = protected.image, true
 		} else {
-			var loaded bool
-			if protected != nil {
-				options.Source, loaded = protected.image, true
-			} else {
-				preview, ready := n.mediaForCard(row)
-				options.Source, loaded = preview.image, ready
-			}
-			if options.Source == nil && loaded {
-				options.Unavailable = n.text("clipboard_image_preview_unavailable")
-			}
+			preview, ready := n.mediaForCard(row)
+			options.Source, loaded = preview.image, ready
 		}
-		kit.HistoryImage(c, options)
-		n.drawCardOCR(c, row, protected, generation)
-	})
+		if options.Source == nil && loaded {
+			options.Unavailable = n.text("clipboard_image_preview_unavailable")
+		}
+	}
+	kit.HistoryImage(c, options)
 }
 
 func (n *nativeMain) mediaForCard(row protocol.DesktopEntry) (nativeCardMedia, bool) {

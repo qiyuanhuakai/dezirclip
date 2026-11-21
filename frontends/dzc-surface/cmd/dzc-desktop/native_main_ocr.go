@@ -82,64 +82,54 @@ func (n *nativeMain) recognizeOCR(row protocol.DesktopEntry, generation uint64) 
 	}()
 }
 
-func (n *nativeMain) drawCardOCR(c *ui.Context, row protocol.DesktopEntry, body *nativeProtectedBody, generation uint64) {
-	if row.Id <= 0 {
-		return
+func (n *nativeMain) cardOCR(row protocol.DesktopEntry, body *nativeProtectedBody, generation uint64) (*uikit.HistoryOCRBadgeOptions, *uikit.HistoryOCRResultOptions) {
+	if row.Id <= 0 || row.ContentType != "image" || nativeConcealed(row) && body == nil {
+		return nil, nil
 	}
 	status := n.ocrStatus(row, body)
+	var label string
 	switch status {
 	case "processing":
-		ui.Text(c, n.text("ocr_processing")).FontSize(11).TextColor(c.Theme().TextMuted)
+		label = n.text("ocr_processing")
 	case "failed":
-		ui.Text(c, n.text("ocr_failed_label")).FontSize(11).TextColor(c.Theme().Danger)
+		label = n.text("ocr_failed_label")
 	case "unsupported":
-		ui.Text(c, n.text("ocr_unsupported_label")).FontSize(11).TextColor(c.Theme().TextMuted)
+		label = n.text("ocr_unsupported_label")
 	case "done":
-		n.drawOCRResult(c, row, generation)
+		label = n.text("ocr_done_label")
+	default:
+		return nil, nil
 	}
-}
-
-func (n *nativeMain) drawOCRResult(c *ui.Context, row protocol.DesktopEntry, generation uint64) {
-	key := nativeCardKey{row.Id, row.Timestamp}
-	open := n.ocrPreview != nil && n.ocrPreview.key == key
-	label := n.text("ocr_done_label")
-	arrow := "▸ "
-	if open {
-		arrow = "▾ "
-	}
-	toggle := ui.ButtonBase(c).Label(label).Tooltip(n.text("ocr_toggle_label")).AlignSelf(ui.Start).
-		Height(22).PaddingX(4).Radius(c.Theme().Radius).FocusRing(true)
-	if toggle.Hovered() {
-		toggle.Background(c.Theme().SurfaceHover)
-	}
-	toggle.Children(func() { ui.Text(c, arrow+label).FontSize(11).TextColor(c.Theme().TextMuted) })
-	if toggle.Clicked() {
-		if open {
-			n.closeOCRPreview()
-			return
-		}
-		n.openOCRPreview(row, generation)
-		return
-	}
-	if !open {
-		return
+	badge := &uikit.HistoryOCRBadgeOptions{Status: status, Label: label}
+	if status != "done" {
+		return badge, nil
 	}
 	form := n.ocrPreview
+	open := form != nil && form.key == (nativeCardKey{row.Id, row.Timestamp})
+	result := &uikit.HistoryOCRResultOptions{
+		Label: label, ToggleLabel: n.text("ocr_toggle_label"), Expanded: open,
+		OnToggle: func() {
+			if open {
+				n.closeOCRPreview()
+			} else {
+				n.openOCRPreview(row, generation)
+			}
+		},
+	}
+	if !open {
+		return badge, result
+	}
 	switch {
 	case form.loading:
-		ui.Text(c, n.text("common_loading")).FontSize(11).TextColor(c.Theme().TextMuted)
+		result.Message = n.text("common_loading")
 	case form.failed:
-		ui.Text(c, n.text("ocr_failed_label")).FontSize(11).TextColor(c.Theme().Danger)
+		result.Failed, result.Message = true, n.text("ocr_failed_label")
 	case strings.TrimSpace(form.text) == "":
-		ui.Text(c, n.text("native_ocr_empty")).FontSize(11).TextColor(c.Theme().TextMuted)
+		result.Message = n.text("native_ocr_empty")
 	default:
-		ui.Scroll(c).FillWidth().MaxHeight(80).Children(func() {
-			ui.Text(c, form.text).FontSize(11).TextColor(c.Theme().TextMuted).Wrap()
-		})
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("native_ocr_copy"), Disabled: n.mutating}).Clicked() {
-			n.copyOCR(row, generation)
-		}
+		result.Text = form.text
 	}
+	return badge, result
 }
 
 func (n *nativeMain) openOCRPreview(row protocol.DesktopEntry, generation uint64) {

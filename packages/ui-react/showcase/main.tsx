@@ -7,7 +7,7 @@ import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDia
   SettingsSlider, SettingsToggle, SettingsToggleField, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
-import { AttachmentFixture, HistoryImageFixture, HistoryRichTextFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
+import { AttachmentFixture, HistoryImageFixture, HistoryOCRFixture, HistoryRichTextFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
 import { BackupDialogFixture, ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture, SettingsUpdateFixture,
   PrivacyRulesFixture, SettingsDataFixture, SettingsFieldsFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, SearchSelectFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture } from "./form-menu-fixtures";
 import "../src/base.css";
@@ -163,6 +163,7 @@ function Showcase() {
     "search-select": <SearchSelectFixture />,
     "attachment-preview": <AttachmentFixture state={state} />,
     "history-image": <HistoryImageFixture state={state} />,
+    "history-ocr": <HistoryOCRFixture state={state} />,
     "preview-toolbar": <PreviewToolbarFixture state={state} />,
     "preview-image": <PreviewImageFixture state={state} />,
     "preview-resize-handles": <ResizeFixture />,

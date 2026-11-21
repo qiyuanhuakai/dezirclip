@@ -35,6 +35,7 @@ const cases = {
   "context-menu": { states: ["default", "text", "privacy"], text: "Clipboard entry" },
   "attachment-preview": { states: ["default", "compact", "media", "expanded", "narrow", "narrow-media", "compact-media"], text: "" },
   "history-image": { states: ["default", "compact", "pending", "compact-pending", "missing", "compact-missing", "unavailable", "compact-unavailable"], text: "" },
+  "history-ocr": { states: ["default", "expanded", "compact-expanded", "processing", "failed", "unsupported"], text: "" },
   "preview-toolbar": { states: ["default", "pinned"], text: "Content preview" },
   "preview-image": { states: ["default", "zoomed"], text: "Image preview" },
   "preview-resize-handles": { states: ["default", "southeast"], text: "Resize preview" },
@@ -196,6 +197,11 @@ try {
             if (fixture === "settings-field" && state === "expanded") {
               await page.getByRole("button", { name: "Setting help: Interface font" }).click();
               await page.getByText("Use the theme font by default.", { exact: true }).waitFor();
+            }
+            if (fixture === "history-ocr" && state.endsWith("expanded")) {
+              await page.getByTestId("ocr-toggle").click();
+              await page.getByTestId("ocr-text").waitFor();
+              await page.mouse.move(450, 390);
             }
             if (fixture === "surface-opacity") {
               await page.getByRole("combobox", { name: "Color mode" }).click();
@@ -443,6 +449,17 @@ try {
               const nativeCard = inspection.Cards["Attachment card"];
               if (!webCard || Math.abs(nativeCard.W - webCard.width) > 2 || Math.abs(nativeCard.H - webCard.height) > 2) {
                 throw Error(`Attachment card ${state}: WebView ${webCard?.width}×${webCard?.height}, Native ${nativeCard.W}×${nativeCard.H}`);
+              }
+            }
+            if (fixture === "history-ocr") {
+              const expanded = state.endsWith("expanded");
+              const stateLabel = { processing: "Recognizing text…", failed: "OCR failed", unsupported: "OCR unavailable" }[state] ?? "OCR text";
+              if (!comparable(nativeText, stateLabel) || Boolean(await page.getByTestId("ocr-text").count()) !== expanded
+                  || comparable(nativeText, "Total: 86.40") !== expanded) {
+                throw Error("OCR status or disclosure content differs");
+              }
+              if (stateLabel !== "OCR text" && await page.getByTestId("ocr-toggle").count()) {
+                throw Error("A recognition result without text can be expanded");
               }
             }
             if (fixture === "history-image") {

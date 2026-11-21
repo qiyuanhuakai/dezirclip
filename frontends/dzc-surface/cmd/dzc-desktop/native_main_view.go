@@ -312,6 +312,7 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 				})
 				return
 			}
+			ocrBadge, ocrResult := n.cardOCR(row, protected, generation)
 			card := kit.HistoryCard(cell.Context, uikit.HistoryCardOptions{
 				Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
 				Pinned: row.IsPinned, Selected: cell.Selected(), Compact: compact, First: cell.Index == first,
@@ -322,7 +323,9 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 				Tags:      n.cardTags(row.Tags),
 				Width:     width,
 				Rich:      n.cardRichText(row, protected),
-				Media:     n.cardBody(cell.Context, kit, row, protected, compact, float32(itemSize), generation),
+				Media:     n.cardBody(cell.Context, kit, row, protected, compact, float32(itemSize)),
+				OCRBadge:  ocrBadge,
+				OCRResult: ocrResult,
 				Reorder:   n.pinReorderGrip(row, cell.Index, generation, reorderPins, func() { draggingPin = true }),
 				Activate: func() {
 					if n.fileGesture.takeClick(row.Id) {

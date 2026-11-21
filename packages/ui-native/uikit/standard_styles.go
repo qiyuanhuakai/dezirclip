@@ -421,6 +421,25 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		if widget == "historyRichContentCompact" {
 			style.MaxHeight = 40
 		}
+	case "historyOCRBadgeDone", "historyOCRBadgeProcessing", "historyOCRBadgeFailed", "historyOCRBadgeUnsupported":
+		style.Fill, style.Text = muted, [4]uint8{255, 255, 255, 255}
+		style.Size, style.Radius, style.Padding = 9, 3, [4]float32{1, 4, 1, 4}
+		if widget == "historyOCRBadgeDone" {
+			style.Fill = accent
+		} else if widget == "historyOCRBadgeFailed" {
+			style.Fill = [4]uint8{191, 54, 50, 255}
+		}
+	case "historyOCRSection":
+		style.Border, style.BorderWidths = border, &[4]float32{1, 0, 0, 0}
+		style.MarginTop, style.Padding = 4, [4]float32{4, 0, 0, 0}
+	case "historyOCRButton":
+		style.Text, style.Size, style.ColumnGap = muted, 9, 4
+		style.Height, style.Padding = 14, [4]float32{1, 4, 1, 4}
+	case "historyOCRContent":
+		style.Fill, style.Text = [4]uint8{128, 128, 128, 13}, muted
+		style.Font, style.UsesMonoFont = "monospace", true
+		style.Size, style.LineHeight, style.MaxHeight = 11, 1.4, 80
+		style.MarginTop, style.Radius, style.Padding = 2, 3, [4]float32{2, 4, 2, 4}
 	case "historyConcealed":
 		style.Size, style.Text, style.Padding = 12, muted, [4]float32{12, 0, 12, 0}
 	case "historyIcon":

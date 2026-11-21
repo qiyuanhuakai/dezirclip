@@ -37,6 +37,23 @@ func TestNativeProtectedRowsExpireOutsideTheirVisibleVersion(t *testing.T) {
 	}
 }
 
+func TestNativeHistoryOCRUsesTheCurrentAuthorizedImage(t *testing.T) {
+	status := "done"
+	row := protocol.DesktopEntry{Id: 3, Timestamp: 22, ContentType: "image", OcrStatus: &status}
+	n := nativeMain{ocrPreview: &nativeOCRPreview{key: nativeCardKey{3, 22}, text: "Invoice 0842"}}
+	if badge, result := n.cardOCR(row, nil, 0); badge != nil || result != nil {
+		t.Fatal("a concealed image exposed its recognition status or text")
+	}
+	body := &nativeProtectedBody{ocrStatus: "done"}
+	if badge, result := n.cardOCR(row, body, 0); badge == nil || result == nil || !result.Expanded || result.Text != "Invoice 0842" {
+		t.Fatal("the current revealed image lost its recognition result")
+	}
+	row.Timestamp++
+	if _, result := n.cardOCR(row, body, 0); result == nil || result.Expanded || result.Text != "" {
+		t.Fatal("an image revision inherited previous recognition text")
+	}
+}
+
 func TestNativeMainHistoryFilterMatchesTagSearch(t *testing.T) {
 	window := nativeMain{query: "  TaG:  Work notes  ", kind: "text"}
 	if got := window.historyFilter(); got != (nativeHistoryFilter{tag: "Work notes", kind: "text", sort: "pinned"}) {

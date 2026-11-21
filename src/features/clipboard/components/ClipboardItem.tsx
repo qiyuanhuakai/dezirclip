@@ -1,3 +1,4 @@
+import { HistoryOCRBadge, HistoryOCRResult } from "@deziro/ui-react/components/HistoryOCR";
 import { HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryImagePreview, HistoryRichTextPreview } from "@deziro/ui-react/components/HistoryCard";
 import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
 import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
@@ -999,33 +1000,11 @@ const ClipboardItem = ({
                             <X size={12} />
                         </HistoryCardAction></>}
                 status={ocrStatus && ocrStatus !== "pending" && (
-                            <span
-                                data-testid="ocr-badge"
-                                className="ocr-badge"
-                                style={{
-                                    fontSize: '9px',
-                                    padding: '1px 4px',
-                                    borderRadius: '3px',
-                                    background: ocrStatus === "done"
-                                        ? 'var(--accent-color, #4a9eff)'
-                                        : ocrStatus === "processing"
-                                            ? 'var(--text-secondary, #888)'
-                                            : ocrStatus === "failed"
-                                                ? 'var(--error-color, #e74c3c)'
-                                                : 'var(--text-tertiary, #666)',
-                                    color: '#fff',
-                                    whiteSpace: 'nowrap',
-                                }}
-                            >
-                                {ocrStatus === "processing"
-                                    ? t('ocr_processing')
-                                    : ocrStatus === "done"
-                                        ? t('ocr_done_label')
-                                        : ocrStatus === "failed"
-                                            ? t('ocr_failed_label')
-                                            : t('ocr_unsupported_label')}
-                            </span>
-                        )}
+                    <HistoryOCRBadge status={ocrStatus === "processing" || ocrStatus === "done" || ocrStatus === "failed" ? ocrStatus : "unsupported"}>
+                        {t(ocrStatus === "processing" ? "ocr_processing" : ocrStatus === "done" ? "ocr_done_label"
+                            : ocrStatus === "failed" ? "ocr_failed_label" : "ocr_unsupported_label")}
+                    </HistoryOCRBadge>
+                )}
                 time={getConciseTime(item.timestamp, language)}
             />
 
@@ -1121,64 +1100,9 @@ const ClipboardItem = ({
             </HistoryCardContent>
 
             {ocrStatus === "done" && ocrText && (
-                <div
-                    data-testid="ocr-section"
-                    data-privacy-protected={isSensitiveEntry(item) ? "true" : undefined}
-                    onDragStart={event => { if (isSensitiveEntry(item)) event.preventDefault(); }}
-                    className="ocr-text-section"
-                    style={{
-                        marginTop: '4px',
-                        borderTop: '1px solid var(--border-color, rgba(128,128,128,0.2))',
-                        paddingTop: '4px',
-                    }}
-                >
-                    <button
-                        data-testid="ocr-toggle"
-                        className="btn-icon"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setOcrTextExpanded((prev) => !prev);
-                        }}
-                        title={t('ocr_toggle_label')}
-                        style={{
-                            fontSize: '9px',
-                            padding: '1px 4px',
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--text-secondary, #888)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                        }}
-                    >
-                        {ocrTextExpanded ? '▼' : '▶'} {t('ocr_done_label')}
-                    </button>
-                    {ocrTextExpanded && (
-                        <div
-                            data-testid="ocr-text"
-                            className="ocr-text-content"
-                            style={{
-                                fontSize: '11px',
-                                color: 'var(--text-secondary, #888)',
-                                fontFamily: 'var(--font-mono, monospace)',
-                                lineHeight: '1.4',
-                                maxHeight: '80px',
-                                overflow: 'auto',
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-all',
-                                padding: '2px 4px',
-                                marginTop: '2px',
-                                borderRadius: '3px',
-                                background: 'var(--bg-tertiary, rgba(128,128,128,0.05))',
-                                userSelect: 'text',
-                                WebkitUserSelect: 'text',
-                            }}
-                        >
-                            {ocrText}
-                        </div>
-                    )}
-                </div>
+                <HistoryOCRResult label={t("ocr_done_label")} toggleLabel={t("ocr_toggle_label")} text={ocrText}
+                    expanded={ocrTextExpanded} protectedContent={isSensitiveEntry(item)}
+                    onToggle={() => setOcrTextExpanded(prev => !prev)} />
             )}
 
             {(item.tags?.length > 0 || isEditingTags) && (

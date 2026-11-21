@@ -27,6 +27,7 @@ type gallery struct {
 	previewImage                        uikit.PreviewImage
 	previewOpacity                      float64
 	previewPinned                       bool
+	ocrExpanded                         bool
 	wheelCount                          int
 	resizeDirection                     uikit.PreviewResizeDirection
 	dialog, disclosure, help, visible   bool
@@ -99,6 +100,8 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 		g.attachmentGallery(c, kit)
 	case "history-image":
 		g.historyImages(c, kit)
+	case "history-ocr":
+		g.historyOCR(c, kit)
 	case "preview-toolbar":
 		g.previewToolbar(c, kit)
 	case "preview-image":
@@ -278,6 +281,13 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 	if g.fixture == "character-panel" && g.state == "after-scroll" {
 		tester.Scroll(270, 185, 0, 2000)
 		tester.Scroll(270, 185, 0, 2000)
+	}
+	if g.fixture == "history-ocr" && strings.HasSuffix(g.state, "expanded") {
+		if err := tester.Click("Toggle OCR text"); err != nil {
+			return err
+		}
+		tester.Move(450, 390)
+		return nil
 	}
 	if g.fixture == "settings-field" && g.state == "expanded" {
 		return tester.Click("Setting help: Interface font")

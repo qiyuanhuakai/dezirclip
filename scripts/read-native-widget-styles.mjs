@@ -169,6 +169,13 @@ const samples = [
   ["history-typography", "default", { historyConcealed: [".privacy-hidden-content"] }],
   ["history-rich-text", "default", { historyRichContent: [".history-rich-preview"] }],
   ["history-rich-text", "compact", { historyRichContentCompact: [".history-rich-preview"] }],
+  ["history-ocr", "expanded", {
+    historyOCRBadgeDone: [".ocr-badge"], historyOCRSection: [".ocr-text-section"],
+    historyOCRButton: [".ocr-text-toggle"], historyOCRContent: [".ocr-text-content"],
+  }],
+  ["history-ocr", "processing", { historyOCRBadgeProcessing: [".ocr-badge"] }],
+  ["history-ocr", "failed", { historyOCRBadgeFailed: [".ocr-badge"] }],
+  ["history-ocr", "unsupported", { historyOCRBadgeUnsupported: [".ocr-badge"] }],
   ["history-card", "hover", { historyCardHover: [".history-item"] }],
   ["history-card", "compact", {
     historyCardCompact: [".history-item.compact"], historyContentCompact: [".content-preview"],
@@ -400,6 +407,7 @@ function readStyles(sample) {
         ...(usesMonoFont ? { usesMonoFont } : {}),
       } : {}),
       ...(id.startsWith("historyRichContent") ? { maxHeight: number(style.maxHeight) } : {}),
+      ...(id === "historyOCRContent" ? { maxHeight: number(style.maxHeight), usesMonoFont: true } : {}),
       ...(columnGap ? { columnGap } : {}),
       ...(rowGap ? { rowGap } : {}),
       ...(switchFace ? { top: number(bounds.top - switchBounds.top), left: number(bounds.left - switchBounds.left) } : top ? { top } : {}),
@@ -539,6 +547,11 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
       if (state.includes("action") || state.includes("active")) {
         await page.getByRole("button", { name: "Pin", exact: true }).hover();
       }
+    }
+    if (fixture === "history-ocr" && state === "expanded") {
+      await page.getByTestId("ocr-toggle").click();
+      await page.getByTestId("ocr-text").waitFor();
+      await page.mouse.move(450, 390);
     }
     if (fixture === "scroll-to-top" && state === "hover") {
       await page.getByRole("button", { name: "Scroll to top" }).hover();

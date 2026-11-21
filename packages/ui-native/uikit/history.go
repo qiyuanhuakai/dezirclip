@@ -25,6 +25,8 @@ type HistoryCardOptions struct {
 	TagSize   float32
 	Rich      *HistoryRichText
 	Body      func()
+	OCRBadge  *HistoryOCRBadgeOptions
+	OCRResult *HistoryOCRResultOptions
 	// Media draws using the width remaining after the card's margins, frame and leading controls.
 	Media    func(contentWidth float32)
 	Width    float32
@@ -56,6 +58,7 @@ type HistoryCardMetaOptions struct {
 	Pinned  bool
 	Actions []HeaderAction
 	Reorder *HistoryReorder
+	OCR     *HistoryOCRBadgeOptions
 }
 
 func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
@@ -102,9 +105,10 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 					ui.Box(c).Height(spacer)
 				}
 			}
-			if !options.Compact && (options.Source != "" || options.Time != "" || options.Pinned || len(options.Actions) > 0) {
+			if !options.Compact && (options.Source != "" || options.Time != "" || options.Pinned || len(options.Actions) > 0 || options.OCRBadge != nil) {
 				k.HistoryCardMeta(c, HistoryCardMetaOptions{
 					Source: options.Source, Time: options.Time, Pinned: options.Pinned, Actions: options.Actions, Reorder: options.Reorder,
+					OCR: options.OCRBadge,
 				})
 			}
 			if options.Body != nil {
@@ -131,6 +135,9 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 				}
 			} else {
 				k.historyCardText(c, options)
+			}
+			if options.OCRResult != nil {
+				k.HistoryOCRResult(c, *options.OCRResult)
 			}
 			if len(options.Tags) > 0 {
 				k.historyTags(c, options.Tags, options.TagSize)
@@ -229,7 +236,14 @@ func (k Kit) HistoryCardMeta(c *ui.Context, options HistoryCardMetaOptions) {
 		if len(options.Actions) > 0 {
 			k.HistoryCardActions(c, options.Actions, false)
 		}
-		text(c, options.Time, k.style("historyTime")).Opacity(0.6)
+		if options.OCR != nil {
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Opacity(0.6).Children(func() {
+				k.HistoryOCRBadge(c, *options.OCR)
+				text(c, options.Time, k.style("historyTime"))
+			})
+		} else {
+			text(c, options.Time, k.style("historyTime")).Opacity(0.6)
+		}
 	})
 }
 
