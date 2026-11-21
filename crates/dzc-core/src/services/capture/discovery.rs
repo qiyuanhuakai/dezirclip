@@ -69,13 +69,7 @@ pub(super) fn entry_from_capture(
     let preview = if content_type == "image" {
         "[Image Content]".to_string()
     } else {
-        let normalized = crate::database::normalize_text(&content);
-        if normalized.chars().count() > 500 {
-            let preview: String = normalized.chars().take(497).collect();
-            format!("{}...", preview.replace('\n', " "))
-        } else {
-            normalized.replace('\n', " ")
-        }
+        crate::database::clipboard_text_preview(&content)
     };
     let is_external = matches!(content_type.as_str(), "file" | "video" | "image")
         && !content.starts_with("data:");

@@ -497,6 +497,13 @@ pub fn prepare_export_entry(e: &ClipboardEntry) -> Result<ExportEntry, String> {
 }
 
 pub fn restore_entry(exp: &crate::services::backup::ExportEntry) -> ClipboardEntry {
+    let preview = match exp.preview.as_deref() {
+        Some(preview) if !preview.trim().is_empty() => preview.to_owned(),
+        _ if crate::database::is_text_type(&exp.content_type) => {
+            crate::database::clipboard_text_preview(&exp.content)
+        }
+        _ => String::new(),
+    };
     ClipboardEntry {
         id: exp.id,
         content_type: exp.content_type.clone(),
@@ -505,10 +512,7 @@ pub fn restore_entry(exp: &crate::services::backup::ExportEntry) -> ClipboardEnt
         source_app: exp.source_app.clone().unwrap_or_default(),
         source_app_path: exp.source_app_path.clone(),
         timestamp: exp.updated_at,
-        // `preview` is `Option<String>` in the export schema but
-        // `String` in the domain model — collapse `None` to empty
-        // and let the repo re-derive a fresh preview on next read.
-        preview: exp.preview.clone().unwrap_or_default(),
+        preview,
         is_pinned: exp.is_pinned,
         tags: exp.tags.clone(),
         use_count: exp.use_count,
@@ -876,6 +880,77 @@ mod data_integrity_tests {
             .write_to(&mut data, image::ImageFormat::Png)
             .unwrap();
         data.into_inner()
+    }
+
+    #[test]
+    fn missing_backup_text_previews_remain_visible_in_bounded_history_pages() {
+        use crate::infrastructure::repository::{
+            clipboard_repo::ClipboardRepository, tag_repo::SqliteTagRepository,
+        };
+
+        let (repo, connection) = repository();
+        let content = format!("  行首\r\n{}  ", "🙂".repeat(500));
+        let expected = format!("行首 {}...", "🙂".repeat(494));
+        let legacy = serde_json::json!({
+            "version": EXPORT_VERSION,
+            "exported_at": 1,
+            "entries": [
+                {"id":1,"content_type":"text","content":content,"created_at":1,"updated_at":1,"tags":["work"]},
+                {"id":2,"content_type":"code","content":"two\nlines","preview":" \t","created_at":1,"updated_at":1,"tags":["work"]},
+                {"id":3,"content_type":"text","content":"original text","preview":"custom excerpt","created_at":1,"updated_at":1,"tags":["work"]}
+            ]
+        });
+        let imported = entries_from_json(&legacy.to_string()).unwrap();
+        apply_entries(&repo, &imported, ImportMode::Merge).unwrap();
+
+        let loaded = rows(&repo);
+        let text = loaded.iter().find(|item| item.id == 1).unwrap();
+        assert_eq!(text.content, content);
+        assert_eq!(text.preview, expected);
+        assert_eq!(
+            loaded.iter().find(|item| item.id == 2).unwrap().preview,
+            "two lines"
+        );
+        assert_eq!(
+            loaded.iter().find(|item| item.id == 3).unwrap().preview,
+            "custom excerpt"
+        );
+
+        // Simulate rows previously imported by a version that retained blank previews.
+        connection.lock().unwrap().execute_batch(
+            "UPDATE clipboard_history SET preview='' WHERE id IN (1,2);\
+             INSERT INTO clipboard_history(id,content_type,content,source_app,timestamp,preview,is_pinned,tags)\
+             VALUES(4,'text','protected legacy body','',1,'',0,'[\"sensitive\"]');\
+             INSERT INTO entry_tags(entry_id,tag) VALUES(4,'work');",
+        ).unwrap();
+        let tags = SqliteTagRepository::new(connection.clone());
+        let metadata = repo
+            .query_cli(&CliQuery {
+                limit: 10,
+                metadata: true,
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(metadata.iter().all(|item| item.content.is_empty()));
+        for page in [
+            metadata,
+            repo.get_history(10, 0, None).unwrap(),
+            tags.get_page("work", "", "time", 10, 0).unwrap().items,
+        ] {
+            assert_eq!(
+                page.iter().find(|item| item.id == 1).unwrap().preview,
+                expected
+            );
+            assert_eq!(
+                page.iter().find(|item| item.id == 2).unwrap().preview,
+                "two lines"
+            );
+            assert_eq!(
+                page.iter().find(|item| item.id == 3).unwrap().preview,
+                "custom excerpt"
+            );
+            assert!(page.iter().find(|item| item.id == 4).unwrap().preview.is_empty());
+        }
     }
 
     #[test]

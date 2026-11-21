@@ -29,12 +29,12 @@ const HISTORY_HTML_PREVIEW_CHARS: usize = 5_000;
 const HISTORY_CACHE_MAX_BYTES: usize = 16 * 1024 * 1024;
 const SEARCH_CACHE_MAX_BYTES: usize = 16 * 1024 * 1024;
 const CONTENT_CACHE_MAX_BYTES: usize = 8 * 1024 * 1024;
+pub(super) const MISSING_HISTORY_TEXT_PREVIEW: &str = "content_type IN ('text','code','url','rich_text') \
+    AND trim(preview,char(9,10,12,13,32))=''";
 const HISTORY_LIST_SELECT_COLUMNS: &str = "id, content_type, \
     CASE WHEN content LIKE 'linux:%' OR content LIKE 'dpapi:%' THEN content ELSE substr(content, 1, 2004) END, \
     CASE WHEN html_content LIKE 'linux:%' OR html_content LIKE 'dpapi:%' THEN html_content ELSE substr(html_content, 1, 5004) END, \
-    source_app, timestamp, \
-    CASE WHEN preview LIKE 'linux:%' OR preview LIKE 'dpapi:%' THEN preview ELSE substr(preview, 1, 504) END, \
-    is_pinned, tags, use_count, is_external, pinned_order, source_app_path, ocr_text, ocr_status";
+    source_app, timestamp";
 
 fn truncate_chars_with_suffix(input: &str, limit: usize, suffix: &str) -> String {
     let Some((cut, _)) = input.char_indices().nth(limit) else {
@@ -1993,6 +1993,11 @@ impl ClipboardRepository for SqliteClipboardRepository {
             ))
         };
 
+        let columns = format!("{HISTORY_LIST_SELECT_COLUMNS}, \
+            CASE WHEN {MISSING_HISTORY_TEXT_PREVIEW} AND dc_search_visible(tags,content,preview,html_content,ocr_text) \
+            THEN dc_text_preview(content) \
+            WHEN preview LIKE 'linux:%' OR preview LIKE 'dpapi:%' THEN preview ELSE substr(preview, 1, 504) END, \
+            is_pinned, tags, use_count, is_external, pinned_order, source_app_path, ocr_text, ocr_status");
         let mut mapped_rows = Vec::new();
         if let Some(ct) = content_type {
             let sql = format!(
@@ -2000,7 +2005,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
                  WHERE content_type = ? \
                  ORDER BY is_pinned DESC, pinned_order DESC, timestamp DESC, id DESC \
                  LIMIT ? OFFSET ?",
-                HISTORY_LIST_SELECT_COLUMNS
+                columns
             );
             let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
             let rows = stmt
@@ -2014,7 +2019,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
                 "SELECT {} FROM clipboard_history \
                  ORDER BY is_pinned DESC, pinned_order DESC, timestamp DESC, id DESC \
                  LIMIT ? OFFSET ?",
-                HISTORY_LIST_SELECT_COLUMNS
+                columns
             );
             let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
             let rows = stmt

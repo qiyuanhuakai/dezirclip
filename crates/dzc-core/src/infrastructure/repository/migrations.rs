@@ -28,10 +28,21 @@ fn remove_feedback_state_fixture(conn: &Connection) {
 /// Initialize an additional write connection to an already migrated history.
 /// Read-only readers may register only the pure visibility function instead.
 pub fn configure_privacy_writer(conn: &Connection) -> Result<()> {
-    register_privacy_functions(conn)?;
+    register_history_functions(conn)?;
     ensure_supported_schema(conn)?;
     super::protection::require_secure_search(conn)
         .map_err(rusqlite::Error::InvalidParameterName)
+}
+
+fn register_history_functions(conn: &Connection) -> Result<()> {
+    use rusqlite::functions::FunctionFlags;
+    register_privacy_functions(conn)?;
+    conn.create_scalar_function(
+        "dc_text_preview",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| Ok(crate::database::clipboard_text_preview(context.get_raw(0).as_str()?)),
+    )
 }
 
 pub fn register_privacy_functions(conn: &Connection) -> Result<()> {
@@ -536,7 +547,7 @@ fn reclaim_stranded_pages(conn: &Connection, min_bytes: i64) -> Result<()> {
 }
 
 pub fn run_migrations(conn: &mut Connection) -> Result<()> {
-    register_privacy_functions(conn)?;
+    register_history_functions(conn)?;
     conn.execute_batch("PRAGMA secure_delete = ON;")?;
     ensure_supported_schema(conn)?;
     let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;

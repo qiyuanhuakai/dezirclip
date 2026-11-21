@@ -81,6 +81,26 @@ pub fn normalize_text(content: &str) -> Cow<'_, str> {
     fold_crlf(content.trim())
 }
 
+pub(crate) fn clipboard_text_preview(content: &str) -> String {
+    let content = content.trim();
+    let normalized = content.char_indices().filter_map(|(offset, ch)| match ch {
+        '\r' if content.as_bytes().get(offset + 1) == Some(&b'\n') => None,
+        '\n' => Some(' '),
+        _ => Some(ch),
+    });
+    let mut preview = String::new();
+    for (index, ch) in normalized.take(501).enumerate() {
+        if index == 500 {
+            let suffix_start = preview.char_indices().nth(497).unwrap().0;
+            preview.truncate(suffix_start);
+            preview.push_str("...");
+            break;
+        }
+        preview.push(ch);
+    }
+    preview
+}
+
 pub fn calc_text_hash(content: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};

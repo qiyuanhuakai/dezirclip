@@ -1,5 +1,5 @@
 //! CLI queries keep pagination after filtering and avoid loading payloads for metadata.
-use super::clipboard_repo::SqliteClipboardRepository;
+use super::clipboard_repo::{SqliteClipboardRepository, MISSING_HISTORY_TEXT_PREVIEW};
 use crate::domain::models::ClipboardEntry;
 use rusqlite::functions::FunctionFlags;
 
@@ -136,9 +136,13 @@ impl SqliteClipboardRepository {
         })
         .map_err(|e| e.to_string())?;
         let fields = if query.metadata {
-            "id, content_type, '', CASE WHEN html_content IS NOT NULL THEN '' END, source_app, timestamp, CASE WHEN preview LIKE 'dpapi:%' OR preview LIKE 'linux:%' THEN preview ELSE substr(preview,1,500) END, is_pinned, tags, use_count, is_external, pinned_order, source_app_path, NULL, ocr_status, content_kinds"
+            format!("id, content_type, '', CASE WHEN html_content IS NOT NULL THEN '' END, source_app, timestamp, \
+                CASE WHEN {MISSING_HISTORY_TEXT_PREVIEW} AND dc_search_visible(tags,content,preview,html_content,ocr_text) \
+                THEN dc_text_preview(content) \
+                WHEN preview LIKE 'dpapi:%' OR preview LIKE 'linux:%' THEN preview ELSE substr(preview,1,500) END, \
+                is_pinned, tags, use_count, is_external, pinned_order, source_app_path, NULL, ocr_status, content_kinds")
         } else {
-            "id, content_type, content, html_content, source_app, timestamp, preview, is_pinned, tags, use_count, is_external, pinned_order, source_app_path, ocr_text, ocr_status, content_kinds"
+            "id, content_type, content, html_content, source_app, timestamp, preview, is_pinned, tags, use_count, is_external, pinned_order, source_app_path, ocr_text, ocr_status, content_kinds".to_owned()
         };
         let order = if query.latest {
             "timestamp DESC, id DESC"
