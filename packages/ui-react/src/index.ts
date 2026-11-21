@@ -26,6 +26,7 @@ export { TextField, NumberField, TextArea } from "./components/TextField";
 export { SettingsChoices, type SettingsChoice } from "./components/SettingsChoices";
 export { SettingsThemeManager, SettingsBackground } from "./components/SettingsAppearance";
 export { CaptureSettingsHeading, CaptureSettingsActions, CaptureEngineStatus, FixedCaptureRenderer, SettingsStatusBadge } from "./components/SettingsCapture";
+export { CLISettings } from "./components/CLISettings";
 export { SettingsField } from "./components/SettingsField";
 export { SettingsSectionCard, SettingsGroupHeader, settingsPaneColumns } from "./components/SettingsSectionCard";
 export { EmojiAddTile, EmojiFavoriteTile } from "./components/EmojiFavoriteTiles";

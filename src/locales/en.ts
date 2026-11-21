@@ -719,6 +719,7 @@ export const en = {
         cli_path_missing_badge: "dzc (not on PATH)",
         cli_not_found: "dzc was not found in the install directory or PATH.",
         cli_path_not_found_badge: "dzc (not found)",
+        cli_info_load_failed: "Could not read CLI status",
         add_to_path: "Add to PATH",
         cli_path_added: "Added to PATH:",
         cli_path_added_restart: "CLI entry is ready. If dzc is not found, add this directory to PATH and reopen your terminal app (sign in again if needed):",

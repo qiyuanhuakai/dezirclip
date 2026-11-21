@@ -387,6 +387,7 @@ func (n *nativeMain) toolsSettings(c *ui.Context, kit uikit.Kit) {
 	}
 	n.booleanSettingWithHelp(c, "app.ocr_enabled", n.text("ocr_enabled"), n.text("ocr_enabled_hint"), true)
 	n.drawOCREngine(c, kit)
+	n.cliSettings(c, kit)
 }
 
 func (n *nativeMain) panelCheckbox(c *ui.Context, kit uikit.Kit, id, label, hint string, enabled bool) {

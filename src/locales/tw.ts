@@ -718,6 +718,7 @@ export const tw = {
         cli_path_missing_badge: "dzc（未加入 PATH）",
         cli_not_found: "未在安裝目錄或 PATH 中找到 dzc。",
         cli_path_not_found_badge: "dzc（未找到）",
+        cli_info_load_failed: "無法讀取 CLI 狀態",
         add_to_path: "加入 PATH",
         cli_path_added: "已加入 PATH：",
         cli_path_added_restart: "命令入口已準備好；若找不到 dzc，請確認此目錄已加入 PATH，並重新開啟終端機（必要時重新登入）：",

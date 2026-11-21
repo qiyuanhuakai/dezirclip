@@ -88,6 +88,7 @@ type nativeMain struct {
 	readingFonts          bool
 	capturing             bool
 	captureError          string
+	cli                   nativeCLISettings
 	reading               bool
 	private               bool
 	privateUntil          *int64

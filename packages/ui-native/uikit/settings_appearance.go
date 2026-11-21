@@ -126,7 +126,9 @@ func (k Kit) settingsAction(c *ui.Context, label string, disabled bool, height f
 		if glyph != nil {
 			ui.Icon(c, glyph).Size(14, 14).TextColor(styleColor(style.Text)).Shrink(0).PassThrough()
 		}
-		text(c, label, style).SingleLine().PassThrough()
+		if label != "" {
+			text(c, label, style).SingleLine().PassThrough()
+		}
 	})
 	return button
 }

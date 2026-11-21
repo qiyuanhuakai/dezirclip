@@ -252,7 +252,7 @@
    independent of width: ordinary selects, ranges and button groups share columns. */
 .settings-pane--cols-2 .group-content > .setting-item:has(.data-panel, .capture-engine-badge, .tools-path-text, .setting-btn-group, .theme-manager, .data-path-header, textarea),
 .settings-pane--cols-3 .group-content > .setting-item:has(.data-panel, .capture-engine-badge, .tools-path-text, .setting-btn-group, .theme-manager, .data-path-header, textarea),
-.settings-pane .group-content > .settings-background {
+.settings-pane .group-content > :is(.settings-background, .tools-note-item) {
   grid-column: 1 / -1;
 }
 

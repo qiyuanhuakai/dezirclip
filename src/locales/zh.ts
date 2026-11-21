@@ -722,6 +722,7 @@ export const zh = {
         cli_path_missing_badge: "dzc（未加入 PATH）",
         cli_not_found: "未在安装目录或 PATH 中找到 dzc。",
         cli_path_not_found_badge: "dzc（未找到）",
+        cli_info_load_failed: "无法读取 CLI 状态",
         add_to_path: "加入 PATH",
         cli_path_added: "已加入 PATH：",
         cli_path_added_restart: "命令入口已准备好；若找不到 dzc，请确认此目录已加入 PATH，并重新打开终端（必要时重新登录）：",

@@ -66,7 +66,7 @@ const ToolsSettingsGroup = ({
                     setOcrEnabled={setOcrEnabled}
                     saveAppSetting={saveAppSetting}
                 />
-                <ToolsCliSection t={t} LabelWithHint={LabelWithHint} />
+                <ToolsCliSection t={t} />
             </div>
         )}
     </div>

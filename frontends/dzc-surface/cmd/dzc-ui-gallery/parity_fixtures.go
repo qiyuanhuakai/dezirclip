@@ -10,6 +10,8 @@ import (
 
 func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool {
 	switch name {
+	case "cli-settings":
+		g.cliSettingsFixture(c, kit)
 	case "capture-actions":
 		g.captureActionsFixture(c, kit)
 	case "capture-engine":

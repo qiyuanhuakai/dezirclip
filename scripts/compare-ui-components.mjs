@@ -25,6 +25,7 @@ const cases = {
   "capture-actions": { states: ["default", "disabled", "narrow"], text: "Capture full screen" },
   "capture-engine": { states: ["available", "unavailable", "loading", "failed"], text: "OCR engine status" },
   "fixed-capture-renderer": { states: ["default"], text: "MyGo Native" },
+  "cli-settings": { states: ["default", "narrow", "conflict", "registered", "failed"], text: "PATH status" },
   "settings-section-card": { states: ["default", "expanded", "wide"], text: "General settings" },
   "settings-choices": { states: ["default"], text: "Update channel" },
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
@@ -469,6 +470,27 @@ try {
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
             const dialog = fixture === "backup-dialog" ? await page.locator(".data-modal-content").boundingBox() : undefined;
             const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64"), dialog });
+            if (fixture === "cli-settings") {
+              const add = page.getByRole("button", { name: "Add to PATH" });
+              if (state === "default" || state === "narrow") {
+                await add.click();
+                await page.getByText("dzc (configured for this user)", { exact: true }).waitFor();
+                await add.waitFor({ state: "hidden" });
+              } else if (await add.count() || comparable(nativeText, "Add to PATH")) {
+                throw Error("A PATH change is available in the wrong state");
+              }
+              if (state === "conflict" && (!comparable(nativeText, "Terminal CLI path") ||
+                !comparable(webText, "Terminal CLI version") || !comparable(nativeText, "0.1.0"))) {
+                throw Error("The conflicting terminal CLI details are missing");
+              }
+              if (state === "failed") {
+                if (await page.getByRole("button", { name: "Open guide: Theme guide" }).isEnabled()) throw Error("An unavailable guide can be opened");
+                await page.getByRole("button", { name: "Retry" }).click();
+                await add.waitFor();
+              }
+              await page.getByRole("button", { name: "Open guide: CLI guide" }).click();
+              await page.getByText("CLI guide opened", { exact: true }).waitFor();
+            }
             if (fixture === "capture-actions") {
               const region = page.getByRole("button", { name: "Capture region" });
               const full = page.getByRole("button", { name: "Capture full screen" });

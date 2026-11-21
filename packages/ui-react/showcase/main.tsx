@@ -9,6 +9,7 @@ import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { BackgroundSettingsFixture, ThemeManagerFixture } from "./appearance-fixtures";
 import { CaptureActionsFixture, CaptureEngineFixture, FixedCaptureRendererFixture } from "./capture-fixtures";
+import { CLISettingsFixture } from "./cli-fixture";
 import { AttachmentFixture, HistoryImageFixture, HistoryOCRFixture, HistoryRichTextFixture, PreviewImageFixture, PreviewToolbarFixture, ResizeFixture, WheelFixture } from "./preview-fixtures";
 import { BackupDialogFixture, ContextMenuFixture, EmojiFavoritesFixture, HotkeyListFixture, SettingsChoicesFixture, SettingsUpdateFixture,
   PrivacyDetectionFixture, PrivacyRulesFixture, SettingsDataFixture, SettingsFieldsFixture, SettingsRemoveFixture, SettingsSectionFixture, SettingsSectionGridFixture, SearchSelectFixture, TagBatchToolbarFixture, TagSearchFixture, TagToolbarFixture, TextFieldsFixture, UpdateActionsFixture } from "./form-menu-fixtures";
@@ -169,6 +170,7 @@ function Showcase() {
     "capture-actions": <CaptureActionsFixture state={state} />,
     "capture-engine": <CaptureEngineFixture state={state} />,
     "fixed-capture-renderer": <FixedCaptureRendererFixture />,
+    "cli-settings": <CLISettingsFixture state={state} />,
     "backup-dialog": <BackupDialogFixture state={state} />,
     "settings-update": <SettingsUpdateFixture state={state} />,
     "settings-update-actions": <UpdateActionsFixture state={state} />,

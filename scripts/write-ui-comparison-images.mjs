@@ -22,6 +22,7 @@ const figures = [
   ["capture-actions", "default", 142],
   ["capture-engine", "available", 100],
   ["fixed-capture-renderer", "default", 90],
+  ["cli-settings", "conflict", 400],
   ["surface-opacity", "20", 312, 0, "surface-opacity-20"],
   ["surface-opacity", "85", 312, 0, "surface-opacity-85"],
   ["quick-paste-panel", "65", 242],
