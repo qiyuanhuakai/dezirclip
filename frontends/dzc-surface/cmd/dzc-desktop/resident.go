@@ -174,6 +174,11 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { cancelActivation() })
 		updateDatabase, _ := owner.DesktopDatabase()
 		checkingUpdates := make(map[string]bool)
+		canQuitIdle := func() bool {
+			return !stopping && !migrating && !moved && pending == nil && !relaunch && commands == nil &&
+				pinnedCount == 0 && !updateInProgress() && len(checkingUpdates) == 0 &&
+				!reachable() && !panel.HasShortcut() && !selector.HasShortcut()
+		}
 		checkUpdate := func(channel string, automatic bool) bool {
 			if stopping || migrating || moved || pending != nil || relaunch || updateInProgress() || checkingUpdates[channel] {
 				return false
@@ -450,7 +455,12 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 										}
 										mygo.RunOnMain(func() {
 											if err != nil {
-												publishUpdate(residentUpdateStatus{Failure: errUpdateVerification.Error()})
+												failure := errUpdateVerification
+												if errors.Is(err, errUpdateInstall) {
+													failure = errUpdateInstall
+												}
+												diagnostics.record("update-download-or-preflight-failed", 0, err)
+												publishUpdate(residentUpdateStatus{Failure: failure.Error()})
 												return
 											}
 											if stopping || migrating || moved || pending != nil || relaunch || pasteBusy {
@@ -616,7 +626,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 								case "pin-preview":
 									err := openPinnedPreview(owner, request.Preview, func() {
 										pinnedCount--
-										if pinnedCount == 0 && commands == nil && !migrating && !moved && pending == nil && !reachable() && !panel.HasShortcut() && !selector.HasShortcut() {
+										if canQuitIdle() {
 											mygo.App.Quit()
 										}
 									})
@@ -763,7 +773,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 						command := reopen
 						reopen = ""
 						present(command)
-					} else if !stopping && !updateInProgress() && pinnedCount == 0 && !panel.HasShortcut() && !selector.HasShortcut() && !reachable() {
+					} else if canQuitIdle() {
 						mygo.App.Quit()
 					}
 				})

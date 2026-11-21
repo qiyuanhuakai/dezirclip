@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -12,6 +13,9 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
+
+// NSIS has no build-info mode. Its signed payload is checked by the installer.
+func preflightMyGoUpdate(context.Context, mygoInstallRequest) error { return nil }
 
 func mygoUpdateTarget() (path, support string) {
 	executable, err := os.Executable()

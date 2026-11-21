@@ -24,6 +24,7 @@ import (
 var nativeUpdaterPublicKey string
 var updateVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
 var errUpdateVerification = errors.New("update_download_or_signature_failed")
+var errUpdateInstall = errors.New("update_install_failed")
 
 type mygoArtifact struct {
 	URL, Signature string
