@@ -68,7 +68,10 @@ type nativeMain struct {
 	resetOpen             bool
 	privacyKindsOpen      bool
 	privacyCustomOpen     bool
-	sourceExclusions      nativeSourceExclusions
+	sourceExclusions      nativePrivacyTextDraft
+	customPrivacyRules    nativePrivacyTextDraft
+	privacyTextTimer      *time.Timer
+	privacyTextWrite      *nativePrivacyTextWrite
 	privacyRules          nativePrivacyRules
 	privacyDialog         *nativePrivacyDialog
 	shortcut              *nativeShortcutForm

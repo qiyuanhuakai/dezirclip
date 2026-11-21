@@ -395,6 +395,7 @@ func run() error {
 		win.OnHide(func() {
 			fmt.Fprintln(os.Stdout, "hidden")
 			if native != nil {
+				native.savePrivacyTexts(true)
 				native.stopSession()
 			}
 			preview.clear()
@@ -431,6 +432,8 @@ func run() error {
 		})
 		win.OnClosed(func() {
 			if native != nil {
+				native.savePrivacyTexts(true)
+				native.waitForPrivacyTexts()
 				native.stopSession()
 				native.stopUpdater()
 			}

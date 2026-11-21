@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -30,66 +31,169 @@ type nativePrivacyFeedbackAction struct {
 	id, label, prompt string
 }
 
-const sourceExclusionsSetting = "app.excluded_source_apps"
+const (
+	sourceExclusionsSetting = "app.excluded_source_apps"
+	customPrivacySetting    = "app.privacy_protection_custom_rules"
+	privacyTextDelay        = 250 * time.Millisecond
+	privacyTextTimeout      = 4 * time.Second
+)
 
-type nativeSourceExclusions struct {
-	instance, value        string
-	editing, dirty, failed bool
+type nativePrivacyTextDraft struct {
+	instance, value                   string
+	editing, composing, dirty, failed bool
+	private                           bool
+	ready                             time.Time
+	pending                           *nativePrivacyTextWrite
+}
+
+type nativePrivacyTextWrite struct {
+	value string
+	done  chan struct{}
+	err   error
+}
+
+func (n *nativeMain) privacyText(draft *nativePrivacyTextDraft, key string) string {
+	saved := n.preferences[key]
+	instance := n.history.state.ServiceInstanceId
+	if instance != "" && instance != draft.instance {
+		*draft = nativePrivacyTextDraft{instance: instance, value: saved, private: n.private}
+	}
+	if !draft.dirty && draft.pending == nil {
+		draft.value = saved
+	}
+	return saved
+}
+
+func (n *nativeMain) observePrivacyText(draft *nativePrivacyTextDraft, field ui.Element, previous, saved string, delay time.Duration) {
+	draft.composing = field.Composing()
+	draft.editing = field.Focused() || draft.composing
+	if draft.value == previous {
+		return
+	}
+	draft.dirty, draft.failed = draft.value != saved, false
+	if n.history.state.ServiceInstanceId == draft.instance {
+		draft.private = n.private
+	}
+	if delay == 0 {
+		return
+	}
+	draft.ready = time.Now().Add(delay)
+	if n.window != nil {
+		if n.privacyTextTimer != nil {
+			n.privacyTextTimer.Stop()
+		}
+		n.privacyTextTimer = time.AfterFunc(delay, func() {
+			n.window.Update(func() {
+				if !n.window.IsDestroyed() {
+					n.savePrivacyTexts(false)
+				}
+			})
+		})
+	}
 }
 
 func (n *nativeMain) drawSourceExclusions(c *ui.Context, kit uikit.Kit) {
 	label := n.text("excluded_source_apps")
 	hint := n.text("excluded_source_apps_hint") + "\n" + n.text("privacy_rules_legacy_exclusions_hint")
-	saved := n.preferences[sourceExclusionsSetting]
-	instance := n.history.state.ServiceInstanceId
 	draft := &n.sourceExclusions
-	if instance != "" && instance != draft.instance {
-		*draft = nativeSourceExclusions{instance: instance, value: saved}
-	}
-	if !draft.dirty {
-		draft.value = saved
-	}
-	disabled := n.session == nil || instance == "" || n.mutating
+	saved := n.privacyText(draft, sourceExclusionsSetting)
+	disabled := n.session == nil || draft.instance == "" || n.mutating
 	kit.SettingsField(c.Key(sourceExclusionsSetting), uikit.SettingsFieldOptions{Stacked: true}).
 		ColumnSpan(-1).Children(func() {
 		kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), hint)
 		previous := draft.value
 		field := kit.SourceExclusionField(c, &draft.value, label, n.text("excluded_source_apps_placeholder")).ReadOnly(disabled)
-		draft.editing = field.Focused() || field.Composing()
-		if draft.value != previous {
-			draft.dirty, draft.failed = draft.value != saved, false
-		}
-		if draft.failed {
-			ui.Text(c, n.text("privacy_rules_save_failed")).Wrap().TextColor(c.Theme().Danger)
-			if kit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: disabled}).Clicked() {
-				draft.failed = false
-			}
-		}
+		n.observePrivacyText(draft, field, previous, saved, 0)
+		n.drawPrivacyTextRetry(c, kit, draft, disabled)
 	})
 }
 
-func (n *nativeMain) saveSourceExclusions() {
-	draft := &n.sourceExclusions
+func (n *nativeMain) drawPrivacyTextRetry(c *ui.Context, kit uikit.Kit, draft *nativePrivacyTextDraft, disabled bool) {
+	if !draft.failed {
+		return
+	}
+	ui.Text(c, n.text("privacy_rules_save_failed")).Wrap().TextColor(c.Theme().Danger)
+	if kit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: disabled || n.history.state.ServiceInstanceId != draft.instance}).Clicked() {
+		draft.failed, draft.private = false, n.private
+	}
+}
+
+func (n *nativeMain) savePrivacyTexts(closing bool) {
 	instance := n.history.state.ServiceInstanceId
-	if !draft.dirty || draft.editing || draft.failed || instance == "" || draft.instance != instance {
+	if n.library == nil || n.window == nil || n.profile.moving || n.profile.restartPending ||
+		!closing && (n.session == nil || instance == "" || n.mutating) {
 		return
 	}
-	value := draft.value
-	if value == n.preferences[sourceExclusionsSetting] {
-		draft.dirty = false
+	n.savePrivacyText(&n.sourceExclusions, sourceExclusionsSetting, instance, closing)
+	n.savePrivacyText(&n.customPrivacyRules, customPrivacySetting, instance, closing)
+}
+
+func (n *nativeMain) savePrivacyText(draft *nativePrivacyTextDraft, key, instance string, closing bool) {
+	pending := draft.pending
+	if draft.instance == "" || instance != "" && draft.instance != instance || draft.failed ||
+		pending == nil && !draft.dirty || pending != nil && (!closing || pending.value == draft.value) {
 		return
 	}
-	n.writeSettingWithResult(func(ctx context.Context, epoch uint64) error {
-		return n.library.edit(ctx, protocol.MethodDesktopSettingsCaptureSet, protocol.CaptureSettingParams{
-			ServiceInstanceId: instance, ExpectedEpoch: epoch, Key: sourceExclusionsSetting, Value: value,
-		})
-	}, func(err error) {
-		draft.failed = err != nil
-		if err == nil {
-			draft.dirty = false
-			n.preferences[sourceExclusionsSetting] = value
+	if !closing && (draft.composing || draft.editing && (draft.ready.IsZero() || time.Now().Before(draft.ready))) {
+		return
+	}
+	write := &nativePrivacyTextWrite{value: draft.value, done: make(chan struct{})}
+	previous := n.privacyTextWrite
+	draft.pending, n.privacyTextWrite = write, write
+	instance, private := draft.instance, draft.private
+	window, library := n.window, n.library
+	ctx, cancel := context.WithTimeout(context.Background(), privacyTextTimeout)
+	go func() {
+		// The capture setting belongs to the authenticated profile even when its window hides.
+		defer cancel()
+		if previous != nil {
+			select {
+			case <-previous.done:
+			case <-ctx.Done():
+			}
 		}
-	})
+		// Capture policy edits advance the epoch. Read it after the prior write
+		// and keep the original Service and privacy mode of the edit.
+		status, err := library.Status(ctx)
+		if err == nil && (status.State.ServiceInstanceId != instance || status.Privacy.Active != private) {
+			err = errors.New("PrivacyEpochChanged")
+		}
+		write.err = err
+		if err == nil {
+			write.err = library.edit(ctx, protocol.MethodDesktopSettingsCaptureSet, protocol.CaptureSettingParams{
+				ServiceInstanceId: instance, ExpectedEpoch: status.State.PrivacyEpoch, Key: key, Value: write.value,
+			})
+		}
+		close(write.done)
+		window.Update(func() {
+			if window.IsDestroyed() || draft.pending != write {
+				return
+			}
+			draft.pending = nil
+			if write.err == nil {
+				draft.dirty = draft.value != write.value
+				if current := n.history.state.ServiceInstanceId; current == "" || current == instance {
+					n.preferences[key] = write.value
+				}
+			} else if draft.value == write.value {
+				draft.failed = true
+			}
+		})
+	}()
+}
+
+func (n *nativeMain) waitForPrivacyTexts() {
+	if n.privacyTextTimer != nil {
+		n.privacyTextTimer.Stop()
+	}
+	if pending := n.privacyTextWrite; pending != nil {
+		timer := time.NewTimer(privacyTextTimeout)
+		defer timer.Stop()
+		select {
+		case <-pending.done:
+		case <-timer.C:
+		}
+	}
 }
 
 func (n *nativeMain) privacyFeedbackActions() []nativePrivacyFeedbackAction {
@@ -376,24 +480,19 @@ func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
 }
 
 func (n *nativeMain) drawCustomPrivacyRules(c *ui.Context, kit uikit.Kit) {
-	const key = "app.privacy_protection_custom_rules"
 	label := n.text("privacy_protection_custom_rules")
-	type privacyDraft struct{ saved, value string }
-	row := ui.Column(c.Key(key)).ColumnSpan(-1).FillWidth().Gap(5)
-	saved := n.preferences[key]
-	draft := ui.Local(row, "privacy-draft", func() privacyDraft { return privacyDraft{saved: saved, value: saved} })
-	if draft.saved != saved {
-		*draft = privacyDraft{saved: saved, value: saved}
-	}
-	disabled := n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating
+	row := ui.Column(c.Key(customPrivacySetting)).ColumnSpan(-1).FillWidth().Gap(5)
+	draft := &n.customPrivacyRules
+	saved := n.privacyText(draft, customPrivacySetting)
+	disabled := n.session == nil || draft.instance == "" || n.mutating
 	row.Children(func() {
 		kit.SettingsDisclosure(c, label, &n.privacyCustomOpen, func() {
 			ui.Column(c).FillWidth().Padding(0, 0, 0, 30).Gap(5).Children(func() {
-				kit.TextArea(c, &draft.value, label).FillWidth().Height(80).ReadOnly(disabled).
+				previous := draft.value
+				field := kit.TextArea(c, &draft.value, label).FillWidth().Height(80).ReadOnly(disabled).
 					Placeholder(n.text("privacy_protection_custom_rules_placeholder")).Tooltip(n.text("privacy_rules_custom_patterns_hint"))
-				if draft.value != saved && kit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: disabled}).Clicked() {
-					n.saveSetting(key, draft.value)
-				}
+				n.observePrivacyText(draft, field, previous, saved, privacyTextDelay)
+				n.drawPrivacyTextRetry(c, kit, draft, disabled)
 			})
 		})
 	})

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
@@ -112,5 +113,29 @@ func TestNativePrivacyExclusionDraftSurvivesSettingsCloseWhileBusy(t *testing.T)
 	view.Frame()
 	if draft := n.sourceExclusions; draft.dirty || draft.value != "Other Editor" || draft.instance != "profile-b" {
 		t.Fatalf("a different profile inherited the previous draft: %+v", draft)
+	}
+}
+
+func TestNativeCustomPrivacyPatternsUseAnInlineAutosaveDraft(t *testing.T) {
+	n := nativeMain{session: context.Background(), preferences: map[string]string{"app.language": "en"}}
+	n.history.state.ServiceInstanceId = "profile-a"
+	view := ui.NewTester(func(c *ui.Context) { n.drawCustomPrivacyRules(c, n.mainKit()) }, 390, 245)
+	label := n.text("privacy_protection_custom_rules")
+	if err := view.Click(label); err != nil {
+		t.Fatal(err)
+	}
+	labelBounds, ok := view.Find(label)
+	if !ok {
+		t.Fatal("missing privacy rules disclosure")
+	}
+	view.ClickAt(labelBounds.X+60, labelBounds.Y+labelBounds.H+40)
+	before := time.Now()
+	view.Type("example-[0-9]+")
+	draft := &n.customPrivacyRules
+	if !draft.dirty || draft.value != "example-[0-9]+" || !draft.ready.After(before) {
+		t.Fatalf("custom pattern did not request a delayed save: %+v", draft)
+	}
+	if view.HasText(n.text("common_save")) {
+		t.Fatal("custom patterns should save without a separate button")
 	}
 }
