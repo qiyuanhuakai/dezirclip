@@ -61137,6 +61137,11 @@
         "border": [45, 233, 185, 80],
         "borderWidth": 1,
         "radius": 999,
+        "gradient": {
+          "angle": 180,
+          "from": [222, 239, 255, 223],
+          "to": [236, 245, 255, 230]
+        },
         "width": 62,
         "height": 30,
         "marginTop": 0,
@@ -66265,6 +66270,11 @@
         "border": [44, 232, 255, 76],
         "borderWidth": 1,
         "radius": 999,
+        "gradient": {
+          "angle": 180,
+          "from": [24, 39, 80, 201],
+          "to": [13, 21, 48, 230]
+        },
         "width": 62,
         "height": 30,
         "marginTop": 0,

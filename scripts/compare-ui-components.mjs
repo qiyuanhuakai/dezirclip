@@ -28,7 +28,7 @@ const cases = {
   "settings-update": { states: ["default", "unknown-size", "installing"], text: "Installed version" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
   "privacy-rules": { states: ["default"], text: "Privacy rules" },
-  "privacy-detection": { states: ["default", "narrow"], text: "Custom detection patterns" },
+  "privacy-detection": { states: ["default", "narrow", "focus"], text: "Custom detection patterns" },
   "tag-toolbar": { states: ["default"], text: "Work" },
   "tag-search": { states: ["default"], text: "Work" },
   "search-select": { states: ["default", "apps-filtered", "empty", "typo"], text: "Interface font" },
@@ -290,7 +290,7 @@ try {
               if (fixture === "scroll-to-top") await page.getByRole("button", { name: "Scroll to top" }).hover();
               else await combo.hover();
             }
-            if (state === "focus") await combo.focus();
+            if (fixture === "select" && state === "focus") await combo.focus();
             if (state === "popup") await combo.click();
             if (fixture === "disclosure" && state === "expanded") await page.getByRole("button", { name: "Software updates" }).click();
             if (fixture === "help" && state === "expanded") await page.getByRole("button", { name: "Setting help: Software updates" }).click();
@@ -309,6 +309,9 @@ try {
               }
             }
 
+            if (fixture === "privacy-detection" && state === "focus") {
+              await page.getByRole("textbox", { name: "Patterns" }).focus();
+            }
             if (fixture === "toast") {
               await page.waitForFunction(() => getComputedStyle(document.querySelector(".toast-item")).opacity === "1");
             }

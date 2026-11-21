@@ -273,6 +273,9 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 }
 
 func (g *gallery) prepare(tester *ui.Tester) error {
+	if g.fixture == "privacy-detection" && g.state == "focus" {
+		return tester.Click("Patterns")
+	}
 	if g.fixture == "settings-toggle-help" && g.state == "expanded" {
 		if err := tester.Click("Setting help: Move pasted entries to top"); err != nil {
 			return err
