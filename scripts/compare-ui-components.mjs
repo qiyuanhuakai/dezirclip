@@ -241,6 +241,22 @@ try {
                   && (!confirmation || parseFloat(getComputedStyle(confirmation).borderTopLeftRadius) >= 8);
               });
               if (!styled) throw Error("Backup dialog lost its themed panel, typography or control states");
+              if (theme === "liquid-glass" && state === "glass") {
+                const keepsLocalBlur = await page.locator(".data-modal-content").evaluate(dialog => {
+                  const root = document.documentElement;
+                  const background = "linear-gradient(90deg, #ac9276 50%, #5d8294 50%)";
+                  root.style.setProperty("--custom-bg-image", background);
+                  document.body.classList.add("has-custom-bg");
+                  try {
+                    return getComputedStyle(document.querySelector("#root")).backdropFilter === "none" &&
+                      getComputedStyle(dialog).backdropFilter === "blur(6px)";
+                  } finally {
+                    document.body.classList.remove("has-custom-bg");
+                    root.style.removeProperty("--custom-bg-image");
+                  }
+                });
+                if (!keepsLocalBlur) throw Error("The wallpaper disabled the backup sheet's local blur");
+              }
             }
             if (fixture === "backup-dialog" && state.startsWith("replace")) {
               const dialog = page.getByRole("dialog", { name: "Import clipboard history" });

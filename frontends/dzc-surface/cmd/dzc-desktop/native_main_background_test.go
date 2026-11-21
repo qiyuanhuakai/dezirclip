@@ -54,6 +54,50 @@ func TestNativeBackgroundLayerFollowsThemeAndAuthorizedEpoch(t *testing.T) {
 	}
 }
 
+func TestNativeBackgroundOpacityPreviewsBeforeSaving(t *testing.T) {
+	n := nativeMain{theme: "liquid-glass", mode: "light", showSettings: true, preferences: map[string]string{
+		"app.language": "en", backgroundSetting: "fixture.png", "app.custom_background_opacity": "20",
+	}}
+	n.history.state = protocol.RuntimeState{ServiceInstanceId: "host", PrivacyEpoch: 3}
+	pixels := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	draw.Draw(pixels, pixels.Bounds(), image.NewUniform(color.RGBA{220, 10, 130, 255}), image.Point{}, draw.Src)
+	n.background = nativeBackground{key: n.backgroundKey(n.history.state), bitmap: ui.NewBitmap(pixels)}
+	view := ui.NewTester(func(c *ui.Context) {
+		n.mainKit().Apply(c)
+		palette := *c.Theme()
+		palette.Background = ui.Color{}
+		c.SetTheme(&palette)
+		ui.Box(c).Fill().Children(func() {
+			n.drawBackground(c, 0)
+			if n.showSettings {
+				n.drawBackgroundOpacity(c)
+			}
+		})
+	}, 320, 180)
+	label, found := view.Find(n.text("background_opacity"))
+	if !found {
+		t.Fatal("missing background opacity slider")
+	}
+	alpha := func() uint8 { return view.Image().RGBAAt(305, 170).A }
+	before := alpha()
+	y := label.Y + label.H + 8
+	view.Press(246, y)
+	view.Move(272, y)
+	view.Advance(250 * time.Millisecond)
+	if stored := nativeBackgroundOpacity.value(n.preferences); stored != 20 || n.currentBackgroundOpacity() <= stored {
+		t.Fatalf("stored opacity %d, preview %d", stored, n.currentBackgroundOpacity())
+	}
+	if live := alpha(); live <= before {
+		t.Fatalf("drag did not update wallpaper alpha: %d -> %d", before, live)
+	}
+	n.closeSettings()
+	view.Release(272, y)
+	view.Frame()
+	if n.background.opacityDraft != nil || alpha() != before {
+		t.Fatalf("closing settings kept the preview: alpha %d, want %d", alpha(), before)
+	}
+}
+
 func TestNativeBackgroundGIFCompositionAndLoops(t *testing.T) {
 	red, green, blue := color.RGBA{R: 255, A: 255}, color.RGBA{G: 255, A: 255}, color.RGBA{B: 255, A: 255}
 	palette := color.Palette{red, green, blue}

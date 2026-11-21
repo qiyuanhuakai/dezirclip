@@ -135,9 +135,12 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 		if edit.dirty && !slider.Pressed() && !n.mutating {
 			edit.dirty = false
 			if value != saved {
-				if setting == nativeSurfaceOpacity {
-					n.saveSurfaceOpacity(value)
-				} else {
+				switch setting {
+				case nativeSurfaceOpacity:
+					n.saveOpacity(setting.key, value, &n.surfaceOpacityDraft)
+				case nativeBackgroundOpacity:
+					n.saveOpacity(setting.key, value, &n.background.opacityDraft)
+				default:
 					n.saveSetting(setting.key, strconv.Itoa(value))
 				}
 			}
@@ -146,13 +149,14 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 	return int(edit.value)
 }
 
-func (n *nativeMain) saveSurfaceOpacity(value int) {
-	const preference = "app.surface_opacity"
+func (n *nativeMain) saveOpacity(preference string, value int, draft **int) {
 	saved := strconv.Itoa(value)
-	n.writeSettingWithEffect(func(ctx context.Context, epoch uint64) error {
+	n.writeSettingWithResult(func(ctx context.Context, epoch uint64) error {
 		return n.library.SetSetting(ctx, preference, saved, epoch)
-	}, func() {
-		n.preferences[preference] = saved
-		n.surfaceOpacityDraft = nil
+	}, func(err error) {
+		if err == nil {
+			n.preferences[preference] = saved
+		}
+		*draft = nil
 	})
 }

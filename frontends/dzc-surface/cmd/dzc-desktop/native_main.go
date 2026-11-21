@@ -138,7 +138,7 @@ func (n *nativeMain) stopSession() {
 	n.clearHistoryOpen = false
 	n.menuTransformsLoading = false
 	n.appearanceBusy, n.appearanceSync = false, false
-	n.surfaceOpacityDraft = nil
+	n.resetOpacityPreviews()
 	n.background.pause()
 	n.tags = nil
 	n.closeEntryEditor()

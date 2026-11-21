@@ -561,9 +561,10 @@ body.has-custom-bg.theme-liquid-glass::before {
   clip-path: inset(0 round var(--radius-window));
 }
 
-/* Keep the selected wallpaper sharp through local glass surfaces. */
+/* Keep the wallpaper sharp through the window and its ordinary controls.
+   Backup sheets still apply their own local frost. */
 body.has-custom-bg.theme-liquid-glass #root,
-body.has-custom-bg.theme-liquid-glass #root *,
+body.has-custom-bg.theme-liquid-glass #root :where(:not(.data-modal-content)),
 body.has-custom-bg.theme-liquid-glass #root *::before,
 body.has-custom-bg.theme-liquid-glass #root *::after {
   backdrop-filter: none !important;

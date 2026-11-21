@@ -29,11 +29,12 @@ type nativeBackgroundKey struct {
 }
 
 type nativeBackground struct {
-	key     nativeBackgroundKey
-	bitmap  *ui.Bitmap
-	gif     *nativeBackgroundGIF
-	timer   *time.Timer
-	loading bool
+	opacityDraft *int
+	key          nativeBackgroundKey
+	bitmap       *ui.Bitmap
+	gif          *nativeBackgroundGIF
+	timer        *time.Timer
+	loading      bool
 }
 
 func (b *nativeBackground) pause() {
@@ -127,9 +128,16 @@ func decodeNativeBackground(source string) (*ui.Bitmap, *nativeBackgroundGIF) {
 	return bitmap, nil
 }
 
+func (n *nativeMain) currentBackgroundOpacity() int {
+	if n.background.opacityDraft != nil {
+		return *n.background.opacityDraft
+	}
+	return nativeBackgroundOpacity.value(n.preferences)
+}
+
 func (n *nativeMain) drawBackground(c *ui.Context, radius int) {
 	b := &n.background
-	opacity := nativeBackgroundOpacity.value(n.preferences)
+	opacity := n.currentBackgroundOpacity()
 	if b.bitmap != nil && opacity != 0 && b.key == n.backgroundKey(n.history.state) {
 		ui.Image(c, b.bitmap).Absolute().Top(0).Right(0).Bottom(0).Left(0).
 			Fit(ui.Cover).Radius(float32(radius)).Opacity(float32(opacity) / 100).PassThrough()
@@ -139,7 +147,7 @@ func (n *nativeMain) drawBackground(c *ui.Context, radius int) {
 func (n *nativeMain) animateBackground() {
 	b := &n.background
 	if n.session == nil || b.gif == nil || b.timer != nil || !n.window.IsVisible() ||
-		b.key != n.backgroundKey(n.history.state) || nativeBackgroundOpacity.value(n.preferences) == 0 {
+		b.key != n.backgroundKey(n.history.state) || (b.opacityDraft == nil && n.currentBackgroundOpacity() == 0) {
 		return
 	}
 	animation := b.gif
@@ -182,9 +190,25 @@ func (n *nativeMain) backgroundSettings(c *ui.Context, kit uikit.Kit) {
 			OnChoose: func() { n.chooseBackground(label) },
 			OnClear:  func() { n.saveSetting(backgroundSetting, "") },
 		}, func() {
-			n.rangeSetting(c, nativeBackgroundOpacity, n.text("background_opacity"), "", nativeBackgroundOpacity.value(n.preferences))
+			n.drawBackgroundOpacity(c)
 		})
 	})
+}
+
+func (n *nativeMain) drawBackgroundOpacity(c *ui.Context) {
+	saved, displayed := nativeBackgroundOpacity.value(n.preferences), n.currentBackgroundOpacity()
+	live := n.rangeSetting(c, nativeBackgroundOpacity, n.text("background_opacity"), "", saved)
+	if live == saved {
+		n.background.opacityDraft = nil
+	} else {
+		n.background.opacityDraft = &live
+	}
+	if live != displayed {
+		c.Invalidate()
+		if displayed == 0 {
+			n.animateBackground()
+		}
+	}
 }
 
 func (n *nativeMain) chooseBackground(label string) {

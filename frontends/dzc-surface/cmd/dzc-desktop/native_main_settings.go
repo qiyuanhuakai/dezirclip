@@ -37,7 +37,7 @@ func (n *nativeMain) closeSettings() {
 	if !n.profile.moving && !n.profile.restartPending {
 		n.showSettings = false
 		n.updater.confirm = false
-		n.surfaceOpacityDraft = nil
+		n.resetOpacityPreviews()
 	}
 }
 
@@ -78,7 +78,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 			kit.SettingsRail(c, n.text("native_settings_sections"), n.settingsSection, sections, func(id string) {
 				n.settingsSection = id
 				if id != "appearance" {
-					n.surfaceOpacityDraft = nil
+					n.resetOpacityPreviews()
 				}
 				n.settingsScroll = ui.ScrollState{}
 			})
@@ -116,7 +116,7 @@ func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nat
 				if *open && !wasOpen {
 					n.settingsSection = pane.ID
 				} else if !*open && wasOpen && pane.ID == "appearance" {
-					n.surfaceOpacityDraft = nil
+					n.resetOpacityPreviews()
 				}
 			}
 			n.settingsFooter(c, kit, false)
@@ -348,6 +348,10 @@ func (n *nativeMain) drawSurfaceOpacity(c *ui.Context, displayed int) int {
 		n.surfaceOpacityDraft = &live
 	}
 	return live
+}
+
+func (n *nativeMain) resetOpacityPreviews() {
+	n.surfaceOpacityDraft, n.background.opacityDraft = nil, nil
 }
 
 func (n *nativeMain) settingChoices(c *ui.Context, kit uikit.Kit, key, label, fallback string, options []uikit.SelectOption) {
