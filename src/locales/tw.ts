@@ -402,7 +402,6 @@ export const tw = {
         privacy_protection_hint: "對離線結構驗證的憑證與明確自訂規則加密。一般電子郵件、電話與密碼複雜度僅作疑似提示；既有保護不會隨此開關自動取消。",
         excluded_source_apps: "不記錄這些應用程式",
         excluded_source_apps_hint: "每行一個應用程式名稱或路徑，離開輸入框後生效。僅排除往後的記錄；無法辨識的來源不受影響。",
-        native_excluded_source_apps_hint: "每行一個應用程式名稱或路徑。儲存後僅排除往後的記錄，無法辨識的來源不受影響。",
         excluded_source_apps_placeholder: "例如：\nBitwarden\nKeePassXC.exe\n/usr/bin/keepassxc",
         privacy_protection_kinds: "疑似內容提示種類",
         privacy_kind_phone: "手機號碼",

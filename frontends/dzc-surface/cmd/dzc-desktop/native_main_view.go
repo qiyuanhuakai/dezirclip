@@ -128,6 +128,7 @@ func (n *nativeMain) view(c *ui.Context) {
 			if !n.showSettings || !about {
 				n.drawBackgroundUpdate(c, kit)
 			}
+			n.sourceExclusions.editing = false
 			kit.WindowContent(c, func() {
 				switch {
 				case n.showSettings:
@@ -141,6 +142,7 @@ func (n *nativeMain) view(c *ui.Context) {
 					n.historyView(c, kit, width)
 				}
 			})
+			n.saveSourceExclusions()
 			if n.notice != "" {
 				ui.Text(c, n.notice).Padding(4, 8).TextColor(c.Theme().TextMuted)
 			}

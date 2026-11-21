@@ -30,6 +30,68 @@ type nativePrivacyFeedbackAction struct {
 	id, label, prompt string
 }
 
+const sourceExclusionsSetting = "app.excluded_source_apps"
+
+type nativeSourceExclusions struct {
+	instance, value        string
+	editing, dirty, failed bool
+}
+
+func (n *nativeMain) drawSourceExclusions(c *ui.Context, kit uikit.Kit) {
+	label := n.text("excluded_source_apps")
+	hint := n.text("excluded_source_apps_hint") + "\n" + n.text("privacy_rules_legacy_exclusions_hint")
+	saved := n.preferences[sourceExclusionsSetting]
+	instance := n.history.state.ServiceInstanceId
+	draft := &n.sourceExclusions
+	if instance != "" && instance != draft.instance {
+		*draft = nativeSourceExclusions{instance: instance, value: saved}
+	}
+	if !draft.dirty {
+		draft.value = saved
+	}
+	disabled := n.session == nil || instance == "" || n.mutating
+	kit.SettingsField(c.Key(sourceExclusionsSetting), uikit.SettingsFieldOptions{Stacked: true}).
+		ColumnSpan(-1).Children(func() {
+		kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), hint)
+		previous := draft.value
+		field := kit.SourceExclusionField(c, &draft.value, label, n.text("excluded_source_apps_placeholder")).ReadOnly(disabled)
+		draft.editing = field.Focused() || field.Composing()
+		if draft.value != previous {
+			draft.dirty, draft.failed = draft.value != saved, false
+		}
+		if draft.failed {
+			ui.Text(c, n.text("privacy_rules_save_failed")).Wrap().TextColor(c.Theme().Danger)
+			if kit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: disabled}).Clicked() {
+				draft.failed = false
+			}
+		}
+	})
+}
+
+func (n *nativeMain) saveSourceExclusions() {
+	draft := &n.sourceExclusions
+	instance := n.history.state.ServiceInstanceId
+	if !draft.dirty || draft.editing || draft.failed || instance == "" || draft.instance != instance {
+		return
+	}
+	value := draft.value
+	if value == n.preferences[sourceExclusionsSetting] {
+		draft.dirty = false
+		return
+	}
+	n.writeSettingWithResult(func(ctx context.Context, epoch uint64) error {
+		return n.library.edit(ctx, protocol.MethodDesktopSettingsCaptureSet, protocol.CaptureSettingParams{
+			ServiceInstanceId: instance, ExpectedEpoch: epoch, Key: sourceExclusionsSetting, Value: value,
+		})
+	}, func(err error) {
+		draft.failed = err != nil
+		if err == nil {
+			draft.dirty = false
+			n.preferences[sourceExclusionsSetting] = value
+		}
+	})
+}
+
 func (n *nativeMain) privacyFeedbackActions() []nativePrivacyFeedbackAction {
 	return []nativePrivacyFeedbackAction{
 		{"not_sensitive", n.text("privacy_feedback_not_sensitive"), n.text("privacy_feedback_unprotect_confirm")},
@@ -280,8 +342,7 @@ func (n *nativeMain) removePrivacyRule(id string) {
 }
 
 func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
-	n.privacyTextSetting(c, kit, "app.excluded_source_apps", n.text("excluded_source_apps"), n.text("native_excluded_source_apps_hint"),
-		n.text("excluded_source_apps_placeholder"))
+	n.drawSourceExclusions(c, kit)
 	kit.SettingsDisclosure(c, n.text("privacy_protection_kinds"), &n.privacyKindsOpen, func() {
 		const key = "app.privacy_protection_kinds"
 		raw, stored := n.preferences[key]
@@ -311,11 +372,12 @@ func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
 			}
 		}
 	})
-	n.privacyTextSetting(c, kit, "app.privacy_protection_custom_rules", n.text("privacy_protection_custom_rules"),
-		n.text("privacy_rules_custom_patterns_hint"), n.text("privacy_protection_custom_rules_placeholder"))
+	n.drawCustomPrivacyRules(c, kit)
 }
 
-func (n *nativeMain) privacyTextSetting(c *ui.Context, kit uikit.Kit, key, label, hint, placeholder string) {
+func (n *nativeMain) drawCustomPrivacyRules(c *ui.Context, kit uikit.Kit) {
+	const key = "app.privacy_protection_custom_rules"
+	label := n.text("privacy_protection_custom_rules")
 	type privacyDraft struct{ saved, value string }
 	row := ui.Column(c.Key(key)).ColumnSpan(-1).FillWidth().Gap(5)
 	saved := n.preferences[key]
@@ -325,24 +387,14 @@ func (n *nativeMain) privacyTextSetting(c *ui.Context, kit uikit.Kit, key, label
 	}
 	disabled := n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating
 	row.Children(func() {
-		sourceExclusion := key == "app.excluded_source_apps"
-		input := func() {
-			if sourceExclusion {
-				kit.SourceExclusionField(c, &draft.value, label, placeholder).ReadOnly(disabled).Tooltip(hint)
-			} else {
-				kit.TextArea(c, &draft.value, label).FillWidth().Height(80).Placeholder(placeholder).ReadOnly(disabled).Tooltip(hint)
-			}
-			if draft.value != saved && kit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: disabled}).Clicked() {
-				n.saveSetting(key, draft.value)
-			}
-		}
-		if sourceExclusion {
-			kit.SettingsLabel(c, label).Wrap()
-			input()
-		} else {
-			kit.SettingsDisclosure(c, label, &n.privacyCustomOpen, func() {
-				ui.Column(c).FillWidth().Padding(0, 0, 0, 30).Gap(5).Children(input)
+		kit.SettingsDisclosure(c, label, &n.privacyCustomOpen, func() {
+			ui.Column(c).FillWidth().Padding(0, 0, 0, 30).Gap(5).Children(func() {
+				kit.TextArea(c, &draft.value, label).FillWidth().Height(80).ReadOnly(disabled).
+					Placeholder(n.text("privacy_protection_custom_rules_placeholder")).Tooltip(n.text("privacy_rules_custom_patterns_hint"))
+				if draft.value != saved && kit.Button(c, uikit.ButtonOptions{Label: n.text("common_save"), Disabled: disabled}).Clicked() {
+					n.saveSetting(key, draft.value)
+				}
 			})
-		}
+		})
 	})
 }

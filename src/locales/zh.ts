@@ -406,7 +406,6 @@ export const zh = {
         privacy_protection_hint: "对离线结构验证的凭据和显式自定义规则加密。普通邮箱、手机号与密码复杂度仅作疑似提示；已有保护不会随此开关自动取消。",
         excluded_source_apps: "不记录这些应用",
         excluded_source_apps_hint: "每行一个应用名或路径，离开输入框后生效。仅排除今后的记录；无法识别的来源不受影响。",
-        native_excluded_source_apps_hint: "每行一个应用名或路径。保存后仅排除今后的记录，无法识别的来源不受影响。",
         excluded_source_apps_placeholder: "例如：\nBitwarden\nKeePassXC.exe\n/usr/bin/keepassxc",
         privacy_protection_kinds: "疑似内容提示种类",
         privacy_kind_phone: "手机号",

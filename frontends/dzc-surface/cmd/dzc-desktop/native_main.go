@@ -68,6 +68,7 @@ type nativeMain struct {
 	resetOpen             bool
 	privacyKindsOpen      bool
 	privacyCustomOpen     bool
+	sourceExclusions      nativeSourceExclusions
 	privacyRules          nativePrivacyRules
 	privacyDialog         *nativePrivacyDialog
 	shortcut              *nativeShortcutForm
@@ -516,6 +517,14 @@ func (n *nativeMain) writeSetting(write func(context.Context, uint64) error) {
 }
 
 func (n *nativeMain) writeSettingWithEffect(write func(context.Context, uint64) error, onSaved func()) {
+	n.writeSettingWithResult(write, func(err error) {
+		if err == nil && onSaved != nil {
+			onSaved()
+		}
+	})
+}
+
+func (n *nativeMain) writeSettingWithResult(write func(context.Context, uint64) error, onFinished func(error)) {
 	if n.session == nil || n.mutating || n.history.state.ServiceInstanceId == "" {
 		return
 	}
@@ -527,12 +536,10 @@ func (n *nativeMain) writeSettingWithEffect(write func(context.Context, uint64) 
 		err := write(ctx, state.PrivacyEpoch)
 		n.update(session, func() {
 			n.mutating = false
+			onFinished(err)
 			if err != nil {
 				n.notice = n.text("native_setting_save_failed")
 				return
-			}
-			if onSaved != nil {
-				onSaved()
 			}
 			n.reloadViewSettings()
 		})

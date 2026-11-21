@@ -950,6 +950,65 @@ pub(crate) mod tests {
     fn dispatch(host: &Host, session: &Session, method: Method, params: Value) -> Response {
         host.dispatch(session, Request { request_id: "synthetic-request".into(), method, params })
     }
+
+    #[test]
+    fn desktop_source_exclusion_setting_applies_to_the_next_capture() {
+        use dzc_core::capture::{
+            CaptureContext, CaptureData, CaptureEngine, CaptureFailure, CaptureOutcome,
+            CaptureReadRequest, CaptureReader, CaptureSkip, CaptureSource,
+        };
+
+        struct Reader<'a> {
+            source: &'a str,
+            read: bool,
+        }
+        impl CaptureReader for Reader<'_> {
+            fn read(&mut self, _: CaptureReadRequest) -> Result<Option<CaptureData>, CaptureFailure> {
+                self.read = true;
+                Ok(Some(CaptureData::Text(format!("source exclusion fixture {}", self.source))))
+            }
+        }
+
+        let host = synthetic_host();
+        let grant = host.grants.issue_control(ClientRole::Desktop).unwrap();
+        let (desktop, _) = host.hello(HelloParams {
+            grant: Some(grant.token().into()), ..hello(ClientRole::Desktop)
+        }).unwrap();
+        let state = host.snapshot().unwrap();
+        let save = |value, expected_epoch| dispatch(&host, &desktop, Method::DesktopSettingsCaptureSet,
+            serde_json::json!({
+                "service_instance_id": state.service_instance_id, "expected_epoch": expected_epoch,
+                "key": "app.excluded_source_apps", "value": value,
+            }));
+
+        let simulate = |app: &str| {
+            let context = CaptureContext {
+                source: CaptureSource { app_name: app.into(), process_path: None },
+                timestamp: now_ms().unwrap(),
+                settings: host.history.capture_settings_snapshot().unwrap(),
+                session: &host.session,
+                paused: false,
+                sequential_echo: None,
+            };
+            let mut reader = Reader { source: app, read: false };
+            let outcome = CaptureEngine::capture(
+                &context, &mut reader, &host.history.capture_store(&host.directory), &mut (),
+            );
+            (outcome, reader.read)
+        };
+
+        let rules = "Example Editor.exe\nAnother app";
+        assert_eq!(save(rules, state.privacy_epoch).result.unwrap()["performed"], true);
+        assert_eq!(host.history.desktop_preferences().unwrap()["app.excluded_source_apps"], rules);
+        let current_epoch = host.snapshot().unwrap().privacy_epoch;
+        assert!(current_epoch > state.privacy_epoch);
+        assert_eq!(save("", state.privacy_epoch).error.unwrap().code, WireErrorCode::PrivacyEpochChanged);
+        assert!(matches!(simulate("example editor.exe"), (CaptureOutcome::Skipped(CaptureSkip::ExcludedSource), false)));
+        assert!(matches!(simulate("Allowed app"), (CaptureOutcome::Stored(_), true)));
+        assert_eq!(save("", current_epoch).result.unwrap()["performed"], true);
+        assert!(matches!(simulate("Example Editor.exe"), (CaptureOutcome::Stored(_), true)));
+    }
+
     #[test]
     fn status_reads_complete_while_a_mutation_is_blocked() {
         let host = synthetic_host();
