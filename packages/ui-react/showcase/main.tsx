@@ -2,7 +2,7 @@ import { useRef, useState, type CSSProperties } from "react";
 import "../src/styles/components/privacy.css";
 import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
-import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HotkeyBinding, MatchHighlight,
+import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryCardTag, HistoryCardTags, HotkeyBinding, MatchHighlight,
   ProgressToast, QuickPastePanel, QuickPasteRow, QuickPasteSearch, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail, SettingsSectionCard,
   SettingsSlider, SettingsToggle, SettingsToggleField, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
@@ -256,6 +256,19 @@ function Showcase() {
     "emoji-tabs": <EmojiTabs active={tab} labels={{ emoji: "Emoji", favorites: "Favorites" }} onChange={setTab} />,
     "emoji-grid": <EmojiGrid groups={[{ name: "Frequently used", emojis: ["😀", "😄", "😂", "🤣", "😊", "😍", "😘", "😎", "🤔", "🔥", "✨", "👌"] }]}
       empty="No emoji" onSelect={() => undefined} />,
+    "history-tags": <HistoryCard compact={state.startsWith("compact")} disableLayout
+      style={{ "--clipboard-tag-font-size": state === "large" ? "15px" : "10px" } as CSSProperties}>
+      <HistoryCardMeta source="Editor" time="12:30" actions={<>
+        <HistoryCardAction title="Pin"><Pin size={12} /></HistoryCardAction>
+        <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
+        <HistoryCardAction title="Delete"><X size={12} /></HistoryCardAction>
+      </>} />
+      <HistoryCardContent>Saved from Editor</HistoryCardContent>
+      <HistoryCardTags>
+        <HistoryCardTag color="#245ed6">Work</HistoryCardTag>
+        <HistoryCardTag color="#7c377c">Reference</HistoryCardTag>
+      </HistoryCardTags>
+    </HistoryCard>,
     "app-header": <HeaderFixture />,
     "clipboard-search": <ClipboardSearchFixture />,
     "history-card": <HistoryCard selected={state === "selected"} pinned={state === "pinned"}

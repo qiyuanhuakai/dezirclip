@@ -48,6 +48,14 @@ export function HistoryImagePreview({ source, missing, pending, unavailable, alt
   </div>;
 }
 
+export function HistoryCardTags({ children }: { children?: ReactNode }) {
+  return <div className="item-tags-container">{children}</div>;
+}
+
+export function HistoryCardTag({ color, children }: { color: string; children?: ReactNode }) {
+  return <span className="tag-chip" style={{ background: color }}>{children}</span>;
+}
+
 export function HistoryCardActions({ children }: { children?: ReactNode }) {
   return <div className="item-actions">{children}</div>;
 }

@@ -498,6 +498,17 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		if widget == "historyContentCompact" {
 			style.LineHeight, style.MaxLines, style.MaxHeight = 1.3, 2, 40
 		}
+	case "historyTags", "historyTagsCompact":
+		style.ColumnGap, style.MarginTop = 4, 2
+		if widget == "historyTagsCompact" {
+			style.Right, style.Bottom, style.MaxWidthPercent, style.MarginTop, style.Opacity = 4, 2, 60, 0, 0.85
+		}
+	case "historyTag", "historyTagCompact":
+		style.Text, style.Size, style.Weight = [4]uint8{255, 255, 255, 255}, 10, palette.EmphasisWeight
+		style.Radius, style.Padding, style.LineHeight = 5, [4]float32{2, 6, 2, 6}, 1.4
+		if widget == "historyTagCompact" {
+			style.MinHeight, style.Padding, style.LineHeight = 16, [4]float32{0, 4, 0, 4}, 1
+		}
 	case "historyRichContent", "historyRichContentCompact":
 		style.LineHeight, style.MaxHeight, style.MarginTop = 1.4, 64, 4
 		if widget == "historyRichContentCompact" {

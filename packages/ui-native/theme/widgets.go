@@ -72,4 +72,7 @@ type WidgetStyle struct {
 	Opacity       float32
 	Dashed        bool
 	Shadows       []Shadow
+
+	MaxWidthPercent float32
+	Bottom          float32
 }

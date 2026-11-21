@@ -253,6 +253,17 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 		}
 		options.Actions = append(options.Actions, uikit.HeaderAction{Icon: "hide", Label: "Hide"})
 		kit.Header(c, options)
+	case "history-tags":
+		tagSize := float32(10)
+		if g.state == "large" {
+			tagSize = 15
+		}
+		kit.HistoryCard(c, uikit.HistoryCardOptions{Source: "Editor", Time: "12:30", Summary: "Saved from Editor",
+			Compact: g.state == "compact", TagSize: tagSize,
+			Actions: []uikit.HeaderAction{{Icon: "pin", Label: "Pin"}, {Icon: "tag", Label: "Tags"}, {Icon: "hide", Label: "Delete"}},
+			Tags: []uikit.HistoryTag{
+				{Name: "Work", Color: ui.RGB(36, 94, 214)}, {Name: "Reference", Color: ui.RGB(124, 55, 124)},
+			}})
 	case "history-card":
 		active := strings.Contains(g.state, "active")
 		kit.HistoryCard(c, uikit.HistoryCardOptions{Source: "Editor", Time: "12:30",

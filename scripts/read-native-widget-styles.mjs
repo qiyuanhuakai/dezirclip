@@ -202,6 +202,12 @@ const samples = [
     historyActions: [".item-actions"], historyAction: [".item-actions .btn-icon"],
     historyActionIcon: [".item-actions .btn-icon svg"],
   }],
+  ["history-tags", "default", {
+    historyTags: [".item-tags-container"], historyTag: [".tag-chip"],
+  }],
+  ["history-tags", "compact", {
+    historyTagsCompact: [".item-tags-container"], historyTagCompact: [".tag-chip"],
+  }],
   ["history-card", "selected", { historyCardSelected: [".history-item.selected"] }],
   ["history-typography", "default", { historyConcealed: [".privacy-hidden-content"] }],
   ["history-rich-text", "default", { historyRichContent: [".history-rich-preview"] }],
@@ -412,6 +418,7 @@ function readStyles(sample) {
     const top = number(style.top);
     const left = number(style.left);
     const right = number(style.right);
+    const bottom = number(style.bottom);
     const transform = style.transform !== "none" ? new DOMMatrixReadOnly(style.transform) : null;
     const translateX = number(transform?.m41);
     const translateY = number(transform?.m42);
@@ -455,6 +462,10 @@ function readStyles(sample) {
       ...(rowGap ? { rowGap } : {}),
       ...(switchFace ? { top: number(bounds.top - switchBounds.top), left: number(bounds.left - switchBounds.left) } : top ? { top } : {}),
       ...(id === "historyActionsCompactAnchor" ? { right } : {}),
+      ...(id === "historyTagsCompact" ? {
+        right, bottom, maxWidthPercent: style.maxWidth.endsWith("%") ? number(style.maxWidth) : 0,
+      } : {}),
+      ...(/^(historyTag|historyTagCompact)$/.test(id) ? { minHeight: number(style.minHeight) } : {}),
       ...((/^historyActionCompact/.test(id) || /^(previewToolbarActive|tagToolbarButtonActive)$/.test(id)) && translateX ? { translateX } : {}),
       ...((/^historyActions?Compact/.test(id) || /^(previewToolbarActive|tagToolbarButtonActive)$/.test(id)) && translateY ? { translateY } : {}),
       ...(headingShift ? { translateY: headingShift } : {}),

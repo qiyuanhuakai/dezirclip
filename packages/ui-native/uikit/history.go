@@ -139,8 +139,8 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 			if options.OCRResult != nil {
 				k.HistoryOCRResult(c, *options.OCRResult)
 			}
-			if len(options.Tags) > 0 {
-				k.historyTags(c, options.Tags, options.TagSize)
+			if !options.Compact && len(options.Tags) > 0 {
+				k.HistoryCardTags(c, options.Tags, options.TagSize, false, 0)
 			}
 		}
 		if options.Leading != nil || options.Compact && (options.Reorder != nil || options.Pinned) {
@@ -156,6 +156,13 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 			})
 		} else {
 			ui.Column(c).Grow(1).MinWidth(0).Children(contentColumn)
+		}
+		if options.Compact && len(options.Tags) > 0 {
+			width := options.Width
+			if width <= 0 {
+				width, _ = c.Size()
+			}
+			k.HistoryCardTags(c, options.Tags, options.TagSize, true, width-style.Margin[1]-style.Margin[3]-horizontalBorders(style))
 		}
 		if options.Compact && len(options.Actions) > 0 {
 			k.compactHistoryActions(c, card, options)
@@ -208,16 +215,31 @@ func (k Kit) historyCardText(c *ui.Context, options HistoryCardOptions) {
 	}
 }
 
-func (k Kit) historyTags(c *ui.Context, tags []HistoryTag, size float32) {
-	if size <= 0 {
-		size = 10
+// HistoryCardTags draws the colored labels on a clipboard entry. In a compact
+// card the labels are overlaid at the lower right and do not enlarge the card.
+func (k Kit) HistoryCardTags(c *ui.Context, tags []HistoryTag, size float32, compact bool, cardWidth float32) ui.Element {
+	group, chip := k.style("historyTags"), k.style("historyTag")
+	if compact {
+		group, chip = k.style("historyTagsCompact"), k.style("historyTagCompact")
 	}
-	ui.Row(c).FillWidth().Justify(ui.End).Wrap().Gap(4).Margin(2, 0, 0).Children(func() {
+	if size > 0 {
+		// The sampled size uses the default 10px preference. Keep the theme offset.
+		chip.Size += size - 10
+	}
+	row := ui.Row(c).Gap(group.ColumnGap).Margin(group.MarginTop, 0, 0).Opacity(group.Opacity).PassThrough()
+	if compact {
+		row.Absolute().Right(group.Right).Bottom(group.Bottom).MaxWidth(max(0, cardWidth*group.MaxWidthPercent/100)).Clip()
+	} else {
+		row.FillWidth().Justify(ui.End).Wrap()
+	}
+	row.Children(func() {
 		for _, tag := range tags {
-			ui.Text(c, tag.Name).FontSize(size).TextColor(ui.RGB(255, 255, 255)).SingleLine().
-				Height(size+6).Padding(2, 5).Background(tag.Color).Radius(min(5, c.Theme().Radius))
+			style := chip
+			style.Fill = rgba(tag.Color)
+			paint(text(c, tag.Name, style).SingleLine().MinHeight(style.MinHeight), style).Shrink(0).PassThrough()
 		}
 	})
+	return row
 }
 
 // HistoryCardMeta renders the source label, available actions and timestamp.

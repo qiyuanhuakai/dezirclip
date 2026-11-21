@@ -1,5 +1,5 @@
 import { HistoryOCRBadge, HistoryOCRResult } from "@deziro/ui-react/components/HistoryOCR";
-import { HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryImagePreview, HistoryRichTextPreview } from "@deziro/ui-react/components/HistoryCard";
+import { HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryCardTag, HistoryCardTags, HistoryImagePreview, HistoryRichTextPreview } from "@deziro/ui-react/components/HistoryCard";
 import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
 import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
 import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
@@ -1106,27 +1106,9 @@ const ClipboardItem = ({
             )}
 
             {(item.tags?.length > 0 || isEditingTags) && (
-                <div
-                    className="item-tags-container"
-                    style={{
-                        marginTop: '2px',
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        justifyContent: 'flex-end',
-                        gap: '4px',
-                        paddingTop: '0'
-                    }}>
+                <HistoryCardTags>
                     {item.tags?.map(tag => (
-                        <span
-                            key={tag}
-                            className="tag-chip"
-                            style={{
-                                background: tagColors?.[tag] || getTagColor(tag, theme),
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                            }}
-                        >
+                        <HistoryCardTag key={tag} color={tagColors?.[tag] || getTagColor(tag, theme)}>
                             {tag}
                             {isEditingTags && (
                                 <button
@@ -1139,7 +1121,7 @@ const ClipboardItem = ({
                                     <X size={8} />
                                 </button>
                             )}
-                        </span>
+                        </HistoryCardTag>
                     ))}
 
                     {isEditingTags && (
@@ -1201,7 +1183,7 @@ const ClipboardItem = ({
                             </button>
                         </div>
                     )}
-                </div>
+                </HistoryCardTags>
             )}
             {contextMenuState && (
                 <ItemContextMenu

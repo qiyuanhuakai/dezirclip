@@ -51,6 +51,7 @@ const cases = {
   "preview-image": { states: ["default", "zoomed"], text: "Image preview" },
   "preview-resize-handles": { states: ["default", "southeast"], text: "Resize preview" },
   "wheel-hot-zone": { states: ["default", "scrolled"], text: "Wheel input" },
+  "history-tags": { states: ["default", "compact", "large"], text: "Reference" },
   "history-card-meta": { states: ["default"], text: "Editor" },
   "history-list": { states: ["default", "selected"], text: "Release checklist and verification notes" },
   "history-typography": { states: ["default", "small", "large", "compact", "compact-large", "custom"], text: "Font sample: Wm12" },

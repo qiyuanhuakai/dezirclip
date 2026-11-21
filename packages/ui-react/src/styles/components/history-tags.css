@@ -1,5 +1,13 @@
 /* Existing clipboard-row tags retain their theme-specific appearance.
    Tag management and filtering use the separate dc-tag-* component styles. */
+.item-tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+    margin-top: 2px;
+}
+
 .tag-chip {
     font-size: var(--clipboard-tag-font-size);
     padding: 2px 6px;
