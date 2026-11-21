@@ -319,7 +319,6 @@ export const tw = {
         emoji_symbols_tab: "符號",
         emoji_search: "依名稱或含義搜尋",
         emoji_search_empty: "找不到相符的字元",
-        emoji_more: "顯示更多",
         emoji_group_expressions: "表情與情緒",
         emoji_group_people: "人物與身體",
         emoji_group_animals: "動物與自然",

@@ -11,6 +11,17 @@ type CharacterChoice struct {
 	Name  string `json:"name"`
 }
 
+// CharacterPanel reserves the same outer padding and section gaps as the Web picker.
+func (k Kit) CharacterPanel(c *ui.Context, viewportWidth float32, draw func(contentWidth float32)) {
+	inset, bottom := float32(12), float32(12)
+	if viewportWidth <= 520 {
+		inset, bottom = 8, 8
+	}
+	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Padding(8, inset, bottom).Gap(8).Children(func() {
+		draw(max(1, viewportWidth-2*inset))
+	})
+}
+
 func (k Kit) EmojiTabs(c *ui.Context, emojiLabel, favoritesLabel string, favorites, disabled bool, selectFavorites func(bool)) {
 	selected := "emoji"
 	if favorites {

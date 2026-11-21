@@ -2,7 +2,7 @@ import { useRef, useState, type CSSProperties } from "react";
 import "../src/styles/components/privacy.css";
 import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
-import { AppHeader, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HotkeyBinding, MatchHighlight,
+import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HotkeyBinding, MatchHighlight,
   ProgressToast, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail, SettingsSectionCard,
   SettingsSlider, SettingsToggle, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
@@ -258,6 +258,27 @@ function SurfaceOpacityFixture() {
   </main>;
 }
 
+const symbolRange = (first: number, count: number) => Array.from({ length: count }, (_, index) => String.fromCodePoint(first + index));
+const symbolGroups = [
+  { name: "Arrows", emojis: symbolRange(0x2190, 112) },
+  { name: "Technical symbols", emojis: symbolRange(0x2300, 104) },
+  { name: "Geometric shapes", emojis: symbolRange(0x25a0, 80) },
+  { name: "Mathematics", emojis: ["∑", "∞", "√", "∫", "≈", "≠", "≤", "≥"] },
+];
+
+function CharacterPanelFixture() {
+  const [shown, setShown] = useState(2);
+  const loadMore = useRef(() => setShown(count => count + 1));
+  return <main className="showcase showcase-character-panel" data-fixture="character-panel">
+    <CharacterPanel>
+      <EmojiTabs active="symbols" labels={{ emoji: "Emoji", symbols: "Symbols", favorites: "Favorites" }} onChange={() => undefined} />
+      <CharacterSearch label="Search symbols" value="" onChange={() => undefined} />
+      <EmojiGrid groups={symbolGroups.slice(0, shown)} empty="No results" onSelect={() => undefined}
+        onLoadMore={shown < symbolGroups.length ? loadMore.current : undefined} />
+    </CharacterPanel>
+  </main>;
+}
+
 async function start() {
   for (const element of [document.documentElement, document.body]) element.classList.add("theme-" + theme, mode + "-mode");
   await loadBuiltinTheme(theme);
@@ -266,7 +287,8 @@ async function start() {
     document.documentElement.style.setProperty("--surface-opacity", String(Math.min(100, Math.max(0, Number(state))) / 100));
   }
   document.body.dataset.appearance = JSON.stringify({ Mode: mode, Tokens: nativeUiPalette() });
-  createRoot(document.getElementById("root")!).render(fixture === "surface-opacity" ? <SurfaceOpacityFixture /> : <Showcase />);
+  createRoot(document.getElementById("root")!).render(fixture === "surface-opacity" ? <SurfaceOpacityFixture />
+    : fixture === "character-panel" ? <CharacterPanelFixture /> : <Showcase />);
 }
 
 void start();

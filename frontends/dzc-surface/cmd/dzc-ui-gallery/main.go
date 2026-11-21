@@ -47,6 +47,10 @@ func (g *gallery) view(c *ui.Context) {
 	}
 	kit := preset.Kit()
 	kit.Apply(c)
+	if g.fixture == "character-panel" {
+		g.characterPanelFixture(c, kit)
+		return
+	}
 	padding := preset.ShowcasePadding()
 	ui.Column(c).Fill().Padding(padding[:]...).Gap(14).Background(c.Theme().Background).Children(func() {
 		if g.fixture == "gallery" {
@@ -249,6 +253,10 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 }
 
 func (g *gallery) prepare(tester *ui.Tester) error {
+	if g.fixture == "character-panel" && g.state == "after-scroll" {
+		tester.Scroll(270, 185, 0, 2000)
+		tester.Scroll(270, 185, 0, 2000)
+	}
 	if g.fixture == "settings-field" && g.state == "expanded" {
 		return tester.Click("Setting help: Interface font")
 	}

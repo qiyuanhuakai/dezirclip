@@ -60,6 +60,7 @@ const cases = {
 };
 const additionalExamples = {
   "character-search": { states: ["default", "filled"], text: "Search symbols" },
+  "character-panel": { states: ["default", "after-scroll"], text: "Symbols" },
   "clipboard-search": { states: ["default", "selected"], text: "富文本" },
   "settings-toggle": { states: ["enabled", "default"], text: "Keep clipboard history" },
   "settings-slider": { states: ["default", "keyboard"], text: "Opacity 72%" },
@@ -156,6 +157,31 @@ try {
             await page.mouse.move(450, 390);
             await page.goto(url.href);
             await page.locator("main[data-fixture]").waitFor();
+            if (fixture === "character-panel") {
+              const viewport = page.locator(".emoji-content");
+              const nextGroup = viewport.getByText("Geometric shapes", { exact: true });
+              const lastGroup = viewport.getByText("Mathematics", { exact: true });
+              if (await nextGroup.count() || await lastGroup.count()) throw Error("Later batches appeared before scrolling");
+              if (state === "after-scroll") {
+                await viewport.hover();
+                await page.mouse.wheel(0, 2000);
+                await nextGroup.waitFor({ state: "attached" });
+                await page.mouse.wheel(0, 2000);
+                await lastGroup.waitFor({ state: "attached" });
+                await page.mouse.wheel(0, 2000);
+                await page.waitForFunction(() => {
+                  const grid = document.querySelector(".emoji-content");
+                  const heading = [...grid.querySelectorAll(".emoji-group-title")].find(element => element.textContent === "Mathematics");
+                  const bounds = grid.getBoundingClientRect();
+                  const title = heading.getBoundingClientRect();
+                  return title.top >= bounds.top && title.bottom <= bounds.bottom;
+                });
+              }
+              if (await viewport.getByRole("button", { name: "Show more", exact: true }).count()) throw Error("The list requires a paging button");
+              const usesThemeColor = await viewport.evaluate(grid =>
+                getComputedStyle(grid.querySelector(".emoji-btn")).color === getComputedStyle(grid.querySelector(".emoji-group-title")).color);
+              if (!usesThemeColor) throw Error("Symbols do not use the theme text color");
+            }
             if (fixture === "settings-field" && state === "expanded") {
               await page.getByRole("button", { name: "Setting help: Interface font" }).click();
               await page.getByText("Use the theme font by default.", { exact: true }).waitFor();
@@ -307,6 +333,7 @@ try {
               ? ["Clipboard", "history"].every(word => comparable(webText, word) && comparable(nativeText, word))
               : comparable(webText, marker) && comparable(nativeText, marker);
             const extra = state === "popup" || fixture === "surface-opacity" ? "Light"
+              : fixture === "character-panel" ? state === "after-scroll" ? "Mathematics" : "Arrows"
               : fixture === "settings-field" && state === "expanded" ? "Use the theme font by default."
               : state === "expanded" && fixture === "disclosure" ? "Preview channel"
               : fixture === "context-menu" && state !== "default" ? state === "text" ? "Uppercase" : "Ignore this source"

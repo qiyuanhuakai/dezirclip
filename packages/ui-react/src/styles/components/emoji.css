@@ -21,12 +21,6 @@
   pointer-events: none;
 }
 
-.emoji-more {
-  align-self: center;
-  flex: none;
-  width: auto;
-}
-
 .emoji-tab{
   flex: 1;
   justify-content: center;
@@ -95,6 +89,7 @@
 
 .emoji-btn{
   height: 32px;
+  color: var(--text-primary);
   background: transparent;
   border: 1px solid transparent;
   box-shadow: none;

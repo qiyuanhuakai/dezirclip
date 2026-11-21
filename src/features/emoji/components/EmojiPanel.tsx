@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { CharacterSearch, EmojiGrid, EmojiTabs, type EmojiTab } from "@deziro/ui-react/components/EmojiPicker";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CharacterPanel, CharacterSearch, EmojiGrid, EmojiTabs, type EmojiTab } from "@deziro/ui-react/components/EmojiPicker";
 import type { DragEvent } from "react";
 import { invoke } from "../../../shared/lib/desktopInvoke";
 import { copyHistorySelection } from "../../../shared/lib/copyHistorySelection";
@@ -156,6 +156,7 @@ const dedupeFavoritePaths = (paths: string[]) =>
 const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveSetting }: EmojiPanelProps) => {
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(characterPageSize);
+  const loadMore = useCallback(() => setLimit(amount => amount + characterPageSize), []);
   const matches = useMemo(() => activeTab === "favorites" ? [] : searchCharacters(activeTab, query), [activeTab, query]);
   const count = matches.reduce((total, group) => total + group.entries.length, 0);
   let remaining = limit;
@@ -474,7 +475,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
   }, [isDragging]);
 
   return (
-    <div className="emoji-panel">
+    <CharacterPanel>
       <EmojiTabs active={activeTab} labels={{ emoji: t("emoji_tab"), symbols: t("emoji_symbols_tab"), favorites: t("emoji_favorites") }}
         onChange={handleTabChange} />
       {activeTab !== "favorites" && <>
@@ -482,8 +483,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
           onChange={value => { setQuery(value); setLimit(characterPageSize); }} />
         <EmojiGrid groups={visibleGroups} empty={t("emoji_search_empty")} key={`${activeTab}:${query}`}
           onSelect={value => handleSend(value, "text")}
-          footer={count > limit && <button type="button" className="btn-icon emoji-more"
-            onClick={() => setLimit(amount => amount + characterPageSize)}>{t("emoji_more")}</button>} />
+          onLoadMore={count > limit ? loadMore : undefined} />
       </>}
 
       {activeTab === "favorites" && (
@@ -540,7 +540,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
           )}
         </div>
       )}
-    </div>
+    </CharacterPanel>
   );
 };
 

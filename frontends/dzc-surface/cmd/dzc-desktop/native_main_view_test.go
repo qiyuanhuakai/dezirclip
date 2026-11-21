@@ -176,6 +176,25 @@ func TestNativeCompactChromeAndEmojiGrid(t *testing.T) {
 	}
 }
 
+func TestNativeEmojiAutomaticallyReachesFinalChoices(t *testing.T) {
+	window := nativeMain{showEmoji: true, preferences: map[string]string{"app.language": "en"}}
+	view := ui.NewTester(window.view, 360, 330)
+	groups := window.emojiPanel().matches
+	lastGroup := groups[len(groups)-1]
+	symbol := lastGroup.choices[len(lastGroup.choices)-1].Value
+	if view.HasText(symbol) {
+		t.Fatal("initial viewport rendered the last emoji")
+	}
+	for attempt := 0; attempt < 12; attempt++ {
+		view.Scroll(180, 235, 0, 3200)
+		bounds, rendered := view.Find(symbol)
+		if rendered && bounds.Y >= 0 && bounds.Y+bounds.H <= 330 {
+			return
+		}
+	}
+	t.Fatalf("scrolling alone did not reach the last emoji %q", symbol)
+}
+
 func TestNativeWideTagLibraryKeepsNavigationBesideHistory(t *testing.T) {
 	n := nativeMain{tagLibrary: &nativeTagLibrary{sort: "time"}, preferences: map[string]string{"app.language": "en"}}
 	n.tagCatalog.names, n.tagCatalog.counts, n.tagCatalog.fresh = []string{"Work"}, map[string]uint64{"Work": 3}, true

@@ -39,7 +39,8 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 		tab = "emoji"
 	}
 	kit := n.mainKit()
-	ui.Column(c).FillWidth().Padding(0, 8).Children(func() {
+	width, _ := c.Size()
+	kit.CharacterPanel(c, width, func(contentWidth float32) {
 		kit.CharacterTabs(c, []uikit.CharacterTab{
 			{ID: "emoji", Label: n.text("emoji_tab")},
 			{ID: "symbols", Label: n.text("emoji_symbols_tab")},
@@ -47,22 +48,23 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 		}, tab, n.mutating, func(selection string) {
 			n.saveSetting("app.emoji_panel_tab", selection)
 		})
+		if tab == "favorites" {
+			n.emojiFavoritesView(c, contentWidth)
+			return
+		}
+		n.drawEmojiResults(c, kit, tab, contentWidth)
 	})
-	if tab == "favorites" {
-		n.emojiFavoritesView(c)
-		return
-	}
+}
+
+func (n *nativeMain) drawEmojiResults(c *ui.Context, kit uikit.Kit, tab string, contentWidth float32) {
 	panel := n.emojiPanel()
-	ui.Column(c).FillWidth().Padding(0, 8).Children(func() {
-		kit.CharacterSearch(c, &panel.query, n.text("emoji_search"), func(composing bool) {
-			if !composing && (panel.tab != tab || panel.searched != panel.query) {
-				panel.matches = searchCharacters(tab, panel.query)
-				panel.tab, panel.searched = tab, panel.query
-				panel.characters = ui.ListState{}
-			}
-		})
+	kit.CharacterSearch(c, &panel.query, n.text("emoji_search"), func(composing bool) {
+		if !composing && (panel.tab != tab || panel.searched != panel.query) {
+			panel.matches = searchCharacters(tab, panel.query)
+			panel.tab, panel.searched = tab, panel.query
+			panel.characters = ui.ListState{}
+		}
 	})
-	width, _ := c.Size()
 	groups := make([]uikit.CharacterGroup, 0, len(panel.matches))
 	for _, group := range panel.matches {
 		groups = append(groups, uikit.CharacterGroup{Label: n.emojiGroupName(group.ID), Choices: group.choices})
@@ -71,10 +73,8 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 	if tab == "symbols" {
 		label = n.text("emoji_symbols_tab")
 	}
-	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Padding(0, 8).Children(func() {
-		kit.CharacterList(c, &panel.characters, width-16, groups, label,
-			n.text("emoji_search_empty"), n.mutating, func(value string) { n.sendEmoji("text", value) })
-	})
+	kit.CharacterList(c, &panel.characters, contentWidth, groups, label,
+		n.text("emoji_search_empty"), n.mutating, func(value string) { n.sendEmoji("text", value) })
 }
 
 func (n *nativeMain) emojiGroupName(name string) string {

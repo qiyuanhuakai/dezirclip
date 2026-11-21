@@ -12,6 +12,13 @@
 .showcase section {
   min-width: 0;
 }
+.showcase.showcase-character-panel {
+  display: block;
+  padding: 0;
+}
+.showcase-character-panel > .emoji-panel {
+  height: 300px;
+}
 /* A neutral backdrop isolates opacity from changes in saturation. */
 html:root.showcase-opacity-background {
   background-color: #6c6c6c !important;

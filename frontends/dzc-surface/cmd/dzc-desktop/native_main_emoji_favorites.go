@@ -20,7 +20,7 @@ func (n *nativeMain) emojiPanel() *nativeEmojiPanel {
 	return n.emoji
 }
 
-func (n *nativeMain) emojiFavoritesView(c *ui.Context) {
+func (n *nativeMain) emojiFavoritesView(c *ui.Context, contentWidth float32) {
 	panel := n.emojiPanel()
 	if !panel.ready && !panel.loading && !panel.loadError && !n.mutating {
 		n.loadEmojiFavorites(panel)
@@ -30,13 +30,13 @@ func (n *nativeMain) emojiFavoritesView(c *ui.Context) {
 	if width <= 520 {
 		cell, gap = 66, 6
 	}
-	columns := max(1, int((width-16+gap)/(cell+gap)))
+	columns := max(1, int((contentWidth-8+gap)/(cell+gap)))
 	count := len(panel.paths) + 1
 	rows := (count + columns - 1) / columns
 	kit := n.mainKit()
 	ui.List(c, &panel.favorites, rows).Grow(1).FillWidth().Gap(gap).Label(n.text("emoji_favorites", "Favorite images")).Rows(func(row ui.ListRow) {
 		start := row.Index * columns
-		ui.Row(row.Context).FillWidth().Padding(4, 8).Gap(gap).Justify(ui.Center).Children(func() {
+		ui.Row(row.Context).FillWidth().Padding(4, 4).Gap(gap).Justify(ui.Center).Children(func() {
 			for index := start; index < min(count, start+columns); index++ {
 				if index == 0 {
 					if kit.EmojiAddTile(row.Context, n.text("emoji_add_files"), cell, n.mutating || n.private).Clicked() {

@@ -319,7 +319,6 @@ export const en = {
         emoji_symbols_tab: "Symbols",
         emoji_search: "Search by name or meaning",
         emoji_search_empty: "No matching characters",
-        emoji_more: "Show more",
         emoji_group_expressions: "Smileys & Emotion",
         emoji_group_people: "People & Body",
         emoji_group_animals: "Animals & Nature",
