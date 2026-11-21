@@ -69,6 +69,7 @@ const figures = [
   ["history-image", "compact", 196, 0, "history-image-compact"],
   ["history-image", "unavailable", 145, 0, "history-image-unavailable"],
   ["preview-toolbar", "pinned", 100],
+  ["preview-toolbar", "default", 100, 0, "preview-toolbar-hover"],
   ["preview-image", "zoomed", 275],
   ["preview-resize-handles", "southeast", 185],
   ["wheel-hot-zone", "scrolled", 185],

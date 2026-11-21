@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -36,10 +38,26 @@ type pinnedPreview struct {
 // Accessed only on the native event thread.
 var pinnedWindows = make(map[*pinnedPreview]struct{})
 
-func refreshPinnedAppearance(owner *client.Client, appearance theme.Appearance) {
+func refreshPinnedAppearance(owner *client.Client, appearance theme.Appearance, settings map[string]string) {
+	base := settings["app.theme"]
+	if id, custom := strings.CutPrefix(base, "custom:"); custom {
+		var catalog []protocol.DesktopThemePackage
+		if json.Unmarshal([]byte(settings["app.custom_themes"]), &catalog) == nil {
+			for _, entry := range catalog {
+				if entry.Id == id {
+					base = entry.Base
+					break
+				}
+			}
+		}
+	}
+	if base == "" {
+		base = "mica"
+	}
 	for preview := range pinnedWindows {
 		if preview.owner == owner && !preview.window.IsDestroyed() {
 			preview.ticket.Appearance.Palette = &appearance
+			preview.ticket.Appearance.BaseTheme = base
 			preview.ticket.Appearance.Background = nil
 			preview.ticket.Appearance.Dark = appearance.Mode == "dark"
 			preview.window.Update(func() {})
@@ -95,24 +113,22 @@ func (p *pinnedPreview) view(c *ui.Context) {
 	a.Opacity = p.opacity.value
 	kit := a.kit()
 	a.panel(c).Children(func() {
-		ui.Row(c).FillWidth().Height(30).Gap(6).Children(func() {
-			label := a.Title
-			if label == "" {
-				label = "DezirClip"
+		options := a.toolbarOptions(true)
+		options.OnClose = func() { p.window.Update(p.window.Close) }
+		var bitmap *ui.Bitmap
+		if p.body != nil {
+			bitmap = p.body.mediaBitmap()
+			if bitmap != nil {
+				options.Image = &p.imageView
 			}
-			ui.Text(c, label).Grow(1).FontSize(13).SingleLine().DragWindow()
-			p.opacity.draw(c, a)
-			if kit.PreviewAction(c, "hide", a.Close, false, false).Clicked() {
-				p.window.Update(p.window.Close)
-			}
-		})
+		}
+		p.opacity.drawToolbar(c, a, options)
 		if p.body != nil {
 			p.body.metadata(c, a.Language)
-			if bitmap := p.body.mediaBitmap(); bitmap != nil {
-				p.imageView.ZoomControls(c, uikit.ImageZoomLabels{
-					In: a.ZoomIn, Out: a.ZoomOut, Actual: a.Actual, Fit: a.Fit, FitLabel: a.FitLabel,
+			if bitmap != nil {
+				ui.Box(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
+					p.imageView.Draw(c, bitmap, a.ImageZoom)
 				})
-				p.imageView.Draw(c, bitmap, a.ImageZoom)
 			} else {
 				p.body.draw(c)
 			}

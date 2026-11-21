@@ -6,6 +6,7 @@ import { currentMonitor, cursorPosition, getCurrentWindow, PhysicalPosition, Phy
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { beginPrivacyAccess, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
 import { compactPreviewLog } from "../../../shared/lib/compactPreviewLog";
+import { resolveBuiltinTheme } from "../../../shared/lib/themeRuntime";
 import { createPreviewSessionQueue } from "./compactPreviewSession";
 import { pickPreviewPosition, type CompactPreviewRect } from "./compactPreviewPosition";
 import { COMPACT_PREVIEW_LABEL, type PreviewRequest, type PreviewLayout } from "./compactPreviewProtocol";
@@ -352,10 +353,10 @@ export async function showCompactPreview(owner: object, anchor: CompactPreviewAn
             const rgb = getComputedStyle(document.documentElement).getPropertyValue("--surface-shell-rgb").trim().split(/\s+/).map(Number);
             const background = rgb.length === 3 && rgb.every(n => Number.isInteger(n) && n >= 0 && n <= 255) ? { R: rgb[0], G: rgb[1], B: rgb[2] } : null;
             const labels = translations[options.language];
-            const appearance = { Language: options.language, Palette: nativeSurfaceAppearance(), Opacity: options.previewOpacity, Dark: options.colorMode === "dark", Background: background,
+            const appearance = { Language: options.language, BaseTheme: resolveBuiltinTheme(options.theme), Palette: nativeSurfaceAppearance(), Opacity: options.previewOpacity, Dark: options.colorMode === "dark", Background: background,
                 Title: labels.preview_toolbar_title, OpacityLabel: labels.preview_toolbar_opacity, ZoomIn: labels.preview_toolbar_zoom_in, ZoomOut: labels.preview_toolbar_zoom_out,
                 Fit: labels.preview_toolbar_fit, FitLabel: labels.preview_toolbar_fit_label, Actual: labels.preview_toolbar_actual,
-                ImageZoom: labels.preview_toolbar_zoom, Pin: labels.preview_toolbar_pin, Close: labels.preview_toolbar_close, Retry: labels.privacy_retry,
+                ImageZoom: labels.preview_toolbar_zoom, Pin: labels.preview_toolbar_pin, Close: labels.preview_toolbar_close, Drag: labels.preview_toolbar_drag, Retry: labels.privacy_retry,
                 Concealed: labels.privacy_sensitive_hidden, Failed: labels.privacy_action_failed };
             await window.mygo.call("Preview.ShowEntry", sequence, options.id, options.expectedHostInstanceId, access.epoch, options.allowSensitive, offset, appearance);
         } catch (error) {

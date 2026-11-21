@@ -85,7 +85,7 @@ func restoreNativeAppearance(owner *client.Client, panel *quickpaste.Panel, sett
 		}
 	}
 	panel.SetAppearance(a)
-	refreshPinnedAppearance(owner, a)
+	refreshPinnedAppearance(owner, a, settings)
 }
 
 func saveNativeAppearance(owner *client.Client, panel *quickpaste.Panel, appearance theme.Appearance) {
@@ -99,7 +99,7 @@ func saveNativeAppearance(owner *client.Client, panel *quickpaste.Panel, appeara
 	}
 	appearance.Locale = settings["app.language"]
 	panel.SetAppearance(appearance)
-	refreshPinnedAppearance(owner, appearance)
+	refreshPinnedAppearance(owner, appearance, settings)
 	path := nativeAppearancePath(owner)
 	if path == "" {
 		return

@@ -168,10 +168,11 @@ func (n *nativeMain) previewAppearance() previewAppearance {
 		appearance.Tokens.FontFamilies = []string{font}
 	}
 	return previewAppearance{
-		Language: language, Palette: &appearance, Opacity: opacity, Dark: n.mode == "dark",
+		Language: language, BaseTheme: n.themeBase(), Palette: &appearance, Opacity: opacity, Dark: n.mode == "dark",
 		Title:        n.text("preview_toolbar_title"),
 		Pin:          n.text("preview_toolbar_pin"),
 		Close:        n.text("preview_toolbar_close"),
+		Drag:         n.text("preview_toolbar_drag"),
 		Retry:        n.text("common_retry"),
 		Concealed:    n.text("native_preview_hidden"),
 		Failed:       n.text("native_preview_failed"),

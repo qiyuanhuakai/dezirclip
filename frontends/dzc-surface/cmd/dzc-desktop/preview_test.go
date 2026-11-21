@@ -23,12 +23,7 @@ func TestPreviewTooltipPaintsOpaqueTextOnTransparentRoot(t *testing.T) {
 			opacity := previewOpacityControl{value: 65, slider: 65}
 			view := ui.NewTester(func(c *ui.Context) {
 				a.panel(c).Children(func() {
-					ui.Row(c).FillWidth().Height(30).Gap(6).Children(func() {
-						ui.Text(c, "内容预览").Grow(1).FontSize(13)
-						opacity.draw(c, a)
-						a.kit().PreviewAction(c, "pin", a.Pin, false, false)
-						a.kit().PreviewAction(c, "hide", a.Close, false, false)
-					})
+					opacity.drawToolbar(c, a, a.toolbarOptions(false))
 				})
 			}, 360, 160)
 			before := image.NewRGBA(view.Image().Bounds())
@@ -231,5 +226,48 @@ func TestPinnedWindowRepaintsBackground(t *testing.T) {
 	after := view.Image().RGBAAt(350, 230)
 	if before.A != 102 || after.A != 196 {
 		t.Fatalf("expected alpha to change from 102 to 196, got %v -> %v", before, after)
+	}
+}
+
+func TestPinnedPreviewSharesToolbarWithWorkingOpacityAndZoom(t *testing.T) {
+	for _, width := range []int{280, 320, 480} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			p := &pinnedPreview{
+				ticket: pinPreviewRequest{Appearance: previewAppearance{
+					BaseTheme: "macos", Title: "Clipboard content preview", Close: "Close preview", OpacityLabel: "Preview opacity",
+					ImageZoom: "Image zoom", ZoomOut: "Zoom out", ZoomIn: "Zoom in", Fit: "Fit image", FitLabel: "Fit", Actual: "Actual size",
+				}},
+				opacity: previewOpacityControl{value: 65, slider: 65},
+				body:    &previewBody{bitmap: ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 260, 190)))},
+			}
+			view := ui.NewTester(p.view, width, 250)
+			for _, label := range []string{"Preview opacity", "Zoom out", "Zoom in", "Fit image", "Actual size", "Close preview"} {
+				box, ok := view.Find(label)
+				if !ok || box.X < 0 || box.X+box.W > float32(width) {
+					t.Fatalf("%s is clipped in the toolbar at width %d: %+v", label, width, box)
+				}
+			}
+			if err := view.Click("Actual size"); err != nil {
+				t.Fatal(err)
+			}
+			if scale, fit := p.imageView.Zoom(); fit || scale != 1 {
+				t.Fatalf("Actual size should render at 100%%, got %v and fit=%t", scale, fit)
+			}
+			if err := view.Click("Fit image"); err != nil {
+				t.Fatal(err)
+			}
+			if _, fit := p.imageView.Zoom(); !fit {
+				t.Fatal("Fit image did not restore automatic sizing")
+			}
+			slider, _ := view.Find("Preview opacity")
+			view.ClickAt(slider.X+slider.W/3, slider.Y+slider.H/2)
+			if p.opacity.value < 20 || p.opacity.value > 45 {
+				t.Fatalf("toolbar slider did not control preview opacity: %d", p.opacity.value)
+			}
+			alpha := view.Image().RGBAAt(20, 235).A
+			if alpha != uint8(math.Round(float64(p.opacity.value*255)/100)) {
+				t.Fatalf("preview background alpha is %d at %d%% opacity", alpha, p.opacity.value)
+			}
+		})
 	}
 }

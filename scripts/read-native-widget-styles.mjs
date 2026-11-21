@@ -112,6 +112,8 @@ const samples = [
   ["preview-toolbar", "default", {
     previewToolbar: [".preview-toolbar"], previewToolbarTitle: [".preview-toolbar-drag span"],
     previewToolbarButton: [".preview-toolbar-actions .preview-toolbar-button"],
+  }],
+  ["preview-toolbar", "pinned", {
     previewToolbarActive: [".preview-toolbar-button.active"], previewToolbarActual: [".preview-toolbar-actual"],
   }],
   ["settings-rail", "default", {

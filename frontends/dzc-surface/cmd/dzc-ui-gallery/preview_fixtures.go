@@ -32,9 +32,13 @@ func samplePicture(width, height int) *ui.Bitmap {
 }
 
 func (g *gallery) previewToolbar(c *ui.Context, kit uikit.Kit) {
+	var image *uikit.PreviewImage
+	if g.previewPinned {
+		image = &g.previewImage
+	}
 	kit.PreviewToolbar(c, uikit.PreviewToolbarOptions{
-		Title: "Content preview", PinLabel: "Pin preview", CloseLabel: "Close preview", OpacityLabel: "Preview opacity",
-		Pinned: g.previewPinned, Opacity: &g.previewOpacity, Image: &g.previewImage,
+		Title: "Content preview", PinLabel: "Pin preview", CloseLabel: "Close preview", OpacityLabel: "Preview opacity", DragLabel: "Move preview",
+		Pinned: g.previewPinned, Opacity: &g.previewOpacity, Image: image,
 		ImageLabels: uikit.ImageZoomLabels{In: "Zoom in", Out: "Zoom out", Actual: "Actual size", Fit: "Fit image", FitLabel: "Fit"},
 		OnPin:       func() { g.previewPinned = true }, OnClose: func() { g.previewPinned = false },
 	})

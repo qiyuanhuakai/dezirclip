@@ -9,6 +9,7 @@ import (
 
 type PreviewToolbarOptions struct {
 	Title, PinLabel, CloseLabel, OpacityLabel string
+	DragLabel                                 string
 	Pinned, PinPending                        bool
 	Opacity                                   *float64
 	Image                                     *PreviewImage
@@ -27,37 +28,53 @@ var (
 
 // PreviewToolbar renders window navigation, transparency and optional image zoom.
 func (k Kit) PreviewToolbar(c *ui.Context, options PreviewToolbarOptions) ui.Element {
-	toolbar := paint(ui.Row(c).FillWidth().Gap(4).AlignItems(ui.Center), k.style("previewToolbar"))
-	toolbar.Children(func() {
-		title := ui.Row(c).Gap(6).AlignItems(ui.Center)
+	width, _ := c.Size()
+	stackZoom := options.Image != nil && width <= 420
+	drawRow := func() {
+		title := ui.Row(c).MinWidth(20).Shrink(1).Gap(6).AlignItems(ui.Center).AlignSelf(ui.Stretch).Clip()
 		if options.Pinned {
-			title.DragWindow()
+			title.DragWindow().Tooltip(options.DragLabel)
 		}
 		title.Children(func() {
 			style := k.style("previewToolbarTitle")
 			ui.Icon(c, previewGrip).Size(14, 14).TextColor(c.Theme().TextMuted).PassThrough()
-			text(c, options.Title, style).SingleLine().PassThrough()
+			text(c, options.Title, style).SingleLine().MinWidth(0).Shrink(1).PassThrough()
 		})
-		ui.Row(c).Grow(1).Gap(6).AlignItems(ui.Center).Justify(ui.End).Wrap().Children(func() {
+		ui.Row(c).Grow(1).MinWidth(0).Gap(6).AlignItems(ui.Center).Justify(ui.End).Children(func() {
 			if options.Opacity != nil {
 				k.previewOpacity(c, options)
 			}
-			if options.Image != nil {
+			if options.Image != nil && !stackZoom {
 				k.previewZoom(c, options.Image, options.ImageLabels)
 			}
 		})
-		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-			label, run, symbol := options.PinLabel, options.OnPin, headerIcons["pin"]
+		ui.Row(c).Shrink(0).Gap(6).AlignItems(ui.Center).Children(func() {
+			label, run := options.PinLabel, options.OnPin
 			if options.Pinned {
-				label, run, symbol = options.CloseLabel, options.OnClose, closeIcon
+				label, run = options.CloseLabel, options.OnClose
 			}
-			if k.previewButton(c, label, "", symbol, false, options.PinPending).Clicked() && run != nil {
+			if label != "" && k.previewButton(c, label, "", headerIcons["pin"], options.Pinned, options.PinPending).Clicked() && run != nil {
 				run()
 			}
-			if !options.Pinned && k.previewButton(c, options.CloseLabel, "", closeIcon, false, false).Clicked() && options.OnClose != nil {
+			if !options.Pinned && options.CloseLabel != "" &&
+				k.previewButton(c, options.CloseLabel, "", closeIcon, false, false).Clicked() && options.OnClose != nil {
 				options.OnClose()
 			}
 		})
+	}
+	var toolbar ui.Element
+	if stackZoom {
+		toolbar = ui.Column(c).Gap(6)
+	} else {
+		toolbar = ui.Row(c).Gap(4).AlignItems(ui.Center)
+	}
+	paint(toolbar.FillWidth().MinWidth(0).Role(ui.RoleToolbar).Label(options.Title), k.style("previewToolbar")).Children(func() {
+		if stackZoom {
+			ui.Row(c).FillWidth().Gap(4).AlignItems(ui.Center).Children(drawRow)
+			ui.Row(c).FillWidth().Justify(ui.End).Children(func() { k.previewZoom(c, options.Image, options.ImageLabels) })
+		} else {
+			drawRow()
+		}
 	})
 	return toolbar
 }
@@ -75,7 +92,7 @@ func (k Kit) previewButton(c *ui.Context, label, value string, symbol *ui.SVG, a
 	if symbol == nil {
 		style = k.style("previewToolbarActual")
 	}
-	button := ui.ButtonBase(c).Label(label).Tooltip(label).MinWidth(style.Width).Height(style.Height).Disabled(disabled)
+	button := ui.ButtonBase(c).Label(label).Tooltip(label).MinWidth(style.Width).Height(style.Height).Disabled(disabled).FocusRing(true)
 	style = k.interactive(c, button, style, active)
 	paint(button, style)
 	button.Children(func() {
@@ -92,23 +109,26 @@ func (k Kit) previewOpacity(c *ui.Context, options PreviewToolbarOptions) {
 	ui.Row(c).Grow(1).MinWidth(90).MaxWidth(220).Gap(6).AlignItems(ui.Center).Children(func() {
 		ui.Icon(c, previewBlend).Size(14, 14).TextColor(c.Theme().TextMuted)
 		slider := ui.SliderBase(c, options.Opacity, 0, 100).Grow(1).MinWidth(40).MaxWidth(160).
-			Height(18).PaddingX(6).Label(options.OpacityLabel).Tooltip(options.OpacityLabel)
+			Height(18).PaddingX(7).Step(1).FocusRing(true).Label(options.OpacityLabel).Tooltip(options.OpacityLabel)
 		if slider.Changed() {
 			*options.Opacity = math.Round(*options.Opacity)
 			if options.OnOpacityChange != nil {
 				options.OnOpacityChange(*options.Opacity)
 			}
 		}
+		palette := k.palette()
 		slider.Draw(func(p *ui.Painter, r ui.Rect) {
-			palette := c.Theme()
-			track := ui.Rect{X: r.X + 6, Y: r.Y + (r.H-6)/2, W: max(0, r.W-12), H: 6}
-			p.Fill(track, palette.Background, 4)
-			p.Stroke(track, palette.Border, 4, 1)
-			thumb := ui.Rect{X: track.X + track.W*float32(*options.Opacity/100) - 7, Y: r.Y + (r.H-14)/2, W: 14, H: 14}
-			p.Fill(thumb, palette.Surface, 4)
-			p.Stroke(thumb, palette.Border, 4, 2)
+			border := c.Theme().Border
+			track := ui.Rect{X: r.X, Y: r.Y + (r.H-6)/2, W: r.W, H: 6}
+			p.Fill(track, ui.Hex(palette.Background), 4)
+			p.Stroke(track, border, 4, 1)
+			thumb := ui.Rect{X: r.X + max(0, r.W-14)*float32(*options.Opacity/100), Y: r.Y + (r.H-14)/2, W: 14, H: 14}
+			p.Fill(thumb, c.Theme().Surface, 4)
+			p.Stroke(thumb, border, 4, 2)
 		})
-		text(c, fmt.Sprintf("%.0f%%", *options.Opacity), k.style("previewToolbarTitle")).Width(32)
+		ui.Row(c).Width(32).Shrink(0).Justify(ui.End).Children(func() {
+			text(c, fmt.Sprintf("%.0f%%", *options.Opacity), k.style("previewToolbarTitle"))
+		})
 	})
 }
 

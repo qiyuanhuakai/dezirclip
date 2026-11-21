@@ -17,6 +17,7 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	surfaceTheme "github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
 )
 
 // The WebView supplies only a row ID. The preview reads its own privacy-bound
@@ -119,13 +120,13 @@ func (p *Preview) clear() {
 }
 
 type previewAppearance struct {
-	Language                                                  string
-	Palette                                                   *surfaceTheme.Appearance
-	Title, Pin, Close, Retry, Concealed, Failed, OpacityLabel string
-	ZoomIn, ZoomOut, Fit, FitLabel, Actual, ImageZoom         string
-	Opacity                                                   int
-	Dark                                                      bool
-	Background                                                *struct{ R, G, B uint8 }
+	Language, BaseTheme                                             string
+	Palette                                                         *surfaceTheme.Appearance
+	Title, Pin, Close, Drag, Retry, Concealed, Failed, OpacityLabel string
+	ZoomIn, ZoomOut, Fit, FitLabel, Actual, ImageZoom               string
+	Opacity                                                         int
+	Dark                                                            bool
+	Background                                                      *struct{ R, G, B uint8 }
 }
 
 func (a previewAppearance) theme() *ui.Theme {
@@ -159,6 +160,17 @@ func (a previewAppearance) panel(c *ui.Context) ui.Element {
 }
 
 func (a previewAppearance) kit() uikit.Kit {
+	if a.BaseTheme != "" {
+		mode := "light"
+		if a.Dark {
+			mode = "dark"
+		}
+		kit := presets.Select(a.BaseTheme, mode).Kit()
+		if a.Palette != nil && a.Palette.Valid() && len(a.Palette.Tokens.FontFamilies) > 0 {
+			kit = kit.WithInterfaceFont(a.Palette.Tokens.FontFamilies[0])
+		}
+		return kit
+	}
 	if a.Palette != nil && a.Palette.Valid() {
 		return uikit.NewKit(a.Palette.Mode, a.Palette.Tokens, nil)
 	}
@@ -166,6 +178,18 @@ func (a previewAppearance) kit() uikit.Kit {
 		return uikit.Kit{Mode: "dark"}
 	}
 	return uikit.Kit{Mode: "light"}
+}
+
+func (a previewAppearance) toolbarOptions(pinned bool) uikit.PreviewToolbarOptions {
+	title := a.Title
+	if title == "" {
+		title = "DezirClip"
+	}
+	return uikit.PreviewToolbarOptions{
+		Title: title, PinLabel: a.Pin, CloseLabel: a.Close, DragLabel: a.Drag,
+		OpacityLabel: a.OpacityLabel, Pinned: pinned,
+		ImageLabels: uikit.ImageZoomLabels{In: a.ZoomIn, Out: a.ZoomOut, Actual: a.Actual, Fit: a.Fit, FitLabel: a.FitLabel},
+	}
 }
 
 func (p *Preview) ShowEntry(ctx context.Context, sequence uint64, id int64, instance string, epoch uint64, reveal bool, placement previewPlacement, appearance previewAppearance) {
@@ -415,40 +439,36 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 		p.window = mygo.NewFlyout(mygo.FlyoutOptions{Parent: main, Anchor: anchor, Width: frame.Width, Height: frame.Height, Hidden: true, Content: ui.View(func(c *ui.Context) {
 			appearance.Opacity = opacity.value
 			appearance.panel(c).Children(func() {
-				ui.Row(c).FillWidth().Height(30).Gap(6).Children(func() {
-					title := appearance.Title
-					if title == "" {
-						title = "DezirClip"
-					}
-					ui.Text(c, title).Grow(1).FontSize(13).SingleLine()
-					opacity.draw(c, appearance)
-					kit := appearance.kit()
-					if appearance.Close != "" && kit.PreviewAction(c, "hide", appearance.Close, false, pinning).Clicked() {
+				options := appearance.toolbarOptions(false)
+				options.PinPending = pinning
+				options.OnClose = func() {
+					if !pinning {
 						main.Update(func() {
 							if p.generation == sequence {
 								p.clear()
 							}
 						})
 					}
-					if appearance.Pin != "" && kit.PreviewAction(c, "pin", appearance.Pin, pinning, pinning).Clicked() {
-						pinning = true
-						ticket := pinPreviewRequest{Params: params, Appearance: appearance, Bounds: p.window.Bounds()}
-						go func() {
-							err := p.resident.send(context.Background(), residentRequest{Operation: "pin-preview", Preview: &ticket}, 10*time.Second)
-							main.Update(func() {
-								if p.generation == sequence && p.window != nil {
-									if err == nil {
-										p.clear()
-									} else {
-										pinning = false
-										failed = true
-										p.window.Update(func() {})
-									}
+				}
+				options.OnPin = func() {
+					pinning = true
+					ticket := pinPreviewRequest{Params: params, Appearance: appearance, Bounds: p.window.Bounds()}
+					go func() {
+						err := p.resident.send(context.Background(), residentRequest{Operation: "pin-preview", Preview: &ticket}, 10*time.Second)
+						main.Update(func() {
+							if p.generation == sequence && p.window != nil {
+								if err == nil {
+									p.clear()
+								} else {
+									pinning = false
+									failed = true
+									p.window.Update(func() {})
 								}
-							})
-						}()
-					}
-				})
+							}
+						})
+					}()
+				}
+				opacity.drawToolbar(c, appearance, options)
 				body.metadata(c, appearance.Language)
 				if failed {
 					ui.Text(c, appearance.Failed)

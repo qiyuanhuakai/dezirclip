@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"strconv"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
 // All control state belongs to the UI thread. While one write is pending,
@@ -55,35 +55,24 @@ func (o *previewOpacityControl) reload() {
 	}()
 }
 
-func (o *previewOpacityControl) draw(c *ui.Context, a previewAppearance) {
-	if a.OpacityLabel == "" {
-		return
-	}
-	t := c.Theme()
-	ui.Row(c).Width(150).Height(26).Gap(5).Children(func() {
-		slider := ui.SliderBase(c, &o.slider, 0, 100).Grow(1).Height(26).PaddingX(6).Label(a.OpacityLabel).Tooltip(a.OpacityLabel)
-		slider.Draw(func(p *ui.Painter, r ui.Rect) {
-			track := ui.Rect{X: r.X + 6, Y: r.Y + 11, W: max(0, r.W-12), H: 4}
-			p.Fill(track, t.Text.Alpha(.25), 2)
-			x := track.X + track.W*float32(o.slider/100)
-			p.Fill(ui.Rect{X: track.X, Y: track.Y, W: x - track.X, H: track.H}, t.Text.Alpha(.75), 2)
-			thumb := ui.Rect{X: x - 5, Y: r.Y + 6, W: 10, H: 14}
-			p.Fill(thumb, t.Surface.Alpha(1), 4)
-			p.Stroke(thumb, t.Text.Alpha(.8), 4, 1.2)
-		})
-		if slider.Changed() {
-			next := int(math.Round(o.slider))
-			if o.value != next {
-				o.value = next
-				o.revision++
-				o.failed = false
-				if !o.writing {
-					o.save()
-				}
+func (o *previewOpacityControl) drawToolbar(c *ui.Context, a previewAppearance, options uikit.PreviewToolbarOptions) {
+	if options.OpacityLabel != "" {
+		options.Opacity = &o.slider
+		options.OnOpacityChange = func(value float64) {
+			next := int(value)
+			if o.value == next {
+				return
+			}
+			o.value = next
+			o.revision++
+			o.failed = false
+			c.Invalidate()
+			if !o.writing && o.window != nil {
+				o.save()
 			}
 		}
-		ui.Text(c, strconv.Itoa(o.value)+"%").FontSize(12).Width(32)
-	})
+	}
+	a.kit().PreviewToolbar(c, options)
 	if o.failed {
 		ui.Text(c, a.Failed)
 	}
