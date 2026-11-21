@@ -146,9 +146,9 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 		})
 	case "tag-toolbar":
 		kit.TagToolbar(c, func() {
-			kit.SettingsLabel(c, "Work").Grow(1)
+			kit.TagToolbarTitle(c, "Work")
 		}, []uikit.HeaderAction{
-			{Icon: "collapse", Label: "Compact view"}, {Icon: "reveal", Label: "Reveal entries", Active: true},
+			{Icon: "collapse", Label: "Compact view"}, {Icon: "conceal", Label: "Hide entries", Active: true},
 			{Icon: "manage", Label: "Manage"}, {Icon: "add", Label: "Add entry"}, {Icon: "more", Label: "Tag actions"},
 		}, nil)
 	case "privacy-rules":

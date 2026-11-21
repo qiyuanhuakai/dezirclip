@@ -673,6 +673,30 @@ body.dark-mode.theme-macos .confirm-dialog-button.primary {
   --icon-btn-hover-border: var(--macos-btn-hover-border);
 }
 
+.theme-macos .segmented-control {
+  background: var(--dc-surface-panel);
+  border-color: var(--dc-border);
+  border-radius: 11px;
+}
+
+.theme-macos .segment-btn {
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.theme-macos .segment-btn:hover:not(.active):not(:disabled) {
+  background: var(--dc-surface-hover);
+  color: var(--dc-text-primary);
+}
+
+.theme-macos .segment-btn.active {
+  background: var(--macos-btn-active-bg);
+  color: var(--macos-btn-active-text);
+  box-shadow: var(--macos-btn-active-shadow);
+}
+
 /* Existing clipboard-row tag treatment. */
 
 .theme-macos .tag-chip {

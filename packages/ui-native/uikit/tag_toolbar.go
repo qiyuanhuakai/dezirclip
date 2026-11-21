@@ -28,16 +28,27 @@ func (k Kit) TagToolbar(c *ui.Context, leading func(), actions []HeaderAction, t
 	})
 }
 
+// TagToolbarTitle shows the current tag in the wide layout, where the rail owns selection.
+func (k Kit) TagToolbarTitle(c *ui.Context, label string) {
+	style, iconStyle := k.style("tagToolbarTitle"), k.style("tagToolbarTitleIcon")
+	ui.Row(c).Grow(1).MinWidth(0).Gap(5).AlignItems(ui.Center).Tooltip(label).Children(func() {
+		ui.Icon(c, headerIcons["tag"]).Size(iconStyle.Width, iconStyle.Height).
+			TextColor(styleColor(iconStyle.Text)).Shrink(0).PassThrough()
+		text(c, label, style).MinWidth(0).Shrink(1).SingleLine().PassThrough()
+	})
+}
+
 func (k Kit) TagToolbarButton(c *ui.Context, action HeaderAction) ui.Element {
 	style := k.style("tagToolbarButton")
 	if action.Active {
 		style = k.style("tagToolbarButtonActive")
 	}
-	button := ui.ButtonBase(c).Label(action.Label).Tooltip(action.Label).Size(27, 27).
-		Selected(action.Active).Center().Shrink(0).Disabled(action.Disabled)
+	button := ui.ButtonBase(c).Label(action.Label).Tooltip(action.Label).Size(style.Width, style.Height).
+		Selected(action.Active).Center().Shrink(0).Disabled(action.Disabled).FocusRing(true).
+		Translate(style.TranslateX, style.TranslateY)
 	paint(button, k.interactive(c, button, style, action.Active)).Children(func() {
 		if symbol := headerIcons[action.Icon]; symbol != nil {
-			ui.Icon(c, symbol).Size(16, 16).TextColor(styleColor(style.Text)).PassThrough()
+			ui.Icon(c, symbol).Size(14, 14).TextColor(styleColor(style.Text)).PassThrough()
 		}
 	})
 	return button

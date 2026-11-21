@@ -5,6 +5,12 @@ export function TagToolbar({ children }: { children: ReactNode }) {
   return <div className="tag-manager-toolbar">{children}</div>;
 }
 
+export function TagToolbarTitle({ label }: { label: string }) {
+  return <span className="tag-manager-current" title={label}>
+    <Tag size={14} aria-hidden="true" /><span>{label}</span>
+  </span>;
+}
+
 interface TagSearchFieldProps extends ComponentPropsWithRef<"input"> {
   variant: "contents" | "rail" | "picker";
   onClear?: () => void;

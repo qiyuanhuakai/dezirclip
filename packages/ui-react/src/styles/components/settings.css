@@ -1108,18 +1108,17 @@
   content: none;
 }
 
-/* Segmented Control - Industrial Style */
+/* Settings choices */
 .settings-choice-cards { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
 .settings-choice-cards .settings-choice-card { flex: 1 0 auto; height: 36px; font-size: 12px; font-weight: bold; }
 
 .segmented-control {
   display: flex;
   background: var(--bg-body);
-  border: 2px solid var(--border-dark);
+  border: 1px solid var(--border-dark);
   padding: 2px;
-  border-radius: 4px;
+  border-radius: 9px;
   gap: 2px;
-  box-shadow: inset 2px 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .segment-btn {
@@ -1132,7 +1131,7 @@
   font-weight: 800;
   text-transform: uppercase;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: 6px;
   transition: all 0.2s;
   font-family: inherit;
   white-space: nowrap;
@@ -1146,8 +1145,11 @@
 .segment-btn.active {
   background: var(--text-primary);
   color: var(--bg-window);
-  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
 }
+
+.segment-btn:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+
+:is(.theme-retro) :is(.segmented-control, .segment-btn) { border-radius: 0; }
 
 /* Labels keep a useful width; long values wrap below instead of crushing them. */
 .settings-themed-select { flex: none; max-width: 100%; }

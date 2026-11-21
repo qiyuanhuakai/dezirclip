@@ -67,7 +67,8 @@
 .tag-manager-current { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; font-size: 12px; font-weight: 600; }
 .tag-manager-current svg { flex-shrink: 0; }
 .tag-manager-current > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tag-manager-toolbar > .btn-icon:not(.tag-manager-picker-trigger):not(.tag-manager-text-button) { width: 27px; height: 27px; flex-shrink: 0; }
+.tag-manager-toolbar > .btn-icon:not(.tag-manager-picker-trigger):not(.tag-manager-text-button) { width: 27px; height: 27px; padding: 0; flex-shrink: 0; }
+.tag-manager-toolbar > .btn-icon:not(.tag-manager-picker-trigger):not(.tag-manager-text-button) > svg { width: 14px; height: 14px; flex-shrink: 0; }
 .tag-manager .tag-manager-text-button { flex-shrink: 0; width: auto; height: 27px; padding: 3px 7px; font-size: 12px; font-weight: 500; white-space: nowrap; }
 .tag-manager-batch-toolbar { display: flex; align-items: center; flex-shrink: 0; gap: 6px; padding: 0 7px 6px 3px; }
 .tag-manager-batch-toolbar > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }

@@ -71,6 +71,7 @@ const samples = [
   ["tag-toolbar", "default", {
     tagToolbar: [".tag-manager-toolbar"], tagToolbarButton: [".tag-manager-toolbar .btn-icon:not(.active)"],
     tagToolbarButtonActive: [".tag-manager-toolbar .btn-icon.active"],
+    tagToolbarTitle: [".tag-manager-current > span"], tagToolbarTitleIcon: [".tag-manager-current > svg"],
   }],
   ["tag-search", "default", {
     tagPickerTrigger: [".tag-manager-picker-trigger", ".tag-manager-picker-trigger > span"],
@@ -403,8 +404,8 @@ function readStyles(sample) {
       ...(rowGap ? { rowGap } : {}),
       ...(switchFace ? { top: number(bounds.top - switchBounds.top), left: number(bounds.left - switchBounds.left) } : top ? { top } : {}),
       ...(id === "historyActionsCompactAnchor" ? { right } : {}),
-      ...(/^historyActionCompact/.test(id) && translateX ? { translateX } : {}),
-      ...(/^historyActions?Compact/.test(id) && translateY ? { translateY } : {}),
+      ...((/^historyActionCompact/.test(id) || /^(previewToolbarActive|tagToolbarButtonActive)$/.test(id)) && translateX ? { translateX } : {}),
+      ...((/^historyActions?Compact/.test(id) || /^(previewToolbarActive|tagToolbarButtonActive)$/.test(id)) && translateY ? { translateY } : {}),
       ...(headingShift ? { translateY: headingShift } : {}),
       ...(id.startsWith("settingsSwitchThumb") ? { left: number(left + translateX) } : {}),
       ...(id.endsWith("InputIcon") ? { left } : {}),

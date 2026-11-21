@@ -150,7 +150,7 @@ func (k Kit) SettingsChoices(c *ui.Context, label, active string, options []Sele
 	paint(row, style).Children(func() {
 		for _, option := range options {
 			selected := option.Value == active
-			button := ui.ButtonBase(c).Label(option.Label).Selected(selected).Disabled(disabled || option.Disabled).Center()
+			button := ui.ButtonBase(c).Label(option.Label).Selected(selected).Disabled(disabled || option.Disabled).Center().FocusRing(true)
 			buttonStyle := k.style(widget)
 			if selected {
 				buttonStyle = k.style(widget + "Active")
@@ -159,7 +159,7 @@ func (k Kit) SettingsChoices(c *ui.Context, label, active string, options []Sele
 			}
 			button.Grow(1)
 			if segmented {
-				button.Width(0).MinWidth(44)
+				button.Width(0).MinWidth(64)
 			}
 			paint(button.Height(buttonStyle.Height), k.animatePaint(button, buttonStyle)).
 				Children(func() { text(c, option.Label, buttonStyle).SingleLine().PassThrough() })

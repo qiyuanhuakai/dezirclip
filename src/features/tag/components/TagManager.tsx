@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useStat
 import { invoke } from '../../../shared/lib/desktopInvoke';
 import { emit } from '@tauri-apps/api/event';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { ArrowDownWideNarrow, Check, ChevronLeft, ChevronRight, Edit2, Eye, EyeOff, List, ListChecks, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
+import { ArrowDownWideNarrow, Check, ChevronLeft, ChevronRight, Edit2, Eye, EyeOff, List, ListChecks, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Trash2, X } from 'lucide-react';
 import type { ClipboardEntry, Locale } from '../../../shared/types';
 import { errorMessage } from '../../../shared/lib/errorMessage';
 import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
@@ -18,7 +18,7 @@ import { hideCompactPreviewGlobal } from '../../clipboard/components/ClipboardIt
 import { clearRichTextSnapshots } from '../../../shared/lib/richTextSnapshot';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 
-import { TagPickerTrigger, TagSearchField, TagToolbar } from "@deziro/ui-react/components/TagToolbar";
+import { TagPickerTrigger, TagSearchField, TagToolbar, TagToolbarTitle } from "@deziro/ui-react/components/TagToolbar";
 
 const QrCodeDialog = lazy(() => import('../../clipboard/components/QrCodeDialog'));
 
@@ -381,7 +381,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         </aside>}
         <section className="tag-manager-content" aria-label={selectedTag ?? t('tag_manager')}>
             <TagToolbar>
-                {split ? <span className="tag-manager-current" title={selectedTag ?? ''}><Tag size={14} /><span>{selectedTag ?? t('tags')}</span></span>
+                {split ? <TagToolbarTitle label={selectedTag ?? t('tags')} />
                     : <TagPickerTrigger ref={pickerButton} current={selectedTag ?? t("tags")}
                         aria-label={`${t('tags')}: ${selectedTag ?? t('tags')}`} title={selectedTag ?? t('tags')}
                         aria-expanded={pickerOpen} aria-controls={pickerOpen ? pickerId : undefined}

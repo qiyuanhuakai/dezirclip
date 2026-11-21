@@ -184,7 +184,7 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 			if label == "" {
 				label = n.text("tags")
 			}
-			kit.SettingsLabel(c, label).Grow(1).MinWidth(0).SingleLine()
+			kit.TagToolbarTitle(c, label)
 			return
 		}
 		options := make([]uikit.TagChoice, 0, len(catalog.names))
