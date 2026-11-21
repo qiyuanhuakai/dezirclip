@@ -36535,11 +36535,12 @@
         "opacity": 1
       },
       "backupDialog": {
-        "fill": [255, 255, 255, 133],
+        "fill": [255, 255, 255, 84],
         "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
-        "backdropBlur": 0.54,
+        "backdropBlur": 2.5,
+        "backdropBlurOpacity": 0.24,
         "radius": 16,
         "width": 500,
         "height": 237,
@@ -36562,36 +36563,36 @@
           }
         ],
         "fillRange": {
-          "clear": [255, 255, 255, 128],
-          "full": [255, 255, 255, 135],
+          "clear": [255, 255, 255, 77],
+          "full": [255, 255, 255, 88],
           "stops": [
             {
               "percent": 0,
-              "rgba": [255, 255, 255, 128]
+              "rgba": [255, 255, 255, 77]
             },
             {
               "percent": 65,
-              "rgba": [255, 255, 255, 133]
+              "rgba": [255, 255, 255, 84]
             },
             {
               "percent": 100,
-              "rgba": [255, 255, 255, 135]
+              "rgba": [255, 255, 255, 88]
             }
           ]
         }
       },
       "backupTitle": {
-        "fill": [0, 0, 0, 0],
+        "fill": [255, 255, 255, 199],
         "text": [17, 18, 23, 255],
         "border": [17, 18, 23, 255],
         "borderWidth": 0,
         "radius": 4,
         "lineHeight": 1.35,
         "marginBottom": 14,
-        "width": 193,
+        "width": 201,
         "height": 23,
         "marginTop": 0,
-        "padding": [0, 0, 0, 0],
+        "padding": [0, 4, 0, 4],
         "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
         "size": 17,
         "weight": 700,
@@ -36616,16 +36617,16 @@
         "opacity": 1
       },
       "backupLabel": {
-        "fill": [0, 0, 0, 0],
+        "fill": [255, 255, 255, 199],
         "text": [17, 18, 23, 255],
         "border": [17, 18, 23, 255],
         "borderWidth": 0,
-        "radius": 0,
+        "radius": 4,
         "marginBottom": 4,
-        "width": 79,
+        "width": 87,
         "height": 16,
         "marginTop": 0,
-        "padding": [0, 0, 0, 0],
+        "padding": [0, 4, 0, 4],
         "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
         "size": 12,
         "weight": 700,
@@ -36651,7 +36652,7 @@
         "opacity": 1
       },
       "backupChoice": {
-        "fill": [255, 255, 255, 122],
+        "fill": [255, 255, 255, 184],
         "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
@@ -36681,7 +36682,7 @@
         ]
       },
       "backupChoiceSelected": {
-        "fill": [201, 227, 255, 138],
+        "fill": [215, 235, 255, 193],
         "text": [17, 18, 23, 255],
         "border": [15, 126, 239, 156],
         "borderWidth": 1,
@@ -36771,7 +36772,7 @@
         "opacity": 1
       },
       "backupInput": {
-        "fill": [255, 255, 255, 122],
+        "fill": [255, 255, 255, 184],
         "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
@@ -36818,7 +36819,7 @@
         "opacity": 1
       },
       "backupBrowse": {
-        "fill": [255, 255, 255, 122],
+        "fill": [255, 255, 255, 184],
         "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
@@ -36864,7 +36865,7 @@
         "opacity": 1
       },
       "backupCancel": {
-        "fill": [255, 255, 255, 122],
+        "fill": [255, 255, 255, 184],
         "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
@@ -36920,7 +36921,7 @@
         ]
       },
       "backupPreview": {
-        "fill": [255, 255, 255, 122],
+        "fill": [255, 255, 255, 184],
         "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
@@ -36949,7 +36950,7 @@
       },
       "backupPreviewRow": {
         "fill": [0, 0, 0, 0],
-        "text": [99, 99, 102, 255],
+        "text": [17, 18, 23, 255],
         "border": [255, 255, 255, 128],
         "borderWidth": 0,
         "radius": 0,
@@ -36965,7 +36966,7 @@
         "opacity": 1
       },
       "backupReplaceConfirmation": {
-        "fill": [255, 255, 255, 122],
+        "fill": [255, 255, 255, 184],
         "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
@@ -37035,7 +37036,7 @@
         }
       },
       "backupReplaceConfirmationChecked": {
-        "fill": [201, 227, 255, 138],
+        "fill": [215, 235, 255, 193],
         "text": [17, 18, 23, 255],
         "border": [15, 126, 239, 156],
         "borderWidth": 1,
@@ -37121,15 +37122,15 @@
         }
       },
       "backupError": {
-        "fill": [0, 0, 0, 0],
-        "text": [220, 53, 69, 255],
-        "border": [220, 53, 69, 255],
+        "fill": [255, 255, 255, 199],
+        "text": [143, 21, 53, 255],
+        "border": [143, 21, 53, 255],
         "borderWidth": 0,
-        "radius": 0,
-        "width": 458,
+        "radius": 4,
+        "width": 207,
         "height": 15,
         "marginTop": 2,
-        "padding": [0, 0, 0, 0],
+        "padding": [0, 4, 0, 4],
         "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
         "size": 11,
         "weight": 400,
@@ -37137,7 +37138,7 @@
         "opacity": 1
       },
       "backupInputFocus": {
-        "fill": [255, 255, 255, 122],
+        "fill": [255, 255, 255, 184],
         "text": [17, 18, 23, 255],
         "border": [10, 132, 255, 255],
         "borderWidth": 1,
@@ -37160,7 +37161,7 @@
         ]
       },
       "backupChoiceHover": {
-        "fill": [255, 255, 255, 189],
+        "fill": [255, 255, 255, 224],
         "text": [17, 18, 23, 255],
         "border": [60, 60, 65, 51],
         "borderWidth": 1,
@@ -37190,7 +37191,7 @@
         ]
       },
       "backupChoiceSelectedHover": {
-        "fill": [196, 225, 255, 202],
+        "fill": [203, 230, 255, 230],
         "text": [17, 18, 23, 255],
         "border": [60, 60, 65, 51],
         "borderWidth": 1,
@@ -37220,7 +37221,7 @@
         ]
       },
       "backupBrowseHover": {
-        "fill": [255, 255, 255, 189],
+        "fill": [255, 255, 255, 224],
         "text": [17, 18, 23, 255],
         "border": [60, 60, 65, 51],
         "borderWidth": 1,
@@ -37248,7 +37249,7 @@
         ]
       },
       "backupCancelHover": {
-        "fill": [255, 255, 255, 189],
+        "fill": [255, 255, 255, 224],
         "text": [17, 18, 23, 255],
         "border": [60, 60, 65, 51],
         "borderWidth": 1,
@@ -45276,11 +45277,12 @@
         "opacity": 1
       },
       "backupDialog": {
-        "fill": [16, 18, 25, 156],
+        "fill": [15, 17, 25, 102],
         "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
-        "backdropBlur": 0.54,
+        "backdropBlur": 2.5,
+        "backdropBlurOpacity": 0.24,
         "radius": 16,
         "width": 500,
         "height": 237,
@@ -45303,44 +45305,36 @@
           }
         ],
         "fillRange": {
-          "clear": [15, 19, 24, 150],
-          "full": [16, 18, 24, 158],
+          "clear": [16, 19, 24, 94],
+          "full": [17, 17, 24, 106],
           "stops": [
             {
               "percent": 0,
-              "rgba": [15, 19, 24, 150]
-            },
-            {
-              "percent": 49,
-              "rgba": [17, 18, 23, 154]
-            },
-            {
-              "percent": 52,
-              "rgba": [16, 18, 25, 155]
+              "rgba": [16, 19, 24, 94]
             },
             {
               "percent": 65,
-              "rgba": [16, 18, 25, 156]
+              "rgba": [15, 17, 25, 102]
             },
             {
               "percent": 100,
-              "rgba": [16, 18, 24, 158]
+              "rgba": [17, 17, 24, 106]
             }
           ]
         }
       },
       "backupTitle": {
-        "fill": [0, 0, 0, 0],
+        "fill": [15, 18, 24, 199],
         "text": [249, 250, 255, 255],
         "border": [249, 250, 255, 255],
         "borderWidth": 0,
         "radius": 4,
         "lineHeight": 1.35,
         "marginBottom": 14,
-        "width": 193,
+        "width": 201,
         "height": 23,
         "marginTop": 0,
-        "padding": [0, 0, 0, 0],
+        "padding": [0, 4, 0, 4],
         "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
         "size": 17,
         "weight": 700,
@@ -45365,16 +45359,16 @@
         "opacity": 1
       },
       "backupLabel": {
-        "fill": [0, 0, 0, 0],
+        "fill": [15, 18, 24, 199],
         "text": [249, 250, 255, 255],
         "border": [249, 250, 255, 255],
         "borderWidth": 0,
-        "radius": 0,
+        "radius": 4,
         "marginBottom": 4,
-        "width": 79,
+        "width": 87,
         "height": 16,
         "marginTop": 0,
-        "padding": [0, 0, 0, 0],
+        "padding": [0, 4, 0, 4],
         "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
         "size": 12,
         "weight": 700,
@@ -45400,7 +45394,7 @@
         "opacity": 1
       },
       "backupChoice": {
-        "fill": [50, 54, 63, 133],
+        "fill": [33, 35, 46, 194],
         "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
@@ -45430,7 +45424,7 @@
         ]
       },
       "backupChoiceSelected": {
-        "fill": [41, 69, 103, 148],
+        "fill": [30, 51, 77, 201],
         "text": [249, 250, 255, 255],
         "border": [23, 139, 255, 152],
         "borderWidth": 1,
@@ -45520,7 +45514,7 @@
         "opacity": 1
       },
       "backupInput": {
-        "fill": [50, 54, 63, 133],
+        "fill": [33, 35, 46, 194],
         "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
@@ -45567,7 +45561,7 @@
         "opacity": 1
       },
       "backupBrowse": {
-        "fill": [50, 54, 63, 133],
+        "fill": [33, 35, 46, 194],
         "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
@@ -45613,7 +45607,7 @@
         "opacity": 1
       },
       "backupCancel": {
-        "fill": [50, 54, 63, 133],
+        "fill": [33, 35, 46, 194],
         "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
@@ -45669,7 +45663,7 @@
         ]
       },
       "backupPreview": {
-        "fill": [50, 54, 63, 133],
+        "fill": [33, 35, 46, 194],
         "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
@@ -45698,7 +45692,7 @@
       },
       "backupPreviewRow": {
         "fill": [0, 0, 0, 0],
-        "text": [161, 161, 166, 255],
+        "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 15],
         "borderWidth": 0,
         "radius": 0,
@@ -45714,7 +45708,7 @@
         "opacity": 1
       },
       "backupReplaceConfirmation": {
-        "fill": [50, 54, 63, 133],
+        "fill": [33, 35, 46, 194],
         "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
@@ -45784,7 +45778,7 @@
         }
       },
       "backupReplaceConfirmationChecked": {
-        "fill": [41, 69, 103, 148],
+        "fill": [30, 51, 77, 201],
         "text": [249, 250, 255, 255],
         "border": [23, 139, 255, 152],
         "borderWidth": 1,
@@ -45870,15 +45864,15 @@
         }
       },
       "backupError": {
-        "fill": [0, 0, 0, 0],
-        "text": [220, 53, 69, 255],
-        "border": [220, 53, 69, 255],
+        "fill": [15, 18, 24, 199],
+        "text": [255, 184, 200, 255],
+        "border": [255, 184, 200, 255],
         "borderWidth": 0,
-        "radius": 0,
-        "width": 458,
+        "radius": 4,
+        "width": 207,
         "height": 15,
         "marginTop": 2,
-        "padding": [0, 0, 0, 0],
+        "padding": [0, 4, 0, 4],
         "font": "SF Pro Text, SF Pro Display, PingFang SC, Segoe UI Variable Text, Segoe UI, Noto Sans, Noto Sans CJK SC, sans-serif",
         "size": 11,
         "weight": 400,
@@ -45886,7 +45880,7 @@
         "opacity": 1
       },
       "backupInputFocus": {
-        "fill": [50, 54, 63, 133],
+        "fill": [33, 35, 46, 194],
         "text": [249, 250, 255, 255],
         "border": [10, 132, 255, 255],
         "borderWidth": 1,
@@ -45909,7 +45903,7 @@
         ]
       },
       "backupChoiceHover": {
-        "fill": [67, 72, 84, 204],
+        "fill": [48, 52, 65, 230],
         "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 41],
         "borderWidth": 1,
@@ -45939,7 +45933,7 @@
         ]
       },
       "backupChoiceSelectedHover": {
-        "fill": [55, 86, 123, 214],
+        "fill": [40, 69, 104, 235],
         "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 41],
         "borderWidth": 1,
@@ -45969,7 +45963,7 @@
         ]
       },
       "backupBrowseHover": {
-        "fill": [67, 72, 84, 204],
+        "fill": [48, 52, 65, 230],
         "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 41],
         "borderWidth": 1,
@@ -45997,7 +45991,7 @@
         ]
       },
       "backupCancelHover": {
-        "fill": [67, 72, 84, 204],
+        "fill": [48, 52, 65, 230],
         "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 41],
         "borderWidth": 1,

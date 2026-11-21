@@ -75,4 +75,7 @@ type WidgetStyle struct {
 
 	MaxWidthPercent float32
 	Bottom          float32
+
+	// A nil opacity preserves the full blur used by older theme data.
+	BackdropBlurOpacity *float32
 }

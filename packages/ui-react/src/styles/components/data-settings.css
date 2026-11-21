@@ -317,20 +317,22 @@
 
 .theme-liquid-glass .data-modal-overlay {
   --text-primary: #111217;
-  --backup-panel-bg: rgba(255, 255, 255, calc(0.50 + 0.02 * var(--surface-layer-scale, 1)));
+  --backup-panel-bg: rgba(255, 255, 255, calc(0.30 + 0.03 * var(--surface-layer-scale, 1)));
   --backup-panel-border: var(--lg-dialog-border);
   --backup-panel-shadow: 0 4px 12px rgba(20, 30, 60, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.65);
   --backup-panel-radius: 16px;
   --backup-control-radius: 10px;
-  --backup-control-bg: var(--lg-dialog-button-bg);
+  --backup-caption-bg: rgba(255, 255, 255, 0.78);
+  --backup-control-bg: rgba(255, 255, 255, 0.72);
   --backup-control-border: var(--lg-dialog-button-border);
-  --backup-control-hover-bg: var(--lg-dialog-button-hover-bg);
+  --backup-control-hover-bg: rgba(255, 255, 255, 0.88);
   --backup-control-hover-border: var(--lg-dialog-button-hover-border);
   --backup-control-shadow: inset 0 1px 0 var(--glass-edge-top), inset 0 -1px 0 var(--glass-edge-bottom);
   --backup-primary-bg: var(--lg-dialog-button-primary-bg);
   --backup-primary-border: var(--lg-dialog-button-primary-border);
   --backup-primary-text: var(--lg-dialog-button-primary-text);
   --backup-primary-hover-bg: var(--lg-dialog-button-primary-hover-bg);
+  --backup-error-text: #8f1535;
 }
 
 .theme-macos .data-modal-overlay::backdrop {
@@ -350,8 +352,12 @@
 
 .theme-liquid-glass.dark-mode .data-modal-overlay {
   --text-primary: #f9faff;
-  --backup-panel-bg: rgba(16, 18, 24, calc(0.59 + 0.02 * var(--surface-layer-scale, 1)));
+  --backup-panel-bg: rgba(16, 18, 24, calc(0.37 + 0.03 * var(--surface-layer-scale, 1)));
   --backup-panel-shadow: 0 4px 12px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  --backup-caption-bg: rgba(16, 18, 24, 0.78);
+  --backup-control-bg: rgba(33, 36, 46, 0.76);
+  --backup-control-hover-bg: rgba(48, 52, 65, 0.90);
+  --backup-error-text: #ffb8c8;
 }
 
 :is(.theme-macos, .theme-liquid-glass) .data-modal-content {
@@ -363,9 +369,9 @@
 }
 
 .theme-liquid-glass .data-modal-content {
-  /* Blend a little softness into the sharp backdrop to preserve fine strokes. */
-  backdrop-filter: blur(0.85px) opacity(0.4);
-  -webkit-backdrop-filter: blur(0.85px) opacity(0.4);
+  /* Mix a diffuse backdrop into the sharp one so fine strokes stay legible. */
+  backdrop-filter: blur(2.5px) opacity(0.24);
+  -webkit-backdrop-filter: blur(2.5px) opacity(0.24);
 }
 
 :is(.theme-macos, .theme-liquid-glass) .data-modal-title {
@@ -381,6 +387,23 @@
 :is(.theme-macos, .theme-liquid-glass) .data-modal-overlay :is(.data-modal-title, .data-label, .data-btn, .btn-icon-export-browse) {
   text-transform: none;
   letter-spacing: normal;
+}
+
+.theme-liquid-glass .data-modal-content :is(.data-modal-title, .data-label, .data-error) {
+  width: fit-content;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding-inline: 4px;
+  border-radius: 4px;
+  background: var(--backup-caption-bg);
+}
+
+.theme-liquid-glass .data-modal-content .data-error {
+  color: var(--backup-error-text);
+}
+
+.theme-liquid-glass .data-modal-content .data-preview-item {
+  color: var(--text-primary);
 }
 
 :is(.theme-macos, .theme-liquid-glass) .data-modal-overlay :is(.data-input, .data-radio-item, .data-preview-list, .data-btn, .btn-icon-export-browse) {

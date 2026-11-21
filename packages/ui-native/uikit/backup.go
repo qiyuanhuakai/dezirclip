@@ -1,17 +1,29 @@
 package uikit
 
 import (
-	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/shader"
 )
 
+var backupBackdropBlur = shader.MustCompile(`package main
+var Strength float
+
+func Fragment(dst vec4, pos vec2) vec4 {
+	return backdropSample(pos) * Strength
+}
+`)
+
 type backupSheetMaterial struct {
-	blur glass.Blur
-	tint ui.Color
+	radius, strength float32
+	tint             ui.Color
 }
 
 func (material backupSheetMaterial) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
-	material.blur.PaintMaterial(p, box, radii)
+	backupBackdropBlur.Draw(p, box, shader.Options{
+		Radius:       radii[0],
+		BackdropBlur: material.radius,
+		Uniforms:     map[string]any{"Strength": material.strength},
+	})
 	p.Fill(box, material.tint, radii[0])
 }
 
@@ -22,7 +34,11 @@ func (k Kit) BackupDialog(c *ui.Context, open *bool, title string, busy bool, bo
 		width, height := c.Size()
 		paint(panel.Label(title).Width(min(style.Width, max(0, width-40))), style)
 		if style.BackdropBlur > 0 {
-			panel.Material(backupSheetMaterial{blur: glass.Blur{Radius: style.BackdropBlur}, tint: styleColor(style.Fill)})
+			strength := float32(1)
+			if style.BackdropBlurOpacity != nil {
+				strength = *style.BackdropBlurOpacity
+			}
+			panel.Material(backupSheetMaterial{radius: style.BackdropBlur, strength: strength, tint: styleColor(style.Fill)})
 		}
 		if busy && panel.Dismissed() {
 			*open = true
@@ -43,8 +59,15 @@ func (k Kit) BackupDialog(c *ui.Context, open *bool, title string, busy bool, bo
 func (k Kit) backupField(c *ui.Context, label string, content func()) {
 	style, labelStyle := k.style("backupField"), k.style("backupLabel")
 	ui.Column(c).FillWidth().Gap(labelStyle.MarginBottom).Margin(0, 0, style.MarginBottom).Children(func() {
-		text(c, label, labelStyle).Wrap()
+		k.backupCaption(c, label, "backupLabel")
 		content()
+	})
+}
+
+func (k Kit) backupCaption(c *ui.Context, value, widget string) {
+	style := k.style(widget)
+	paint(ui.Row(c).AlignSelf(ui.Start).MaxWidthPercent(100), style).Children(func() {
+		text(c, value, style).Wrap()
 	})
 }
 
@@ -149,7 +172,7 @@ func (k Kit) BackupField(c *ui.Context, options BackupFieldOptions) {
 }
 
 func (k Kit) BackupError(c *ui.Context, message string) {
-	text(c, message, k.style("backupError")).Wrap()
+	k.backupCaption(c, message, "backupError")
 }
 
 func (k Kit) BackupPreview(c *ui.Context, label string, entries []string) {

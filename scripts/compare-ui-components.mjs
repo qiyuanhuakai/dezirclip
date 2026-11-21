@@ -187,8 +187,9 @@ async function verifyGlassStrokes(page, panel) {
     }, screenshot.toString("base64"));
     const [outside, [bright, edge, single, double, dark]] = samples;
     const range = bright - dark;
-    if (outside.join() !== "255,255,0,0,0" || range < 90
-      || (bright - edge) / range < 0.04 || (bright - single) / range < 0.65 || (bright - double) / range < 0.75) {
+    if (outside.join() !== "255,255,0,0,0" || range < 130
+      || (bright - edge) / range < 0.02 || (bright - edge) / range > 0.16
+      || (bright - single) / range < 0.74 || (bright - double) / range < 0.78) {
       throw Error("The glass must retain narrow backdrop strokes, soften their edges, and leave pixels outside untouched: " + JSON.stringify(samples));
     }
   } finally {
@@ -275,19 +276,20 @@ try {
               await page.getByText("Use the theme font by default.", { exact: true }).waitFor();
             }
             if (fixture === "backup-dialog" && ["macos", "liquid-glass"].includes(theme)) {
-              const styled = await page.locator(".data-modal-content").evaluate(dialog => {
+              const styled = await page.locator(".data-modal-content").evaluate((dialog, glass) => {
                 const panel = getComputedStyle(dialog);
                 const title = getComputedStyle(dialog.querySelector(".data-modal-title"));
                 const submit = getComputedStyle(dialog.querySelector(".data-btn-primary"));
                 const chosen = getComputedStyle(dialog.querySelector(".data-radio-item:has(input:checked)"));
                 const other = getComputedStyle(dialog.querySelector(".data-radio-item:has(input:not(:checked))"));
                 const confirmation = dialog.querySelector(".data-replace-confirm");
+                const titleHasBacking = title.backgroundColor !== "rgba(0, 0, 0, 0)";
                 return panel.borderTopWidth === "1px" && parseFloat(panel.borderTopLeftRadius) >= 14
-                  && title.backgroundColor === "rgba(0, 0, 0, 0)" && title.textTransform === "none"
+                  && titleHasBacking === glass && title.textTransform === "none"
                   && submit.textTransform === "none" && parseFloat(submit.borderTopLeftRadius) >= 8
                   && chosen.borderTopColor !== other.borderTopColor
                   && (!confirmation || parseFloat(getComputedStyle(confirmation).borderTopLeftRadius) >= 8);
-              });
+              }, theme === "liquid-glass");
               if (!styled) throw Error("Backup dialog lost its themed panel, typography or control states");
               if (theme === "liquid-glass" && state === "glass") {
                 const keepsLocalBlur = await page.locator(".data-modal-content").evaluate(dialog => {
@@ -300,7 +302,7 @@ try {
                     return getComputedStyle(document.querySelector("#root")).backdropFilter === "none" &&
                       scrim.backdropFilter === "none" &&
                       scrim.backgroundColor === "rgba(0, 0, 0, 0)" &&
-                      getComputedStyle(dialog).backdropFilter === "blur(0.85px) opacity(0.4)";
+                      getComputedStyle(dialog).backdropFilter === "blur(2.5px) opacity(0.24)";
                   } finally {
                     document.body.classList.remove("has-custom-bg");
                     root.style.removeProperty("--custom-bg-image");
@@ -311,7 +313,16 @@ try {
                 const minimumContrast = await page.locator(".data-modal-content").evaluate(dialog => {
                   const root = document.documentElement;
                   const previous = root.style.getPropertyValue("--surface-layer-scale");
-                  const channels = color => color.match(/[\d.]+/g).map(Number);
+                  const canvas = document.createElement("canvas");
+                  canvas.width = canvas.height = 1;
+                  const pixels = canvas.getContext("2d", { willReadFrequently: true });
+                  const channels = color => {
+                    pixels.clearRect(0, 0, 1, 1);
+                    pixels.fillStyle = color;
+                    pixels.fillRect(0, 0, 1, 1);
+                    const [r, g, b, alpha] = pixels.getImageData(0, 0, 1, 1).data;
+                    return [r, g, b, alpha / 255];
+                  };
                   const composite = ([r, g, b, alpha = 1], backdrop) =>
                     [r, g, b].map((value, i) => value * alpha + backdrop[i] * (1 - alpha));
                   const luminance = (rgb) => rgb.map(value => value / 255)
@@ -321,12 +332,16 @@ try {
                   try {
                     const scrim = channels(getComputedStyle(dialog.closest(".data-modal-overlay"), "::backdrop").backgroundColor);
                     const panel = channels(getComputedStyle(dialog).backgroundColor);
-                    const label = channels(getComputedStyle(dialog.querySelector(".data-label")).color);
+                    const foreground = [...dialog.querySelectorAll(".data-modal-title, .data-label, .data-radio-item, .data-input, .data-btn-cancel")]
+                      .map(element => getComputedStyle(element));
                     return Math.min(...[0, 255].map(value => {
                       const surface = composite(panel, composite(scrim, [value, value, value]));
-                      const bg = luminance(surface);
-                      const fg = luminance(composite(label, surface));
-                      return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+                      return Math.min(...foreground.map(style => {
+                        const control = composite(channels(style.backgroundColor), surface);
+                        const bg = luminance(control);
+                        const fg = luminance(composite(channels(style.color), control));
+                        return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+                      }));
                     }));
                   } finally {
                     if (previous) root.style.setProperty("--surface-layer-scale", previous);

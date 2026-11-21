@@ -442,13 +442,8 @@ function readStyles(sample) {
     const headingShift = id.startsWith("settingsGroupHeader")
       ? (number(text.paddingTop) - number(text.paddingBottom)) / 2 : 0;
     const marginBottom = number(style.marginBottom);
-    const backdropBlur = (() => {
-      if (id !== "backupDialog") return 0;
-      const radius = number(style.backdropFilter.match(/blur\(([^)]+)\)/)?.[1]);
-      const opacity = Number(style.backdropFilter.match(/opacity\(([^)]+)\)/)?.[1] ?? 1);
-      // Match the effective radius of the sharp and blurred layers in MyGo's Gaussian.
-      return Math.round(radius * Math.sqrt(opacity) * 100) / 100;
-    })();
+    const backdropBlur = id === "backupDialog" ? number(style.backdropFilter.match(/blur\(([^)]+)\)/)?.[1]) : 0;
+    const backdropBlurOpacity = backdropBlur ? Number(style.backdropFilter.match(/opacity\(([^)]+)\)/)?.[1] ?? 1) : 0;
     const bounds = element.getBoundingClientRect();
     const switchFace = /^settingsSwitch(Left|Right)/.test(id);
     const switchBounds = switchFace ? element.parentElement.getBoundingClientRect() : null;
@@ -456,7 +451,7 @@ function readStyles(sample) {
     return [id, {
       fill: color(style.backgroundColor, id === "settingsRangeTrack" ? "" : tint), text: color(text.color), border: color(style["border" + borderSide + "Color"]),
       borderWidth: borderWidths[0],
-      ...(backdropBlur ? { backdropBlur } : {}),
+      ...(backdropBlur ? { backdropBlur, backdropBlurOpacity } : {}),
       radius: id === "settingsRangeThumb" && style.borderTopLeftRadius.endsWith("%")
         ? Math.min(bounds.width, bounds.height) * number(style.borderTopLeftRadius) / 100
         : number(style.borderTopLeftRadius),
