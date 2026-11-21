@@ -159,6 +159,43 @@ function comparePixels({ web, native, dialog }) {
   });
 }
 
+async function verifyGlassStrokes(page, panel) {
+  const box = await panel.boundingBox();
+  const x = Math.floor(box.x + box.width - 100);
+  const y = Math.ceil(box.y + 9);
+  const chart = await page.evaluateHandle(x => {
+    const chart = document.createElement("div");
+    chart.style.cssText = `position: fixed; inset: 0; z-index: 10000;
+      background: linear-gradient(90deg, white ${x + 6}px, black ${x + 6}px ${x + 7}px,
+        white ${x + 7}px ${x + 15}px, black ${x + 15}px ${x + 17}px, white ${x + 17}px ${x + 29}px, black ${x + 29}px)`;
+    return document.body.appendChild(chart);
+  }, x);
+  try {
+    const screenshot = await page.screenshot({ clip: { x, y: 15, width: 40, height: y - 14 } });
+    const samples = await page.evaluate(async bytes => {
+      const image = new Image();
+      image.src = "data:image/png;base64," + bytes;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0);
+      return [0, image.height - 1].map(y =>
+        [0, 5, 6, 15, 37].map(x => context.getImageData(x, y, 1, 1).data[0]));
+    }, screenshot.toString("base64"));
+    const [outside, [bright, edge, single, double, dark]] = samples;
+    const range = bright - dark;
+    if (outside.join() !== "255,255,0,0,0" || range < 90
+      || (bright - edge) / range < 0.04 || (bright - single) / range < 0.65 || (bright - double) / range < 0.75) {
+      throw Error("The glass must retain narrow backdrop strokes, soften their edges, and leave pixels outside untouched: " + JSON.stringify(samples));
+    }
+  } finally {
+    await chart.evaluate(chart => chart.remove());
+    await chart.dispose();
+  }
+}
+
 let browser;
 try {
   const listening = once(server.httpServer, "listening");
@@ -262,13 +299,14 @@ try {
                     return getComputedStyle(document.querySelector("#root")).backdropFilter === "none" &&
                       scrim.backdropFilter === "none" &&
                       scrim.backgroundColor === "rgba(0, 0, 0, 0)" &&
-                      getComputedStyle(dialog).backdropFilter === "blur(0.9px)";
+                      getComputedStyle(dialog).backdropFilter === "blur(0.85px) opacity(0.4)";
                   } finally {
                     document.body.classList.remove("has-custom-bg");
                     root.style.removeProperty("--custom-bg-image");
                   }
                 });
                 if (!keepsLocalBlur) throw Error("The wallpaper disabled the backup sheet's local blur");
+                await verifyGlassStrokes(page, page.locator(".data-modal-content"));
                 const minimumContrast = await page.locator(".data-modal-content").evaluate(dialog => {
                   const root = document.documentElement;
                   const previous = root.style.getPropertyValue("--surface-layer-scale");

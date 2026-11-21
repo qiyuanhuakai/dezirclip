@@ -439,7 +439,13 @@ function readStyles(sample) {
     const headingShift = id.startsWith("settingsGroupHeader")
       ? (number(text.paddingTop) - number(text.paddingBottom)) / 2 : 0;
     const marginBottom = number(style.marginBottom);
-    const backdropBlur = id === "backupDialog" ? number(style.backdropFilter.match(/blur\(([^)]+)\)/)?.[1]) : 0;
+    const backdropBlur = (() => {
+      if (id !== "backupDialog") return 0;
+      const radius = number(style.backdropFilter.match(/blur\(([^)]+)\)/)?.[1]);
+      const opacity = Number(style.backdropFilter.match(/opacity\(([^)]+)\)/)?.[1] ?? 1);
+      // Match the effective radius of the sharp and blurred layers in MyGo's Gaussian.
+      return Math.round(radius * Math.sqrt(opacity) * 100) / 100;
+    })();
     const bounds = element.getBoundingClientRect();
     const switchFace = /^settingsSwitch(Left|Right)/.test(id);
     const switchBounds = switchFace ? element.parentElement.getBoundingClientRect() : null;
