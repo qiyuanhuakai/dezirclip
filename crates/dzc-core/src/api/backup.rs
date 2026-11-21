@@ -1,8 +1,14 @@
 use super::{CoreError, CoreResult, HistoryQuery, HistoryService};
 use crate::services::backup;
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 
 pub use backup::{ExportEntry, ImportMode};
+
+fn requires_passphrase(bytes: &[u8]) -> bool {
+    bytes.len() >= backup::MIN_ENCRYPTED_BACKUP_LEN
+        && !std::str::from_utf8(bytes).is_ok_and(|text| text.trim_start().starts_with('{'))
+}
 
 #[derive(Clone)]
 pub struct BackupService {
@@ -82,22 +88,47 @@ impl BackupService {
     }
 
     pub fn preview_file(&self, path: &Path, ticket: &super::CaptureTicket) -> CoreResult<Vec<String>> {
-        self.check_ticket(ticket)?;
-        let bytes = crate::filesystem::read_regular_nofollow(path).map_err(|error| CoreError::from(error.to_string()))?;
-        let data = std::str::from_utf8(&bytes).map_err(|_| CoreError::validation("expected a JSON backup"))?;
-        let entries = backup::entries_from_json(data).map_err(|error| CoreError::validation(error.to_string()))?;
-        let rows = entries.into_iter().filter(|entry| !crate::database::has_sensitive_tag(&entry.tags))
-            .take(10).map(|entry| entry.content.chars().take(500).collect()).collect();
-        self.check_ticket(ticket)?;
+        let (encrypted, rows) = self.inspect_file(path, ticket)?;
+        if encrypted {
+            return Err(CoreError::validation("expected a JSON backup"));
+        }
         Ok(rows)
+    }
+
+    pub fn inspect_file(&self, path: &Path, ticket: &super::CaptureTicket) -> CoreResult<(bool, Vec<String>)> {
+        self.check_ticket(ticket)?;
+        let io_error = |error: std::io::Error| CoreError::from(error.to_string());
+        let file = crate::filesystem::open_regular_nofollow(path).map_err(io_error)?;
+        let size = file.metadata().map_err(io_error)?.len();
+        let mut reader = BufReader::new(file);
+        let first_content = reader.fill_buf().map_err(io_error)?.iter()
+            .copied().find(|byte| !byte.is_ascii_whitespace());
+        if size >= backup::MIN_ENCRYPTED_BACKUP_LEN as u64 && first_content.is_some_and(|byte| byte != b'{') {
+            self.check_ticket(ticket)?;
+            return Ok((true, Vec::new()));
+        }
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).map_err(io_error)?;
+        let encrypted = requires_passphrase(&bytes);
+        let rows = if encrypted {
+            Vec::new()
+        } else {
+            let data = std::str::from_utf8(&bytes).map_err(|_| CoreError::validation("expected a JSON backup"))?;
+            let entries = backup::entries_from_json(data).map_err(|error| CoreError::validation(error.to_string()))?;
+            entries.into_iter().filter(|entry| !crate::database::has_sensitive_tag(&entry.tags))
+                .take(10).map(|entry| entry.content.chars().take(500).collect()).collect()
+        };
+        self.check_ticket(ticket)?;
+        Ok((encrypted, rows))
     }
 
     pub fn import_file_authorized(&self, path: &Path, passphrase: Option<&str>, mode: ImportMode, ticket: &super::CaptureTicket) -> CoreResult<usize> {
         self.check_ticket(ticket)?;
         let bytes = crate::filesystem::read_regular_nofollow(path).map_err(|error| CoreError::from(error.to_string()))?;
-        let plain = std::str::from_utf8(&bytes).is_ok_and(|text| text.trim_start().starts_with('{'));
-        let password = if plain || bytes.len() < 28 { None } else {
+        let password = if requires_passphrase(&bytes) {
             Some(passphrase.filter(|value| !value.is_empty()).ok_or_else(|| CoreError::validation("encrypted import requires a passphrase"))?)
+        } else {
+            None
         };
         self.import_bytes_authorized(&bytes, password, mode, ticket)
     }

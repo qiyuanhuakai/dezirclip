@@ -57,6 +57,13 @@ byte count. The client checks the instance, privacy epoch, byte count and result
 schema before using the body. Older peers and larger snapshots use the original
 session-bound descriptor and `desktop.snapshot.read` frames.
 
+The Desktop can discover `desktop.backup.inspect` in its capability report.
+Inspection uses the same file and privacy checks as backup preview. JSON backups
+include up to ten non-protected preview rows. For a potential encrypted backup,
+inspection returns an empty list and requests a passphrase through the format
+flag. Authentication takes place during import. The existing JSON-only preview
+method remains available to older clients.
+
 Native transport fixture (synthetic data, no clipboard/GUI/database):
 
 ```text

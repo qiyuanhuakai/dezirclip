@@ -31,7 +31,7 @@ const cases = {
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
   "emoji-favorites": { states: ["default", "empty", "hover", "drop"], text: "Add emoji" },
   "settings-data": { states: ["default", "hover-path", "hover-action"], text: "Data storage path" },
-  "backup-dialog": { states: ["default", "encrypted", "error", "import", "replace", "replace-confirmed", "glass"], text: "File path" },
+  "backup-dialog": { states: ["default", "encrypted", "error", "import", "import-encrypted", "replace", "replace-confirmed", "glass"], text: "File path" },
   "settings-update": { states: ["default", "unknown-size", "installing"], text: "Installed version" },
   "settings-update-actions": { states: ["default", "busy", "hover"], text: "Check now" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
@@ -586,7 +586,8 @@ try {
               : fixture === "settings-update-actions" ? state === "busy" ? "42%" : "Install update"
               : fixture === "backup-dialog" ? {
                 default: "Export format", glass: "Export format", encrypted: "Confirm passphrase", error: "Passphrase must be at least 12 characters",
-                import: "Release checklist", replace: "Confirm replacing clipboard history", "replace-confirmed": "Confirm replacing clipboard history",
+                import: "Release checklist", "import-encrypted": "Decryption passphrase",
+                replace: "Confirm replacing clipboard history", "replace-confirmed": "Confirm replacing clipboard history",
               }[state]
               : state === "southeast" ? "SouthEast" : state === "scrolled" ? "1 scroll" : "";
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
@@ -755,6 +756,14 @@ try {
               } else {
                 await close.click();
                 await dialog.waitFor({ state: "hidden" });
+              }
+            }
+            if (fixture === "backup-dialog" && state === "import-encrypted") {
+              const password = page.getByLabel("Decryption passphrase", { exact: true });
+              if (await password.getAttribute("type") !== "password" ||
+                  await page.getByRole("list", { name: "Preview entries" }).count() ||
+                  !comparable(nativeText, "Decryption passphrase") || comparable(nativeText, "Preview entries")) {
+                throw Error("The detected encrypted backup should show a password field and keep the preview hidden");
               }
             }
             if (fixture === "backup-dialog" && state === "import") {

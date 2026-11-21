@@ -137,7 +137,8 @@ export function SettingsDataFixture() {
 
 export function BackupDialogFixture({ state }: { state: string }) {
   const replacing = state.startsWith("replace");
-  const restoring = state === "import" || replacing;
+  const encryptedImport = state === "import-encrypted";
+  const restoring = state === "import" || encryptedImport || replacing;
   const encrypted = ["encrypted", "error", "hover-submit", "hover-cancel"].includes(state);
   const [format, setFormat] = useState(encrypted ? "encrypted" : "json");
   const [mode, setMode] = useState(replacing ? "replace" : "merge");
@@ -164,7 +165,9 @@ export function BackupDialogFixture({ state }: { state: string }) {
       <BackupField label="Confirm passphrase" type="password" placeholder="••••••••••••" />
     </>}
     <BackupField label="File path" value={path} readOnly browse="Browse" />
-    {restoring && <BackupPreview label="Preview entries" entries={["Release checklist", "Example screenshot", "Draft notes"]} />}
+    {encryptedImport
+      ? <BackupField label="Decryption passphrase" type="password" placeholder="••••••••••••" />
+      : restoring && <BackupPreview label="Preview entries" entries={["Release checklist", "Example screenshot", "Draft notes"]} />}
   </BackupDialog>;
   return state === "glass" ? <><div className="showcase-backup-underlay"><SettingsDataFixture /></div>{dialog}</> : dialog;
 }

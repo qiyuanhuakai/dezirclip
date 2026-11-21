@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"path/filepath"
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -40,15 +38,11 @@ func (n *nativeMain) closeBackup() {
 }
 
 func (b *nativeBackupDialog) encrypted() bool {
-	if !b.restoring {
-		return b.format == "encrypted"
-	}
-	switch strings.ToLower(filepath.Ext(b.path)) {
-	case ".dzc", ".tiez":
-		return true
-	default:
-		return false
-	}
+	return b.format == "encrypted"
+}
+
+func (b *nativeBackupDialog) canSubmit() bool {
+	return b.path != "" && b.format != "" && (!b.restoring || b.mode != "replace" || b.replaceConfirmed)
 }
 
 func (n *nativeMain) dataSettings(c *ui.Context) {
@@ -103,8 +97,7 @@ func (n *nativeMain) backupView(c *ui.Context, kit uikit.Kit, form *nativeBackup
 		if n.mutating {
 			submit = n.text("processing")
 		}
-		disabled := form.path == "" || form.mode == "replace" && !form.replaceConfirmed
-		kit.BackupActions(c, n.text("cancel"), submit, n.mutating, disabled,
+		kit.BackupActions(c, n.text("cancel"), submit, n.mutating, !form.canSubmit(),
 			func() { form.open = false }, func() { n.submitBackup(form) })
 	})
 	if !form.open {
@@ -118,10 +111,12 @@ func (n *nativeMain) backupImportFields(c *ui.Context, kit uikit.Kit, form *nati
 		{Value: "replace", Label: n.text("data.import.replace")},
 	}, n.mutating) {
 		form.replaceConfirmed = false
-		form.message = ""
+		if form.format != "" {
+			form.message = ""
+		}
 	}
 	if form.mode == "replace" {
-		kit.BackupReplaceConfirmation(c, &form.replaceConfirmed, n.text("native_backup_replace_confirm"), n.mutating)
+		kit.BackupReplaceConfirmation(c, &form.replaceConfirmed, n.text("native_backup_replace_confirm"), n.mutating || form.format == "")
 	}
 }
 
@@ -173,10 +168,8 @@ func (n *nativeMain) chooseBackupFile(form *nativeBackupDialog, title string) {
 			form.clearPreview()
 			form.path, form.replaceConfirmed = path, false
 			if restoring {
-				form.passphrase, form.passphraseError = "", ""
-				if !form.encrypted() {
-					n.previewBackup(form)
-				}
+				form.format, form.passphrase, form.passphraseError = "", "", ""
+				n.inspectBackup(form)
 			}
 		})
 	}()
@@ -200,30 +193,35 @@ func pickBackupFile(window *mygo.Window, title string, language nativeLanguage, 
 		DefaultPath: "clipboard-export." + filter.Extensions[0], Filters: []mygo.FileFilter{filter}})
 }
 
-func (n *nativeMain) previewBackup(form *nativeBackupDialog) {
+func (n *nativeMain) inspectBackup(form *nativeBackupDialog) {
 	n.mutating, form.previewAllowed = true, true
 	session, epoch, path := n.session, n.history.state.PrivacyEpoch, form.path
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 8*time.Second)
 		defer cancel()
-		rows, err := n.library.PreviewBackup(ctx, epoch, path)
+		inspection, err := n.library.InspectBackup(ctx, epoch, path)
 		n.update(session, func() {
 			n.mutating = false
-			if n.backup != form || !form.previewAllowed {
+			if n.backup != form || n.history.state.PrivacyEpoch != epoch {
 				return
 			}
 			if err != nil {
 				form.message = n.text("native_backup_preview_failed")
-			} else {
-				form.preview = rows
+				return
+			}
+			form.format = "json"
+			if inspection.Encrypted {
+				form.format = "encrypted"
+			}
+			if form.previewAllowed {
+				form.preview = inspection.Entries
 			}
 		})
 	}()
 }
 
 func (n *nativeMain) submitBackup(form *nativeBackupDialog) {
-	if n.session == nil || n.backup != form || n.mutating || n.private || form.path == "" ||
-		form.mode == "replace" && !form.replaceConfirmed {
+	if n.session == nil || n.backup != form || n.mutating || n.private || !form.canSubmit() {
 		return
 	}
 	var password *string
@@ -245,8 +243,6 @@ func (n *nativeMain) submitBackup(form *nativeBackupDialog) {
 		password = &value
 	}
 	n.mutating, form.message = true, ""
-	form.clearPreview()
-	form.passphrase, form.confirmation = "", ""
 	session, epoch := n.session, n.history.state.PrivacyEpoch
 	restoring, path, mode, format := form.restoring, form.path, form.mode, form.format
 	go func() {

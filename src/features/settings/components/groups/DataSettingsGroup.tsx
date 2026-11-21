@@ -6,7 +6,8 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { SettingsDataPath, SettingsDataAction } from "@deziro/ui-react/components/SettingsData";
 import { BackupActions, BackupChoices, BackupDialog, BackupField, BackupPreview, BackupReplaceConfirmation } from "@deziro/ui-react/components/BackupDialog";
 
-import { invokePrivacyBound, subscribePrivacyInvalidation } from "../../../../shared/lib/privacySession";
+import { beginPrivacyAccess, subscribePrivacyInvalidation } from "../../../../shared/lib/privacySession";
+import { usePrivacySession } from "../../../../shared/hooks/usePrivacySession";
 
 interface DataSettingsGroupProps {
     t: (key: string) => string;
@@ -18,16 +19,21 @@ interface DataSettingsGroupProps {
 interface ExportModalProps {
     t: (key: string) => string;
     onClose: () => void;
+    onComplete: () => void;
 }
-
-const encryptedBackup = (path: string) => /\.(dzc|tiez)$/i.test(path);
 
 interface ImportModalProps {
     t: (key: string) => string;
     onClose: () => void;
+    onComplete: () => void;
 }
 
-const ExportModal = ({ t, onClose }: ExportModalProps) => {
+interface BackupInspection {
+    encrypted: boolean;
+    entries: Array<{ content: string }>;
+}
+
+const ExportModal = ({ t, onClose, onComplete }: ExportModalProps) => {
     const [format, setFormat] = useState<"json" | "encrypted">("json");
     const [passphrase, setPassphrase] = useState("");
     const [passphraseConfirm, setPassphraseConfirm] = useState("");
@@ -76,6 +82,11 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
 
     const handleExport = async () => {
         if (!validate() || !filePath) return;
+        const access = beginPrivacyAccess("list");
+        if (!access) {
+            setFailure(t("native_backup_export_failed"));
+            return;
+        }
         setExporting(true);
         setFailure("");
         try {
@@ -83,8 +94,12 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
                 path: filePath,
                 format,
                 passphrase: format === "encrypted" ? passphrase : undefined,
+                expectedEpoch: access.epoch,
             });
-            onClose();
+            if (access.isCurrent()) {
+                onComplete();
+                onClose();
+            }
         } catch {
             setFailure(t("native_backup_export_failed"));
         } finally {
@@ -122,64 +137,77 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
     </BackupDialog>;
 };
 
-const ImportModal = ({ t, onClose }: ImportModalProps) => {
+const ImportModal = ({ t, onClose, onComplete }: ImportModalProps) => {
     const [mode, setMode] = useState<"merge" | "replace">("merge");
     const [replaceConfirmed, setReplaceConfirmed] = useState(false);
     const [filePath, setFilePath] = useState("");
+    const [format, setFormat] = useState<"json" | "encrypted" | null>(null);
     const [passphrase, setPassphrase] = useState("");
     const [importing, setImporting] = useState(false);
     const [picking, setPicking] = useState(false);
     const [failure, setFailure] = useState("");
     const [passphraseError, setPassphraseError] = useState("");
     const [previewEntries, setPreviewEntries] = useState<Array<{ content: string }>>([]);
-    const [showPreview, setShowPreview] = useState(false);
 
     const selection = useRef(0);
     useEffect(() => {
-        const clear = () => {
-            selection.current++;
+        const unsubscribe = subscribePrivacyInvalidation(scope => {
             setPreviewEntries([]);
-            setShowPreview(false);
-        };
-        const unsubscribe = subscribePrivacyInvalidation(clear);
+            if (scope === "all") {
+                selection.current++;
+                setFilePath("");
+                setFormat(null);
+                setReplaceConfirmed(false);
+                setPassphrase("");
+                setPassphraseError("");
+                setFailure("");
+            }
+        });
         return () => { selection.current++; unsubscribe(); };
     }, []);
 
     const handleBrowse = async () => {
+        const request = ++selection.current;
         setPicking(true);
-        setFailure("");
         try {
             const path = await open({ multiple: false, filters: [{ name: "Backup", extensions: ["json", "dzc", "tiez"] }] });
-            if (!path) return;
-            const request = ++selection.current;
+            if (!path || request !== selection.current) return;
             setFilePath(path);
+            setFormat(null);
+            setFailure("");
             setReplaceConfirmed(false);
             setPreviewEntries([]);
-            setShowPreview(false);
             setPassphrase("");
             setPassphraseError("");
 
-            if (!encryptedBackup(path)) {
-                try {
-                    const data = await invokePrivacyBound<Array<{ content: string }>>("preview_backup_file", { path });
-                    if (request !== selection.current) return;
-                    setPreviewEntries(data);
-                    setShowPreview(true);
-                } catch {
-                    if (request === selection.current) setFailure(t("native_backup_preview_failed"));
-                }
+            try {
+                const access = beginPrivacyAccess("list");
+                const previewAccess = beginPrivacyAccess();
+                if (!access) throw new Error("PrivacyStateUnavailable");
+                const inspection = await invoke<BackupInspection>("inspect_backup_file", { path, expectedEpoch: access.epoch });
+                if (request !== selection.current || !access.isCurrent()) return;
+                setFormat(inspection.encrypted ? "encrypted" : "json");
+                if (previewAccess?.isCurrent()) setPreviewEntries(inspection.entries);
+            } catch {
+                if (request === selection.current) setFailure(t("native_backup_preview_failed"));
             }
         } catch {
-            setFailure(t("native_backup_picker_failed"));
+            if (request === selection.current) setFailure(t("native_backup_picker_failed"));
         } finally {
             setPicking(false);
         }
     };
 
+    const canSubmit = Boolean(filePath && format && (mode !== "replace" || replaceConfirmed));
     const handleImport = async () => {
-        if (!filePath || mode === "replace" && !replaceConfirmed) return;
-        if (encryptedBackup(filePath) && !passphrase) {
+        if (!canSubmit) return;
+        if (format === "encrypted" && !passphrase) {
             setPassphraseError(t("native_backup_password_required"));
+            return;
+        }
+        const access = beginPrivacyAccess("list");
+        if (!access) {
+            setFailure(t("native_backup_import_failed"));
             return;
         }
         setPassphraseError("");
@@ -189,9 +217,13 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
             await invoke("import_from_file", {
                 path: filePath,
                 mode,
-                passphrase: encryptedBackup(filePath) ? passphrase : undefined,
+                passphrase: format === "encrypted" ? passphrase : undefined,
+                expectedEpoch: access.epoch,
             });
-            onClose();
+            if (access.isCurrent()) {
+                onComplete();
+                onClose();
+            }
         } catch {
             setFailure(t("native_backup_import_failed"));
         } finally {
@@ -203,26 +235,41 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
     const close = () => { if (!busy) onClose(); };
     return <BackupDialog title={t("data.import.title")} busy={busy} onClose={close}
         footer={<BackupActions cancel={t("cancel")} submit={t(busy ? "processing" : "data.import.title")}
-            busy={busy} disabled={!filePath || mode === "replace" && !replaceConfirmed} onCancel={close} onSubmit={handleImport} />}>
+            busy={busy} disabled={!canSubmit} onCancel={close} onSubmit={handleImport} />}>
         <BackupChoices label={t("data.import.mode")} value={mode}
             options={[{ value: "merge", label: t("data.import.merge") }, { value: "replace", label: t("data.import.replace") }]}
-            disabled={busy} onChange={next => { setMode(next); setReplaceConfirmed(false); setFailure(""); }} />
+            disabled={busy} onChange={next => {
+                setMode(next);
+                setReplaceConfirmed(false);
+                if (format) setFailure("");
+            }} />
         {mode === "replace" && <BackupReplaceConfirmation label={t("native_backup_replace_confirm")}
-            checked={replaceConfirmed} disabled={busy} onChange={setReplaceConfirmed} />}
+            checked={replaceConfirmed} disabled={busy || format === null} onChange={setReplaceConfirmed} />}
         <BackupField label={t("data_path")} value={filePath} readOnly title={filePath}
             browse={t("browse_file")} onBrowse={handleBrowse} disabled={busy} />
-        {encryptedBackup(filePath) && <BackupField label={t("data.import.passphrase_prompt")} type="password"
+        {format === "encrypted" && <BackupField label={t("data.import.passphrase_prompt")} type="password"
             value={passphrase} onChange={e => setPassphrase(e.target.value)} placeholder="••••••••••••"
             autoComplete="off" disabled={busy} error={passphraseError} />}
-        {showPreview && previewEntries.length > 0 &&
+        {previewEntries.length > 0 &&
             <BackupPreview label={t("data.import.preview")} entries={previewEntries.map(entry => entry.content)} />}
         {failure && <p className="data-error" role="alert">{failure}</p>}
     </BackupDialog>;
 };
 
 const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGroupProps) => {
-    const [showExportModal, setShowExportModal] = useState(false);
-    const [showImportModal, setShowImportModal] = useState(false);
+    const [backupDialog, setBackupDialog] = useState<"export" | "import" | null>(null);
+    const [completed, setCompleted] = useState<"export" | "import" | null>(null);
+    const privacy = usePrivacySession();
+    const privateSession = privacy.snapshot?.session.active === true;
+    const backupDisabled = privacy.phase !== "ready" || privateSession;
+    useEffect(() => {
+        if (privateSession) setBackupDialog(null);
+    }, [privateSession]);
+
+    const openBackup = (mode: "export" | "import") => {
+        setCompleted(null);
+        setBackupDialog(mode);
+    };
 
     return (
         <div className={`settings-group ${collapsed ? "collapsed" : ""}`}>
@@ -285,25 +332,27 @@ const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGro
                     </SettingsDataPath>
 
                     <div className="data-actions-row">
-                        <SettingsDataAction icon="export"
-                            onClick={() => setShowExportModal(true)}
+                        <SettingsDataAction icon="export" disabled={backupDisabled}
+                            onClick={() => openBackup("export")}
                         >
                             {t("data.export.title")}
                         </SettingsDataAction>
-                        <SettingsDataAction icon="import"
-                            onClick={() => setShowImportModal(true)}
+                        <SettingsDataAction icon="import" disabled={backupDisabled}
+                            onClick={() => openBackup("import")}
                         >
                             {t("data.import.title")}
                         </SettingsDataAction>
                     </div>
+                    {privateSession && <p className="settings-value">{t("native_backup_private")}</p>}
+                    {completed && <p className="settings-value" role="status">{t(`data.${completed}.success`)}</p>}
                 </div>
             )}
 
-            {showExportModal && (
-                <ExportModal t={t} onClose={() => setShowExportModal(false)} />
+            {backupDialog === "export" && (
+                <ExportModal t={t} onClose={() => setBackupDialog(null)} onComplete={() => setCompleted("export")} />
             )}
-            {showImportModal && (
-                <ImportModal t={t} onClose={() => setShowImportModal(false)} />
+            {backupDialog === "import" && (
+                <ImportModal t={t} onClose={() => setBackupDialog(null)} onComplete={() => setCompleted("import")} />
             )}
         </div>
     );

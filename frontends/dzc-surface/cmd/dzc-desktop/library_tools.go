@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
@@ -43,6 +45,26 @@ func (l *Library) PreviewBackup(ctx context.Context, epoch uint64, path string) 
 	params := protocol.BackupPreviewParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path}
 	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopBackupPreview, params, "BackupPreview", &result)
 	return result.Entries, err
+}
+
+func (l *Library) InspectBackup(ctx context.Context, epoch uint64, path string) (protocol.BackupInspection, error) {
+	var result protocol.BackupInspection
+	var capabilities protocol.CapabilityReport
+	if err := l.owner.DesktopCall(ctx, protocol.MethodCapabilities, struct{}{}, "CapabilityReport", &capabilities); err != nil {
+		return result, err
+	}
+	if !slices.Contains(capabilities.Methods, string(protocol.MethodDesktopBackupInspect)) {
+		switch strings.ToLower(filepath.Ext(path)) {
+		case ".dzc", ".tiez":
+			return protocol.BackupInspection{Encrypted: true, Entries: []protocol.BackupPreviewRow{}}, nil
+		}
+		var err error
+		result.Entries, err = l.PreviewBackup(ctx, epoch, path)
+		return result, err
+	}
+	params := protocol.BackupPreviewParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path}
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopBackupInspect, params, "BackupInspection", &result)
+	return result, err
 }
 
 func (l *Library) ImportBackup(ctx context.Context, epoch uint64, path, mode string, passphrase *string) (protocol.BackupImportResult, error) {

@@ -191,6 +191,11 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 24%, transparent);
 }
 
+.data-input::placeholder {
+  color: var(--dc-text-muted, var(--text-secondary));
+  opacity: 1;
+}
+
 .data-input-path {
   flex: 1;
   min-width: 0;

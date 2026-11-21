@@ -689,7 +689,7 @@ func TestNativeMainPrivacySettingsAreClosedOnReentry(t *testing.T) {
 func TestNativeBackupConfirmationFitsMinimumWindow(t *testing.T) {
 	window := nativeMain{showSettings: true, settingsSection: "data", preferences: map[string]string{"app.language": "en"}}
 	window.backup = &nativeBackupDialog{
-		open: true, restoring: true, mode: "replace", path: "fixture.json",
+		open: true, restoring: true, mode: "replace", format: "json", path: "fixture.json",
 		preview: make([]protocol.BackupPreviewRow, 10),
 	}
 	for i := range window.backup.preview {
@@ -718,19 +718,35 @@ func TestNativeBackupFormatsAndReplaceConfirmation(t *testing.T) {
 	if err := tester.Click("Cancel"); err != nil || window.backup != nil {
 		t.Fatalf("cancel did not close the backup dialog: %v", err)
 	}
-	restore := &nativeBackupDialog{open: true, restoring: true, mode: "merge", path: "fixture.json"}
+	restore := &nativeBackupDialog{open: true, restoring: true, mode: "merge", path: "fixture.dzc",
+		format: "json", preview: []protocol.BackupPreviewRow{{Content: "Sample backup entry"}}}
 	window.backup = restore
 	tester.Frame()
+	password := "DECRYPTION PASSPHRASE"
+	if tester.HasText(password) || !tester.HasText("Sample backup entry") || !restore.canSubmit() {
+		t.Fatalf("the detected JSON backup should show its preview at an encrypted filename: %v", tester.Texts())
+	}
+	restore.path, restore.format = "fixture.json", ""
+	restore.clearPreview()
+	tester.Frame()
+	if restore.canSubmit() {
+		t.Fatal("import was enabled before the new selection was inspected")
+	}
+	restore.format = "encrypted"
+	tester.Frame()
+	if !tester.HasText(password) || tester.HasText("Sample backup entry") {
+		t.Fatalf("the detected encrypted backup should request a password at a JSON filename: %v", tester.Texts())
+	}
 	if err := tester.Click(window.text("data.import.replace")); err != nil {
 		t.Fatal(err)
 	}
-	if restore.mode != "replace" || restore.replaceConfirmed {
+	if restore.mode != "replace" || restore.replaceConfirmed || restore.canSubmit() {
 		t.Fatal("selecting replacement must wait for explicit confirmation")
 	}
 	if err := tester.Click(window.text("native_backup_replace_confirm")); err != nil {
 		t.Fatal(err)
 	}
-	if !restore.replaceConfirmed {
+	if !restore.replaceConfirmed || !restore.canSubmit() {
 		t.Fatal("checking the replacement confirmation did not update the form")
 	}
 }

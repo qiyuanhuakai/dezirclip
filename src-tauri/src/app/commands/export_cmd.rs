@@ -9,10 +9,10 @@ use dzc_host::wire::{BackupExportParams, BackupExportResult as ExportSummary, Me
 use tauri::State;
 
 #[tauri::command]
-pub async fn export_to_file(host: State<'_, DesktopHost>, path: String, format: String, passphrase: Option<String>) -> Result<ExportSummary, String> {
+pub async fn export_to_file(host: State<'_, DesktopHost>, path: String, format: String, passphrase: Option<String>, expected_epoch: Option<u64>) -> Result<ExportSummary, String> {
     let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await?;
     host.blocking_call(Method::DesktopBackupExport, BackupExportParams { service_instance_id: state.service_instance_id,
-        expected_epoch: state.privacy_epoch, path, format, passphrase }, "BackupExportResult").await
+        expected_epoch: expected_epoch.unwrap_or(state.privacy_epoch), path, format, passphrase }, "BackupExportResult").await
 }
 
 /// Pure helper: serialize `entries` and write to `path`.

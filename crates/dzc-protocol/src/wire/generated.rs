@@ -48,6 +48,13 @@ pub struct BackupPreview {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct BackupInspection {
+    pub encrypted: bool,
+    pub entries: Vec<BackupPreviewRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BackupImportResult {
     pub imported: u64,
     pub skipped: u64,
@@ -627,6 +634,8 @@ pub enum Method {
     DesktopToolsQr,
     #[serde(rename = "desktop.backup.preview")]
     DesktopBackupPreview,
+    #[serde(rename = "desktop.backup.inspect")]
+    DesktopBackupInspect,
     #[serde(rename = "desktop.backup.import")]
     DesktopBackupImport,
     #[serde(rename = "desktop.backup.export")]

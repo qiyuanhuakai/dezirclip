@@ -87,6 +87,7 @@
         "desktop.tools.transform",
         "desktop.tools.qr",
         "desktop.backup.preview",
+        "desktop.backup.inspect",
         "desktop.backup.import",
         "desktop.backup.export",
         "desktop.ocr.recognize",
@@ -1145,7 +1146,7 @@
           "if": {
             "properties": {
               "method": {
-                "enum": ["desktop.backup.preview", "desktop.profile.move"]
+                "enum": ["desktop.backup.preview", "desktop.backup.inspect", "desktop.profile.move"]
               }
             },
             "required": [

@@ -224,6 +224,28 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	instance, epoch := status.State.ServiceInstanceId, status.State.PrivacyEpoch
 	t.Run("preferences during snapshot contention", func(t *testing.T) {
+		// Small settings responses now travel inline and do not reserve a snapshot slot.
+		path := filepath.Join(t.TempDir(), "snapshot-capacity.dezirtheme.json")
+		body, err := json.Marshal(map[string]any{
+			"format": "dezirclip-theme", "version": 1, "id": "snapshot-capacity-fixture",
+			"name": "Snapshot capacity fixture", "base": "retro",
+			"css": ":root.light-mode{--dc-accent:#156c44}/*" + strings.Repeat("a", 64*1024) + "*/",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, body, 0600); err != nil {
+			t.Fatal(err)
+		}
+		theme, err := library.ImportTheme(ctx, path, epoch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := library.RemoveTheme(ctx, theme.Id, epoch); err != nil {
+				t.Errorf("remove temporary snapshot fixture: %v", err)
+			}
+		})
 		host, err := owner.DesktopConnection(ctx)
 		if err != nil {
 			t.Fatal(err)
@@ -234,6 +256,9 @@ func TestReactLibraryWithService(t *testing.T) {
 		for i := range held {
 			if err := host.Call(ctx, protocol.MethodDesktopSettingsPreferences, params, "BodySnapshot", &held[i]); err != nil {
 				t.Fatal(err)
+			}
+			if held[i].InlineJson != nil {
+				t.Fatal("snapshot contention requires a non-inline response")
 			}
 		}
 		var excess protocol.BodySnapshot
@@ -593,20 +618,30 @@ func TestReactLibraryWithService(t *testing.T) {
 	if err != nil || imported.Imported != 1 || imported.Mode != "merge" {
 		t.Fatalf("import: %+v %v", imported, err)
 	}
-	plain := filepath.Join(t.TempDir(), "clipboard-export.json")
+	plain := filepath.Join(t.TempDir(), "plaintext-with-encrypted-extension.dzc")
 	exportedBackup, err := library.ExportBackup(ctx, epoch, plain, "json", nil)
 	if err != nil || exportedBackup.Count != 1 || exportedBackup.Encrypted {
 		t.Fatalf("JSON export: %+v %v", exportedBackup, err)
 	}
-	preview, err = library.PreviewBackup(ctx, epoch, plain)
-	if err != nil || len(preview) != 1 || preview[0].Content != "bridge-marker" {
-		t.Fatalf("exported preview: %+v %v", preview, err)
+	inspection, err := library.InspectBackup(ctx, epoch, plain)
+	if err != nil || inspection.Encrypted || len(inspection.Entries) != 1 || inspection.Entries[0].Content != "bridge-marker" {
+		t.Fatalf("exported JSON inspection: %+v %v", inspection, err)
 	}
-	encrypted := filepath.Join(t.TempDir(), "clipboard-export.dzc")
+	encrypted := filepath.Join(t.TempDir(), "encrypted-with-plain-extension.json")
 	password, wrong := "mygo backup test passphrase", "incorrect backup test passphrase"
 	exportedBackup, err = library.ExportBackup(ctx, epoch, encrypted, "encrypted", &password)
 	if err != nil || !exportedBackup.Encrypted || exportedBackup.Count != 1 {
 		t.Fatalf("encrypted export: %+v %v", exportedBackup, err)
+	}
+	inspection, err = library.InspectBackup(ctx, epoch, encrypted)
+	if err != nil || !inspection.Encrypted || len(inspection.Entries) != 0 {
+		t.Fatalf("encrypted backup inspection: %+v %v", inspection, err)
+	}
+	if _, err := library.PreviewBackup(ctx, epoch, encrypted); err == nil {
+		t.Fatal("legacy JSON preview accepted an encrypted backup")
+	}
+	if _, err := library.InspectBackup(ctx, epoch+1, encrypted); err == nil {
+		t.Fatal("backup inspection ignored the private-session epoch")
 	}
 	if _, err := library.ImportBackup(ctx, epoch, encrypted, "replace", &wrong); err == nil {
 		t.Fatal("wrong backup passphrase accepted")
@@ -618,6 +653,7 @@ func TestReactLibraryWithService(t *testing.T) {
 	if err != nil || imported.Imported != 1 || imported.Mode != "replace" {
 		t.Fatalf("encrypted restore: %+v %v", imported, err)
 	}
+	t.Log("verified content-based backup inspection and restore with mismatched filename suffixes")
 	query := "bridge-marker"
 	search := protocol.DesktopPageParams{Query: &query, Limit: 40}
 	rows, err := library.Page(ctx, search, epoch)

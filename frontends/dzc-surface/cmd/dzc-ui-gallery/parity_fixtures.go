@@ -376,7 +376,8 @@ func (g *gallery) backupDialogFixture(c *ui.Context, kit uikit.Kit) {
 		})
 	}
 	replacing := strings.HasPrefix(g.state, "replace")
-	open, restoring := true, g.state == "import" || replacing
+	encryptedImport := g.state == "import-encrypted"
+	open, restoring := true, g.state == "import" || encryptedImport || replacing
 	title, path := "Export clipboard history", ""
 	if restoring {
 		title, path = "Import clipboard history", "C:/Example/clipboard.json"
@@ -416,7 +417,11 @@ func (g *gallery) backupDialogFixture(c *ui.Context, kit uikit.Kit) {
 			}
 		}
 		kit.BackupField(c, uikit.BackupFieldOptions{Label: "File path", Value: &path, ReadOnly: true, BrowseLabel: "Browse"})
-		if restoring {
+		if encryptedImport {
+			var passphrase string
+			kit.BackupField(c, uikit.BackupFieldOptions{Label: "Decryption passphrase", Value: &passphrase,
+				Placeholder: "••••••••••••", Password: true})
+		} else if restoring {
 			kit.BackupPreview(c, "Preview entries", []string{"Release checklist", "Example screenshot", "Draft notes"})
 		}
 	}, func() {

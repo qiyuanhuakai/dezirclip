@@ -332,7 +332,7 @@ mod tests {
             *host.after_backup_ticket.lock().unwrap() = Some((reached, paused));
             let request = BackupPreviewParams { service_instance_id: initial.service_instance_id,
                 expected_epoch: initial.privacy_epoch, path: directory.join("backup.json").to_str().unwrap().into() };
-            let preview = tokio::spawn(async move { desktop.call::<BackupPreview>(Method::DesktopBackupPreview, request, "BackupPreview").await });
+            let preview = tokio::spawn(async move { desktop.call::<BackupInspection>(Method::DesktopBackupInspect, request, "BackupInspection").await });
             tokio::time::timeout(Duration::from_secs(3), waiting).await.unwrap().unwrap();
             let privacy = tokio::time::timeout(Duration::from_secs(1), control.call::<PrivacyState>(
                 Method::PrivacySet, serde_json::json!({"active":true}), "PrivacyState")).await.unwrap().unwrap();

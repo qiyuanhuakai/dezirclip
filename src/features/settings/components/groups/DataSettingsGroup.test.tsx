@@ -8,11 +8,21 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 const mockSave = vi.fn();
+const mockOpen = vi.fn();
 vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
+  open: (...args: unknown[]) => mockOpen(...args),
   save: (...args: unknown[]) => mockSave(...args),
   ask: vi.fn(),
   message: vi.fn(),
+}));
+
+let privateSession = false;
+vi.mock("../../../../shared/hooks/usePrivacySession", () => ({
+  usePrivacySession: () => ({ phase: "ready", snapshot: { session: { active: privateSession } } }),
+}));
+vi.mock("../../../../shared/lib/privacySession", () => ({
+  beginPrivacyAccess: () => ({ epoch: 3, isCurrent: () => !privateSession }),
+  subscribePrivacyInvalidation: () => () => undefined,
 }));
 
 const t = (key: string) => key;
@@ -27,6 +37,7 @@ const defaultProps = {
 describe("DataSettingsGroup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    privateSession = false;
   });
 
   it("test_renders_export_button: Export button is visible", () => {
@@ -63,6 +74,24 @@ describe("DataSettingsGroup", () => {
     fireEvent.click(screen.getByText("data.import.title"));
     expect(screen.getByText("data.import.merge")).toBeInTheDocument();
     expect(screen.getByText("data.import.replace")).toBeInTheDocument();
+  });
+
+  it("shows a password field for detected encryption even at a JSON filename", async () => {
+    mockOpen.mockResolvedValueOnce("/tmp/renamed.json");
+    mockInvoke.mockResolvedValueOnce({ encrypted: true, entries: [] });
+    render(<DataSettingsGroup {...defaultProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "data.import.title" }));
+    fireEvent.click(screen.getByRole("button", { name: "browse_file" }));
+    expect(await screen.findByLabelText("data.import.passphrase_prompt")).toHaveAttribute("type", "password");
+    expect(mockInvoke).toHaveBeenCalledWith("inspect_backup_file", { path: "/tmp/renamed.json", expectedEpoch: 3 });
+  });
+
+  it("disables backup actions while a private session is active", () => {
+    privateSession = true;
+    render(<DataSettingsGroup {...defaultProps} />);
+    expect(screen.getByRole("button", { name: "data.export.title" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "data.import.title" })).toBeDisabled();
+    expect(screen.getByText("native_backup_private")).toBeInTheDocument();
   });
 
   it("test_export_modal_validates_passphrase: encrypted format requires 12+ char passphrase", async () => {

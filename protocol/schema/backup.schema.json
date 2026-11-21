@@ -130,6 +130,23 @@
       ],
       "additionalProperties": false
     },
+    "BackupInspection": {
+      "type": "object",
+      "properties": {
+        "encrypted": {
+          "type": "boolean"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "https://dezirclip.local/protocol/v1/backup.schema.json#/$defs/BackupPreviewRow"
+          }
+        }
+      },
+      "required": ["encrypted", "entries"],
+      "additionalProperties": false
+    },
     "BackupImportResult": {
       "type": "object",
       "properties": {

@@ -350,7 +350,7 @@ impl Host {
                 if self.actions.can_copy() { methods.push("desktop.screen.finish"); }
             }
             methods.extend(["desktop.ocr.recognize", "desktop.ocr.status", "desktop.ocr.engine"]);
-            methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
+            methods.extend(["desktop.backup.preview", "desktop.backup.inspect", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
                 methods.push("desktop.hotkey.recording");
@@ -454,7 +454,7 @@ impl Host {
             Method::DesktopScreenBegin | Method::DesktopScreenRead | Method::DesktopScreenCrop | Method::DesktopScreenCancel | Method::DesktopScreenFinish |
             Method::DesktopHistoryOpen | Method::DesktopFilesDrop | Method::DesktopFilesDrag | Method::DesktopApplicationsSelect | Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
             Method::DesktopWindowPaste | Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
-            Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview | Method::DesktopSystemExplorerRestart)
+            Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview | Method::DesktopBackupInspect | Method::DesktopSystemExplorerRestart)
     }
     fn subscribe(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
         if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
@@ -585,7 +585,7 @@ impl Host {
                 self.delete_library_entries(session, request.method, request.params),
             Method::DesktopTagsColor | Method::DesktopHistoryClear | Method::DesktopHistoryReorder | Method::DesktopTagsCreate
             | Method::DesktopTagsRename | Method::DesktopTagsRemove => self.edit_library(session, request.method, request.params),
-            Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview =>
+            Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview | Method::DesktopBackupInspect =>
                 self.backup(session, request.method, request.params),
             Method::DesktopThemesList | Method::DesktopThemesGet | Method::DesktopThemesImport |
             Method::DesktopThemesExport | Method::DesktopThemesRemove => self.theme_request(session, request.method, request.params),

@@ -36,6 +36,11 @@ type BackupPreview struct {
     Entries []BackupPreviewRow `json:"entries"`
 }
 
+type BackupInspection struct {
+    Encrypted bool `json:"encrypted"`
+    Entries []BackupPreviewRow `json:"entries"`
+}
+
 type BackupImportResult struct {
     Imported uint64 `json:"imported"`
     Skipped uint64 `json:"skipped"`
@@ -442,6 +447,7 @@ const (
     MethodDesktopToolsTransform Method = "desktop.tools.transform"
     MethodDesktopToolsQr Method = "desktop.tools.qr"
     MethodDesktopBackupPreview Method = "desktop.backup.preview"
+    MethodDesktopBackupInspect Method = "desktop.backup.inspect"
     MethodDesktopBackupImport Method = "desktop.backup.import"
     MethodDesktopBackupExport Method = "desktop.backup.export"
     MethodDesktopOcrRecognize Method = "desktop.ocr.recognize"

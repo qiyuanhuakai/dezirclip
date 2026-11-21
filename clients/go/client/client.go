@@ -52,7 +52,7 @@ func (client *Client) Call(ctx context.Context, method protocol.Method, params a
     switch method {
     case protocol.MethodDesktopSystemExplorerRestart, protocol.MethodDesktopApplicationsSelect, protocol.MethodDesktopHistoryOpen:
         limitDuration = 15 * time.Second
-    case protocol.MethodDesktopQueueNext, protocol.MethodDesktopOcrRecognize, protocol.MethodDesktopBackupImport, protocol.MethodDesktopBackupExport, protocol.MethodDesktopBackupPreview, protocol.MethodDesktopProfileMove:
+    case protocol.MethodDesktopQueueNext, protocol.MethodDesktopOcrRecognize, protocol.MethodDesktopBackupImport, protocol.MethodDesktopBackupExport, protocol.MethodDesktopBackupPreview, protocol.MethodDesktopBackupInspect, protocol.MethodDesktopProfileMove:
         limitDuration = 10 * time.Minute
     }
     if maximum := time.Now().Add(limitDuration); !ok || deadline.After(maximum) { deadline = maximum }

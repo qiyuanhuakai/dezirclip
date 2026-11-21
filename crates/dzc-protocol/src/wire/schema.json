@@ -129,6 +129,26 @@
       ],
       "additionalProperties": false
     },
+    "BackupInspection": {
+      "type": "object",
+      "properties": {
+        "encrypted": {
+          "type": "boolean"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/BackupPreviewRow"
+          }
+        }
+      },
+      "required": [
+        "encrypted",
+        "entries"
+      ],
+      "additionalProperties": false
+    },
     "BackupImportResult": {
       "type": "object",
       "properties": {
@@ -1705,6 +1725,7 @@
         "desktop.tools.transform",
         "desktop.tools.qr",
         "desktop.backup.preview",
+        "desktop.backup.inspect",
         "desktop.backup.import",
         "desktop.backup.export",
         "desktop.ocr.recognize",
@@ -2854,6 +2875,7 @@
               "method": {
                 "enum": [
                   "desktop.backup.preview",
+                  "desktop.backup.inspect",
                   "desktop.profile.move"
                 ]
               }

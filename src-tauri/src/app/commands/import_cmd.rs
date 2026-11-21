@@ -1,13 +1,14 @@
 use crate::app::ipc_host::DesktopHost;
-use dzc_host::wire::{BackupImportParams, BackupImportResult as ImportSummaryResponse, BackupPreview,
-    BackupPreviewParams, BackupPreviewRow, Method, RuntimeState};
+use dzc_host::wire::{BackupImportParams, BackupImportResult as ImportSummaryResponse, BackupInspection, BackupPreview,
+    BackupPreviewParams, BackupPreviewRow, CapabilityReport, Method, RuntimeState};
+use std::path::Path;
 use tauri::State;
 
 #[tauri::command]
-pub async fn import_from_file(host: State<'_, DesktopHost>, path: String, mode: String, passphrase: Option<String>) -> Result<ImportSummaryResponse, String> {
+pub async fn import_from_file(host: State<'_, DesktopHost>, path: String, mode: String, passphrase: Option<String>, expected_epoch: Option<u64>) -> Result<ImportSummaryResponse, String> {
     let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await?;
     host.blocking_call(Method::DesktopBackupImport, BackupImportParams { service_instance_id: state.service_instance_id,
-        expected_epoch: state.privacy_epoch, path, mode, passphrase }, "BackupImportResult").await
+        expected_epoch: expected_epoch.unwrap_or(state.privacy_epoch), path, mode, passphrase }, "BackupImportResult").await
 }
 
 #[tauri::command]
@@ -17,6 +18,24 @@ pub async fn preview_backup_file(host: State<'_, DesktopHost>, path: String) -> 
         service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, path
     }, "BackupPreview").await?;
     Ok(result.entries)
+}
+
+#[tauri::command]
+pub async fn inspect_backup_file(host: State<'_, DesktopHost>, path: String, expected_epoch: Option<u64>) -> Result<BackupInspection, String> {
+    let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await?;
+    let capabilities: CapabilityReport = host.call(Method::Capabilities, serde_json::json!({}), "CapabilityReport").await?;
+    let params = BackupPreviewParams { service_instance_id: state.service_instance_id,
+        expected_epoch: expected_epoch.unwrap_or(state.privacy_epoch), path };
+    if capabilities.methods.iter().any(|method| method == "desktop.backup.inspect") {
+        return host.blocking_call(Method::DesktopBackupInspect, params, "BackupInspection").await;
+    }
+    let encrypted = Path::new(&params.path).extension().and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("dzc") || ext.eq_ignore_ascii_case("tiez"));
+    if encrypted {
+        return Ok(BackupInspection { encrypted, entries: Vec::new() });
+    }
+    let preview: BackupPreview = host.blocking_call(Method::DesktopBackupPreview, params, "BackupPreview").await?;
+    Ok(BackupInspection { encrypted, entries: preview.entries })
 }
 
 #[cfg(test)]

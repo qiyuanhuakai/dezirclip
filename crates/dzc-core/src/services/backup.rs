@@ -57,6 +57,8 @@ const NONCE_LEN: usize = 12;
 
 /// Argon2id 盐长度（字节）。OWASP 推荐 ≥ 16 字节。
 const SALT_LEN: usize = 16;
+// The unversioned encrypted envelope contains a nonce, salt and GCM tag.
+pub(crate) const MIN_ENCRYPTED_BACKUP_LEN: usize = NONCE_LEN + SALT_LEN + 16;
 
 /// 派生 key 长度（字节）。32 字节 → AES-256。
 const KEY_LEN: usize = 32;

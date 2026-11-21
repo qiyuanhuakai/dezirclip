@@ -29,7 +29,7 @@ impl Host {
         let service = BackupService::new(self.history.clone());
         let invalid = |_| WireErrorCode::InvalidRequest;
         match method {
-            Method::DesktopBackupPreview => {
+            Method::DesktopBackupPreview | Method::DesktopBackupInspect => {
                 let p: BackupPreviewParams = serde_json::from_value(params).map_err(invalid)?;
                 let ticket = self.backup_ticket(session, &p.service_instance_id, p.expected_epoch, &p.path)?;
                 #[cfg(test)]
@@ -37,9 +37,18 @@ impl Host {
                     let _ = reached.send(());
                     resume.recv_timeout(std::time::Duration::from_secs(5)).map_err(|_| WireErrorCode::Busy)?;
                 }
-                let rows = service.preview_file(Path::new(&p.path), &ticket).map_err(failure)?;
+                let path = Path::new(&p.path);
+                let (encrypted, rows) = if method == Method::DesktopBackupInspect {
+                    service.inspect_file(path, &ticket).map_err(failure)?
+                } else {
+                    (false, service.preview_file(path, &ticket).map_err(failure)?)
+                };
                 let entries = rows.into_iter().map(|content| BackupPreviewRow { content }).collect();
-                serde_json::to_value(BackupPreview { entries })
+                if method == Method::DesktopBackupInspect {
+                    serde_json::to_value(BackupInspection { encrypted, entries })
+                } else {
+                    serde_json::to_value(BackupPreview { entries })
+                }
             }
             Method::DesktopBackupImport => {
                 let p: BackupImportParams = serde_json::from_value(params).map_err(invalid)?;
