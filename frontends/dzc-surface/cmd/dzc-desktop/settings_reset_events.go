@@ -9,14 +9,14 @@ import (
 )
 
 // Keep the cursor across reconnects: a failed reset may complete on a later request.
-func watchSettingsReset(ctx context.Context, owner *client.Client, reset, refresh func()) {
+func watchSettingsReset(ctx context.Context, owner *client.Client, reset, refresh, appearanceChanged func()) {
 	state := owner.Hello().State
 	for ctx.Err() == nil {
 		poll, cancel := context.WithTimeout(ctx, 7*time.Second)
 		host, err := owner.DesktopConnection(poll)
 		cancel()
 		if err == nil {
-			err = followSettingsReset(ctx, host, &state, reset, refresh)
+			err = followSettingsReset(ctx, host, &state, reset, refresh, appearanceChanged)
 			host.Close()
 		}
 		if err == client.ErrProtocol {
@@ -38,7 +38,7 @@ type settingsEventSource interface {
 	Call(context.Context, protocol.Method, any, string, any) error
 }
 
-func followSettingsReset(ctx context.Context, host settingsEventSource, state *protocol.RuntimeState, reset, refresh func()) error {
+func followSettingsReset(ctx context.Context, host settingsEventSource, state *protocol.RuntimeState, reset, refresh, appearanceChanged func()) error {
 	for ctx.Err() == nil {
 		poll, cancel := context.WithTimeout(ctx, 3*time.Second)
 		wait := uint16(1000)
@@ -51,17 +51,27 @@ func followSettingsReset(ctx context.Context, host settingsEventSource, state *p
 		if result.State.ServiceInstanceId != state.ServiceInstanceId {
 			return client.ErrProtocol
 		}
-		changed := false
+		changed, appearance := false, false
 		for _, event := range result.Events {
-			if event.Event == protocol.EventKindServiceStateChanged && event.Data.Status != nil && *event.Data.Status == "application_settings_reset" {
-				changed = true
+			if event.Event == protocol.EventKindServiceStateChanged && event.Data.Status != nil {
+				switch *event.Data.Status {
+				case "application_settings_reset":
+					changed = true
+				case "view_settings_changed", "custom_themes_changed":
+					appearance = true
+				}
 			}
 		}
 		*state = result.State
 		if changed && ctx.Err() == nil {
 			reset()
-		} else if result.ResyncRequired && ctx.Err() == nil {
-			refresh()
+		} else if ctx.Err() == nil {
+			if result.ResyncRequired {
+				refresh()
+			}
+			if appearanceChanged != nil && (appearance || result.ResyncRequired) {
+				appearanceChanged()
+			}
 		}
 	}
 	return ctx.Err()

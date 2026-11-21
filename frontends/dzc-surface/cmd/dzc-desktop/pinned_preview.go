@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -38,28 +36,16 @@ type pinnedPreview struct {
 // Accessed only on the native event thread.
 var pinnedWindows = make(map[*pinnedPreview]struct{})
 
-func refreshPinnedAppearance(owner *client.Client, appearance theme.Appearance, settings map[string]string) {
-	base := settings["app.theme"]
-	if id, custom := strings.CutPrefix(base, "custom:"); custom {
-		var catalog []protocol.DesktopThemePackage
-		if json.Unmarshal([]byte(settings["app.custom_themes"]), &catalog) == nil {
-			for _, entry := range catalog {
-				if entry.Id == id {
-					base = entry.Base
-					break
-				}
-			}
-		}
-	}
-	if base == "" {
-		base = "mica"
-	}
+func refreshPinnedAppearance(owner *client.Client, appearance theme.Appearance, base string, updateOpacity bool) {
 	for preview := range pinnedWindows {
 		if preview.owner == owner && !preview.window.IsDestroyed() {
 			preview.ticket.Appearance.Palette = &appearance
 			preview.ticket.Appearance.BaseTheme = base
 			preview.ticket.Appearance.Background = nil
 			preview.ticket.Appearance.Dark = appearance.Mode == "dark"
+			if updateOpacity {
+				preview.opacity.applyPreference(int(appearance.Opacity*100 + .5))
+			}
 			preview.window.Update(func() {})
 		}
 	}

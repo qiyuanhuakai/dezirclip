@@ -714,19 +714,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 		}
 		startupSettings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
 		updateLanguage = mainLanguage(startupSettings["app.language"])
-		restoreNativeAppearance(owner, panel, startupSettings)
-		panel.SetAppearanceRefresher(func() {
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-				if encoded, err := (&Library{owner}).Preferences(ctx); err == nil {
-					var values map[string]string
-					if json.Unmarshal(encoded, &values) == nil {
-						mygo.RunOnMain(func() { restoreNativeAppearance(owner, panel, values) })
-					}
-				}
-			}()
-		})
+		refreshAppearance := bindResidentAppearance(activationContext, owner, panel, startupSettings, useNativeMain)
 		refreshSearch(startupSettings)
 		refreshPaste(startupSettings)
 		setTrayVisible = func(visible bool) error {
@@ -762,6 +750,16 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 		})
 		resetContext, stopResetWatch := context.WithCancel(context.Background())
 		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { stopResetWatch() })
+		var appearanceChanged func()
+		if refreshAppearance != nil {
+			appearanceChanged = func() {
+				mygo.RunOnMain(func() {
+					if resetContext.Err() == nil && !stopping && !migrating && !moved && pending == nil && !relaunch {
+						refreshAppearance()
+					}
+				})
+			}
+		}
 		go watchSettingsReset(resetContext, owner, func() {
 			mygo.RunOnMain(func() {
 				if resetContext.Err() != nil || stopping || migrating || moved || pending != nil || relaunch {
@@ -788,7 +786,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 					_ = setTrayVisible(settings["app.hide_tray_icon"] != "true")
 				}
 			})
-		})
+		}, appearanceChanged)
 		mygo.App.OnBeforeQuit(func(event *mygo.QuitEvent) {
 			log.Printf("Desktop quit requested (migrating=%t, relaunch=%t)", migrating, relaunch)
 			if migrating {

@@ -17,15 +17,7 @@ type nativeTheme struct {
 
 func (n *nativeMain) configureThemes(selection, catalog string) {
 	if catalog != n.preferences["app.custom_themes"] {
-		var imported []protocol.DesktopThemePackage
-		n.importedThemes = nil
-		if json.Unmarshal([]byte(catalog), &imported) == nil && len(imported) <= maxImportedThemes {
-			for _, entry := range imported {
-				if entry.Format == "dezirclip-theme" && entry.Version == 1 && entry.Id != "" && entry.Name != "" {
-					n.importedThemes = append(n.importedThemes, entry)
-				}
-			}
-		}
+		n.importedThemes = importedThemeCatalog(catalog)
 	} else if selection == n.theme {
 		return
 	}
@@ -37,14 +29,32 @@ func (n *nativeMain) configureThemes(selection, catalog string) {
 	}
 }
 
+func importedThemeCatalog(catalog string) []protocol.DesktopThemePackage {
+	var imported []protocol.DesktopThemePackage
+	if json.Unmarshal([]byte(catalog), &imported) != nil || len(imported) > maxImportedThemes {
+		return nil
+	}
+	valid := imported[:0]
+	for _, entry := range imported {
+		if entry.Format == "dezirclip-theme" && entry.Version == 1 && entry.Id != "" && entry.Name != "" {
+			valid = append(valid, entry)
+		}
+	}
+	return valid
+}
+
 func (n *nativeMain) findImportedTheme(selection string) *protocol.DesktopThemePackage {
+	return selectedImportedTheme(n.importedThemes, selection)
+}
+
+func selectedImportedTheme(catalog []protocol.DesktopThemePackage, selection string) *protocol.DesktopThemePackage {
 	id, isCustom := strings.CutPrefix(selection, "custom:")
 	if !isCustom {
 		return nil
 	}
-	for i := range n.importedThemes {
-		if n.importedThemes[i].Id == id {
-			return &n.importedThemes[i]
+	for i := range catalog {
+		if catalog[i].Id == id {
+			return &catalog[i]
 		}
 	}
 	return nil

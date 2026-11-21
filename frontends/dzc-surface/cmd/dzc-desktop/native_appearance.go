@@ -10,9 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
+	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/quickpaste"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
 )
 
 type appearanceCache struct {
@@ -57,7 +60,122 @@ func opacityPreference(values ...string) int {
 	return 65
 }
 
-func restoreNativeAppearance(owner *client.Client, panel *quickpaste.Panel, settings map[string]string) {
+type nativeSurfaceAppearance struct {
+	base       string
+	quickPaste theme.Appearance
+	preview    theme.Appearance
+}
+
+func surfaceThemeSelection(settings map[string]string) (string, *protocol.DesktopThemePackage) {
+	base := settings["app.theme"]
+	if strings.HasPrefix(base, "custom:") {
+		if imported := selectedImportedTheme(importedThemeCatalog(settings["app.custom_themes"]), base); imported != nil {
+			return imported.Base, imported
+		}
+		base = ""
+	}
+	if base == "" {
+		base = "mica"
+	}
+	return base, nil
+}
+
+func resolveNativeSurfaceAppearance(settings map[string]string, systemDark bool) nativeSurfaceAppearance {
+	mode := settings["app.color_mode"]
+	if mode != "light" && mode != "dark" {
+		mode = "light"
+		if systemDark {
+			mode = "dark"
+		}
+	}
+	base, imported := surfaceThemeSelection(settings)
+	preset := presets.Select(base, mode)
+	if imported != nil {
+		preset = presets.Imported(base, mode, imported.Css)
+	}
+	a := theme.Appearance{
+		Mode: mode, Locale: string(mainLanguage(settings["app.language"])), Tokens: preset.Tokens(),
+		Opacity: float64(opacityPreference(settings["app.surface_opacity"])) / 100,
+	}
+	if font := nativeInterfaceFont(settings); font != "" {
+		a.Tokens.FontFamilies = []string{font}
+	}
+	preview := a
+	if tint := preset.SurfaceTint(); tint != "" {
+		preview.Tokens.Background = tint
+	}
+	preview.Opacity = float64(opacityPreference(settings["app.preview_opacity"], settings["app.surface_opacity"])) / 100
+	a.Tokens.FontSize = nativeItemSize.value(settings)
+	return nativeSurfaceAppearance{base: base, quickPaste: a, preview: preview}
+}
+
+func bindResidentAppearance(ctx context.Context, owner *client.Client, panel *quickpaste.Panel, startup map[string]string, native bool) func() {
+	var latest map[string]string
+	var previousKey string
+	applied := false
+	apply := func(settings map[string]string) {
+		if !native {
+			restoreWebViewAppearance(owner, panel, settings)
+			return
+		}
+		latest = settings
+		systemDark := settings["app.color_mode"] != "light" && settings["app.color_mode"] != "dark" && mygo.Theme.IsDark()
+		key := appearanceKey(settings) + "\x00" + settings["app.preview_opacity"] + strconv.FormatBool(systemDark)
+		if applied && previousKey == key {
+			return
+		}
+		applied, previousKey = true, key
+		resolved := resolveNativeSurfaceAppearance(settings, systemDark)
+		panel.SetAppearance(resolved.quickPaste)
+		refreshPinnedAppearance(owner, resolved.preview, resolved.base, true)
+	}
+	apply(startup)
+	if native {
+		unsubscribe := mygo.Theme.OnUpdated(func() { apply(latest) })
+		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { unsubscribe() })
+	}
+
+	reading, refreshPending := false, false
+	var refresh func()
+	refresh = func() {
+		if ctx.Err() != nil {
+			return
+		}
+		if reading {
+			refreshPending = true
+			return
+		}
+		reading = true
+		go func() {
+			read, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			var values map[string]string
+			encoded, err := (&Library{owner}).Preferences(read)
+			if err == nil {
+				err = json.Unmarshal(encoded, &values)
+			}
+			mygo.RunOnMain(func() {
+				reading = false
+				if ctx.Err() != nil {
+					return
+				}
+				if refreshPending {
+					refreshPending = false
+					refresh()
+				} else if err == nil {
+					apply(values)
+				}
+			})
+		}()
+	}
+	panel.SetAppearanceRefresher(refresh)
+	if native {
+		return refresh
+	}
+	return nil
+}
+
+func restoreWebViewAppearance(owner *client.Client, panel *quickpaste.Panel, settings map[string]string) {
 	mode := settings["app.color_mode"]
 	if mode != "light" && mode != "dark" {
 		mode = (&DesktopShell{}).SystemThemeMode(context.Background())
@@ -79,13 +197,14 @@ func restoreNativeAppearance(owner *client.Client, panel *quickpaste.Panel, sett
 	if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() && info.Size() <= 65536 {
 		if bytes, err := os.ReadFile(path); err == nil {
 			var cached appearanceCache
-			if json.Unmarshal(bytes, &cached) == nil && cached.Key == appearanceKey(settings) && cached.Appearance.Mode == mode && cached.Appearance.Valid() {
+			if json.Unmarshal(bytes, &cached) == nil && cached.Key == appearanceKey(settings) && cached.Appearance.Mode == a.Mode && cached.Appearance.Valid() {
 				a = cached.Appearance
 			}
 		}
 	}
 	panel.SetAppearance(a)
-	refreshPinnedAppearance(owner, a, settings)
+	base, _ := surfaceThemeSelection(settings)
+	refreshPinnedAppearance(owner, a, base, false)
 }
 
 func saveNativeAppearance(owner *client.Client, panel *quickpaste.Panel, appearance theme.Appearance) {
@@ -99,7 +218,8 @@ func saveNativeAppearance(owner *client.Client, panel *quickpaste.Panel, appeara
 	}
 	appearance.Locale = settings["app.language"]
 	panel.SetAppearance(appearance)
-	refreshPinnedAppearance(owner, appearance, settings)
+	base, _ := surfaceThemeSelection(settings)
+	refreshPinnedAppearance(owner, appearance, base, false)
 	path := nativeAppearancePath(owner)
 	if path == "" {
 		return

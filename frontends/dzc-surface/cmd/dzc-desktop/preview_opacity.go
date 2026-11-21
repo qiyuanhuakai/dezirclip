@@ -37,6 +37,14 @@ func (l *Library) previewOpacity(ctx context.Context) (int, error) {
 	return opacityPreference(prefs.Preview, prefs.Surface), nil
 }
 
+func (o *previewOpacityControl) applyPreference(value int) {
+	if o.writing {
+		return
+	}
+	o.revision++
+	o.value, o.committed, o.slider = value, value, float64(value)
+}
+
 func (o *previewOpacityControl) reload() {
 	if o.writing {
 		return
@@ -49,7 +57,7 @@ func (o *previewOpacityControl) reload() {
 		value, err := o.library.previewOpacity(ctx)
 		o.window.Update(func() {
 			if err == nil && version == o.revision {
-				o.value, o.committed, o.slider = value, value, float64(value)
+				o.applyPreference(value)
 			}
 		})
 	}()

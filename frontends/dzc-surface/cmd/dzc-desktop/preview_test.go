@@ -229,6 +229,19 @@ func TestPinnedWindowRepaintsBackground(t *testing.T) {
 	}
 }
 
+func TestPinnedOpacityRefreshPreservesPendingSliderWrite(t *testing.T) {
+	control := previewOpacityControl{value: 48, slider: 48, committed: 65, writing: true}
+	control.applyPreference(20)
+	if control.value != 48 || control.committed != 65 {
+		t.Fatalf("saved preferences overwrote the pending slider: %+v", control)
+	}
+	control.writing = false
+	control.applyPreference(0)
+	if control.value != 0 || control.slider != 0 || control.committed != 0 || control.revision != 1 {
+		t.Fatalf("a settled slider did not receive the updated preference: %+v", control)
+	}
+}
+
 func TestPinnedPreviewSharesToolbarWithWorkingOpacityAndZoom(t *testing.T) {
 	for _, width := range []int{280, 320, 480} {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
