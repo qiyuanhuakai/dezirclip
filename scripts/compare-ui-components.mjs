@@ -31,7 +31,7 @@ const cases = {
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
   "emoji-favorites": { states: ["default"], text: "Add emoji" },
   "settings-data": { states: ["default", "hover-path", "hover-action"], text: "Data storage path" },
-  "backup-dialog": { states: ["default", "encrypted", "error", "import", "replace", "replace-confirmed"], text: "File path" },
+  "backup-dialog": { states: ["default", "encrypted", "error", "import", "replace", "replace-confirmed", "glass"], text: "File path" },
   "settings-update": { states: ["default", "unknown-size", "installing"], text: "Installed version" },
   "settings-update-actions": { states: ["default", "busy", "hover"], text: "Check now" },
   "settings-remove": { states: ["default"], text: "Remove theme" },
@@ -485,7 +485,7 @@ try {
               }[state]
               : fixture === "settings-update-actions" ? state === "busy" ? "42%" : "Install update"
               : fixture === "backup-dialog" ? {
-                default: "Export format", encrypted: "Confirm passphrase", error: "Passphrase must be at least 12 characters",
+                default: "Export format", glass: "Export format", encrypted: "Confirm passphrase", error: "Passphrase must be at least 12 characters",
                 import: "Release checklist", replace: "Confirm replacing clipboard history", "replace-confirmed": "Confirm replacing clipboard history",
               }[state]
               : state === "southeast" ? "SouthEast" : state === "scrolled" ? "1 scroll" : "";

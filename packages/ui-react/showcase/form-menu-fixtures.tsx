@@ -139,9 +139,9 @@ export function BackupDialogFixture({ state }: { state: string }) {
   const [open, setOpen] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
   const title = restoring ? "Import clipboard history" : "Export clipboard history";
-  const path = state === "default" ? "" : restoring ? "C:/Example/clipboard.json" : "C:/Example/clipboard.dzc";
+  const path = state === "default" || state === "glass" ? "" : restoring ? "C:/Example/clipboard.json" : "C:/Example/clipboard.dzc";
   const close = () => setOpen(false);
-  return open && <BackupDialog title={title} onClose={close}
+  const dialog = open && <BackupDialog title={title} onClose={close}
     footer={<BackupActions cancel="Cancel" submit={title} disabled={!path || mode === "replace" && !confirmed}
       onCancel={close} onSubmit={() => undefined} />}>
     {restoring
@@ -161,6 +161,7 @@ export function BackupDialogFixture({ state }: { state: string }) {
     <BackupField label="File path" value={path} readOnly browse="Browse" />
     {restoring && <BackupPreview label="Preview entries" entries={["Release checklist", "Example screenshot", "Draft notes"]} />}
   </BackupDialog>;
+  return state === "glass" ? <><SettingsDataFixture />{dialog}</> : dialog;
 }
 
 export function SettingsUpdateFixture({ state }: { state: string }) {

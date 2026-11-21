@@ -56,12 +56,8 @@ func (n *nativeMain) view(c *ui.Context) {
 		if surfaceOpacity != nil {
 			background = preset.WindowBackground(*surfaceOpacity)
 		}
-		ui.Box(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).Background(background).PassThrough()
 		main := ui.Column(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).
-			Gap(6)
-		if n.backup != nil {
-			main = kit.BackupDialogBackground(main)
-		}
+			Gap(6).Background(background)
 		if n.preferences["app.show_app_border"] != "false" {
 			main.Border(1, c.Theme().Border)
 		}

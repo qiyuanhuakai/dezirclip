@@ -55,6 +55,7 @@ const figures = [
   ["tag-batch-toolbar", "selected", 85],
   ["tag-search", "default", 180],
   ["tag-suggestions", "active", 230, 0, "tag-suggestions"],
+  ["backup-dialog", "glass", 420, 0, "backup-dialog-glass"],
   ["tag-suggestions", "empty", 190, 0, "tag-suggestions-empty"],
   ["settings-rail", "long-label", 225, 0, "settings-rail-long-label"],
   ["search-select", "long-options", 355, 0, "search-select-long-options"],

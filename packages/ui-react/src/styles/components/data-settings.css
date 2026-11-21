@@ -345,7 +345,7 @@
 }
 
 .theme-liquid-glass .data-modal-content {
-  backdrop-filter: var(--lg-dialog-blur);
+  backdrop-filter: blur(6px);
 }
 
 :is(.theme-macos, .theme-liquid-glass) .data-modal-title {

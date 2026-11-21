@@ -311,6 +311,9 @@ func (g *gallery) historyTypographyFixture(c *ui.Context, kit uikit.Kit) {
 }
 
 func (g *gallery) backupDialogFixture(c *ui.Context, kit uikit.Kit) {
+	if g.state == "glass" {
+		g.parityFixture(c, kit, "settings-data")
+	}
 	replacing := strings.HasPrefix(g.state, "replace")
 	open, restoring := true, g.state == "import" || replacing
 	title, path := "Export clipboard history", ""
