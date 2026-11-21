@@ -34,6 +34,8 @@ const figures = [
   ["settings-section-card", "expanded", 120],
   ["settings-section-card", "wide", 195, 0, "settings-section-grid"],
   ["settings-choices", "default", 170],
+  ["settings-choices", "narrow", 235, 0, "settings-choices-narrow"],
+  ["theme-manager", "narrow", 420, 0, "theme-manager-narrow"],
   ["hotkey-list", "multiple", 120],
   ["hotkey-list", "win-v", 120, 0, "hotkey-list-win-v"],
   ["hotkey-list", "extended", 120, 0, "hotkey-list-extended"],

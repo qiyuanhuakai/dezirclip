@@ -83,16 +83,20 @@ export function SettingsSectionGridFixture() {
   </div>;
 }
 
-export function SettingsChoicesFixture() {
+export function SettingsChoicesFixture({ state }: { state: string }) {
   const [mode, setMode] = useState("light");
   const [channel, setChannel] = useState("preview");
-  return <div className="showcase-fields">
+  const narrow = state === "narrow";
+  const disabled = state === "disabled";
+  return <div className="showcase-fields" style={narrow ? { width: 168 } : undefined}>
     <span className="item-label">Color mode</span>
-    <SettingsChoices label="Color mode" value={mode} onChange={setMode}
-      options={[{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
+    <SettingsChoices label="Color mode" value={mode} onChange={setMode} disabled={disabled}
+      options={[{ value: "system", label: narrow ? "Follow system appearance" : "System" },
+        { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
     <span className="item-label">Update channel</span>
-    <SettingsChoices label="Update channel" value={channel} onChange={setChannel} segmented
-      options={[{ value: "stable", label: "Stable" }, { value: "preview", label: "Preview" }]} />
+    <SettingsChoices label="Update channel" value={channel} onChange={setChannel} segmented disabled={disabled}
+      options={[{ value: "stable", label: narrow ? "Stable releases" : "Stable" },
+        { value: "preview", label: narrow ? "Preview releases" : "Preview" }]} />
   </div>;
 }
 

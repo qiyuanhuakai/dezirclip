@@ -41,7 +41,6 @@
 .update-release-notes { margin-top: 10px; font-size: var(--font-size-sm); }
 .update-release-notes summary { cursor: pointer; color: var(--accent-color); }
 .update-release-notes pre { max-height: 220px; overflow: auto; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; color: var(--text-primary); background: var(--bg-body); border: 1px solid var(--border-dark); border-radius: 4px; user-select: text; }
-.update-settings .segment-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .update-settings .switch .cb { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; z-index: 1; cursor: pointer; }
 .update-settings .switch:has(input:focus-visible) { outline: 2px solid var(--accent-color); outline-offset: 5px; }
 .update-settings .switch input:disabled + .toggle { opacity: 0.6; }
@@ -1113,10 +1112,25 @@
 
 /* Settings choices */
 .settings-choice-cards { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
-.settings-choice-cards .settings-choice-card { flex: 1 0 auto; height: 36px; font-size: 12px; font-weight: bold; }
+.settings-choice-cards .settings-choice-card {
+  flex: 1 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 36px;
+  height: auto;
+  font-size: 12px;
+  font-weight: bold;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.settings-choice-cards .settings-choice-card.active:not(:active) { transform: none; }
 
 .segmented-control {
   display: flex;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   background: var(--bg-body);
   border: 1px solid var(--border-dark);
   padding: 2px;
@@ -1126,6 +1140,7 @@
 
 .segment-btn {
   flex: 1;
+  min-width: 0;
   background: transparent;
   border: none;
   color: var(--text-secondary);
@@ -1137,7 +1152,8 @@
   border-radius: 6px;
   transition: all 0.2s;
   font-family: inherit;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .segment-btn:hover {
@@ -1151,6 +1167,7 @@
 }
 
 .segment-btn:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+:is(.settings-choice-card, .segment-btn):disabled { opacity: 0.5; cursor: not-allowed; }
 
 :is(.theme-retro) :is(.segmented-control, .segment-btn) { border-radius: 0; }
 

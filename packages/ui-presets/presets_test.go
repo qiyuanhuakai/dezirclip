@@ -25,6 +25,15 @@ func TestBuiltinThemeCatalogs(t *testing.T) {
 	}
 }
 
+func TestSciFiSelectedSettingCardsKeepTheirGradient(t *testing.T) {
+	for _, mode := range []string{"light", "dark"} {
+		gradient := Select("scifi", mode).widgets["settingsChoiceCardActive"].Gradient
+		if gradient == nil || gradient.From[3] == 0 || gradient.To[3] == 0 || gradient.From == gradient.To {
+			t.Errorf("Sci-Fi %s selected cards lost their fill gradient: %+v", mode, gradient)
+		}
+	}
+}
+
 func TestProgressToastsFollowThemeShadowPolicy(t *testing.T) {
 	for name := range palettes {
 		wantShadow := name == "retro" || name == "liquid-glass"

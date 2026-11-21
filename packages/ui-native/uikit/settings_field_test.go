@@ -1,10 +1,62 @@
 package uikit
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
 )
+
+func TestSettingsChoicesFitAndKeepSelectionInNarrowFields(t *testing.T) {
+	active, disabled := "preview", false
+	var changes []string
+	options := []SelectOption{
+		{Value: "stable", Label: "Stable releases"},
+		{Value: "preview", Label: "Preview releases"},
+	}
+	view := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Width(112).Children(func() {
+			Kit{}.SettingsChoices(c, "Update channel", active, options, true, disabled, func(value string) {
+				changes = append(changes, value)
+				active = value
+			})
+		})
+	}, 160, 140)
+	left, leftVisible := view.Find(options[0].Label)
+	right, rightVisible := view.Find(options[1].Label)
+	if !leftVisible || !rightVisible || left.W <= 0 || right.W <= 0 || right.X+right.W > 112 || left.Y != right.Y {
+		t.Fatalf("segments must stay side by side within the field: %+v and %+v", left, right)
+	}
+	for _, label := range []string{options[1].Label, options[0].Label, options[0].Label} {
+		if err := view.Click(label); err != nil {
+			t.Fatal(err)
+		}
+	}
+	disabled = true
+	view.Frame()
+	view.ClickAt(right.X+right.W/2, right.Y+right.H/2)
+	if !slices.Equal(changes, []string{"stable"}) || active != "stable" {
+		t.Fatalf("active or disabled segments triggered an extra change: %v", changes)
+	}
+}
+
+func TestSettingsChoiceCardsWrapAtTheirLabelWidths(t *testing.T) {
+	const system = "Follow system appearance"
+	view := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Width(168).Children(func() {
+			Kit{}.SettingsChoices(c, "Color mode", "light", []SelectOption{
+				{Value: "system", Label: system}, {Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"},
+			}, false, false, nil)
+		})
+	}, 190, 150)
+	first, firstVisible := view.Find(system)
+	light, lightVisible := view.Find("Light")
+	dark, darkVisible := view.Find("Dark")
+	if !firstVisible || !lightVisible || !darkVisible ||
+		first.X+first.W > 168 || first.W < 166 || light.Y <= first.Y || dark.Y != light.Y {
+		t.Fatalf("long option should take a full row before the two short cards: %+v, %+v, %+v", first, light, dark)
+	}
+}
 
 func TestSettingsHotkeyBindingWrapsLongChords(t *testing.T) {
 	kit := Kit{}.WithHotkeyPlatform("windows")

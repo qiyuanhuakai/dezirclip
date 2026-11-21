@@ -2,11 +2,13 @@ import { useState } from "react";
 import { SettingsBackground, SettingsThemeManager, SettingsSlider } from "../src";
 
 export function ThemeManagerFixture({ state }: { state: string }) {
+  const narrow = state === "narrow";
   const [value, setValue] = useState(state === "imported" ? "custom:studio" : "macos");
   const builtins = ["Retro", "Mica", "Acrylic", "Liquid Glass", "macOS", "Sci-Fi"].map(label => ({ value: label.toLowerCase(), label }));
-  return <div style={{ width: state === "wide" ? 500 : 330 }}>
+  const imported = [{ value: "custom:studio", label: narrow ? "Studio glass with higher contrast and softer colors" : "Studio theme" }];
+  return <div style={{ width: narrow ? 220 : state === "wide" ? 500 : 330 }}>
     <SettingsThemeManager label="Visual theme" builtinLabel="Built-in themes" importedLabel="Imported themes"
-      value={value} builtins={builtins} imported={[{ value: "custom:studio", label: "Studio theme" }]}
+      value={value} builtins={builtins} imported={imported}
       importLabel="Import theme" exportLabel="Export theme" removeLabel="Remove theme"
       onChange={setValue} onImport={() => undefined} onExport={() => undefined} onRemove={() => undefined} />
   </div>;

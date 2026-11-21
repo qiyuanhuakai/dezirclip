@@ -1,6 +1,11 @@
 package uikit
 
-import "github.com/egoist/mygo/ui"
+import (
+	"strings"
+
+	"github.com/egoist/mygo/ui"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
+)
 
 type SettingsSection struct {
 	ID    string
@@ -160,41 +165,50 @@ func (k Kit) SettingsChoices(c *ui.Context, label, active string, options []Sele
 		container, widget = "settingsSegments", "settingsSegment"
 	}
 	style := k.style(container)
-	var row ui.Element
-	if !segmented && len(options) > 4 {
-		columns := 3
-		if width, _ := c.Size(); width < 380 {
-			columns = 2
-		}
-		row = ui.Grid(c).Columns(columns)
-	} else {
-		row = ui.Row(c).Wrap().AlignItems(ui.Center)
-	}
-	row.Role(ui.RoleGroup).Label(label).Gap(style.ColumnGap)
+	row := ui.Row(c).AlignItems(ui.Stretch).Role(ui.RoleGroup).Label(label).
+		Gap(style.ColumnGap).MinWidth(0).MaxWidthPercent(100)
 	if !segmented {
-		row.FillWidth()
+		row.FillWidth().Wrap()
 	}
 	paint(row, style).Children(func() {
 		for _, option := range options {
-			selected := option.Value == active
-			button := ui.ButtonBase(c).Label(option.Label).Selected(selected).Disabled(disabled || option.Disabled).Center().FocusRing(true)
-			buttonStyle := k.style(widget)
-			if selected {
-				buttonStyle = k.style(widget + "Active")
-			} else if button.Hovered() {
-				buttonStyle = k.style(widget + "Hover")
-			}
-			button.Grow(1)
-			if segmented {
-				button.Width(0).MinWidth(64)
-			}
-			paint(button.Height(buttonStyle.Height), k.animatePaint(button, buttonStyle)).
-				Children(func() { text(c, option.Label, buttonStyle).SingleLine().PassThrough() })
-			if !selected && selectValue != nil && button.Clicked() {
-				selectValue(option.Value)
-			}
+			k.settingsChoiceButton(c, widget, active, option, !segmented, disabled, selectValue)
 		}
 	})
+}
+
+func (k Kit) settingsChoiceButton(c *ui.Context, widget, active string, option SelectOption, wrapCard, disabled bool, onSelect func(string)) {
+	selected := option.Value == active
+	button := ui.ButtonBase(c.Key(option.Value)).Label(option.Label).Selected(selected).
+		Disabled(disabled || option.Disabled).Center().FocusRing(true).MinWidth(0).MaxWidthPercent(100).Grow(1)
+	if widget == "settingsSegment" {
+		button.Width(64).Shrink(1)
+	}
+	if selected {
+		widget += "Active"
+	} else if button.Hovered() && !disabled && !option.Disabled {
+		widget += "Hover"
+	}
+	style := k.animatePaint(button, k.style(widget))
+	if wrapCard {
+		// Use the unwrapped label to choose a row, then allow text to wrap within a full-width card.
+		button.Basis(settingsTextWidth(c, option.Label, style) + style.Padding[1] + style.Padding[3] + horizontalBorders(style)).Shrink(0)
+	}
+	paint(button.MinHeight(style.Height), style).Children(func() {
+		text(c, option.Label, style).MinWidth(0).MaxWidthPercent(100).Wrap().TextAlign(ui.Center).PassThrough()
+	})
+	if !selected && onSelect != nil && button.Clicked() {
+		onSelect(option.Value)
+	}
+}
+
+func settingsTextWidth(c *ui.Context, label string, style theme.WidgetStyle) float32 {
+	if style.Uppercase {
+		label = strings.ToUpper(label)
+	}
+	width, _ := c.MeasureText(0, ui.Span{Text: label, Font: style.Font, Size: style.Size,
+		Weight: style.Weight, LetterSpacing: style.LetterSpacing})
+	return width
 }
 
 // SettingsRail renders the wide settings navigation with application-owned selection.

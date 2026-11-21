@@ -17,7 +17,8 @@ type ThemeManagerOptions struct {
 func (k Kit) SettingsThemeManager(c *ui.Context, width float32, options ThemeManagerOptions) {
 	ui.Column(c).FillWidth().Gap(12).Label(options.Label).Children(func() {
 		ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
-			k.SettingsLabel(c, options.Label).Grow(1).MinWidth(0).Wrap()
+			labelWidth := settingsTextWidth(c, options.Label, k.style("settingsLabel"))
+			k.SettingsLabel(c, options.Label).Basis(labelWidth).Grow(1).Shrink(0).MaxWidthPercent(100).MinWidth(0).Wrap()
 			if k.appearanceAction(c, options.ImportLabel, options.Disabled || options.ImportDisabled, false).Clicked() && options.OnImport != nil {
 				options.OnImport()
 			}
@@ -52,20 +53,7 @@ func (k Kit) themeChoices(c *ui.Context, width float32, label, active string, op
 	columns := min(len(options), max(1, int(width+gap)/(minWidth+gap)))
 	ui.Grid(c).FillWidth().Columns(columns).Gap(gap).Role(ui.RoleGroup).Label(label).Children(func() {
 		for _, option := range options {
-			selected := option.Value == active
-			button := ui.ButtonBase(c).Label(option.Label).Selected(selected).Disabled(disabled || option.Disabled).Center().FocusRing(true)
-			widget := "settingsChoiceCard"
-			if selected {
-				widget += "Active"
-			} else if button.Hovered() {
-				widget += "Hover"
-			}
-			style := k.style(widget)
-			paint(button.MinWidth(0).MinHeight(style.Height), k.animatePaint(button, style)).
-				Children(func() { text(c, option.Label, style).Wrap().PassThrough() })
-			if button.Clicked() && !selected && onChange != nil {
-				onChange(option.Value)
-			}
+			k.settingsChoiceButton(c, "settingsChoiceCard", active, option, false, disabled, onChange)
 		}
 	})
 }

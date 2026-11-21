@@ -7,8 +7,12 @@ import (
 
 func (g *gallery) themeManagerFixture(c *ui.Context, kit uikit.Kit) {
 	width := float32(330)
+	imported := "Studio theme"
 	if g.state == "wide" {
 		width = 500
+	} else if g.state == "narrow" {
+		width = 220
+		imported = "Studio glass with higher contrast and softer colors"
 	}
 	active := "macos"
 	if g.state == "imported" {
@@ -21,7 +25,7 @@ func (g *gallery) themeManagerFixture(c *ui.Context, kit uikit.Kit) {
 				{Value: "retro", Label: "Retro"}, {Value: "mica", Label: "Mica"}, {Value: "acrylic", Label: "Acrylic"},
 				{Value: "liquid-glass", Label: "Liquid Glass"}, {Value: "macos", Label: "macOS"}, {Value: "scifi", Label: "Sci-Fi"},
 			},
-			Imported:    []uikit.SelectOption{{Value: "custom:studio", Label: "Studio theme"}},
+			Imported:    []uikit.SelectOption{{Value: "custom:studio", Label: imported}},
 			ImportLabel: "Import theme", ExportLabel: "Export theme", RemoveLabel: "Remove theme",
 		})
 	})

@@ -229,7 +229,7 @@ function Showcase() {
     "settings-field": <SettingsFieldsFixture />,
     "context-menu": <ContextMenuFixture state={state} />,
     "settings-section-card": state === "wide" ? <SettingsSectionGridFixture /> : <SettingsSectionFixture open={state === "expanded"} />,
-    "settings-choices": <SettingsChoicesFixture />,
+    "settings-choices": <SettingsChoicesFixture state={state} />,
     "hotkey-list": <HotkeyListFixture multiple={state === "multiple" || state === "win-v"} extended={state === "extended"} winV={state === "win-v"} />,
     "emoji-favorites": <EmojiFavoritesFixture state={state} />,
     "settings-data": <SettingsDataFixture />,

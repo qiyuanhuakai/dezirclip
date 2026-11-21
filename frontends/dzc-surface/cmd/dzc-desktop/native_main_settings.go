@@ -366,7 +366,8 @@ func (n *nativeMain) settingChoices(c *ui.Context, kit uikit.Kit, key, label, fa
 		if value == "" {
 			value = fallback
 		}
-		kit.SettingsChoices(c, label, value, options, false, n.mutating, func(value string) { n.saveSetting(key, value) })
+		disabled := n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating
+		kit.SettingsChoices(c, label, value, options, false, disabled, func(value string) { n.saveSetting(key, value) })
 	})
 }
 

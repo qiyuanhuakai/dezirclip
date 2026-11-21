@@ -53,15 +53,22 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			kit.SettingsLabel(c, "Keep clipboard history")
 		})
 	case "settings-choices":
-		ui.Column(c).Width(330).Gap(8).Children(func() {
+		width := float32(330)
+		system, stable, preview := "System", "Stable", "Preview"
+		if g.state == "narrow" {
+			width = 168
+			system, stable, preview = "Follow system appearance", "Stable releases", "Preview releases"
+		}
+		disabled := g.state == "disabled"
+		ui.Column(c).Width(width).Gap(8).Children(func() {
 			kit.SettingsLabel(c, "Color mode")
 			kit.SettingsChoices(c, "Color mode", g.colorChoice, []uikit.SelectOption{
-				{Value: "system", Label: "System"}, {Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"},
-			}, false, false, func(value string) { g.colorChoice = value })
+				{Value: "system", Label: system}, {Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"},
+			}, false, disabled, func(value string) { g.colorChoice = value })
 			kit.SettingsLabel(c, "Update channel")
 			kit.SettingsChoices(c, "Update channel", g.channelChoice, []uikit.SelectOption{
-				{Value: "stable", Label: "Stable"}, {Value: "preview", Label: "Preview"},
-			}, true, false, func(value string) { g.channelChoice = value })
+				{Value: "stable", Label: stable}, {Value: "preview", Label: preview},
+			}, true, disabled, func(value string) { g.channelChoice = value })
 		})
 	case "hotkey-list":
 		kit = kit.WithHotkeyPlatform("linux")

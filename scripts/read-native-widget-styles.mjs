@@ -420,7 +420,7 @@ function readStyles(sample) {
     const outlineWidth = style.outlineStyle === "solid" ? number(style.outlineWidth) : 0;
     const backgroundImage = style.backgroundImage.replace(/(?:, none)+$/, "");
     const gradient = backgroundImage.match(/^linear-gradient\(([\d.]+)deg, (rgba?\([^)]*\)) 0%, (rgba?\([^)]*\)) 100%\)$/)
-      ?? (id.startsWith("settingsSwitch") && backgroundImage.match(
+      ?? ((id.startsWith("settingsSwitch") || id.startsWith("settingsChoiceCard")) && backgroundImage.match(
         /^linear-gradient\((?:([\d.]+)deg, )?((?:rgba?|color|oklch)\([^)]*\))(?: 0%)?, ((?:rgba?|color|oklch)\([^)]*\))(?: 100%)?\)$/));
     // Some glass surfaces layer a uniform tint over their background color.
     const tint = backgroundImage.match(/^linear-gradient\((rgba?\([^)]*\)), \1\)$/)?.[1];

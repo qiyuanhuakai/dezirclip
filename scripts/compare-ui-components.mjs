@@ -20,14 +20,14 @@ const cases = {
   "surface-opacity": { states: ["0", "20", "65", "85", "100"], text: "Appearance" },
   "quick-paste-panel": { states: ["0", "65", "100"], text: "Release checklist" },
   "settings-field": { states: ["default", "expanded"], text: "Interface font" },
-  "theme-manager": { states: ["default", "imported", "wide"], text: "Visual theme" },
+  "theme-manager": { states: ["default", "imported", "wide", "narrow"], text: "Visual theme" },
   "background-settings": { states: ["default", "saved"], text: "Custom background" },
   "capture-actions": { states: ["default", "disabled", "narrow"], text: "Capture full screen" },
   "capture-engine": { states: ["available", "unavailable", "loading", "failed"], text: "OCR engine status" },
   "fixed-capture-renderer": { states: ["default"], text: "MyGo Native" },
   "cli-settings": { states: ["default", "narrow", "conflict", "registered", "failed"], text: "PATH status" },
   "settings-section-card": { states: ["default", "expanded", "wide"], text: "General settings" },
-  "settings-choices": { states: ["default"], text: "Update channel" },
+  "settings-choices": { states: ["default", "narrow", "disabled"], text: "Update channel" },
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
   "emoji-favorites": { states: ["default", "empty", "hover", "drop"], text: "Add emoji" },
   "settings-data": { states: ["default", "hover-path", "hover-action"], text: "Data storage path" },
@@ -694,16 +694,39 @@ try {
                 await page.getByRole("status").getByText("Tesseract (Available)", { exact: true }).waitFor();
               }
             }
+            if (fixture === "settings-choices") {
+              const channels = page.getByRole("group", { name: "Update channel" });
+              const stable = channels.getByRole("button", { name: /^Stable/ });
+              const preview = channels.getByRole("button", { name: /^Preview/ });
+              const stateDisabled = state === "disabled";
+              if ((await stable.isDisabled()) !== stateDisabled || (await preview.isDisabled()) !== stateDisabled
+                || await preview.getAttribute("aria-pressed") !== "true") throw Error("Update channel lost its selected or disabled state");
+              if (state === "narrow") {
+                const [track, first, second] = await Promise.all([channels.boundingBox(), stable.boundingBox(), preview.boundingBox()]);
+                if (!track || !first || !second || first.y !== second.y || second.x + second.width > track.x + track.width + 1)
+                  throw Error("Update channels escaped the narrow field");
+              }
+              if (!stateDisabled) {
+                await stable.focus();
+                await stable.press("Space");
+                if (await stable.getAttribute("aria-pressed") !== "true" || await preview.getAttribute("aria-pressed") !== "false")
+                  throw Error("Choosing a channel did not update the selected state");
+              }
+            }
             if (fixture === "theme-manager") {
-              const imported = page.getByRole("group", { name: "Imported themes" }).getByRole("button", { name: "Studio theme" });
+              const initiallyImported = state === "imported";
+              const imported = page.getByRole("group", { name: "Imported themes" }).getByRole("button", { name: /^Studio/ });
               const exportTheme = page.getByRole("button", { name: "Export theme" });
-              if ((await exportTheme.count() > 0) !== (state === "imported") ||
-                comparable(nativeText, "Export theme") !== (state === "imported")) {
+              if ((await exportTheme.count() > 0) !== initiallyImported ||
+                comparable(nativeText, "Export theme") !== initiallyImported) {
                 throw Error("Export is available for the wrong theme");
               }
-              if (state !== "imported") {
+              if (!initiallyImported) {
                 await imported.click();
                 await exportTheme.waitFor();
+              }
+              if (state === "narrow" && await page.locator(".theme-manager").evaluate(node => node.scrollWidth > node.clientWidth + 1)) {
+                throw Error("A selected theme card or its actions overflow the narrow theme manager");
               }
               await page.getByRole("group", { name: "Built-in themes" }).getByRole("button", { name: "Mica" }).click();
               await exportTheme.waitFor({ state: "hidden" });
