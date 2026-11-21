@@ -228,25 +228,34 @@ func (k Kit) historyCardText(c *ui.Context, options HistoryCardOptions) {
 		})
 		return
 	}
-	var label ui.Element
-	if spans := k.matchSpans(summary, options.Match); spans != nil {
-		label = styledText(ui.RichText(c, spans...), content)
+	wrap := historyTextCanWrap(summary)
+	drawText := func() {
+		var label ui.Element
+		if spans := k.matchSpans(summary, options.Match); spans != nil {
+			label = styledText(ui.RichText(c, spans...), content)
+		} else {
+			label = text(c, summary, content)
+		}
+		label.Padding(content.Padding[:]...).MinHeight(minHeight)
+		if wrap {
+			label.Wrap()
+		} else {
+			label.NoWrap().FillWidth().MinWidth(0)
+		}
+		maxLines := content.MaxLines
+		if options.TextRows > 0 {
+			maxLines = options.TextRows
+		}
+		label.MaxLines(maxLines)
+		if content.MaxHeight > 0 {
+			label.MaxHeight(content.MaxHeight).Clip()
+		}
+	}
+	if wrap {
+		drawText()
 	} else {
-		label = text(c, summary, content)
-	}
-	label.Padding(content.Padding[:]...).MinHeight(minHeight)
-	if historyTextCanWrap(summary) {
-		label.Wrap()
-	} else {
-		label.NoWrap().FillWidth().MinWidth(0).ClipX()
-	}
-	maxLines := content.MaxLines
-	if options.TextRows > 0 {
-		maxLines = options.TextRows
-	}
-	label.MaxLines(maxLines)
-	if content.MaxHeight > 0 {
-		label.MaxHeight(content.MaxHeight).Clip()
+		// Clip the painted glyphs of the child, including any overhang.
+		ui.Box(c).FillWidth().MinWidth(0).ClipX().Children(drawText)
 	}
 }
 

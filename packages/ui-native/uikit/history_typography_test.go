@@ -18,11 +18,20 @@ func TestHistoryCardClipsAnUnbreakablePreviewOnOneLine(t *testing.T) {
 				kit.HistoryCard(c, HistoryCardOptions{Summary: "Short text", Compact: compact}).Label("reference")
 				kit.HistoryCard(c, HistoryCardOptions{Summary: strings.Repeat("Ab09", 66), Compact: compact}).Label("token")
 			})
-		}, 200, 180)
+		}, 240, 180)
 		plain, plainOK := tester.Find("reference")
 		token, tokenOK := tester.Find("token")
 		if !plainOK || !tokenOK || token.H != plain.H || token.W != plain.W {
 			t.Fatalf("compact=%v: long token resized its card: reference %v, token %v", compact, plain, token)
+		}
+		image := tester.Image()
+		for x := 192; x < 235; x++ {
+			for offset := 4; offset < int(plain.H)-4; offset++ {
+				want := image.RGBAAt(x, int(plain.Y)+offset)
+				if got := image.RGBAAt(x, int(token.Y)+offset); got != want {
+					t.Fatalf("compact=%v: text painted outside the card at x=%d: %v, want %v", compact, x, got, want)
+				}
+			}
 		}
 	}
 }
