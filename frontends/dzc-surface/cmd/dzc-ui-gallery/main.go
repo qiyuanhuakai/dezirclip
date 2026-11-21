@@ -43,6 +43,10 @@ type gallery struct {
 
 func (g *gallery) view(c *ui.Context) {
 	preset := presets.Select(g.theme, g.mode)
+	if g.fixture == "quick-paste-panel" {
+		g.quickPasteFixture(c, preset)
+		return
+	}
 	if g.fixture == "surface-opacity" {
 		g.opacityFixture(c, preset)
 		return

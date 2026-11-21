@@ -38,6 +38,10 @@
     "SurfaceTheme": {
       "type": "object",
       "properties": {
+        "name": {
+          "type": "string",
+          "enum": ["retro", "mica", "acrylic", "liquid-glass", "macos", "scifi"]
+        },
         "mode": {
           "type": "string",
           "enum": [

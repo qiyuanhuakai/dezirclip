@@ -1472,6 +1472,8 @@ pub struct SurfaceBuildIdentity {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SurfaceTheme {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub mode: String,
     pub opacity: f64,
 }

@@ -17,7 +17,7 @@ import { entryInstanceArgs } from "../../../shared/lib/historyIdentity";
 import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { PrivacyStatusBanner } from "../../../shared/components/PrivacyStatusBanner";
 import { privacyStatusZh } from "../../../locales/zh";
-import "@deziro/ui-react/styles/components/QuickPasteWindow.css";
+import { QuickPastePanel, QuickPasteSearch, QuickPasteRow } from "@deziro/ui-react";
 
 const MAX_ENTRIES = 10;
 
@@ -233,19 +233,16 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   useAuxiliaryWindowReady(initialFetchSettled && listenersReady);
 
   return (
-    <div className="quick-paste-window">
+    <QuickPastePanel>
       <PrivacyStatusBanner t={t} />
-      <div className="quick-paste-window__search">
-        <input
-          ref={inputRef}
-          className="quick-paste-window__search-input"
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="搜索..."
-          data-testid="quick-paste-search"
-        />
-      </div>
+      <QuickPasteSearch
+        ref={inputRef}
+        aria-label="搜索..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        placeholder="搜索..."
+        data-testid="quick-paste-search"
+      />
       <div
         ref={setListRef}
         className="quick-paste-window__list"
@@ -260,26 +257,19 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
           </div>
         ) : (
           filtered.map((entry, i) => (
-            <div
+            <QuickPasteRow
               key={entry.id}
-              className={`quick-paste-window__item${
-                i === activeIndex ? " quick-paste-window__item--active" : ""
-              }`}
+              active={i === activeIndex}
+              preview={entry.preview || entry.content || "—"}
+              source={entry.source_app}
               onMouseEnter={() => setActiveId(entry.id)}
               onClick={() => handlePaste(entry.id)}
               data-testid="quick-paste-item"
-            >
-              <div className="quick-paste-window__item-preview">
-                {entry.preview || entry.content || "—"}
-              </div>
-              <div className="quick-paste-window__item-meta">
-                {entry.source_app}
-              </div>
-            </div>
+            />
           ))
         )}
       </div>
-    </div>
+    </QuickPastePanel>
   );
 });
 

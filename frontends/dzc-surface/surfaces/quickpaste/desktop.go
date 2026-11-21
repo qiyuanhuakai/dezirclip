@@ -12,6 +12,7 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
 // The resident Desktop already has ordinary GUI metadata authority. Enrich
@@ -128,15 +129,20 @@ func (p *Panel) SetShortcutRecorder(record func(string) bool) { p.local.record =
 
 func (p *Panel) SetAppearanceRefresher(refresh func()) { p.local.refreshAppearance = refresh }
 
-func (p *Panel) SetAppearance(appearance theme.Appearance) {
+func (p *Panel) SetAppearance(appearance theme.Appearance, kit uikit.Kit) {
 	if !appearance.Valid() {
 		return
 	}
-	p.appearance = &appearance
-	p.mode, p.locale, p.opacity = appearance.Mode, appearance.Locale, appearance.Opacity
+	p.applyAppearance(appearance, kit)
 	if !p.window.IsDestroyed() {
 		p.window.Update(func() {})
 	}
+}
+
+func (p *Panel) applyAppearance(appearance theme.Appearance, kit uikit.Kit) {
+	p.appearance = &appearance
+	p.kit = kit.WithSurfaceOpacity(int(appearance.Opacity*100 + .5))
+	p.mode, p.locale, p.opacity = appearance.Mode, appearance.Locale, appearance.Opacity
 }
 
 func (p *Panel) HasShortcut() bool { return p.local != nil && p.local.shortcut != "" }

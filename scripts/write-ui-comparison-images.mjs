@@ -19,6 +19,7 @@ const figures = [
   ["settings-field", "expanded", 200],
   ["surface-opacity", "20", 312, 0, "surface-opacity-20"],
   ["surface-opacity", "85", 312, 0, "surface-opacity-85"],
+  ["quick-paste-panel", "65", 242],
   ["history-card", "compact-hover", 90, 0, "history-card-compact-actions"],
   ["context-menu", "text", 215],
   ["text-fields", "default", 275],

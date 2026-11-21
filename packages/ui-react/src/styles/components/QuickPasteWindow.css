@@ -2,11 +2,12 @@
 
 body.quick-paste {
   margin: 0;
-  background: transparent;
+  background: transparent !important;
   overflow: hidden;
 }
 
-body.quick-paste #root {
+/* The panel paints its own material. Keep the theme's main window shell off this host. */
+html body.quick-paste #root:has(.quick-paste-window) {
   height: 100vh !important;
   display: flex !important;
   flex-direction: column !important;
@@ -14,9 +15,13 @@ body.quick-paste #root {
   border: none !important;
   border-radius: 0 !important;
   box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
-body.quick-paste #root::before {
+body.quick-paste::before,
+body.quick-paste::after,
+html body.quick-paste #root:has(.quick-paste-window)::before {
   content: none !important;
   display: none !important;
 }
@@ -24,41 +29,65 @@ body.quick-paste #root::before {
 /* ── Root container ─────────────────────────────────────────── */
 
 .quick-paste-window {
-  width: 100vw;
-  height: 100vh;
+  --quick-paste-panel-radius: 12px;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--surface-dialog-bg);
+  gap: 8px;
+  padding: 12px;
+  background: var(--dc-material-window);
   border: none;
-  border-radius: var(--surface-dialog-radius, var(--radius-window));
+  border-radius: var(--quick-paste-panel-radius);
   box-shadow: none;
   overflow: hidden;
   box-sizing: border-box;
 }
 
-/* ── Search ─────────────────────────────────────────────────── */
-
-.quick-paste-window__search {
-  padding: var(--spacing-sm);
-  border-bottom: 1px solid var(--border-light);
-  flex-shrink: 0;
+.theme-retro .quick-paste-window {
+  --quick-paste-panel-radius: 8px;
 }
+
+.theme-scifi .quick-paste-window {
+  --quick-paste-panel-radius: 14px;
+}
+
+.theme-liquid-glass .quick-paste-window {
+  --quick-paste-panel-radius: 16px;
+}
+
+:is(.theme-mica, .theme-acrylic, .theme-liquid-glass):not(.theme-custom) .quick-paste-window {
+  background: var(--surface-shell-root-bg);
+}
+
+.theme-custom .quick-paste-window {
+  --quick-paste-panel-radius: var(--dc-radius);
+  background: var(--dc-material-window);
+}
+
+/* ── Search ─────────────────────────────────────────────────── */
 
 .quick-paste-window__search-input {
   width: 100%;
-  padding: var(--spacing-sm) var(--spacing-md);
-  background: var(--bg-input);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-panel);
-  color: var(--text-primary);
-  font-size: var(--font-size-md, var(--dzc-surface-font-size));
-  font-family: var(--font-main, var(--dzc-surface-font-family));
+  flex: 0 0 36px;
+  min-height: 36px;
+  padding: 0 12px;
+  background: var(--dc-surface-input);
+  border: 1px solid var(--dc-border);
+  border-radius: var(--quick-paste-panel-radius);
+  color: var(--dc-text-primary);
+  font: 14px var(--dc-font-ui);
   outline: none;
   box-sizing: border-box;
 }
 
 .quick-paste-window__search-input:focus {
-  border-color: var(--accent-color);
+  border-color: var(--dc-accent);
+}
+
+.quick-paste-window__search-input::placeholder {
+  color: var(--dc-text-secondary);
+  opacity: 1;
 }
 
 /* ── List ───────────────────────────────────────────────────── */
@@ -89,8 +118,10 @@ body.quick-paste #root::before {
 /* ── Item ───────────────────────────────────────────────────── */
 
 .quick-paste-window__item {
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-bottom: 1px solid var(--border-light);
+  box-sizing: border-box;
+  height: 48px;
+  padding: 6px 12px;
+  border-radius: min(8px, var(--quick-paste-panel-radius));
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -98,21 +129,14 @@ body.quick-paste #root::before {
   transition: background-color var(--dzc-surface-transition-ms) var(--dzc-surface-transition-curve);
 }
 
-.quick-paste-window__item:last-child {
-  border-bottom: none;
-}
-
-.quick-paste-window__item:hover {
-  background: var(--surface-history-selected-bg);
-}
-
+.quick-paste-window__item:hover,
 .quick-paste-window__item--active {
-  background: var(--surface-history-selected-bg);
+  background: var(--dc-accent-soft);
 }
 
 .quick-paste-window__item-preview {
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
+  color: var(--dc-text-primary);
+  font-size: 13px;
   line-height: 1.4;
   white-space: nowrap;
   overflow: hidden;
@@ -120,8 +144,9 @@ body.quick-paste #root::before {
 }
 
 .quick-paste-window__item-meta {
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
+  color: var(--dc-text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 /* ── Empty state ────────────────────────────────────────────── */

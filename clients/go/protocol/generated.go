@@ -1032,6 +1032,7 @@ type SurfaceBuildIdentity struct {
 }
 
 type SurfaceTheme struct {
+    Name *string `json:"name,omitempty"`
     Mode string `json:"mode"`
     Opacity float64 `json:"opacity"`
 }

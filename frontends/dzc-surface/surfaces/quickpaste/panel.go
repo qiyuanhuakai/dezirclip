@@ -19,6 +19,7 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/model"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
 )
 
 type outgoing struct {
@@ -39,6 +40,7 @@ type Panel struct {
 	mode           string
 	opacity        float64
 	appearance     *theme.Appearance
+	kit            uikit.Kit
 	search         string
 	list           *ui.ListState
 	prefetch       pagePrefetch
@@ -263,8 +265,7 @@ func (p *Panel) receive(message protocol.SurfaceControlMessage) {
 				}
 				p.init = &init
 				p.init.State = state
-				p.locale, p.mode = init.Locale, init.Theme.Mode
-				p.opacity = init.Theme.Opacity
+				p.applyDisplayTheme(init.Locale, init.Theme)
 				mygo.App.SetLocale(model.NativeLocale(init.Locale))
 				p.send(message.RequestId, protocol.SurfaceControlTypeReady, protocol.SurfaceReady{SurfaceSessionId: init.SurfaceSessionId, Build: buildinfo.Identity(), State: state}, nil)
 			})
@@ -290,8 +291,7 @@ func (p *Panel) receive(message protocol.SurfaceControlMessage) {
 		p.model.Show(show.SurfaceSessionId, show.DisplayRequestId, show.State)
 		p.model.ShowNotice = show.Notice != nil && *show.Notice == "paste_unavailable"
 		p.search = ""
-		p.locale, p.mode = show.Locale, show.Theme.Mode
-		p.opacity = show.Theme.Opacity
+		p.applyDisplayTheme(show.Locale, show.Theme)
 		mygo.App.SetLocale(model.NativeLocale(show.Locale))
 		ctx, cancel := context.WithCancel(context.Background())
 		p.displayCancel = cancel
@@ -662,30 +662,38 @@ func (p *Panel) word(key string) string {
 	return words[key][index]
 }
 
+func (p *Panel) applyDisplayTheme(locale string, display protocol.SurfaceTheme) {
+	base := ""
+	if display.Name != nil {
+		base = *display.Name
+	}
+	preset := presets.Select(base, display.Mode)
+	tokens := preset.Tokens()
+	if tint := preset.SurfaceTint(); tint != "" {
+		tokens.Background = tint
+	}
+	p.applyAppearance(theme.Appearance{Mode: display.Mode, Locale: locale, Opacity: display.Opacity, Tokens: tokens}, preset.Kit())
+}
+
 func (p *Panel) view(c *ui.Context) {
 	tokens := theme.Select(p.mode)
+	kit := uikit.Kit{Mode: p.mode}
 	if p.appearance != nil {
 		tokens = p.appearance.Tokens
+		kit = p.kit
 	}
 	t := ui.LightTheme()
 	if p.mode == "dark" {
 		t = ui.DarkTheme()
 	}
-	// Native panels have no CSS backdrop blur to separate text from the desktop.
-	t.Background, t.Surface, t.Text, t.TextMuted = ui.Hex(tokens.Background).Alpha(float32(max(.92, p.opacity))), ui.Hex(tokens.Panel), ui.Hex(tokens.Text), ui.Hex(tokens.Muted)
-	t.Accent, t.Selection, t.Border = ui.Hex(tokens.Accent), ui.Hex(tokens.Selected), ui.Hex(tokens.Border)
-	t.Radius, t.FontSize = float32(tokens.Radius), float32(tokens.FontSize)
-	if len(tokens.FontFamilies) > 0 {
-		t.Font = tokens.FontFamilies[0]
-	}
-	background := t.Background
+	theme.Apply(t, tokens)
+	background := t.Background.Alpha(float32(p.opacity))
 	t.Inverse, t.InverseText = t.Text, background
 	t.Inverse.A, t.InverseText.A = 255, 255
 	t.Background = background.Alpha(0)
 	c.SetTheme(t)
-	kit := uikit.NewKit(p.mode, tokens, nil)
 	if p.local != nil && p.local.unavailable {
-		ui.Column(c).Fill().Padding(float32(tokens.Padding)).Gap(12).Center().Radius(float32(tokens.Radius)).Background(background).Children(func() {
+		kit.QuickPastePanel(c, background).Padding(float32(tokens.Padding)).Gap(12).Center().Children(func() {
 			ui.Text(c, p.word("unavailable")).Wrap()
 			if kit.Button(c, uikit.ButtonOptions{Label: p.word("close")}).Clicked() {
 				p.dismiss("cancel")
@@ -699,13 +707,12 @@ func (p *Panel) view(c *ui.Context) {
 	}
 	display := p.model.Display
 	var rows *model.View
-	panel := ui.Column(c.Key("display-"+display)).Fill().Padding(float32(tokens.Padding)).Gap(float32(tokens.Gap)).Radius(float32(tokens.Radius)).Border(1, t.Border).Background(background)
+	panel := kit.QuickPastePanel(c.Key("display-"+display), background)
 	x, y, over := panel.PointerPosition()
 	pointerMoved := over && (!p.pointerKnown || p.pointerX != x || p.pointerY != y)
 	p.pointerKnown, p.pointerX, p.pointerY = over, x, y
 	panel.Children(func() {
-		input := kit.TextField(c.Key("query-"+display), &p.search, p.word("search")).FillWidth().
-			Placeholder(p.word("search")).Height(float32(tokens.SearchHeight)).AutoFocus()
+		input := kit.QuickPasteSearch(c.Key("query-"+display), &p.search, p.word("search")).AutoFocus()
 		input.OnTextKey(func(key ui.TextKey) bool {
 			if key.Key == ui.KeyEnter {
 				p.diagnosticRecord(map[string]any{"stage": "enter_gate", "visible": p.model.Visible,
@@ -787,7 +794,7 @@ func (p *Panel) view(c *ui.Context) {
 					label = p.word("link")
 				}
 			}
-			cell := kit.PickerRow(c, label, row.SourceApp, p.model.Selected == i)
+			cell := kit.QuickPasteRow(c, label, row.SourceApp, p.model.Selected == i)
 			if _, _, over := cell.PointerPosition(); over {
 				if p.model.CanSelect() && pointerMoved && p.model.Selected != i {
 					p.model.Selected = i

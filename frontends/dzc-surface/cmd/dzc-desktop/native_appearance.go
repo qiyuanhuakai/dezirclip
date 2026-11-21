@@ -64,6 +64,7 @@ type nativeSurfaceAppearance struct {
 	base       string
 	quickPaste theme.Appearance
 	preview    theme.Appearance
+	preset     presets.Preset
 }
 
 func surfaceThemeSelection(settings map[string]string) (string, *protocol.DesktopThemePackage) {
@@ -100,13 +101,13 @@ func resolveNativeSurfaceAppearance(settings map[string]string, systemDark bool)
 	if font := nativeInterfaceFont(settings); font != "" {
 		a.Tokens.FontFamilies = []string{font}
 	}
-	preview := a
 	if tint := preset.SurfaceTint(); tint != "" {
-		preview.Tokens.Background = tint
+		a.Tokens.Background = tint
 	}
+	preview := a
 	preview.Opacity = float64(opacityPreference(settings["app.preview_opacity"], settings["app.surface_opacity"])) / 100
 	a.Tokens.FontSize = nativeItemSize.value(settings)
-	return nativeSurfaceAppearance{base: base, quickPaste: a, preview: preview}
+	return nativeSurfaceAppearance{base: base, quickPaste: a, preview: preview, preset: preset}
 }
 
 func bindResidentAppearance(ctx context.Context, owner *client.Client, panel *quickpaste.Panel, startup map[string]string, native bool, settingsChanged func(map[string]string)) func() {
@@ -126,8 +127,8 @@ func bindResidentAppearance(ctx context.Context, owner *client.Client, panel *qu
 		}
 		applied, previousKey = true, key
 		resolved := resolveNativeSurfaceAppearance(settings, systemDark)
-		panel.SetAppearance(resolved.quickPaste)
-		refreshPinnedAppearance(owner, resolved.preview, resolved.base, true)
+		panel.SetAppearance(resolved.quickPaste, resolved.preset.Kit().WithInterfaceFont(nativeInterfaceFont(settings)))
+		refreshPinnedAppearance(owner, resolved.preview, resolved.base)
 	}
 	apply(startup)
 	settingsChanged(startup)
@@ -185,16 +186,8 @@ func restoreWebViewAppearance(owner *client.Client, panel *quickpaste.Panel, set
 	if mode != "dark" {
 		mode = "light"
 	}
-	a := theme.Appearance{Mode: mode, Locale: settings["app.language"], Opacity: .65, Tokens: theme.Select(mode)}
-	if value, err := strconv.ParseFloat(settings["app.surface_opacity"], 64); err == nil {
-		a.Opacity = max(0, min(1, value/100))
-	}
-	if font := nativeInterfaceFont(settings); font != "" {
-		a.Tokens.FontFamilies = []string{font}
-	}
-	if size, err := strconv.Atoi(settings["app.clipboard_item_font_size"]); err == nil {
-		a.Tokens.FontSize = max(8, min(32, size))
-	}
+	resolved := resolveNativeSurfaceAppearance(settings, mode == "dark")
+	a := resolved.quickPaste
 	path := nativeAppearancePath(owner)
 	if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() && info.Size() <= 65536 {
 		if bytes, err := os.ReadFile(path); err == nil {
@@ -204,9 +197,9 @@ func restoreWebViewAppearance(owner *client.Client, panel *quickpaste.Panel, set
 			}
 		}
 	}
-	panel.SetAppearance(a)
-	base, _ := surfaceThemeSelection(settings)
-	refreshPinnedAppearance(owner, a, base, false)
+	a.Tokens.Background = resolved.quickPaste.Tokens.Background
+	panel.SetAppearance(a, resolved.preset.Kit().WithInterfaceFont(nativeInterfaceFont(settings)))
+	refreshPinnedAppearance(owner, resolved.preview, resolved.base)
 }
 
 func saveNativeAppearance(owner *client.Client, panel *quickpaste.Panel, appearance theme.Appearance) {
@@ -215,13 +208,16 @@ func saveNativeAppearance(owner *client.Client, panel *quickpaste.Panel, appeara
 	settingsJSON, err := (&Library{owner}).Preferences(ctx)
 	var settings map[string]string
 	if err != nil || json.Unmarshal(settingsJSON, &settings) != nil {
-		panel.SetAppearance(appearance)
+		return
+	}
+	resolved := resolveNativeSurfaceAppearance(settings, appearance.Mode == "dark")
+	if appearance.Mode != resolved.quickPaste.Mode {
 		return
 	}
 	appearance.Locale = settings["app.language"]
-	panel.SetAppearance(appearance)
-	base, _ := surfaceThemeSelection(settings)
-	refreshPinnedAppearance(owner, appearance, base, false)
+	appearance.Tokens.Background = resolved.quickPaste.Tokens.Background
+	panel.SetAppearance(appearance, resolved.preset.Kit().WithInterfaceFont(nativeInterfaceFont(settings)))
+	refreshPinnedAppearance(owner, resolved.preview, resolved.base)
 	path := nativeAppearancePath(owner)
 	if path == "" {
 		return

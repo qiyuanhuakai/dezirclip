@@ -18,6 +18,7 @@ const selectedFixtures = flags.get("fixture")?.split(",");
 const presets = JSON.parse(await readFile(resolve(root, "packages/ui-presets/builtin-presets.json"), "utf8"));
 const cases = {
   "surface-opacity": { states: ["0", "20", "65", "85", "100"], text: "Appearance" },
+  "quick-paste-panel": { states: ["0", "65", "100"], text: "Release checklist" },
   "settings-field": { states: ["default", "expanded"], text: "Interface font" },
   "settings-section-card": { states: ["default", "expanded", "wide"], text: "General settings" },
   "settings-choices": { states: ["default"], text: "Update channel" },
@@ -463,6 +464,9 @@ try {
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
             const dialog = fixture === "backup-dialog" ? await page.locator(".data-modal-content").boundingBox() : undefined;
             const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64"), dialog });
+            if (fixture === "quick-paste-panel" && pixels.backgroundDistance > 2) {
+              throw Error(`Quick Paste backdrop differs at ${state}%: ${pixels.backgroundDistance}`);
+            }
             if (fixture === "tag-batch-toolbar") {
               const selection = page.getByRole("button", { name: state === "default" ? "Select all" : state === "narrow"
                 ? "Clear all matching entries" : "Clear selection" });

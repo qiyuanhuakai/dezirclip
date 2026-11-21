@@ -27,7 +27,7 @@ func TestNativePopupAppearanceUsesSelectedThemeAndSeparateOpacity(t *testing.T) 
 				if got.base != name || !got.quickPaste.Valid() || !got.preview.Valid() {
 					t.Fatalf("invalid popup styles: %+v", got)
 				}
-				if got.quickPaste.Mode != mode || got.quickPaste.Tokens.Background != want.Background ||
+				if got.quickPaste.Mode != mode || got.quickPaste.Tokens.Background != tint ||
 					got.quickPaste.Tokens.Accent != want.Accent || got.preview.Tokens.Background != tint {
 					t.Fatalf("popup palette disagrees with the selected preset: %+v", got)
 				}

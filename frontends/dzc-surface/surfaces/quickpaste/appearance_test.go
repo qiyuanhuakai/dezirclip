@@ -12,6 +12,8 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
 )
 
 func TestPanelVisualFixture(t *testing.T) {
@@ -26,7 +28,7 @@ func TestPanelVisualFixture(t *testing.T) {
 		panel := &Panel{mode: mode, locale: "en", opacity: .85}
 		tokens := theme.Select(mode)
 		tokens.FontFamilies = []string{"Segoe UI"}
-		panel.appearance = &theme.Appearance{Mode: mode, Locale: "en", Opacity: .85, Tokens: tokens}
+		panel.applyAppearance(theme.Appearance{Mode: mode, Locale: "en", Opacity: .85, Tokens: tokens}, uikit.NewKit(mode, tokens, nil))
 		panel.model.Visible, panel.model.Display, panel.model.Session = true, "visual", "visual"
 		panel.model.Selected = 0
 		for i, value := range []string{"[image]", "https://github.com/qiyuanhuakai/dezirclip", "A rich text note with formatting and a long readable preview", "Design notes for the native clipboard panel", "A short note"} {
@@ -46,17 +48,35 @@ func TestPanelVisualFixture(t *testing.T) {
 	}
 }
 
-func TestPanelKeepsReadableOpacityAndTransparentCorners(t *testing.T) {
-	for _, opacity := range []float64{0, .65, 1} {
-		panel := &Panel{mode: "light", locale: "en", opacity: opacity}
-		panel.model.Visible = true
-		frame := ui.NewTester(panel.view, 560, 440).Image()
-		got := frame.RGBAAt(550, 220).A
-		if math.Abs(float64(got)-max(.92, opacity)*255) > 2 {
-			t.Fatalf("opacity %v painted alpha %d", opacity, got)
-		}
-		if corner := frame.RGBAAt(0, 0).A; corner != 0 {
-			t.Fatalf("rounded panel left an opaque root corner: %d", corner)
+func TestPanelUsesCurrentPresetAndAbsoluteOpacity(t *testing.T) {
+	panel := &Panel{}
+	panel.model.Visible = true
+	tester := ui.NewTester(panel.view, 560, 440)
+	for _, name := range []string{"retro", "mica", "acrylic", "macos", "liquid-glass", "scifi"} {
+		for _, mode := range []string{"light", "dark"} {
+			preset := presets.Select(name, mode)
+			tint := preset.SurfaceTint()
+			if tint == "" {
+				tint = preset.Tokens().Background
+			}
+			for _, opacity := range []float64{0, .65, 1} {
+				panel.applyDisplayTheme("en", protocol.SurfaceTheme{Name: &name, Mode: mode, Opacity: opacity})
+				tester.Frame()
+				frame := tester.Image()
+				got := frame.RGBAAt(550, 220)
+				if math.Abs(float64(got.A)-opacity*255) > 2 {
+					t.Fatalf("%s %s opacity %.2f painted alpha %d", name, mode, opacity, got.A)
+				}
+				if opacity == 1 {
+					want := ui.Hex(tint)
+					if got.R != want.R || got.G != want.G || got.B != want.B {
+						t.Fatalf("%s %s painted %v, want %s", name, mode, got, tint)
+					}
+				}
+				if corner := frame.RGBAAt(0, 0).A; corner != 0 {
+					t.Fatalf("%s %s rounded panel left an opaque root corner: %d", name, mode, corner)
+				}
+			}
 		}
 	}
 }

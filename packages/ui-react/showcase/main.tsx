@@ -3,7 +3,7 @@ import "../src/styles/components/privacy.css";
 import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HotkeyBinding, MatchHighlight,
-  ProgressToast, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail, SettingsSectionCard,
+  ProgressToast, QuickPastePanel, QuickPasteRow, QuickPasteSearch, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail, SettingsSectionCard,
   SettingsSlider, SettingsToggle, SettingsToggleField, TagDialog, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
@@ -306,16 +306,31 @@ function CharacterPanelFixture() {
   </main>;
 }
 
+function QuickPasteFixture() {
+  return <main data-fixture="quick-paste-panel">
+    <QuickPastePanel>
+      <QuickPasteSearch aria-label="Search clipboard" placeholder="Search clipboard…" />
+      <div className="quick-paste-window__list">
+        <QuickPasteRow preview="Release checklist" source="Editor" active />
+        <QuickPasteRow preview="Design notes" source="Browser" />
+        <QuickPasteRow preview="Preview package ready for testing" source="Terminal" />
+      </div>
+    </QuickPastePanel>
+  </main>;
+}
+
 async function start() {
   for (const element of [document.documentElement, document.body]) element.classList.add("theme-" + theme, mode + "-mode");
   await loadBuiltinTheme(theme);
-  if (fixture === "surface-opacity") {
+  if (fixture === "surface-opacity" || fixture === "quick-paste-panel") {
     document.documentElement.classList.add("showcase-opacity-background");
     document.documentElement.style.setProperty("--surface-opacity", String(Math.min(100, Math.max(0, Number(state))) / 100));
   }
+  if (fixture === "quick-paste-panel") document.body.classList.add("quick-paste");
   document.body.dataset.appearance = JSON.stringify({ Mode: mode, Tokens: nativeUiPalette() });
   createRoot(document.getElementById("root")!).render(fixture === "surface-opacity" ? <SurfaceOpacityFixture />
-    : fixture === "character-panel" ? <CharacterPanelFixture /> : <Showcase />);
+    : fixture === "character-panel" ? <CharacterPanelFixture />
+    : fixture === "quick-paste-panel" ? <QuickPasteFixture /> : <Showcase />);
 }
 
 void start();

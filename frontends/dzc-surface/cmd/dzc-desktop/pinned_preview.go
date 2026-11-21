@@ -36,16 +36,14 @@ type pinnedPreview struct {
 // Accessed only on the native event thread.
 var pinnedWindows = make(map[*pinnedPreview]struct{})
 
-func refreshPinnedAppearance(owner *client.Client, appearance theme.Appearance, base string, updateOpacity bool) {
+func refreshPinnedAppearance(owner *client.Client, appearance theme.Appearance, base string) {
 	for preview := range pinnedWindows {
 		if preview.owner == owner && !preview.window.IsDestroyed() {
 			preview.ticket.Appearance.Palette = &appearance
 			preview.ticket.Appearance.BaseTheme = base
 			preview.ticket.Appearance.Background = nil
 			preview.ticket.Appearance.Dark = appearance.Mode == "dark"
-			if updateOpacity {
-				preview.opacity.applyPreference(int(appearance.Opacity*100 + .5))
-			}
+			preview.opacity.applyPreference(int(appearance.Opacity*100 + .5))
 			preview.window.Update(func() {})
 		}
 	}

@@ -279,9 +279,26 @@ fn appearance(app: &AppHandle) -> (String, SurfaceTheme) {
         .filter(|value| value.is_finite())
         .map(|value| value.clamp(0.0, 100.0) / 100.0)
         .unwrap_or(0.65);
+    let selected = read("app.theme").unwrap_or_default();
+    let base = if let Some(id) = selected.strip_prefix("custom:") {
+        let catalog = read("app.custom_themes");
+        dzc_core::domain::theme::parse_theme_library(catalog.as_deref())
+            .unwrap_or_default()
+            .into_iter()
+            .find(|theme| theme.id == id)
+            .map(|theme| theme.base)
+            .unwrap_or_default()
+    } else {
+        selected
+    };
+    let name = match base.as_str() {
+        "retro" | "mica" | "acrylic" | "liquid-glass" | "macos" | "scifi" => base,
+        _ => "mica".into(),
+    };
     (
         locale,
         SurfaceTheme {
+            name: Some(name),
             mode: mode.into(),
             opacity,
         },

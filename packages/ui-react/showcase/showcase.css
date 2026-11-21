@@ -16,6 +16,10 @@
   display: block;
   padding: 0;
 }
+[data-fixture="quick-paste-panel"] {
+  height: 100vh;
+  font-family: var(--dc-font-ui);
+}
 .showcase-character-panel > .emoji-panel {
   height: 300px;
 }
