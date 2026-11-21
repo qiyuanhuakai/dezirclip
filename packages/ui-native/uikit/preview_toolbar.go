@@ -106,25 +106,25 @@ func (k Kit) previewButton(c *ui.Context, label, value string, symbol *ui.SVG, a
 }
 
 func (k Kit) previewOpacity(c *ui.Context, options PreviewToolbarOptions) {
+	trackStyle, thumbStyle := k.style("previewOpacityTrack"), k.style("previewOpacityThumb")
 	ui.Row(c).Grow(1).MinWidth(90).MaxWidth(220).Gap(6).AlignItems(ui.Center).Children(func() {
 		ui.Icon(c, previewBlend).Size(14, 14).TextColor(c.Theme().TextMuted)
 		slider := ui.SliderBase(c, options.Opacity, 0, 100).Grow(1).MinWidth(40).MaxWidth(160).
-			Height(18).PaddingX(7).Step(1).FocusRing(true).Label(options.OpacityLabel).Tooltip(options.OpacityLabel)
+			Height(18).PaddingX(thumbStyle.Width / 2).Step(1).FocusRing(true).Label(options.OpacityLabel).Tooltip(options.OpacityLabel)
 		if slider.Changed() {
 			*options.Opacity = math.Round(*options.Opacity)
 			if options.OnOpacityChange != nil {
 				options.OnOpacityChange(*options.Opacity)
 			}
 		}
-		palette := k.palette()
 		slider.Draw(func(p *ui.Painter, r ui.Rect) {
-			border := c.Theme().Border
-			track := ui.Rect{X: r.X, Y: r.Y + (r.H-6)/2, W: r.W, H: 6}
-			p.Fill(track, ui.Hex(palette.Background), 4)
-			p.Stroke(track, border, 4, 1)
-			thumb := ui.Rect{X: r.X + max(0, r.W-14)*float32(*options.Opacity/100), Y: r.Y + (r.H-14)/2, W: 14, H: 14}
-			p.Fill(thumb, c.Theme().Surface, 4)
-			p.Stroke(thumb, border, 4, 2)
+			track := ui.Rect{X: r.X, Y: r.Y + (r.H-trackStyle.Height)/2, W: r.W, H: trackStyle.Height}
+			p.Fill(track, styleColor(trackStyle.Fill), trackStyle.Radius)
+			p.Stroke(track, styleColor(trackStyle.Border), trackStyle.Radius, trackStyle.BorderWidth)
+			thumb := ui.Rect{X: r.X + max(0, r.W-thumbStyle.Width)*float32(*options.Opacity/100),
+				Y: r.Y + (r.H-thumbStyle.Height)/2, W: thumbStyle.Width, H: thumbStyle.Height}
+			p.Fill(thumb, styleColor(thumbStyle.Fill), thumbStyle.Radius)
+			p.Stroke(thumb, styleColor(thumbStyle.Border), thumbStyle.Radius, thumbStyle.BorderWidth)
 		})
 		ui.Row(c).Width(32).Shrink(0).Justify(ui.End).Children(func() {
 			text(c, fmt.Sprintf("%.0f%%", *options.Opacity), k.style("previewToolbarTitle"))

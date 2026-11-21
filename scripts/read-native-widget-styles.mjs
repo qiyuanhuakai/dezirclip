@@ -112,6 +112,8 @@ const samples = [
   ["preview-toolbar", "default", {
     previewToolbar: [".preview-toolbar"], previewToolbarTitle: [".preview-toolbar-drag span"],
     previewToolbarButton: [".preview-toolbar-actions .preview-toolbar-button"],
+    previewOpacityTrack: [".preview-toolbar-opacity [data-slider-sample=track]"],
+    previewOpacityThumb: [".preview-toolbar-opacity [data-slider-sample=thumb]"],
   }],
   ["preview-toolbar", "pinned", {
     previewToolbarActive: [".preview-toolbar-button.active"], previewToolbarActual: [".preview-toolbar-actual"],
@@ -261,8 +263,8 @@ const samples = [
 
 // Chromium returns the input's style for its internal range pseudo-elements.
 // Apply those same CSS declarations to offscreen boxes to capture their geometry and paint.
-function prepareSliderSamples() {
-  const field = document.querySelector(".settings-view input[type=range]");
+function prepareSliderSamples(selector) {
+  const field = document.querySelector(selector);
   const parts = { track: "runnable-track", thumb: "thumb" };
   const sampleStyle = document.createElement("style");
   const activeRules = function* (rules) {
@@ -576,7 +578,10 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
     });
     if (fixture === "settings-slider") {
       if (state === "keyboard") await page.getByRole("slider", { name: "Opacity" }).focus();
-      else await page.evaluate(prepareSliderSamples);
+      else await page.evaluate(prepareSliderSamples, ".settings-view input[type=range]");
+    }
+    if (fixture === "preview-toolbar" && state === "default") {
+      await page.evaluate(prepareSliderSamples, ".preview-toolbar-opacity input[type=range]");
     }
     Object.assign(styles, await page.evaluate(readStyles, { selectors, materialOpacity }));
   }

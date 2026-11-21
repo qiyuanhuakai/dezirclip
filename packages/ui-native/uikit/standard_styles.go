@@ -490,6 +490,12 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.BorderWidths = &[4]float32{0, 0, 1, 0}
 	case "previewToolbarTitle":
 		style.Size = 12
+	case "previewOpacityTrack":
+		style.Height, style.Radius, style.BorderWidth = 6, 4, 1
+		style.Fill, style.Border = rgba(ui.Hex(palette.Background)), border
+	case "previewOpacityThumb":
+		style.Width, style.Height, style.Radius, style.BorderWidth = 14, 14, 4, 2
+		style.Fill, style.Border = panel, border
 	case "previewToolbarButton", "previewToolbarActive", "previewToolbarActual":
 		surface()
 		style.Width, style.Height = 26, 26
