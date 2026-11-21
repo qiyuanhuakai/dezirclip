@@ -162,13 +162,22 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 		})
 	case "search-select":
 		scope := ui.Column(c).Width(385).Gap(12)
-		choices := []uikit.SelectOption{{Label: "System default (Example Browser)"}}
-		if g.state == "long-options" {
-			scope.Width(260).Margin(0, 0, 0, 150)
-			choices = append(choices, uikit.SelectOption{Value: "/example/long", Label: longApplicationLabel})
+		label := "Images"
+		var choices []uikit.SelectOption
+		if g.state == "app-inherited" || g.state == "app-same-name" {
+			label = "Code"
+			choices = []uikit.SelectOption{{Label: "Follow text setting (Example Editor)"},
+				{Value: "C:/Apps/CodeEditor.exe", Label: "Code Editor (C:/Apps/CodeEditor.exe)"},
+				{Value: "D:/Portable/CodeEditor.exe", Label: "Code Editor (D:/Portable/CodeEditor.exe)"}}
+		} else {
+			choices = []uikit.SelectOption{{Label: "System default (Example Browser)"}}
+			if g.state == "long-options" {
+				scope.Width(260).Margin(0, 0, 0, 150)
+				choices = append(choices, uikit.SelectOption{Value: "/example/long", Label: longApplicationLabel})
+			}
+			choices = append(choices, uikit.SelectOption{Value: "/example/photo-viewer", Label: "Photo Viewer"},
+				uikit.SelectOption{Value: "/example/archive", Label: "Archive Manager"})
 		}
-		choices = append(choices, uikit.SelectOption{Value: "/example/photo-viewer", Label: "Photo Viewer"},
-			uikit.SelectOption{Value: "/example/archive", Label: "Archive Manager"})
 		scope.Children(func() {
 			ui.Column(c).FillWidth().Gap(6).Padding(6, 0).Children(func() {
 				kit.SettingsLabel(c, "Interface font")
@@ -177,8 +186,8 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 					Choices: []uikit.SelectOption{{Label: "Default font"}, {Value: "Example Sans", Label: "Example Sans"}, {Value: "Example Serif", Label: "Example Serif"}}})
 			})
 			ui.Column(c).FillWidth().Gap(6).Padding(6, 0).Children(func() {
-				kit.SettingsLabel(c, "IMAGES").FontSize(11).Opacity(0.8)
-				kit.SearchSelect(c, uikit.SearchSelectOptions{Label: "Images", NoMatches: "No matching applications", Value: &g.choice,
+				kit.SettingsLabel(c, strings.ToUpper(label)).FontSize(11).Opacity(0.8)
+				kit.SearchSelect(c, uikit.SearchSelectOptions{Label: label, NoMatches: "No matching applications", Value: &g.choice,
 					Choices: choices})
 			})
 		})

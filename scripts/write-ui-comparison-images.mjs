@@ -66,6 +66,8 @@ const figures = [
   ["font-select", "open", 210, 0, "font-select"],
   ["preview-text", "large", 92, 0, "preview-text"],
   ["search-select", "long-options", 355, 0, "search-select-long-options"],
+  ["search-select", "app-inherited", 90, 100, "search-select-app-inherited"],
+  ["search-select", "app-same-name", 190, 100, "search-select-app-same-name"],
   ["search-select", "apps-filtered", 218],
   ["search-select", "empty", 218, 0, "search-select-empty"],
   ["search-select", "typo", 218, 0, "search-select-typo"],

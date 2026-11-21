@@ -268,17 +268,28 @@ func TestReactLibraryWithService(t *testing.T) {
 		if !errors.As(err, &remote) || remote.Code != protocol.WireErrorCodeInvalidRequest {
 			t.Fatalf("unregistered application selection: %v", err)
 		}
+		if err := library.SetSetting(ctx, "app.text", iconExecutable, epoch); err != nil {
+			t.Fatal(err)
+		}
+		checkSelection := func(want string) {
+			t.Helper()
+			raw, err := library.Preferences(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var preferences map[string]string
+			if err := json.Unmarshal(raw, &preferences); err != nil {
+				t.Fatal(err)
+			}
+			if value, ok := preferences["app.text"]; !ok || value != want {
+				t.Fatalf("saved application = %q, want %q", value, want)
+			}
+		}
+		checkSelection(iconExecutable)
 		if err := library.SetSetting(ctx, "app.text", "", epoch); err != nil {
 			t.Fatal(err)
 		}
-		raw, err := library.Preferences(ctx)
-		var preferences map[string]string
-		if err != nil || json.Unmarshal(raw, &preferences) != nil {
-			t.Fatalf("read saved selection: %v", err)
-		}
-		if value, ok := preferences["app.text"]; !ok || value != "" {
-			t.Fatal("system default did not persist")
-		}
+		checkSelection("")
 	})
 	t.Run("selected background", func(t *testing.T) {
 		// Incompressible pixels exercise multiple protocol chunks and the renderer file-size check.

@@ -286,6 +286,9 @@ export function SearchSelectFixture({ state }: { state: string }) {
   const [font, setFont] = useState("Example Sans");
   const [app, setApp] = useState("");
   const narrow = state === "long-options";
+  const code = state === "app-inherited" || state === "app-same-name";
+  const appLabel = code ? "Code" : "Images";
+  const fallback = code ? "Follow text setting (Example Editor)" : "System default (Example Browser)";
   return <div style={{ width: narrow ? 260 : 385, marginInlineStart: narrow ? 150 : 0, display: "grid", gap: 12 }}>
     <div className="setting-item column">
       <span className="item-label">Interface font</span>
@@ -294,11 +297,16 @@ export function SearchSelectFixture({ state }: { state: string }) {
         ariaLabel="Interface font" noOptionsMessage="No matching fonts" />
     </div>
     <div className="setting-item column">
-      <span className="item-label" style={{ textTransform: "uppercase", fontSize: "11px", opacity: 0.8 }}>Images</span>
-      <ThemedSelect options={[{ value: "", label: "System default (Example Browser)" },
+      <span className="item-label" style={{ textTransform: "uppercase", fontSize: "11px", opacity: 0.8 }}>{appLabel}</span>
+      <ThemedSelect options={[{ value: "", label: fallback },
         ...(narrow ? [{ value: "/example/long", label: "Example Windows application with a very long display name for editing and browsing images" }] : []),
-        { value: "/example/photo-viewer", label: "Photo Viewer" }, { value: "/example/archive", label: "Archive Manager" }]}
-        value={app} onChange={setApp} width="100%" searchable ariaLabel="Images" noOptionsMessage="No matching applications" />
+        ...(code ? [
+          { value: "C:/Apps/CodeEditor.exe", label: "Code Editor (C:/Apps/CodeEditor.exe)" },
+          { value: "D:/Portable/CodeEditor.exe", label: "Code Editor (D:/Portable/CodeEditor.exe)" },
+        ] : [
+          { value: "/example/photo-viewer", label: "Photo Viewer" }, { value: "/example/archive", label: "Archive Manager" },
+        ])]}
+        value={app} onChange={setApp} width="100%" searchable ariaLabel={appLabel} noOptionsMessage="No matching applications" />
     </div>
   </div>;
 }

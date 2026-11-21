@@ -474,6 +474,21 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 		}
 	}
 	if g.fixture == "search-select" && g.state != "default" {
+		if g.state == "app-inherited" {
+			if !tester.HasText("Follow text setting (Example Editor)") {
+				return fmt.Errorf("the inherited application was not displayed")
+			}
+			return nil
+		}
+		if g.state == "app-same-name" {
+			if err := tester.Click("Code"); err != nil {
+				return err
+			}
+			if !tester.HasText("Code Editor (C:/Apps/CodeEditor.exe)") || !tester.HasText("Code Editor (D:/Portable/CodeEditor.exe)") {
+				return fmt.Errorf("same-name applications were not distinguished by path")
+			}
+			return nil
+		}
 		field, _ := tester.Find("Images")
 		if err := tester.Click("Images"); err != nil {
 			return err

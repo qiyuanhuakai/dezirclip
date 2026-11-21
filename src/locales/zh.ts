@@ -480,6 +480,7 @@ export const zh = {
         // Settings - Default Apps
         change_app: "更改",
         system_default: "[系统默认]",
+        default_app_follow_text: "沿用文本设置",
         not_configured: "未配置（点击选择）",
         no_matching_apps: "无匹配应用",
 

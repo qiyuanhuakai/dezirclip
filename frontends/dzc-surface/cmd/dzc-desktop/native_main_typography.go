@@ -159,7 +159,7 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 
 func (n *nativeMain) saveOpacity(preference string, value int, draft **int) {
 	saved := strconv.Itoa(value)
-	n.writeSettingWithResult(func(ctx context.Context, epoch uint64) error {
+	n.writeSettingWithResult(4*time.Second, func(ctx context.Context, epoch uint64) error {
 		return n.library.SetSetting(ctx, preference, saved, epoch)
 	}, func(err error) {
 		if err == nil {

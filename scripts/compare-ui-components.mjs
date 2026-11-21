@@ -43,7 +43,7 @@ const cases = {
   "tag-search": { states: ["default"], text: "Work" },
   "font-select": { states: ["default", "open"], text: "Georgia" },
   "preview-text": { states: ["small", "large"], text: "second line stays visible" },
-  "search-select": { states: ["default", "apps-filtered", "empty", "typo", "long-options"], text: "Interface font" },
+  "search-select": { states: ["default", "apps-filtered", "empty", "typo", "long-options", "app-inherited", "app-same-name"], text: "Interface font" },
   "tag-suggestions": { states: ["active", "empty"], text: "Tags" },
   "text-fields": { states: ["default"], text: "Idle timeout" },
   "context-menu": { states: ["default", "text", "privacy"], text: "Clipboard entry" },
@@ -460,7 +460,14 @@ try {
                 throw Error("Preview ignored the clipboard font size or discarded a line break");
               }
             }
-            if (fixture === "search-select" && state !== "default") {
+            if (fixture === "search-select" && state === "app-inherited") {
+              await page.getByText("Follow text setting (Example Editor)", { exact: true }).waitFor();
+            } else if (fixture === "search-select" && state === "app-same-name") {
+              await page.getByRole("combobox", { name: "Code" }).click();
+              for (const path of ["C:/Apps/CodeEditor.exe", "D:/Portable/CodeEditor.exe"]) {
+                await page.getByRole("option", { name: `Code Editor (${path})`, exact: true }).waitFor();
+              }
+            } else if (fixture === "search-select" && state !== "default") {
               const input = page.getByRole("combobox", { name: "Images" });
               await input.click();
               if (state !== "long-options") await input.fill(({ empty: "zzzz0000", typo: "Photo Veiwer" })[state] ?? "viewer");

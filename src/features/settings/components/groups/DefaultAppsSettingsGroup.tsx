@@ -6,6 +6,7 @@ import type { DefaultAppsMap, InstalledAppOption } from "../../../app/types";
 import { getClipboardTypeName } from "../../../../shared/lib/clipboardTypeName";
 
 const SYSTEM_DEFAULT_VALUE = "__system_default__";
+const APP_TYPES = ["text", "rich_text", "image", "video", "code", "url"] as const;
 
 interface DefaultAppsSettingsGroupProps {
     t: (key: string) => string;
@@ -31,26 +32,36 @@ const DefaultAppsSettingsGroup = ({
     defaultApps,
     saveAppSetting
 }: DefaultAppsSettingsGroupProps) => {
-    const APP_TYPES = ['text', 'rich_text', 'image', 'video', 'code', 'url'] as const;
     const [saving, setSaving] = useState(false);
 
     const optionsByType = useMemo(() => {
+        const installedByPath = new Map<string, string>();
+        const nameCounts = new Map<string, number>();
+        for (const { value, label } of installedApps) {
+            if (!value || installedByPath.has(value)) continue;
+            const name = label || stripExe(value);
+            installedByPath.set(value, name);
+            const folded = name.toLowerCase();
+            nameCounts.set(folded, (nameCounts.get(folded) ?? 0) + 1);
+        }
+        const appOptions = Array.from(installedByPath, ([value, label]) => ({
+            value,
+            label: (nameCounts.get(label.toLowerCase()) ?? 0) > 1 ? `${label} (${value})` : label,
+        }));
         const map: Record<string, ThemedSelectOption[]> = {};
         for (const type of APP_TYPES) {
-            const seen = new Set<string>();
-            const opts: ThemedSelectOption[] = [];
             const sysValue = `${SYSTEM_DEFAULT_VALUE}::${type}`;
-            opts.push({ value: sysValue, label: defaultApps[type]
-                ? `${t('system_default')} (${stripExe(defaultApps[type])})` : t('system_default') });
-            seen.add(sysValue);
-            for (const app of installedApps) {
-                if (!seen.has(app.value)) {
-                    seen.add(app.value);
-                    opts.push({ value: app.value, label: app.label });
-                }
-            }
+            const inherited = type === "code" ? appSettings["app.text"] : "";
+            const name = inherited
+                ? installedByPath.get(inherited) || stripExe(inherited)
+                : stripExe(defaultApps[type] ?? "");
+            const fallbackLabel = t(inherited ? "default_app_follow_text" : "system_default");
+            const opts: ThemedSelectOption[] = [
+                { value: sysValue, label: name ? `${fallbackLabel} (${name})` : fallbackLabel },
+                ...appOptions,
+            ];
             const saved = appSettings[`app.${type}`];
-            if (saved && !seen.has(saved)) opts.push({ value: saved, label: stripExe(saved) });
+            if (saved && !installedByPath.has(saved)) opts.push({ value: saved, label: stripExe(saved) });
             map[type] = opts;
         }
         return map;

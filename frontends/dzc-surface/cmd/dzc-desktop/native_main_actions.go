@@ -56,8 +56,12 @@ func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, act
 	n.mutating, n.notice = true, ""
 	n.closePreview()
 	session, state, preferences := n.session, n.history.state, n.preferences
+	timeout := 4 * time.Second
+	if action == nativeOpen {
+		timeout = nativeExternalApplicationTimeout
+	}
 	go func() {
-		ctx, cancel := context.WithTimeout(session, 4*time.Second)
+		ctx, cancel := context.WithTimeout(session, timeout)
 		defer cancel()
 		pasted, notice, err := n.runRowAction(ctx, row, state, preferences, action, reveal)
 		n.update(session, func() {

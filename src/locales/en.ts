@@ -478,6 +478,7 @@ export const en = {
         // Settings - Default Apps
         change_app: "Change",
         system_default: "[System Default]",
+        default_app_follow_text: "Follow text setting",
         not_configured: "Not Configured (Click to select)",
         no_matching_apps: "No matching apps",
 

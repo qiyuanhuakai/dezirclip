@@ -476,6 +476,7 @@ export const tw = {
         // Settings - Default Apps
         change_app: "更改",
         system_default: "[系統預設]",
+        default_app_follow_text: "沿用文字設定",
         not_configured: "未配置 (點擊選擇)",
         no_matching_apps: "無符合的應用程式",
 

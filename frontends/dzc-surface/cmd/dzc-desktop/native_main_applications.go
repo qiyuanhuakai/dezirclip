@@ -16,6 +16,9 @@ type nativeInstalledApplication struct {
 	Path string `json:"path"`
 }
 
+// The Host may scan installed applications for up to ten seconds before saving.
+const nativeExternalApplicationTimeout = 15 * time.Second
+
 type nativeApplicationCatalog struct {
 	system                  map[string]string
 	options                 []uikit.SelectOption
@@ -49,7 +52,13 @@ func (n *nativeMain) defaultAppsSettings(c *ui.Context) {
 func (n *nativeMain) applicationSetting(c *ui.Context, kind, label string) {
 	catalog := &n.applications
 	system := n.text("system_default")
-	if path := catalog.system[kind]; path != "" {
+	if inherited := n.preferences["app.text"]; kind == "code" && inherited != "" {
+		name := catalog.labelsByPath[inherited]
+		if name == "" {
+			name = applicationFilename(inherited)
+		}
+		system = n.text("default_app_follow_text") + " (" + name + ")"
+	} else if path := catalog.system[kind]; path != "" {
 		system += " (" + applicationFilename(path) + ")"
 	}
 	options := make([]uikit.SelectOption, 1, len(catalog.options)+2)
@@ -73,7 +82,13 @@ func (n *nativeMain) applicationSetting(c *ui.Context, kind, label string) {
 			ui.Text(c, applicationFilename(path)).FontSize(10).TextColor(c.Theme().TextMuted).Margin(2, 0, 0).Wrap()
 		}
 		if changed {
-			n.saveSetting(key, selected)
+			n.writeSettingWithResult(nativeExternalApplicationTimeout, func(ctx context.Context, epoch uint64) error {
+				return n.library.SetSetting(ctx, key, selected, epoch)
+			}, func(err error) {
+				if err == nil {
+					n.preferences[key] = selected
+				}
+			})
 		}
 	})
 }
@@ -111,9 +126,6 @@ func (n *nativeMain) loadApplications() {
 		}
 		names := make(map[string]int, len(listed))
 		for _, app := range listed {
-			names[app.Name]++
-		}
-		for _, app := range listed {
 			if app.Path == "" || catalog.labelsByPath[app.Path] != "" {
 				continue
 			}
@@ -121,11 +133,14 @@ func (n *nativeMain) loadApplications() {
 			if label == "" {
 				label = applicationFilename(app.Path)
 			}
-			if names[app.Name] > 1 {
-				label += " (" + app.Path + ")"
-			}
+			names[strings.ToLower(label)]++
 			catalog.options = append(catalog.options, uikit.SelectOption{Value: app.Path, Label: label})
 			catalog.labelsByPath[app.Path] = label
+		}
+		for index, option := range catalog.options {
+			if names[strings.ToLower(option.Label)] > 1 {
+				catalog.options[index].Label += " (" + option.Value + ")"
+			}
 		}
 		window.Update(func() { n.applications = catalog })
 	}()

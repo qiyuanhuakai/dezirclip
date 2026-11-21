@@ -528,21 +528,21 @@ func (n *nativeMain) writeSetting(write func(context.Context, uint64) error) {
 }
 
 func (n *nativeMain) writeSettingWithEffect(write func(context.Context, uint64) error, onSaved func()) {
-	n.writeSettingWithResult(write, func(err error) {
+	n.writeSettingWithResult(4*time.Second, write, func(err error) {
 		if err == nil && onSaved != nil {
 			onSaved()
 		}
 	})
 }
 
-func (n *nativeMain) writeSettingWithResult(write func(context.Context, uint64) error, onFinished func(error)) {
+func (n *nativeMain) writeSettingWithResult(timeout time.Duration, write func(context.Context, uint64) error, onFinished func(error)) {
 	if n.session == nil || n.mutating || n.history.state.ServiceInstanceId == "" {
 		return
 	}
 	n.mutating, n.notice = true, ""
 	session, state := n.session, n.history.state
 	go func() {
-		ctx, cancel := context.WithTimeout(session, 4*time.Second)
+		ctx, cancel := context.WithTimeout(session, timeout)
 		defer cancel()
 		err := write(ctx, state.PrivacyEpoch)
 		n.update(session, func() {

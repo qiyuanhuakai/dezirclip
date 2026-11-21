@@ -484,7 +484,7 @@ func TestNativeApplicationSelectsFitTheirSettingsColumns(t *testing.T) {
 		showSettings: true, settingsSection: "applications",
 		preferences: map[string]string{"app.language": "en"},
 		applications: nativeApplicationCatalog{
-			loaded: true, system: map[string]string{"text": "/example/Example Editor", "rich_text": "/example/Example Writer"},
+			loaded: true, system: map[string]string{"text": "/example/Example Editor", "rich_text": "/example/Example Writer", "code": "/example/System Editor"},
 		},
 	}
 	view := ui.NewTester(window.view, 800, 620)
@@ -492,6 +492,27 @@ func TestNativeApplicationSelectsFitTheirSettingsColumns(t *testing.T) {
 	writer, writerOK := view.Find(window.text("system_default") + " (Example Writer)")
 	if !editorOK || !writerOK || editor.X+editor.W > writer.X || editor.Y != writer.Y {
 		t.Fatalf("default applications do not fit their own columns: editor=%+v writer=%+v, visible %v", editor, writer, view.Texts())
+	}
+	systemCode := window.text("system_default") + " (System Editor)"
+	if !view.HasText(systemCode) {
+		t.Fatal("code did not show the system editor with no overrides")
+	}
+	window.preferences["app.text"] = `C:\Example\Text Editor.exe`
+	view.Frame()
+	inherited := window.text("default_app_follow_text") + " (Text Editor)"
+	if !view.HasText(inherited) || view.HasText(systemCode) {
+		t.Fatalf("code did not show its inherited text handler: %v", view.Texts())
+	}
+	window.applications.labelsByPath = map[string]string{window.preferences["app.text"]: "My Text Editor"}
+	view.Frame()
+	inherited = window.text("default_app_follow_text") + " (My Text Editor)"
+	if !view.HasText(inherited) {
+		t.Fatalf("code did not use the discovered application name: %v", view.Texts())
+	}
+	window.preferences["app.code"] = "/example/Code Editor"
+	view.Frame()
+	if !view.HasText("Code Editor") || view.HasText(inherited) {
+		t.Fatalf("code did not show its explicit handler: %v", view.Texts())
 	}
 }
 
