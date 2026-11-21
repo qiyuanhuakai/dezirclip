@@ -308,6 +308,10 @@ impl HistoryService {
     pub fn increment_use_count(&self, id: i64) -> CoreResult<()> {
         self.repository.increment_use_count(id).map_err(Into::into)
     }
+    /// Records a successful paste with the caller's ordering preference or the saved default.
+    pub fn record_paste_use(&self, id: i64, timestamp: i64, move_to_top: Option<bool>) -> CoreResult<()> {
+        self.repository.record_paste_use(id, timestamp, move_to_top).map_err(Into::into)
+    }
     pub fn touch_entry(&self,id:i64,timestamp:i64)->CoreResult<()> {
         self.repository.touch_entry(id,timestamp).map_err(Into::into)
     }

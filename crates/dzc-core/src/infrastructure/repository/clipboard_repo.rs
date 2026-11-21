@@ -184,6 +184,7 @@ pub trait ClipboardRepository {
     fn clear(&self, data_dir: Option<&std::path::Path>) -> Result<(), String>;
     fn get_count(&self) -> Result<i64, String>;
     fn increment_use_count(&self, id: i64) -> Result<(), String>;
+    fn record_paste_use(&self, id: i64, timestamp: i64, move_to_top: Option<bool>) -> Result<(), String>;
     fn touch_entry(&self, id: i64, timestamp: i64) -> Result<(), String>;
     fn toggle_pin(&self, id: i64, is_pinned: bool) -> Result<(), String>;
     fn update_pinned_order(&self, orders: Vec<(i64, i64)>) -> Result<(), String>;
@@ -2347,6 +2348,25 @@ impl ClipboardRepository for SqliteClipboardRepository {
             params![id],
         )
         .map_err(|e| e.to_string())?;
+        self.invalidate_caches();
+        Ok(())
+    }
+
+    fn record_paste_use(&self, id: i64, timestamp: i64, move_to_top: Option<bool>) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|error| error.to_string())?;
+        conn.execute(
+            "UPDATE clipboard_history
+             SET use_count = use_count + 1,
+                 timestamp = CASE
+                   WHEN is_pinned = 0 AND COALESCE(
+                     ?3, (SELECT value != 'false' FROM settings WHERE key = 'app.move_to_top_after_paste'), 1
+                   ) THEN ?2
+                   ELSE timestamp
+                 END
+             WHERE id = ?1",
+            params![id, timestamp, move_to_top],
+        )
+        .map_err(|error| error.to_string())?;
         self.invalidate_caches();
         Ok(())
     }
