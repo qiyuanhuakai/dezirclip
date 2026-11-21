@@ -635,7 +635,7 @@ mod queue_completion_tests {
         let after = &host.history.query(&query).unwrap()[0];
         assert_eq!((after.timestamp, after.use_count), (1, 1));
         assert_eq!(first_id(), newer_id);
-        // The quick panel supplies its own explicit policy.
+        // The protocol also accepts an explicit policy for individual actions.
         host.record_desktop_paste(id, Some(true)).unwrap();
         let after = &host.history.query(&query).unwrap()[0];
         assert!(after.timestamp > 1);

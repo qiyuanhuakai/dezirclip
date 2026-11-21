@@ -1,4 +1,5 @@
 import type { ClipboardEntry } from "../types";
+import { compareForList } from "./searchPlan";
 
 /**
  * Put one entry where the history list expects it: pinned entries first, then
@@ -16,32 +17,8 @@ export const insertHistoryItem = (
     item: ClipboardEntry
 ): ClipboardEntry[] => {
     const next = list.slice();
-    const isPinned = !!item.is_pinned;
-    let insertIndex = 0;
-
-    if (isPinned) {
-        while (insertIndex < next.length) {
-            const current = next[insertIndex];
-            if (!current.is_pinned) break;
-            if (current.timestamp < item.timestamp) break;
-            insertIndex++;
-        }
-    } else {
-        while (insertIndex < next.length && next[insertIndex].is_pinned) {
-            insertIndex++;
-        }
-        while (insertIndex < next.length) {
-            const current = next[insertIndex];
-            if (current.is_pinned) {
-                insertIndex++;
-                continue;
-            }
-            if (current.timestamp < item.timestamp) break;
-            insertIndex++;
-        }
-    }
-
-    next.splice(insertIndex, 0, item);
+    const insertIndex = next.findIndex(current => (compareForList(item, current) || current.id - item.id) < 0);
+    next.splice(insertIndex < 0 ? next.length : insertIndex, 0, item);
     return next;
 };
 

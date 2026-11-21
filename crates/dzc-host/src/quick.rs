@@ -8,6 +8,24 @@ use std::{
 };
 
 pub(super) const TIMEOUT: Duration = Duration::from_secs(120);
+
+fn quick_copy_params(selection: QuickPasteParams) -> DesktopCopyParams {
+    DesktopCopyParams {
+        id: selection.id,
+        service_instance_id: selection.service_instance_id,
+        expected_epoch: selection.expected_epoch,
+        reveal: false,
+        paste: true,
+        with_format: None,
+        derived_text: None,
+        image_as_base64: None,
+        // Quick paste preserves entries even when main-window paste consumes them.
+        delete_after_use: Some(false),
+        move_to_top: None,
+        expected_paste_target: None,
+    }
+}
+
 struct FocusTicket {
     token: String,
     state: RuntimeState,
@@ -115,27 +133,29 @@ impl Host {
                 if !crate::same_surface_state(&current, &self.snapshot()?) {
                     return Err(WireErrorCode::HistoryRevisionChanged);
                 }
-                self.desktop_copy_bound(
-                    session,
-                    DesktopCopyParams {
-                        id: p.id,
-                        service_instance_id: p.service_instance_id,
-                        expected_epoch: epoch,
-                        reveal: false,
-                        paste: true,
-                        with_format: None,
-                        derived_text: None,
-                        image_as_base64: None,
-                        // Quick paste matches the Tauri panel: selecting a row
-                        // preserves history even when main-window paste consumes it.
-                        delete_after_use: Some(false),
-                        move_to_top: Some(true),
-                        expected_paste_target: None,
-                    },
-                    Some((bound, current)),
-                )
+                self.desktop_copy_bound(session, quick_copy_params(p), Some((bound, current)))
             }
             _ => Err(WireErrorCode::InvalidRequest),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quick_paste_preserves_the_entry_and_uses_the_saved_promotion_policy() {
+        let request = quick_copy_params(QuickPasteParams {
+            id: 7,
+            token: "selection".into(),
+            service_instance_id: "profile".into(),
+            expected_epoch: 8,
+            expected_history_revision: 9,
+        });
+        assert_eq!((request.id, request.expected_epoch), (7, 8));
+        assert!(request.paste);
+        assert_eq!(request.delete_after_use, Some(false));
+        assert_eq!(request.move_to_top, None);
     }
 }

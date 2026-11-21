@@ -130,7 +130,6 @@ const App = () => {
     setIsRecordingSearch,
     deleteAfterPaste,
     setDeleteAfterPaste,
-    moveToTopAfterPaste,
     setMoveToTopAfterPaste,
     privacyProtection,
     setPrivacyProtection,
@@ -697,7 +696,6 @@ const App = () => {
       isWindowPinned,
       pushToast,
       deleteAfterPaste,
-      moveToTopAfterPaste,
       setSearch,
       setHistory,
       virtualListRef

@@ -110,7 +110,7 @@ pub struct PasteDispatchPlan {
     pub paste: bool,
     pub delete_after_use: bool,
     pub paste_with_format: bool,
-    pub move_to_top: bool,
+    pub move_to_top: Option<bool>,
     pub paste_image_as_base64: bool,
 }
 
@@ -130,7 +130,7 @@ pub fn build_paste_dispatch_plan(
         // raw bytes (matches `copy_to_clipboard`'s `paste_with_format`
         // defaulting to `content_type == "rich_text"`).
         paste_with_format: content_type == "rich_text",
-        move_to_top: true,
+        move_to_top: None,
         // Image content can be requested as base64 by the caller; the
         // quick-paste path always wants the native image, never base64,
         // so this stays `false` here.
@@ -483,7 +483,7 @@ pub async fn paste_quick_paste_selection(
         plan.id,
         plan.delete_after_use,
         Some(plan.paste_with_format),
-        Some(plan.move_to_top),
+        plan.move_to_top,
         Some(plan.paste_image_as_base64),
         None,
         None,
@@ -606,10 +606,7 @@ mod tests {
             !plan.delete_after_use,
             "quick-paste must not delete after use"
         );
-        assert!(
-            plan.move_to_top,
-            "quick-paste must move the entry to the top"
-        );
+        assert_eq!(plan.move_to_top, None, "quick-paste must use the saved setting");
         assert!(
             !plan.paste_with_format,
             "plain text must skip the rich-text formatting path"

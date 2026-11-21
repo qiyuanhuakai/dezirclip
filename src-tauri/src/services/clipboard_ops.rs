@@ -1027,32 +1027,8 @@ fn handle_post_paste_actions(
         if state.repo.delete(id, Some(&data_dir)).is_ok() {
             let _ = app_handle.emit("clipboard-removed", id);
         }
-    } else if id > 0 {
-        let _ = state.repo.increment_use_count(id);
-
-        let should_move_to_top = match move_to_top {
-            Some(val) => val,
-            None => state
-                .settings_repo
-                .get("app.move_to_top_after_paste")
-                .ok()
-                .flatten()
-                .map(|v| v != "false")
-                .unwrap_or(true),
-        };
-
-        if should_move_to_top {
-            let should_promote = state
-                .repo
-                .get_entry_by_id(id)
-                .ok()
-                .flatten()
-                .map(|entry| !entry.is_pinned)
-                .unwrap_or(true);
-            if should_promote {
-                let _ = state.repo.touch_entry(id, Utc::now().timestamp_millis());
-            }
-        }
+    } else if id > 0 && state.history_service().record_paste_use(id, Utc::now().timestamp_millis(), move_to_top).is_ok() {
+        let _ = app_handle.emit("clipboard-updated", serde_json::json!({"id": id}));
     }
 
     Ok(())

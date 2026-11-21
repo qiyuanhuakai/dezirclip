@@ -143,8 +143,7 @@ func (n *nativeMain) transferRow(ctx context.Context, id int64, state protocol.R
 	}
 	if params.Paste {
 		deleteAfterUse := preferences["app.delete_after_paste"] == "true"
-		moveToTop := preferences["app.move_to_top_after_paste"] != "false"
-		params.DeleteAfterUse, params.MoveToTop = &deleteAfterUse, &moveToTop
+		params.DeleteAfterUse = &deleteAfterUse
 	}
 	outcome, err := n.actions.CopyEntry(ctx, params)
 	if err != nil {
@@ -152,7 +151,7 @@ func (n *nativeMain) transferRow(ctx context.Context, id int64, state protocol.R
 	}
 	if outcome == "target_required" && params.Paste {
 		// The Host guarantees that this outcome preceded dispatch. Retry only as a copy.
-		params.Paste, params.DeleteAfterUse, params.MoveToTop = false, nil, nil
+		params.Paste, params.DeleteAfterUse = false, nil
 		outcome, err = n.actions.CopyEntry(ctx, params)
 		if err != nil {
 			return false, "", err

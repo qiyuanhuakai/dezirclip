@@ -29,7 +29,6 @@ interface UseClipboardActionsOptions {
   pushToast: (msg: string, duration?: number) => number;
   deleteAfterPaste: boolean;
   isWindowPinned: boolean;
-  moveToTopAfterPaste: boolean;
   setSearch: (val: string) => void;
   setHistory: Dispatch<SetStateAction<ClipboardEntry[]>>;
   virtualListRef: RefObject<VirtualClipboardListHandle | null>;
@@ -40,7 +39,6 @@ export const useClipboardActions = ({
   pushToast,
   deleteAfterPaste,
   isWindowPinned,
-  moveToTopAfterPaste,
   setSearch,
   setHistory,
   virtualListRef
@@ -75,22 +73,12 @@ export const useClipboardActions = ({
           pasteImageAsBase64,
           expectedPrivacyEpoch,
           derivedFromId,
-          ...entryInstanceArgs(hostInstanceId),
-          moveToTop: !manualCopy && moveToTopAfterPaste
+          ...entryInstanceArgs(hostInstanceId)
         };
         const outcome = await copyHistorySelection(request, t);
         if (outcome === "copied") {
           pushToast(t("wayland_manual_copy_done"));
           return;
-        }
-
-        if (!manualCopy && moveToTopAfterPaste && !deleteAfterPaste) {
-          const now = Date.now();
-          setHistory((prev) =>
-            prev.map((item) =>
-              matchesEntryIdentity(item, id, hostInstanceId) ? { ...item, timestamp: now } : item
-            )
-          );
         }
 
         if (manualCopy) pushToast(t("wayland_manual_copy_done"));
@@ -101,7 +89,7 @@ export const useClipboardActions = ({
         pushToast(errorMsg, 3000);
       }
     },
-    [deleteAfterPaste, isWindowPinned, moveToTopAfterPaste, pushToast, setHistory, setSearch, t, manualCopy, pending, failed, report]
+    [deleteAfterPaste, isWindowPinned, pushToast, setSearch, t, manualCopy, pending, failed, report]
   );
 
   const openContent = useCallback(

@@ -63,4 +63,19 @@ describe("applyHistoryUpdate", () => {
         const result = applyHistoryUpdate(list, entry(2, 300));
         expect(result.entries.map((e) => e.id)).toEqual([1, 2]);
     });
+
+    it("keeps explicit pin order when a paste only updates the use count", () => {
+        const first = { ...entry(1, 90, true), pinned_order: 2 };
+        const second = { ...entry(2, 300, true), pinned_order: 1 };
+        const result = applyHistoryUpdate([first, second], { ...second, use_count: 1 });
+        expect(result.entries.map((e) => e.id)).toEqual([1, 2]);
+        expect(result.entries[1].use_count).toBe(1);
+    });
+
+    it("keeps database order when two timestamps match and promotion is disabled", () => {
+        const older = entry(1, 100);
+        const newer = entry(2, 100);
+        const result = applyHistoryUpdate([newer, older], { ...newer, use_count: 1 });
+        expect(result.entries.map((e) => e.id)).toEqual([2, 1]);
+    });
 });
