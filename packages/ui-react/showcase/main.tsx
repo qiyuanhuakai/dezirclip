@@ -222,7 +222,7 @@ function Showcase() {
     "settings-section-card": state === "wide" ? <SettingsSectionGridFixture /> : <SettingsSectionFixture open={state === "expanded"} />,
     "settings-choices": <SettingsChoicesFixture />,
     "hotkey-list": <HotkeyListFixture multiple={state === "multiple" || state === "win-v"} extended={state === "extended"} winV={state === "win-v"} />,
-    "emoji-favorites": <EmojiFavoritesFixture />,
+    "emoji-favorites": <EmojiFavoritesFixture state={state} />,
     "settings-data": <SettingsDataFixture />,
     "theme-manager": <ThemeManagerFixture state={state} />,
     "background-settings": <BackgroundSettingsFixture state={state} />,

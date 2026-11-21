@@ -160,12 +160,14 @@
   padding: 4px 0;
 }
 
-.emoji-content.dragging{
+.emoji-fav-region{
   position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
-.emoji-content.dragging::after{
-  content: "拖拽图片到这里";
+.emoji-fav-drop-hint{
   position: absolute;
   inset: 4px;
   border: 2px dashed var(--accent-color);
@@ -196,7 +198,7 @@
   transition: transform 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease;
 }
 
-.emoji-fav-card:hover{
+.emoji-fav-card:is(:hover, :focus-within){
   transform: translateY(-2px);
   border-color: var(--border-dark);
 }
@@ -219,7 +221,7 @@
   transition: opacity 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
 
-.emoji-fav-card:hover .emoji-fav-remove,
+.emoji-fav-card:is(:hover, :focus-within) .emoji-fav-remove,
 .emoji-fav-card[data-delete-visible="true"] .emoji-fav-remove{
   opacity: 1;
   pointer-events: auto;
@@ -264,9 +266,14 @@
   letter-spacing: 0.5px;
 }
 
-.emoji-fav-add .emoji-fav-preview:hover{
+.emoji-fav-add .emoji-fav-preview:is(:hover, :focus-visible){
   border-color: var(--accent-color);
   color: var(--accent-color);
+}
+
+.emoji-fav-add .emoji-fav-preview:disabled{
+  cursor: default;
+  opacity: 0.5;
 }
 
 .emoji-fav-add .emoji-fav-preview span{

@@ -418,6 +418,27 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 		return tester.Click("Color mode")
 	}
 	if g.fixture == "emoji-favorites" {
+		message := "Drag to add emoji"
+		switch g.state {
+		case "empty":
+			message = "No emoji yet"
+		case "drop":
+			message = "Drop images here"
+		}
+		if !tester.HasText(message) {
+			return fmt.Errorf("favorite gallery did not show %q", message)
+		}
+		if g.state == "hover" {
+			target, ok := tester.Find("Add emoji")
+			if !ok {
+				return fmt.Errorf("favorite add tile is missing")
+			}
+			tester.Move(target.X+target.W/2, target.Y+target.H/2)
+			return nil
+		}
+		if g.state != "default" {
+			return nil
+		}
 		if err := tester.RightClick("Example image"); err != nil {
 			return err
 		}

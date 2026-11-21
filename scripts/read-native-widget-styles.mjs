@@ -17,9 +17,15 @@ const samples = [
   ["settings-choices", "hover-segment", { settingsSegmentHover: [".segment-btn:not(.active)"] }],
   ["emoji-favorites", "default", {
     emojiAddTile: [".emoji-fav-add-btn"], emojiFavoriteTile: [".emoji-fav-card:not(.emoji-fav-add) .emoji-fav-preview"],
-    emojiFavoriteRemove: [".emoji-fav-remove"],
+    emojiFavoriteRemove: [".emoji-fav-remove"], emojiFavoriteFrame: [".emoji-fav-card:not(.emoji-fav-add)"],
+    emojiFavoriteGrid: [".emoji-fav-grid"], emojiFavoriteTip: [".emoji-fav-tip"],
   }],
   ["emoji-favorites", "hover", { emojiAddTileHover: [".emoji-fav-add-btn"] }],
+  ["emoji-favorites", "empty", {
+    emojiFavoriteEmpty: [".emoji-fav-empty"], emojiFavoriteEmptyTitle: [".emoji-empty-title"],
+    emojiFavoriteEmptyHint: [".emoji-empty-desc"],
+  }],
+  ["emoji-favorites", "drop", { emojiFavoriteDrop: [".emoji-fav-drop-hint"] }],
   ["settings-data", "default", {
     settingsDataPath: [".data-panel"], settingsDataAction: [".data-actions-row .btn-icon"],
     settingsDataLabel: [".data-path-label"], settingsDataHeader: [".data-path-header"],

@@ -14,6 +14,7 @@ type nativeEmojiPanel struct {
 	thumbnails           nativeVisibleCache[string, ui.ImageSource]
 	read                 uint64
 	ready, loading       bool
+	changing             bool
 	loadError            bool
 	query, searched, tab string
 	matches              []characterGroup

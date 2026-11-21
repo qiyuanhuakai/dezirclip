@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import ThemedSelect from "../src/components/ThemedSelect";
+import { EmojiFavoritesPanel } from "../src/components/EmojiFavoriteTiles";
 import { BackupActions, BackupChoices, BackupDialog, BackupField, BackupPreview, BackupReplaceConfirmation, ContextMenuItem, ContextMenuSurface, EmojiAddTile, EmojiFavoriteTile, HotkeyBinding, HotkeyList, HotkeyListLayout, NumberField,
   PrivacyDetectionOptions, PrivacyPatternsField, PrivacyRuleCard, PrivacyRuleGrid, PrivacyRulesHeading, SourceExclusionField, SettingHelp, SettingsChoices, SettingsDataAction, SettingsDataPath, SettingsField, SettingsRemoveButton, SettingsSectionCard, TagBatchToolbar, TagPickerTrigger, TagSearchField, TagToolbar, TagToolbarTitle, TextArea, TextField } from "../src";
 import { Ellipsis, EyeOff, ListChecks, ListCollapse, Plus } from "lucide-react";
@@ -108,14 +109,18 @@ export function HotkeyListFixture({ multiple, winV, extended }: { multiple: bool
   </HotkeyListLayout>;
 }
 
-export function EmojiFavoritesFixture() {
-  return <div className="emoji-fav-grid">
+export function EmojiFavoritesFixture({ state }: { state: string }) {
+  const empty = state === "empty" || state === "drop";
+  return <EmojiFavoritesPanel style={{ height: 220, flex: "none" }}
+    emptyTitle={empty ? "No emoji yet" : undefined}
+    hint={empty ? "Click or drag images to add quickly" : "Drag to add emoji"}
+    dragging={state === "drop"} dropLabel="Drop images here">
     <EmojiAddTile label="Add emoji" onAdd={() => undefined} />
-    <EmojiFavoriteTile name="Example image" removeLabel="Delete favorite" removeVisible
+    {!empty && <EmojiFavoriteTile name="Example image" removeLabel="Delete favorite" removeVisible={state === "default"}
       onRevealRemove={() => undefined} onRemove={() => undefined} onChoose={() => undefined}>
       <span>🌿</span>
-    </EmojiFavoriteTile>
-  </div>;
+    </EmojiFavoriteTile>}
+  </EmojiFavoritesPanel>;
 }
 
 export function SettingsDataFixture() {

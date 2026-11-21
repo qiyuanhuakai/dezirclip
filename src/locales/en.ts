@@ -340,6 +340,7 @@ export const en = {
         emoji_fav_tip: "Drag to add emoji",
         emoji_fav_hint: "Click or drag images to add quickly",
         emoji_add_files: "Add emoji",
+        emoji_fav_drop: "Drop images here",
         emoji_empty: "No emoji yet",
         clear_confirm_title: "Clear History",
         clear_confirm_message: "Are you sure you want to clear history? Pinned and tagged items will be preserved.",

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -25,41 +26,30 @@ func (n *nativeMain) emojiFavoritesView(c *ui.Context, contentWidth float32) {
 	if !panel.ready && !panel.loading && !panel.loadError && !n.mutating {
 		n.loadEmojiFavorites(panel)
 	}
-	width, _ := c.Size()
-	cell, gap := float32(74), float32(8)
-	if width <= 520 {
-		cell, gap = 66, 6
-	}
-	columns := max(1, int((contentWidth-8+gap)/(cell+gap)))
-	count := len(panel.paths) + 1
-	rows := (count + columns - 1) / columns
 	kit := n.mainKit()
-	ui.List(c, &panel.favorites, rows).Grow(1).FillWidth().Gap(gap).Label(n.text("emoji_favorites", "Favorite images")).Rows(func(row ui.ListRow) {
-		start := row.Index * columns
-		ui.Row(row.Context).FillWidth().Padding(4, 4).Gap(gap).Justify(ui.Center).Children(func() {
-			for index := start; index < min(count, start+columns); index++ {
-				if index == 0 {
-					if kit.EmojiAddTile(row.Context, n.text("emoji_add_files"), cell, n.mutating || n.private).Clicked() {
-						n.changeEmojiFavorites("import", nil, true)
-					}
-					continue
-				}
-				n.emojiFavoriteCard(row.Context, kit, panel, panel.paths[index-1], cell)
-			}
-			if empty := columns - min(columns, count-start); empty > 0 && len(panel.paths) > 0 {
-				ui.Box(row.Context).Width(float32(empty)*(cell+gap) - gap)
-			}
-		})
-	})
-	message := n.text("emoji_fav_tip")
-	if n.private {
-		message = n.text("native_favorites_read_only")
-	} else if panel.loading {
-		message = n.text("common_loading", "Loading favorites…")
-	} else if len(panel.paths) == 0 {
-		message = n.text("emoji_fav_hint", "Choose images or drop them here to add favorites.")
+	options := uikit.EmojiFavoritesOptions{
+		ContentWidth: contentWidth, Count: len(panel.paths), Label: n.text("emoji_favorites"),
+		AddLabel: n.text("emoji_add_files"), DropLabel: n.text("emoji_fav_drop"),
+		EmptyTitle: n.text("emoji_empty"), Hint: n.text("emoji_fav_tip"),
+		Disabled: n.mutating || n.private,
+		OnAdd:    func() { n.changeEmojiFavorites("import", nil, true) },
+		OnDrop:   n.importEmojiPaths,
+		Item: func(c *ui.Context, index int, width float32) {
+			n.emojiFavoriteCard(c, kit, panel, panel.paths[index], width)
+		},
 	}
-	ui.Text(c, message).FillWidth().Padding(8).FontSize(11).TextAlign(ui.Center).Wrap().TextColor(c.Theme().TextMuted)
+	if options.Count == 0 {
+		options.Hint = n.text("emoji_fav_hint")
+	}
+	switch {
+	case n.private:
+		options.Status = n.text("native_favorites_read_only")
+	case panel.changing || panel.loading:
+		options.Status = n.text("common_loading")
+	case panel.loadError:
+		options.Status = n.text("native_favorites_failed")
+	}
+	kit.EmojiFavorites(c, &panel.favorites, options)
 	if panel.loadError && kit.Button(c, uikit.ButtonOptions{Label: n.text("common_retry", "Retry loading favorites")}).Clicked() {
 		n.loadEmojiFavorites(panel)
 	}
@@ -162,10 +152,20 @@ func (n *nativeMain) loadEmojiThumbnail(panel *nativeEmojiPanel, path string) {
 }
 
 func (n *nativeMain) importEmojiPaths(paths []string) {
-	if len(paths) == 0 || len(paths) > 256 {
+	if fileDragPending.Load() || len(paths) == 0 || len(paths) > 256 {
 		return
 	}
-	n.changeEmojiFavorites("import", slices.Clone(paths), false)
+	paths = slices.DeleteFunc(slices.Clone(paths), func(path string) bool {
+		switch strings.ToLower(filepath.Ext(path)) {
+		case ".png", ".jpg", ".jpeg", ".webp", ".gif":
+			return false
+		default:
+			return true
+		}
+	})
+	if len(paths) > 0 {
+		n.changeEmojiFavorites("import", paths, false)
+	}
 }
 
 func (n *nativeMain) changeEmojiFavorites(action string, paths []string, choose bool) {
@@ -176,7 +176,14 @@ func (n *nativeMain) changeEmojiFavorites(action string, paths []string, choose 
 	session, epoch := n.session, n.history.state.PrivacyEpoch
 	window := n.window
 	panel := n.emojiPanel()
+	panel.changing = true
 	preferences := n.preferences["app.emoji_favorites"]
+	var preferred []string
+	if panel.ready {
+		preferred = slices.Clone(panel.paths)
+	} else {
+		_ = json.Unmarshal([]byte(preferences), &preferred)
+	}
 	language := n.language()
 	go func() {
 		var err error
@@ -190,10 +197,11 @@ func (n *nativeMain) changeEmojiFavorites(action string, paths []string, choose 
 		if err == nil && len(paths) > 0 {
 			ctx, cancel := context.WithTimeout(session, 30*time.Second)
 			defer cancel()
-			order, err = n.saveEmojiFavorites(ctx, epoch, action, paths, preferences)
+			order, err = n.saveEmojiFavorites(ctx, epoch, action, paths, preferred, preferences)
 		}
 		n.update(session, func() {
 			n.mutating = false
+			panel.changing = false
 			if err != nil {
 				n.notice = n.text("native_favorites_failed")
 			}
@@ -208,9 +216,7 @@ func (n *nativeMain) changeEmojiFavorites(action string, paths []string, choose 
 	}()
 }
 
-func (n *nativeMain) saveEmojiFavorites(ctx context.Context, epoch uint64, action string, paths []string, saved string) ([]string, error) {
-	var preferred []string
-	_ = json.Unmarshal([]byte(saved), &preferred)
+func (n *nativeMain) saveEmojiFavorites(ctx context.Context, epoch uint64, action string, paths, preferred []string, saved string) ([]string, error) {
 	var changeError error
 	seen := make(map[string]bool, len(paths))
 	for _, path := range paths {

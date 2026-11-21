@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -396,6 +397,35 @@ func TestReactLibraryWithService(t *testing.T) {
 		}
 		if _, err := library.EmojiFavorites(ctx, epoch, &outside); err == nil {
 			t.Fatal("unmanaged image was exposed")
+		}
+		alternate := filepath.Join(t.TempDir(), "alternate.png")
+		var encoded bytes.Buffer
+		if err := png.Encode(&encoded, image.NewNRGBA(image.Rect(0, 0, 8, 8))); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(alternate, encoded.Bytes(), 0600); err != nil {
+			t.Fatal(err)
+		}
+		window := nativeMain{library: &library}
+		first, err := window.saveEmojiFavorites(ctx, epoch, "import", []string{source}, refreshed.Paths, "")
+		if err != nil || len(first) != 2 || !sameFile(first[0], sticker) {
+			t.Fatalf("first selection: %v %v", first, err)
+		}
+		second, err := window.saveEmojiFavorites(ctx, epoch, "import", []string{alternate, source}, first, "")
+		if err != nil || len(second) != 3 || !sameFile(filepath.Dir(second[2]), filepath.Dir(first[1])) ||
+			first[0] != second[0] || first[1] != second[1] {
+			t.Fatalf("second selection changed the existing order: %v → %v %v", first, second, err)
+		}
+		settings, err := library.Preferences(ctx)
+		var saved map[string]string
+		var order []string
+		if err != nil || json.Unmarshal(settings, &saved) != nil ||
+			json.Unmarshal([]byte(saved["app.emoji_favorites"]), &order) != nil || !slices.Equal(order, second) {
+			t.Fatalf("saved favorites order: %v, want %v, error %v", order, second, err)
+		}
+		remaining, err := window.saveEmojiFavorites(ctx, epoch, "remove", second[1:], second, saved["app.emoji_favorites"])
+		if err != nil || len(remaining) != 1 || !sameFile(remaining[0], sticker) {
+			t.Fatalf("remove selections: %v %v", remaining, err)
 		}
 	})
 	watcher := History{actions: owner}

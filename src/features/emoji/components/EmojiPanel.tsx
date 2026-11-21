@@ -5,7 +5,7 @@ import { invoke } from "../../../shared/lib/desktopInvoke";
 import { copyHistorySelection } from "../../../shared/lib/copyHistorySelection";
 import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { open } from "@tauri-apps/plugin-dialog";
-import { EmojiAddTile, EmojiFavoriteTile } from "@deziro/ui-react/components/EmojiFavoriteTiles";
+import { EmojiAddTile, EmojiFavoritesPanel, EmojiFavoriteTile } from "@deziro/ui-react/components/EmojiFavoriteTiles";
 import { schedulePreview } from "../../../shared/lib/previewQueue";
 import { characterPageSize, searchCharacters } from "../characterCatalog";
 
@@ -168,6 +168,8 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
   });
   const [isDragging, setIsDragging] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [selectingImages, setSelectingImages] = useState(false);
+  const [favoriteImportFailed, setFavoriteImportFailed] = useState(false);
   const hasFavorites = favorites.length > 0;
 
   // The drag-drop listeners below are bound to the window, not to the favorites
@@ -220,7 +222,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
   }, [activeTab, favorites]);
 
   const addFavoritePaths = async (paths: string[]) => {
-    const normalized = paths.map(normalizePath).filter((p) => p && isImagePath(p));
+    const normalized = dedupeFavoritePaths(paths);
     if (normalized.length === 0) return;
     const saved = await Promise.all(
       normalized.map(async (path) => {
@@ -233,6 +235,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
       })
     );
     const valid = saved.filter((p): p is string => typeof p === "string" && p.length > 0);
+    setFavoriteImportFailed(valid.length !== saved.length);
     if (valid.length === 0) return;
     persistFavorites((prev) => Array.from(new Set([...prev, ...valid])));
   };
@@ -317,13 +320,20 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
   };
 
   const handleSelectFiles = async () => {
-    const selected = await open({
-      multiple: true,
-      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }]
-    });
-    if (!selected) return;
-    const paths = Array.isArray(selected) ? selected : [selected];
-    void addFavoritePaths(paths);
+    setSelectingImages(true);
+    setFavoriteImportFailed(false);
+    try {
+      const selected = await open({
+        title: t("emoji_add_files"),
+        multiple: true,
+        filters: [{ name: t("native_images"), extensions: ["png", "jpg", "jpeg", "webp", "gif"] }]
+      });
+      if (selected) await addFavoritePaths(Array.isArray(selected) ? selected : [selected]);
+    } catch {
+      setFavoriteImportFailed(true);
+    } finally {
+      setSelectingImages(false);
+    }
   };
 
   const getFilesFromDataTransfer = (dt: DataTransfer | null): File[] => {
@@ -487,8 +497,12 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
       </>}
 
       {activeTab === "favorites" && (
-        <div
-          className={`emoji-content ${isDragging ? "dragging" : ""}`}
+        <EmojiFavoritesPanel
+          emptyTitle={hasFavorites ? undefined : t("emoji_empty")}
+          hint={t(hasFavorites ? "emoji_fav_tip" : "emoji_fav_hint")}
+          status={selectingImages ? t("common_loading") : favoriteImportFailed ? t("native_favorites_failed") : undefined}
+          dragging={isDragging}
+          dropLabel={t("emoji_fav_drop")}
           onClick={() => setDeleteTarget(null)}
           onContextMenu={(e) => {
             if ((e.target as HTMLElement).closest(".emoji-fav-card")) return;
@@ -508,8 +522,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
             void handleDomDrop(e);
           }}
         >
-          <div className={`emoji-fav-grid ${isDragging ? "dragging" : ""}`}>
-            <EmojiAddTile label={t("emoji_add_files") || "添加表情"} onAdd={() => void handleSelectFiles()} />
+            <EmojiAddTile label={t("emoji_add_files") || "添加表情"} disabled={selectingImages} onAdd={() => void handleSelectFiles()} />
             {favorites.map((path) => {
               const name = path.split(/[/\\]/).pop() || path;
               const isDeleteVisible = deleteTarget === path;
@@ -527,18 +540,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
                 </EmojiFavoriteTile>
               );
             })}
-          </div>
-
-          {!hasFavorites && (
-            <div className="emoji-fav-empty">
-              <div className="emoji-empty-title">{t("emoji_empty") || "暂无表情"}</div>
-              <div className="emoji-empty-desc">{t("emoji_fav_hint") || "点击或拖拽图片快速添加"}</div>
-            </div>
-          )}
-          {hasFavorites && (
-            <div className="emoji-fav-tip">{t("emoji_fav_tip") || "可直接拖拽表情添加"}</div>
-          )}
-        </div>
+        </EmojiFavoritesPanel>
       )}
     </CharacterPanel>
   );

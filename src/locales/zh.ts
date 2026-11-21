@@ -344,6 +344,7 @@ export const zh = {
         emoji_fav_tip: "可直接拖拽表情添加",
         emoji_fav_hint: "点击或拖拽图片快速添加",
         emoji_add_files: "添加表情",
+        emoji_fav_drop: "将图片拖到这里",
         emoji_empty: "暂无表情",
 
         // Settings - Headers

@@ -31,7 +31,7 @@ export { CaptureSettingsHeading, CaptureSettingsActions, CaptureEngineStatus, Fi
 export { CLISettings } from "./components/CLISettings";
 export { SettingsField } from "./components/SettingsField";
 export { SettingsSectionCard, SettingsGroupHeader, settingsPaneColumns } from "./components/SettingsSectionCard";
-export { EmojiAddTile, EmojiFavoriteTile } from "./components/EmojiFavoriteTiles";
+export { EmojiAddTile, EmojiFavoritesPanel, EmojiFavoriteTile } from "./components/EmojiFavoriteTiles";
 export { SettingsDataPath, SettingsDataAction } from "./components/SettingsData";
 export { BackupDialog, BackupChoices, BackupField, BackupPreview, BackupReplaceConfirmation, BackupActions } from "./components/BackupDialog";
 export { UpdateAction, UpdateActions, UpdateProgress, UpdateVersionRow } from "./components/SettingsUpdate";

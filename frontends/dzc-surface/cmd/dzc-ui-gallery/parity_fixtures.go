@@ -6,6 +6,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
+	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
 )
 
 func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool {
@@ -79,13 +80,22 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			})
 		})
 	case "emoji-favorites":
-		ui.Row(c).FillWidth().Gap(16).Padding(8, 0).Justify(ui.Center).Children(func() {
-			kit.EmojiAddTile(c, "Add emoji", 66, false)
-			kit.EmojiFavoriteTile(c, uikit.EmojiFavoriteOptions{
-				Name: "Example image", RemoveLabel: "Delete favorite", Width: 66,
-				OnRemove: func() {},
-				Preview:  func() { ui.Text(c, "🌿").PassThrough() },
-			})
+		width, _ := c.Size()
+		padding := presets.Select(g.theme, g.mode).ShowcasePadding()
+		options := uikit.EmojiFavoritesOptions{ContentWidth: width - padding[1] - padding[3], Count: 1,
+			Label: "Favorites", AddLabel: "Add emoji", Hint: "Drag to add emoji", DropLabel: "Drop images here",
+			Dragging: g.state == "drop", Item: func(c *ui.Context, _ int, width float32) {
+				kit.EmojiFavoriteTile(c, uikit.EmojiFavoriteOptions{
+					Name: "Example image", RemoveLabel: "Delete favorite", Width: width,
+					OnRemove: func() {},
+					Preview:  func() { ui.Text(c, "🌿").PassThrough() },
+				})
+			}}
+		if g.state == "empty" || g.state == "drop" {
+			options.Count, options.EmptyTitle, options.Hint = 0, "No emoji yet", "Click or drag images to add quickly"
+		}
+		ui.Column(c).FillWidth().Height(220).Children(func() {
+			kit.EmojiFavorites(c, &g.characterList, options)
 		})
 	case "settings-data":
 		ui.Column(c).Width(330).Gap(8).Children(func() {

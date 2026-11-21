@@ -275,12 +275,31 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.Padding = [4]float32{3, 3, 3, 3}
 		if widget != "emojiFavoriteTile" {
 			style.Dashed, style.BorderWidth, style.Weight = true, 2, 800
+			style.RowGap = 8
 		}
 		if widget == "emojiAddTileHover" {
 			style.Border, style.Text = accent, accent
 		}
 	case "emojiFavoriteRemove":
 		style.Fill, style.Text, style.Radius = [4]uint8{0, 0, 0, 217}, [4]uint8{255, 255, 255, 255}, 6
+	case "emojiFavoriteGrid":
+		style.ColumnGap, style.Padding = 8, [4]float32{4, 0, 4, 0}
+	case "emojiFavoriteFrame":
+		style.BorderWidth, style.Radius = 1, 12
+		style.Border, style.Padding = [4]uint8{}, [4]float32{3, 3, 1, 3}
+	case "emojiFavoriteEmpty":
+		surface()
+		style.Dashed, style.Radius, style.RowGap = true, 10, 8
+		style.Padding = [4]float32{14, 10, 18, 10}
+	case "emojiFavoriteEmptyTitle":
+		style.Size, style.Weight = 12, 800
+	case "emojiFavoriteEmptyHint":
+		style.Size, style.Width, style.Opacity = 11, 144, 0.8
+	case "emojiFavoriteTip":
+		style.Size, style.Text, style.MarginTop, style.Opacity = 11, muted, 6, 0.9
+	case "emojiFavoriteDrop":
+		style.Fill, style.Border, style.Dashed, style.BorderWidth = selected, accent, true, 2
+		style.Size, style.Radius, style.Weight, style.LetterSpacing = 12, 8, 700, 1
 	case "settingsGroup", "settingsGroupOpen":
 		surface()
 	case "settingsGroupHeader", "settingsGroupHeaderOpen":

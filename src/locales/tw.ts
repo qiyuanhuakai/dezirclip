@@ -340,6 +340,7 @@ export const tw = {
         emoji_fav_tip: "可直接拖拽表情新增",
         emoji_fav_hint: "點擊或拖拽圖片快速新增",
         emoji_add_files: "新增表情",
+        emoji_fav_drop: "將圖片拖到這裡",
         emoji_empty: "暫無表情",
 
         // Settings - Headers

@@ -29,7 +29,7 @@ const cases = {
   "settings-section-card": { states: ["default", "expanded", "wide"], text: "General settings" },
   "settings-choices": { states: ["default"], text: "Update channel" },
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
-  "emoji-favorites": { states: ["default"], text: "Add emoji" },
+  "emoji-favorites": { states: ["default", "empty", "hover", "drop"], text: "Add emoji" },
   "settings-data": { states: ["default", "hover-path", "hover-action"], text: "Data storage path" },
   "backup-dialog": { states: ["default", "encrypted", "error", "import", "replace", "replace-confirmed", "glass"], text: "File path" },
   "settings-update": { states: ["default", "unknown-size", "installing"], text: "Installed version" },
@@ -184,6 +184,12 @@ try {
             await page.mouse.move(450, 390);
             await page.goto(url.href);
             await page.locator("main[data-fixture]").waitFor();
+            if (fixture === "emoji-favorites") {
+              const add = page.getByRole("button", { name: "Add emoji", exact: true });
+              if (state === "hover") await add.hover();
+              if (state === "empty") await page.getByText("No emoji yet", { exact: true }).waitFor();
+              if (state === "drop") await page.getByText("Drop images here", { exact: true }).waitFor();
+            }
             if (fixture === "hotkey-optional") {
               if (await page.getByRole("button", { name: "Clear shortcut" }).count()) {
                 throw Error("The optional shortcut exposes a clear action before opening help");
@@ -390,7 +396,7 @@ try {
             if (state === "hover") {
               if (fixture === "scroll-to-top") await page.getByRole("button", { name: "Scroll to top" }).hover();
               else if (fixture === "settings-update-actions") await page.getByRole("button", { name: "Check now" }).hover();
-              else await combo.hover();
+              else if (fixture === "select") await combo.hover();
             }
             if (fixture === "select" && state === "focus") await combo.focus();
             if (state === "popup") await combo.click();

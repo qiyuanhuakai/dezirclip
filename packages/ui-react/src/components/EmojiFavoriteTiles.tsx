@@ -1,5 +1,27 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { Plus, X } from "lucide-react";
+
+interface EmojiFavoritesPanelProps extends ComponentProps<"div"> {
+  emptyTitle?: string;
+  hint: string;
+  status?: string;
+  dragging?: boolean;
+  dropLabel?: string;
+}
+
+export function EmojiFavoritesPanel({ children, className, emptyTitle, hint, status, dragging, dropLabel, ...props }: EmojiFavoritesPanelProps) {
+  return <div {...props} className={["emoji-fav-region", className].filter(Boolean).join(" ")}>
+    <div className="emoji-content">
+      <div className="emoji-fav-grid">{children}</div>
+      {!dragging && (emptyTitle && !status ? <div className="emoji-fav-empty">
+          <div className="emoji-empty-title">{emptyTitle}</div>
+          <div className="emoji-empty-desc">{hint}</div>
+        </div>
+          : <div className="emoji-fav-tip" role={status ? "status" : undefined}>{status || hint}</div>)}
+    </div>
+    {dragging && dropLabel && <div className="emoji-fav-drop-hint" role="status">{dropLabel}</div>}
+  </div>;
+}
 
 export function EmojiAddTile({ label, disabled, onAdd }: { label: string; disabled?: boolean; onAdd: () => void }) {
   return <div className="emoji-fav-card emoji-fav-add">
