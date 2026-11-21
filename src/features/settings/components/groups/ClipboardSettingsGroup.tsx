@@ -30,7 +30,7 @@ interface ClipboardSettingsGroupProps {
     setPersistentLimitEnabled: (val: boolean) => void;
     persistentLimit: number;
     setPersistentLimit: (val: number) => void;
-    saveAppSetting: (key: string, val: string) => void;
+    saveAppSetting: (key: string, val: string) => void | Promise<boolean | void>;
     deduplicate: boolean;
     setDeduplicate: (val: boolean) => void;
     captureFiles: boolean;
@@ -89,6 +89,17 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
     ];
 
     const pasteMethodBusy = useRef(false);
+    const [pasteToggleSaving, setPasteToggleSaving] = useState(false);
+    const savePasteToggle = async (key: "delete_after_paste" | "move_to_top_after_paste", enabled: boolean) => {
+        setPasteToggleSaving(true);
+        try {
+            if (await props.saveAppSetting(key, String(enabled)) === false) return;
+            if (key === "delete_after_paste") props.setDeleteAfterPaste(enabled);
+            else props.setMoveToTopAfterPaste(enabled);
+        } finally {
+            setPasteToggleSaving(false);
+        }
+    };
     const [pasteMethodError, setPasteMethodError] = useState(false);
     const applyPasteMethod = async (val: string) => {
         if (pasteMethodBusy.current) return;
@@ -425,24 +436,12 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             )}
                         </div>
                     </div>
-                    <div className="setting-item">
-                        <div className="item-label-group">
-                            <span className="item-label">{props.t('delete_after_paste')}</span>
-                        </div>
-                        <SettingsToggle checked={props.deleteAfterPaste}
-                                onChange={(e) => {
-                                    const val = e.target.checked;
-                                    props.setDeleteAfterPaste(val);
-                                    props.saveAppSetting('delete_after_paste', String(val));
-                                }} />
-                    </div>
+                    <SettingsToggleField label={props.t("delete_after_paste")} helpLabel={helpLabel}
+                        description={undefined} checked={props.deleteAfterPaste} disabled={pasteToggleSaving}
+                        onChange={(e) => { void savePasteToggle("delete_after_paste", e.target.checked); }} />
                     <SettingsToggleField label={props.t("move_to_top_after_paste")} helpLabel={helpLabel}
-                        description={props.t("move_to_top_after_paste_hint")} checked={props.moveToTopAfterPaste}
-                        onChange={(e) => {
-                            const val = e.target.checked;
-                            props.setMoveToTopAfterPaste(val);
-                            props.saveAppSetting('move_to_top_after_paste', String(val));
-                        }} />
+                        description={props.t("move_to_top_after_paste_hint")} checked={props.moveToTopAfterPaste} disabled={pasteToggleSaving}
+                        onChange={(e) => { void savePasteToggle("move_to_top_after_paste", e.target.checked); }} />
                     <SettingsField>
                         <props.LabelWithHint
                             label={props.t('paste_method')}

@@ -323,7 +323,7 @@ impl Host {
         }
         encoded(OperationResult{performed:true})
     }
-    fn record_desktop_paste(&self, id: i64, move_to_top: Option<bool>) -> Result<(), WireErrorCode> {
+    pub(super) fn record_desktop_paste(&self, id: i64, move_to_top: Option<bool>) -> Result<(), WireErrorCode> {
         self.history.record_paste_use(id, crate::router::now_ms()?, move_to_top)
             .map_err(|_| WireErrorCode::Unavailable)?;
         self.publish(EventKind::EntryUpdated, EventData { entry_id: Some(id), status: None })

@@ -480,13 +480,17 @@ impl Host {
                         },
                     )
                 })
+        } else if !delete {
+            now_ms()
+                .and_then(|now| self.history.privacy().check_read(&permit, now).map_err(privacy_error))
+                .and_then(|()| self.record_desktop_paste(id, None))
         } else {
             self.mutate_inner(DesktopMutationParams {
                 id,
                 service_instance_id: p.service_instance_id.clone(),
                 expected_epoch: p.expected_epoch,
                 reveal: false,
-                action: if delete { "delete" } else { "used" }.into(),
+                action: "delete".into(),
                 content: None,
                 pinned: None,
                 tags: None,

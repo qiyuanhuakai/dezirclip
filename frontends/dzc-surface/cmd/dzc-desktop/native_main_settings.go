@@ -175,7 +175,12 @@ func (n *nativeMain) booleanSettings(c *ui.Context, settings ...nativeBooleanSet
 func (n *nativeMain) booleanSettingWithHelp(c *ui.Context, key, label, hint string, initial bool) {
 	enabled := n.settingEnabled(key, initial)
 	if n.mainKit().SettingsToggleField(c.Key(key), &enabled, label, n.settingsHelpLabel(label), hint, n.mutating) {
-		n.saveSetting(key, strconv.FormatBool(enabled))
+		value := strconv.FormatBool(enabled)
+		n.writeSettingWithEffect(func(ctx context.Context, epoch uint64) error {
+			return n.library.SetSetting(ctx, key, value, epoch)
+		}, func() {
+			n.preferences[key] = value
+		})
 	}
 }
 
@@ -270,7 +275,7 @@ func (n *nativeMain) clipboardSettings(c *ui.Context, kit uikit.Kit) {
 	n.booleanSettingWithHelp(c, "app.capture_rich_text", n.text("capture_rich_text"), n.text("capture_rich_text_hint"), false)
 	n.shortcutSetting(c, "app.rich_paste_hotkey", n.text("rich_paste_hotkey_label"), "Ctrl+Shift+Z")
 	n.shortcutSetting(c, "app.search_hotkey", n.text("search_hotkey_label"), "Alt+F")
-	n.booleanSettings(c, nativeBooleanSetting{"app.delete_after_paste", n.text("delete_after_paste", "Delete entries after pasting"), false})
+	n.booleanSettingWithHelp(c, "app.delete_after_paste", n.text("delete_after_paste", "Delete entries after pasting"), "", false)
 	n.booleanSettingWithHelp(c, "app.move_to_top_after_paste", n.text("move_to_top_after_paste", "Move pasted entries to top"), n.text("move_to_top_after_paste_hint"), true)
 	n.pasteMethodSetting(c, kit)
 	n.sequentialSettings(c)

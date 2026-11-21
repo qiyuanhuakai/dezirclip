@@ -17,7 +17,7 @@ interface UseSettingsPanelPropsOptions {
   updateSequentialHotkey: (key: string) => void;
   updateRichPasteHotkey: (key: string) => void;
   updateSearchHotkey: (key: string) => void;
-  saveAppSetting: (key: string, val: string) => void;
+  saveAppSetting: SettingsPanelProps["saveAppSetting"];
   saveSetting: (key: string, val: string) => void;
   handleResetSettings: () => void;
   toggleGroup: (group: string) => void;

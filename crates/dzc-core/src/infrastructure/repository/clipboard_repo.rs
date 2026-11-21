@@ -2359,7 +2359,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
 
     fn record_paste_use(&self, id: i64, timestamp: i64, move_to_top: Option<bool>) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|error| error.to_string())?;
-        conn.execute(
+        let updated = conn.execute(
             "UPDATE clipboard_history
              SET use_count = use_count + 1,
                  timestamp = CASE
@@ -2372,6 +2372,9 @@ impl ClipboardRepository for SqliteClipboardRepository {
             params![id, timestamp, move_to_top],
         )
         .map_err(|error| error.to_string())?;
+        if updated == 0 {
+            return Err("Clipboard entry no longer exists".into());
+        }
         self.invalidate_caches();
         Ok(())
     }
