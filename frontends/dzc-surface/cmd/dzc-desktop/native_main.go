@@ -88,6 +88,7 @@ type nativeMain struct {
 	capturing             bool
 	reading               bool
 	private               bool
+	privateUntil          *int64
 	pinned                bool
 	failed                bool
 	mutating              bool
@@ -124,6 +125,7 @@ func (n *nativeMain) stopSession() {
 	n.ocrJob, n.ocrEngine, n.ocrEngineLoading = nativeOCRJob{}, nil, false
 	n.cardTagColors, n.readingTagColors = nil, false
 	n.reading, n.failed, n.mutating, n.private = false, false, n.profile.moving || n.profile.restartPending || n.winV.changing || n.restartingAdmin, false
+	n.privateUntil = nil
 	n.notice, n.keyboard, n.focusList = "", false, false
 	n.temporarySearch = false
 	n.searchWheel, n.towardsTop = 0, time.Time{}
@@ -200,6 +202,7 @@ func (n *nativeMain) open(session context.Context) {
 			n.update(session, func() {
 				n.configured(settings)
 				n.private = status.Privacy.Active
+				n.privateUntil = status.Privacy.ExpiresAtMs
 				n.history.reset(status.State, n.historyFilter())
 				n.loadBackground()
 				n.list.Reset()

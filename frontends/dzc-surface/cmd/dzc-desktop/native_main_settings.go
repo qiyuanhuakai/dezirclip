@@ -268,15 +268,9 @@ func (n *nativeMain) clipboardSettings(c *ui.Context, kit uikit.Kit) {
 }
 
 func (n *nativeMain) privacySettings(c *ui.Context, kit uikit.Kit) {
-	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() {
-		private := n.private
-		if kit.SettingsToggle(c, &private, n.text("privacy_session_title", "Private session")).Disabled(n.mutating).Changed() {
-			n.changePrivateSession(private)
-		}
-		n.shortcutSetting(c, "app.privacy_session_hotkey", n.text("privacy_session_hotkey"), "")
-	})
+	n.drawPrivacySession(c, kit)
 	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() { n.drawPrivacyRules(c) })
-	n.booleanSettings(c, nativeBooleanSetting{"app.privacy_protection", n.text("privacy_protection", "Protect sensitive clipboard content"), true})
+	n.booleanSettingWithHelp(c, "app.privacy_protection", n.text("privacy_protection"), n.text("privacy_protection_hint"), true)
 	n.drawPrivacyDetection(c, kit)
 }
 

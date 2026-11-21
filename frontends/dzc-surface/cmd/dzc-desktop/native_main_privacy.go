@@ -12,6 +12,27 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
+func (n *nativeMain) drawPrivacySession(c *ui.Context, kit uikit.Kit) {
+	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() {
+		private := n.private
+		ready := n.session != nil && n.history.state.ServiceInstanceId != ""
+		label := n.text("privacy_session_title")
+		if kit.SettingsToggleField(c.Key("privacy-session"), &private, label, n.settingsHelpLabel(label),
+			n.text("privacy_session_hint"), !ready || n.mutating) {
+			n.changePrivateSession(private)
+		}
+		if private && n.privateUntil != nil {
+			layout := "2006/1/2 15:04:05"
+			if n.language() == "en" {
+				layout = "1/2/2006, 3:04:05 PM"
+			}
+			until := time.UnixMilli(*n.privateUntil).Local().Format(layout)
+			ui.Text(c, n.text("privacy_session_until")+" "+until).TextColor(c.Theme().TextMuted).Wrap()
+		}
+		n.shortcutSetting(c, "app.privacy_session_hotkey", n.text("privacy_session_hotkey"), "")
+	})
+}
+
 type nativePrivacyRules struct {
 	started, loading, failed bool
 	rules                    []protocol.PolicyRuleValue

@@ -560,14 +560,14 @@ func TestNativeMainPrivacySettingsAreClosedOnReentry(t *testing.T) {
 			}
 			assertClosed := func() {
 				t.Helper()
-				if tester.HasText("Protect sensitive clipboard content") {
+				if tester.HasText(window.text("privacy_protection")) {
 					t.Fatal("privacy settings were expanded on entry")
 				}
 			}
 			click("Settings")
 			assertClosed()
 			click("Privacy")
-			if !tester.HasText("Protect sensitive clipboard content") {
+			if !tester.HasText(window.text("privacy_protection")) {
 				t.Fatal("selecting Privacy did not open its settings")
 			}
 			click("Back")

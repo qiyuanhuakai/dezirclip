@@ -66,6 +66,42 @@ func TestNativePrivacyExclusionsStayInlineAndCustomRulesExpand(t *testing.T) {
 	}
 }
 
+func TestNativePrivacySettingsShowHelpAndTimedSession(t *testing.T) {
+	n := nativeMain{
+		showSettings: true, settingsSection: "privacy", private: true,
+		preferences: map[string]string{"app.language": "en"},
+	}
+	view := ui.NewTester(n.view, 820, 680)
+	shows := func(text string) bool { return strings.Contains(strings.Join(view.Texts(), "\n"), text) }
+	until := n.text("privacy_session_until")
+	if shows(until) {
+		t.Fatal("an indefinite session displays a time limit")
+	}
+	expiry := time.Now().Add(15 * time.Minute).UnixMilli()
+	n.privateUntil = &expiry
+	view.Frame()
+	if !shows(until) {
+		t.Fatal("missing the end of the timed session")
+	}
+	for _, field := range []struct{ label, description string }{
+		{"privacy_session_title", "privacy_session_hint"},
+		{"privacy_protection", "privacy_protection_hint"},
+	} {
+		hint := n.text(field.description)
+		if shows(hint) {
+			t.Fatalf("%s help starts expanded", field.label)
+		}
+		if err := view.Click(n.settingsHelpLabel(n.text(field.label))); err != nil || !shows(hint) || !n.private {
+			t.Fatalf("%s help did not expand independently: %v", field.label, err)
+		}
+	}
+	n.private = false
+	view.Frame()
+	if shows(until) {
+		t.Fatal("an inactive session displays an old time limit")
+	}
+}
+
 func TestNativePrivacyExclusionDraftSurvivesSettingsCloseWhileBusy(t *testing.T) {
 	n := nativeMain{
 		session: context.Background(), showSettings: true, settingsSection: "privacy",
