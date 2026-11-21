@@ -233,7 +233,7 @@ func (n *nativeMain) numberSetting(c *ui.Context, key, label, hint string, fallb
 		value, saved string
 	}
 	kit := n.mainKit()
-	row := kit.SettingsField(c.Key(key), uikit.SettingsFieldOptions{})
+	row := kit.SettingsField(c.Key(key), uikit.SettingsFieldOptions{Detail: key == "app.idle_destroy_seconds"})
 	draft := ui.Local(row, key, func() limitDraft { return limitDraft{value: saved, saved: saved} })
 	if draft.saved != saved {
 		draft.value, draft.saved = saved, saved

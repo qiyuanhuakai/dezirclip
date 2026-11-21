@@ -25,9 +25,18 @@ func (k Kit) SettingsToggle(c *ui.Context, on *bool, label string) ui.Element {
 
 // SettingsToggleField places an accessible switch beside an optional expandable description.
 func (k Kit) SettingsToggleField(c *ui.Context, on *bool, label, helpLabel, description string, disabled bool) bool {
+	return k.settingsToggleField(c, on, label, helpLabel, description, disabled, SettingsFieldOptions{})
+}
+
+// SettingsDetailToggle aligns a switch under its parent setting.
+func (k Kit) SettingsDetailToggle(c *ui.Context, on *bool, label, helpLabel, description string, disabled bool) bool {
+	return k.settingsToggleField(c, on, label, helpLabel, description, disabled, SettingsFieldOptions{Detail: true})
+}
+
+func (k Kit) settingsToggleField(c *ui.Context, on *bool, label, helpLabel, description string, disabled bool, field SettingsFieldOptions) bool {
 	switchStyle := k.style("settingsSwitch")
 	changed := false
-	k.SettingsField(c, SettingsFieldOptions{}).Children(func() {
+	k.SettingsField(c, field).Children(func() {
 		k.SettingsFieldLabel(c, label, helpLabel, description).Grow(1)
 		ui.Box(c).Size(switchStyle.Width, switchStyle.Height).Margin(0, 0, 0, 12).Shrink(0).Children(func() {
 			control := ui.CheckboxBase(c, on).Label(label).Fill().Disabled(disabled).FocusRing(true)

@@ -5,6 +5,7 @@ import "github.com/egoist/mygo/ui"
 type SettingsFieldOptions struct {
 	Stacked bool
 	Last    bool
+	Detail  bool
 }
 
 // SettingsField lays out a setting and its control with the theme's row padding and divider.
@@ -19,7 +20,11 @@ func (k Kit) SettingsField(c *ui.Context, options SettingsFieldOptions) ui.Eleme
 	} else {
 		field = ui.Row(c).GapX(12).GapY(8).Wrap().AlignItems(ui.Center).Justify(ui.SpaceBetween)
 	}
-	return paint(field.AlignSelf(ui.Stretch).MinWidth(0).MinHeight(style.Height), style)
+	field = paint(field.AlignSelf(ui.Stretch).MinWidth(0).MinHeight(style.Height), style)
+	if options.Detail {
+		field.MarginStart(18)
+	}
+	return field
 }
 
 // SettingsFieldLabel shows a setting name and an optional expandable description.

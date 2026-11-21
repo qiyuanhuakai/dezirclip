@@ -99,6 +99,8 @@ type nativeMain struct {
 	fileGesture           nativeFileGesture
 	pinFocus              nativePinSource
 	login                 nativeLoginState
+	restartingAdmin       bool
+	adminRestartFailed    bool
 	tagLibrary            *nativeTagLibrary
 	editor                *nativeEntryEditor
 	transform             *nativeTransformDialog
@@ -118,7 +120,7 @@ func (n *nativeMain) stopSession() {
 	n.cardMedia = nativeVisibleCache[nativeCardKey, nativeCardMedia]{}
 	n.ocrJob, n.ocrEngine, n.ocrEngineLoading = nativeOCRJob{}, nil, false
 	n.cardTagColors, n.readingTagColors = nil, false
-	n.reading, n.failed, n.mutating, n.private = false, false, n.profile.moving || n.profile.restartPending || n.winV.changing, false
+	n.reading, n.failed, n.mutating, n.private = false, false, n.profile.moving || n.profile.restartPending || n.winV.changing || n.restartingAdmin, false
 	n.notice, n.keyboard, n.focusList = "", false, false
 	n.temporarySearch = false
 	n.searchWheel, n.towardsTop = 0, time.Time{}

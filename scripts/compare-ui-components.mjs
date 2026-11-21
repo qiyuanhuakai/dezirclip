@@ -65,6 +65,7 @@ const additionalExamples = {
   "clipboard-search": { states: ["default", "selected"], text: "富文本" },
   "settings-toggle": { states: ["enabled", "default"], text: "Keep clipboard history" },
   "settings-toggle-help": { states: ["default", "expanded"], text: "Move pasted entries to top" },
+  "settings-keyboard-preview": { states: ["default", "enabled"], text: "Preview keyboard selection" },
   "settings-slider": { states: ["default", "keyboard"], text: "Opacity 72%" },
   "hotkey-binding": { states: ["default", "recording"], text: "Quick Paste" },
   "scroll-to-top": { states: ["default", "hover"], text: "Clipboard history" },

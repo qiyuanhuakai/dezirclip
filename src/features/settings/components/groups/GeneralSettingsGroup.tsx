@@ -1,5 +1,7 @@
 import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
 import { SettingsSlider } from "@deziro/ui-react/components/SettingsSlider";
+import { SettingsField } from "@deziro/ui-react/components/SettingsField";
+import { NumberField } from "@deziro/ui-react/components/TextField";
 import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
@@ -300,16 +302,12 @@ const GeneralSettingsGroup = ({
                 </div>
                 {idleError && <span role="alert">{t("common_error")} · {idleError}</span>}
                 {idleDestroyEnabled && (
-                    <div className="setting-item setting-item--detail">
+                    <SettingsField detail>
                         <LabelWithHint
                             label={t('idle_destroy_seconds')}
                             hintKey="idle_destroy_seconds"
                         />
-                        <input
-                            className="numeric-input"
-                            type="text"
-                            inputMode="numeric"
-                            pattern="[0-9]*"
+                        <NumberField
                             aria-label={t('idle_destroy_seconds')}
                             disabled={idleSaving}
                             value={idleDestroyDraft}
@@ -330,7 +328,7 @@ const GeneralSettingsGroup = ({
                                 }
                             }}
                         />
-                    </div>
+                    </SettingsField>
                 )}
 
                 <div className="setting-item">

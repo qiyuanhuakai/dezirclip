@@ -20,7 +20,7 @@ func (n *nativeMain) loginSettings(c *ui.Context) {
 		n.loadLogin("")
 	}
 	enabled := state.enabled
-	if n.mainKit().SettingsToggle(c, &enabled, n.text("autostart")).Disabled(!state.known || state.pending || n.mutating).Changed() {
+	if n.mainKit().SettingsToggleField(c, &enabled, n.text("autostart"), "", "", !state.known || state.pending || n.mutating) {
 		action := "disable-login"
 		if enabled {
 			action = "enable-login"

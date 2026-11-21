@@ -136,6 +136,15 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 			winV := false
 			kit.SettingsToggleField(c, &winV, "Use Win+V", "Setting help: Use Win+V", "Use Win+V to open DezirClip.", true)
 		})
+	case "settings-keyboard-preview":
+		fields := ui.Column(c).Width(330).Gap(8)
+		preview := ui.Local(fields, "preview-enabled", func() bool { return g.state == "enabled" })
+		fields.Children(func() {
+			kit.SettingsToggleField(c.Key("arrow"), &g.settingEnabled, "Arrow key selection", "Setting help: Arrow key selection",
+				"Use arrow keys to select clipboard entries.", false)
+			kit.SettingsDetailToggle(c.Key("preview"), preview, "Preview keyboard selection", "Setting help: Preview keyboard selection",
+				"Show the selected item's preview when using arrow keys.", !g.settingEnabled)
+		})
 	case "settings-slider":
 		ui.Column(c).FillWidth().Padding(6, 0).Children(func() {
 			kit.SettingsLabel(c, fmt.Sprintf("Opacity %.0f%%", g.previewOpacity))

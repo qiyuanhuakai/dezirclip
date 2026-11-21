@@ -178,6 +178,12 @@ function Showcase() {
     "settings-toggle": <div className="setting-item"><span className="item-label">Keep clipboard history</span>
       <SettingsToggle aria-label="Keep clipboard history" checked={enabled} onChange={event => setEnabled(event.currentTarget.checked)} />
     </div>,
+    "settings-keyboard-preview": <div className="showcase-fields settings-view showcase-toggle-help">
+      <SettingsToggleField label="Arrow key selection" helpLabel="Setting help" description="Use arrow keys to select clipboard entries."
+        checked={enabled} onChange={event => setEnabled(event.target.checked)} />
+      <SettingsToggleField detail label="Preview keyboard selection" helpLabel="Setting help"
+        description="Show the selected item's preview when using arrow keys." defaultChecked={state === "enabled"} disabled={!enabled} />
+    </div>,
     "settings-toggle-help": <div className="showcase-fields settings-view showcase-toggle-help">
       <SettingsToggleField label="Move pasted entries to top" helpLabel="Setting help"
         description="After pasting, move the item to the top of the list." checked={enabled}

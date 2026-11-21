@@ -168,13 +168,14 @@ func TestNativeResponsiveSettingsFieldPlacement(t *testing.T) {
 	for _, test := range []struct{ width, columns int }{{699, 1}, {700, 2}, {999, 2}, {1000, 3}} {
 		view.SetSize(test.width, 420)
 		first, firstOK := view.Find(n.text("autostart"))
-		second, secondOK := view.Find("Start hidden")
-		third, thirdOK := view.Find("Show window near the mouse")
+		second, secondOK := view.Find(n.text("hide_tray_icon"))
+		third, thirdOK := view.Find(n.text("edge_docking"))
 		if !firstOK || !secondOK || !thirdOK {
 			t.Fatalf("settings controls missing at width %d: %v", test.width, view.Texts())
 		}
+		sameRow := func(y float32) bool { return y >= first.Y-2 && y <= first.Y+2 }
 		if (second.X > first.X) != (test.columns >= 2) || (third.X > second.X) != (test.columns == 3) ||
-			(second.Y == first.Y) != (test.columns >= 2) || (third.Y == first.Y) != (test.columns == 3) {
+			sameRow(second.Y) != (test.columns >= 2) || sameRow(third.Y) != (test.columns == 3) {
 			t.Fatalf("width %d: expected %d columns, got bounds %v, %v, %v", test.width, test.columns, first, second, third)
 		}
 	}
@@ -427,6 +428,48 @@ func TestNativeSettingsFieldHelpExpandsIndependently(t *testing.T) {
 	}
 	if err := view.Click(label); err != nil || view.HasText(hint) {
 		t.Fatalf("font help did not close: %v", err)
+	}
+}
+
+func TestNativeGeneralSettingsOrderAndKeyboardPreviewDependency(t *testing.T) {
+	n := &nativeMain{preferences: map[string]string{
+		"app.language": "en", "app.idle_destroy_enabled": "true", "app.sound_enabled": "true",
+	}}
+	view := ui.NewTester(n.generalSettings, 390, 810)
+	labels := []string{"autostart", "hide_tray_icon", "edge_docking", "follow_mouse", "idle_destroy_enabled", "idle_destroy_seconds",
+		"sound_effects", "sound_volume", "paste_sound", "silent_start", "show_search_box", "scroll_top_button",
+		"emoji_panel_enabled", "tag_manager_enabled", "arrow_key_selection", "preview_keyboard_enabled"}
+	previousY := float32(-1)
+	for _, label := range labels {
+		box, found := view.Find(n.text(label))
+		if !found || box.Y <= previousY {
+			t.Fatalf("%s missing or out of order at %+v after y=%.1f", label, box, previousY)
+		}
+		previousY = box.Y
+	}
+	arrowLabel := n.text("arrow_key_selection")
+	previewLabel := n.text("preview_keyboard_enabled")
+	arrow, _ := view.Find(arrowLabel)
+	preview, _ := view.Find(previewLabel)
+	if preview.X-arrow.X < 17 {
+		t.Fatalf("preview should be nested under arrow navigation: arrow=%+v preview=%+v", arrow, preview)
+	}
+	view.ClickAt(365, preview.Y+preview.H/2)
+	if view.Focused(previewLabel) {
+		t.Fatal("keyboard preview should be disabled when arrow navigation is off")
+	}
+	if err := view.Click(n.settingsHelpLabel(previewLabel)); err != nil || !view.HasText(n.text("preview_keyboard_enabled_hint")) {
+		t.Fatalf("disabled preview should retain its help: %v", err)
+	}
+	if err := view.Click(n.settingsHelpLabel(previewLabel)); err != nil {
+		t.Fatal(err)
+	}
+	n.preferences["app.arrow_key_selection"] = "true"
+	view.Frame()
+	preview, _ = view.Find(previewLabel)
+	view.ClickAt(365, preview.Y+preview.H/2)
+	if !view.Focused(previewLabel) {
+		t.Fatal("keyboard preview should accept interaction when arrow navigation is on")
 	}
 }
 

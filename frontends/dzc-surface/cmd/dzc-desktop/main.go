@@ -328,7 +328,7 @@ func run() error {
 		if native != nil {
 			native.window = win
 			shell.nativePrepare = native.prepare
-			shell.keepMainAlive = func() bool { return native.updater.pending() || native.winV.changing }
+			shell.keepMainAlive = func() bool { return native.updater.pending() || native.winV.changing || native.restartingAdmin }
 			win.OnClosed(mygo.Theme.OnUpdated(native.systemAppearanceChanged))
 		}
 		if err := win.SetIcon(trayIcon); err != nil {

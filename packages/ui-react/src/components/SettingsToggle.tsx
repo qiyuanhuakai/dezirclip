@@ -11,12 +11,13 @@ export function SettingsToggle(props: SettingsToggleProps) {
   </label>;
 }
 
-export function SettingsToggleField({ label, helpLabel, description, ...toggle }: SettingsToggleProps & {
+export function SettingsToggleField({ label, helpLabel, description, detail, ...toggle }: SettingsToggleProps & {
   label: string;
   helpLabel: string;
   description: ReactNode;
+  detail?: boolean;
 }) {
-  return <SettingsField>
+  return <SettingsField detail={detail}>
     <div className="item-label-group">
       <div className="settings-label-line">
         <span className="item-label">{label}</span>

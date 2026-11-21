@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -176,35 +177,66 @@ func (n *nativeMain) settingEnabled(key string, initial bool) bool {
 }
 
 func (n *nativeMain) generalSettings(c *ui.Context) {
-	ui.Column(c).Gap(8).Children(func() { n.loginSettings(c) })
-	n.booleanSettings(c,
-		nativeBooleanSetting{"app.silent_start", n.text("silent_start", "Start hidden"), true},
-		nativeBooleanSetting{"app.follow_mouse", n.text("follow_mouse", "Show window near the mouse"), true},
-		nativeBooleanSetting{"app.show_search_box", n.text("show_search_box", "Show search box"), true},
-		nativeBooleanSetting{"app.show_scroll_top_button", n.text("scroll_top_button", "Show scroll-to-top button"), true},
-		nativeBooleanSetting{"app.tag_manager_enabled", n.text("tag_manager_enabled", "Enable tag manager"), true},
-		nativeBooleanSetting{"app.emoji_panel_enabled", n.text("emoji_panel_enabled", "Enable emoji panel"), false},
-		nativeBooleanSetting{"app.arrow_key_selection", n.text("arrow_key_selection", "Select history with arrow keys"), false},
-		nativeBooleanSetting{"app.preview_keyboard_enabled", n.text("preview_keyboard_enabled", "Preview keyboard selection"), false},
-	)
-	const edge = "app.edge_docking"
-	dock := n.settingEnabled(edge, false)
-	if n.mainKit().SettingsToggle(c, &dock, n.text("edge_docking", "Edge docking")).Disabled(n.mutating || !dock && !dockingAvailable()).Changed() {
-		n.saveSetting(edge, strconv.FormatBool(dock))
-	}
-	hideTray := n.settingEnabled("app.hide_tray_icon", false)
-	if n.mainKit().SettingsToggle(c, &hideTray, n.text("hide_tray_icon", "Hide tray icon")).Disabled(n.mutating).Changed() {
+	kit := n.mainKit()
+	n.loginSettings(c.Key("login-startup"))
+	const trayKey = "app.hide_tray_icon"
+	hideTray := n.settingEnabled(trayKey, false)
+	if kit.SettingsToggleField(c.Key(trayKey), &hideTray, n.text("hide_tray_icon"), "", "", n.mutating) {
 		n.writeSetting(func(ctx context.Context, epoch uint64) error {
 			return n.shell.SetTrayVisible(ctx, !hideTray, epoch)
 		})
 	}
+	const edge = "app.edge_docking"
+	dock, dockLabel := n.settingEnabled(edge, false), n.text("edge_docking")
+	if kit.SettingsToggleField(c.Key(edge), &dock, dockLabel, n.settingsHelpLabel(dockLabel), n.text("edge_docking_hint"),
+		n.mutating || !dock && !dockingAvailable()) {
+		n.saveSetting(edge, strconv.FormatBool(dock))
+	}
+	n.booleanSettingWithHelp(c, "app.follow_mouse", n.text("follow_mouse"), "", true)
 	n.idleSettings(c)
 	n.soundSettings(c)
+	n.booleanSettingWithHelp(c, "app.silent_start", n.text("silent_start"), n.text("silent_start_hint"), true)
+	n.booleanSettingWithHelp(c, "app.show_search_box", n.text("show_search_box"), n.text("show_search_box_hint"), true)
+	n.booleanSettingWithHelp(c, "app.show_scroll_top_button", n.text("scroll_top_button"), n.text("scroll_top_button_hint"), true)
+	n.booleanSettingWithHelp(c, "app.emoji_panel_enabled", n.text("emoji_panel_enabled"), n.text("emoji_panel_enabled_hint"), false)
+	n.booleanSettingWithHelp(c, "app.tag_manager_enabled", n.text("tag_manager_enabled"), n.text("tag_manager_enabled_hint"), true)
+	const arrowKeySelection = "app.arrow_key_selection"
+	n.booleanSettingWithHelp(c, arrowKeySelection, n.text("arrow_key_selection"), n.text("arrow_key_selection_hint"), false)
+	const previewKey = "app.preview_keyboard_enabled"
+	preview := n.settingEnabled(previewKey, false)
+	label := n.text("preview_keyboard_enabled")
+	if kit.SettingsDetailToggle(c.Key(previewKey), &preview, label, n.settingsHelpLabel(label), n.text("preview_keyboard_enabled_hint"),
+		n.mutating || !n.settingEnabled(arrowKeySelection, false)) {
+		n.saveSetting(previewKey, strconv.FormatBool(preview))
+	}
+	if runtime.GOOS == "windows" {
+		n.adminRestartSetting(c, kit)
+	}
+}
+
+func (n *nativeMain) adminRestartSetting(c *ui.Context, kit uikit.Kit) {
+	label := n.text("restart_as_admin")
+	kit.SettingsField(c.Key("restart-as-admin"), uikit.SettingsFieldOptions{}).Children(func() {
+		kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), n.text("restart_as_admin_hint")).Grow(1)
+		if kit.SettingsDataAction(c, n.text("restart"), "", n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating).Clicked() {
+			n.restartingAdmin, n.mutating, n.adminRestartFailed = true, true, false
+			window := n.window
+			go func() {
+				err := n.shell.RestartAsAdmin(context.Background())
+				window.Update(func() {
+					n.restartingAdmin, n.mutating, n.adminRestartFailed = false, false, err != nil
+				})
+			}()
+		}
+	})
+	if n.adminRestartFailed {
+		ui.Text(c, n.text("native_restart_as_admin_failed")).TextColor(c.Theme().Danger).Wrap()
+	}
 }
 
 func (n *nativeMain) idleSettings(c *ui.Context) {
 	const enabled = "app.idle_destroy_enabled"
-	n.booleanSettings(c, nativeBooleanSetting{enabled, n.text("idle_destroy_enabled"), false})
+	n.booleanSettingWithHelp(c, enabled, n.text("idle_destroy_enabled"), n.text("idle_destroy_enabled_hint"), false)
 	if n.settingEnabled(enabled, false) {
 		n.numberSetting(c, "app.idle_destroy_seconds", n.text("idle_destroy_seconds"), n.text("idle_destroy_seconds_hint"),
 			defaultIdleSeconds, minIdleSeconds, maxIdleSeconds)
@@ -213,11 +245,11 @@ func (n *nativeMain) idleSettings(c *ui.Context) {
 
 func (n *nativeMain) soundSettings(c *ui.Context) {
 	const enabled = "app.sound_enabled"
-	n.booleanSettings(c, nativeBooleanSetting{enabled, n.text("sound_effects"), false})
+	n.booleanSettingWithHelp(c, enabled, n.text("sound_effects"), "", false)
 	if n.settingEnabled(enabled, false) {
 		volume := nativeRangeSetting{key: "app.sound_volume", unit: "%", maximum: 100, fallback: 70}
 		n.rangeSetting(c, volume, n.text("sound_volume"), "", volume.value(n.preferences))
-		n.booleanSettings(c, nativeBooleanSetting{"app.sound_paste_enabled", n.text("paste_sound"), true})
+		n.booleanSettingWithHelp(c, "app.sound_paste_enabled", n.text("paste_sound"), "", true)
 	}
 }
 
@@ -300,9 +332,9 @@ func (n *nativeMain) appearanceSettings(c *ui.Context, kit uikit.Kit, surfaceOpa
 	n.booleanSettingWithHelp(c, "app.show_app_border", n.text("show_app_border", "Show window border"), n.text("show_app_border_hint"), true)
 	n.booleanSettingWithHelp(c, "app.compact_mode", n.text("compact_mode", "Compact history"), n.text("compact_mode_hint"), false)
 	n.typographySettings(c)
-	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() { n.backgroundSettings(c) })
 	previewOpacity := opacityPreference(n.preferences["app.preview_opacity"], n.preferences["app.surface_opacity"])
 	n.rangeSetting(c, nativePreviewOpacity, n.text("preview_opacity"), n.text("preview_opacity_hint"), previewOpacity)
+	ui.Column(c).ColumnSpan(-1).Gap(8).Children(func() { n.backgroundSettings(c) })
 	if surfaceOpacity != nil {
 		*surfaceOpacity = n.drawSurfaceOpacity(c, *surfaceOpacity)
 	}
