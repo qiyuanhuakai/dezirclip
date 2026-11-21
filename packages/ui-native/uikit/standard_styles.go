@@ -562,6 +562,10 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.MarginTop, style.Radius, style.Padding = 2, 3, [4]float32{2, 4, 2, 4}
 	case "historyConcealed":
 		style.Size, style.Text, style.Padding = 12, muted, [4]float32{12, 0, 12, 0}
+	case "historyCompactPin":
+		style.Width, style.Fill = 3, [4]uint8{0, 123, 255, 255}
+	case "historyPreviewPlaceholder":
+		style.Text, style.ColumnGap = muted, 6
 	case "historyIcon":
 		style.Width, style.Height, style.Text = 14, 14, muted
 	case "searchModeIcon":

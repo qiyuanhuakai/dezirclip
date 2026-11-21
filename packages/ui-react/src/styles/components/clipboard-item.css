@@ -99,6 +99,7 @@
   align-items: center;
   gap: 6px;
   min-height: 1.35em;
+  font-family: var(--font-main);
   color: var(--text-secondary);
 }
 .history-preview-placeholder svg { flex-shrink: 0; }

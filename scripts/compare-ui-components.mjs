@@ -57,7 +57,8 @@ const cases = {
   "history-tags": { states: ["default", "compact", "large"], text: "Reference" },
   "history-card-meta": { states: ["default"], text: "Editor" },
   "history-list": { states: ["default", "selected"], text: "Release checklist and verification notes" },
-  "history-typography": { states: ["default", "small", "large", "compact", "compact-large", "custom"], text: "Font sample: Wm12" },
+  "history-typography": { states: ["default", "small", "large", "compact", "compact-large", "custom", "token", "compact-token"], text: "Font sample: Wm12" },
+  "history-preview-status": { states: ["default", "compact"], text: "No text preview available" },
   "history-rich-text": { states: ["default", "compact"], text: "Release checklist" },
   "settings-rail": { states: ["default", "selected", "long-label"], text: "Appearance" },
   "settings-footer": { states: ["default", "compact"], text: "Reset defaults" },
@@ -852,7 +853,7 @@ try {
                 throw Error("Update progress range disagrees with the download state");
               }
             }
-            if (fixture === "history-typography") {
+            if (fixture === "history-typography" || fixture === "history-preview-status") {
               const measurements = await page.locator("[data-card-metrics]").evaluateAll(cards => cards.map(card => {
                 const bounds = card.getBoundingClientRect();
                 const content = getComputedStyle(card.querySelector(".content-preview"));
@@ -868,6 +869,19 @@ try {
               if (state === "custom") {
                 const family = ["mica", "acrylic"].includes(theme) ? "Georgia" : "Courier New";
                 if (!measurements[0].font.includes(family)) throw Error("Unexpected theme font source: " + measurements[0].font);
+              }
+              if (fixture === "history-preview-status") {
+                for (const status of ["Loading preview…", "No text preview available", "Text preview is currently unavailable"]) {
+                  if (!comparable(nativeText, status) || !comparable(webText, status)) throw Error("Missing preview state: " + status);
+                }
+                if (state === "compact") {
+                  const reference = measurements.find(card => card.name === "reference");
+                  const pinned = measurements.find(card => card.name === "pinned");
+                  const stripe = await page.locator(".compact-pinned-indicator").boundingBox();
+                  if (!stripe || stripe.width !== 3 || Math.abs(reference.height - pinned.height) > 0.25 ||
+                      Math.abs(inspection.Cards.reference.H - inspection.Cards.pinned.H) > 0.25)
+                    throw Error("The compact pin changed the card's height");
+                }
               }
             }
             if (fixture === "history-rich-text") {

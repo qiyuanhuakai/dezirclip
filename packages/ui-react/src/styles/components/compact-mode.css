@@ -458,10 +458,6 @@ html.theme-acrylic .history-item.compact .compact-pinned-indicator {
     border-radius: 4px 0 0 4px;
 }
 
-.compact-pinned-indicator svg {
-    display: none;
-}
-
 /* Retro Theme Specific Styling for Popover */
 .compact-popover-portal.retro {
     background: var(--compact-popover-retro-bg);

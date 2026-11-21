@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf16"
 
 	"github.com/egoist/mygo/ui"
@@ -41,16 +42,75 @@ func visibleCardSummary(row protocol.DesktopEntry, language nativeLanguage) stri
 	if row.ContentType == "image" {
 		return language.text("image_preview", "Clipboard image")
 	}
+	if nativeTextPreviewKind(row.ContentType) {
+		if summary := nativeReadablePreview(row.Preview); summary != "" {
+			return summary
+		}
+		return nativeReadablePreview(row.Content)
+	}
 	if row.Preview != "" {
 		return row.Preview
 	}
 	return row.Content
 }
 
+func nativeTextPreviewKind(kind string) bool {
+	switch kind {
+	case "text", "code", "url", "rich_text":
+		return true
+	default:
+		return false
+	}
+}
+
+func nativeReadablePreview(value string) string {
+	first := strings.IndexFunc(value, func(r rune) bool {
+		return !unicode.IsSpace(r) && !unicode.In(r, unicode.Cc, unicode.Cf,
+			unicode.Other_Default_Ignorable_Code_Point, unicode.Variation_Selector)
+	})
+	if first < 0 {
+		return ""
+	}
+	value = value[first:]
+	count := 0
+	for index := range value {
+		if count == 500 {
+			return value[:index]
+		}
+		count++
+	}
+	return value
+}
+
+func (n *nativeMain) cardPresentation(row protocol.DesktopEntry, body *nativeProtectedBody) (summary, placeholder string) {
+	if body != nil {
+		summary = body.summary
+	} else {
+		summary = nativeCardSummary(row, n.language())
+	}
+	if summary != "" || !nativeTextPreviewKind(row.ContentType) {
+		return summary, ""
+	}
+	if body == nil && !nativeConcealed(row) {
+		preview, loaded := n.mediaForCard(row)
+		switch {
+		case loaded && preview.failed:
+			return "", n.text("clipboard_preview_unavailable")
+		case loaded && preview.summary != "":
+			return preview.summary, ""
+		case !loaded && n.canLoadCardPreview(row):
+			return "", n.text("clipboard_preview_loading")
+		}
+	}
+	return "", n.text("clipboard_preview_empty")
+}
+
 type nativeCardMedia struct {
 	image       ui.ImageSource
 	attachments []uikit.PreviewAttachment
 	rich        *uikit.HistoryRichText
+	summary     string
+	failed      bool
 }
 
 const (
@@ -126,14 +186,17 @@ func (n *nativeMain) imageCardBody(c *ui.Context, kit uikit.Kit, row protocol.De
 	kit.HistoryImage(c, options)
 }
 
+func (n *nativeMain) canLoadCardPreview(row protocol.DesktopEntry) bool {
+	return n.session != nil && n.library != nil && n.history.state.ServiceInstanceId != "" && row.Id != 0
+}
+
 func (n *nativeMain) mediaForCard(row protocol.DesktopEntry) (nativeCardMedia, bool) {
 	key := nativeCardKey{row.Id, row.Timestamp}
 	preview, loaded := n.cardMedia.lookup(key)
-	if loaded || n.session == nil || n.library == nil || n.history.state.ServiceInstanceId == "" ||
-		row.Id == 0 || !n.cardMedia.begin(key) {
+	if loaded || !n.canLoadCardPreview(row) || !n.cardMedia.begin(key) {
 		return preview, loaded
 	}
-	session, state := n.session, n.history.state
+	session, state, language := n.session, n.history.state, n.language()
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 4*time.Second)
 		defer cancel()
@@ -146,8 +209,13 @@ func (n *nativeMain) mediaForCard(row protocol.DesktopEntry) (nativeCardMedia, b
 			Id: key.id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch,
 			ThumbnailDimension: &size, OmitOcrText: &omitText,
 		})
+		preview := nativeCardMedia{failed: true}
 		if err == nil && result.Id == key.id && result.Timestamp == key.timestamp &&
 			result.ContentType == row.ContentType && !nativeConcealed(result.DesktopEntry) {
+			preview.failed = false
+			if nativeTextPreviewKind(row.ContentType) {
+				preview.summary = strings.Clone(visibleCardSummary(result.DesktopEntry, language))
+			}
 			switch {
 			case row.ContentType == "image":
 				preview.image = decodePreviewSource(result.Content, historyImageEncodedLimit)

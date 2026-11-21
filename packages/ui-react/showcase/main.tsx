@@ -2,7 +2,7 @@ import { useRef, useState, type CSSProperties } from "react";
 import "../src/styles/components/privacy.css";
 import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
-import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryCardTag, HistoryCardTags, HotkeyBinding, MatchHighlight,
+import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryCardTag, HistoryCardTags, HistoryPreviewPlaceholder, HotkeyBinding, MatchHighlight,
   PreviewText, ProgressToast, QuickPastePanel, QuickPasteRow, QuickPasteSearch, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail, SettingsSectionCard,
   SettingsSlider, SettingsToggle, SettingsToggleField, TagDialog, TagHistoryEntry, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
@@ -176,7 +176,34 @@ function HistoryTypographyFixture() {
         <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
         <HistoryCardAction title="Delete"><X size={12} /></HistoryCardAction>
       </>} />
-      <HistoryCardContent concealed={name === "concealed"}>{text}</HistoryCardContent>
+      <HistoryCardContent concealed={name === "concealed"}>
+        {name === "wrapped" && state.endsWith("token") ? "Ab09".repeat(66) : text}
+      </HistoryCardContent>
+      </HistoryCard>
+    </div>)}
+  </div>;
+}
+
+function HistoryPreviewStatusFixture() {
+  const compact = state === "compact";
+  return <div style={{ width: 336 }}>
+    {([
+      ["loading", "Loading preview…"],
+      ["empty", "No text preview available"],
+      ["error", "Text preview is currently unavailable"],
+      ["reference", ""],
+      ["pinned", ""],
+    ] as const).map(([name, label]) => <div key={name} style={{ paddingBottom: compact ? 2 : 4 }}>
+      <HistoryCard compact={compact} pinned={name === "pinned"} disableLayout data-card-metrics={name}>
+        <HistoryCardMeta source="Editor" time="12:30"
+          sourceIcon={name === "pinned" && !compact ? <Pin size={10} /> : undefined} actions={<>
+            <HistoryCardAction title="Pin"><Pin size={12} /></HistoryCardAction>
+            <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
+            <HistoryCardAction title="Delete"><X size={12} /></HistoryCardAction>
+          </>} />
+        <HistoryCardContent>
+          {label ? <HistoryPreviewPlaceholder label={label} /> : "A clipboard preview keeps the same width when a card is pinned."}
+        </HistoryCardContent>
       </HistoryCard>
     </div>)}
   </div>;
@@ -266,6 +293,7 @@ function Showcase() {
       sourceIcon={<Pin size={10} />} actions={<button type="button" className="btn-icon" title="Tags"><Tag size={12} /></button>} /></HistoryCard>,
     "history-list": <HistoryListFixture />,
     "history-typography": <HistoryTypographyFixture />,
+    "history-preview-status": <HistoryPreviewStatusFixture />,
     "history-rich-text": <HistoryRichTextFixture state={state} />,
     "settings-rail": <SettingsRail t={key => key} groups={settingsGroups} activeGroup={activeSettings} onSelect={setActiveSettings} />,
     "settings-footer": <SettingsFooter t={key => footerLabels[key] ?? key} productName="DezirClip 0.2"

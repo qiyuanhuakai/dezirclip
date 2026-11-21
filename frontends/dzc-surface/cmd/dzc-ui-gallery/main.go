@@ -669,14 +669,24 @@ func run() error {
 		tester.Advance(time.Duration(transition) * time.Millisecond)
 		if *inspect {
 			var result any = tester.Texts()
-			if g.fixture == "history-typography" {
-				cards := make(map[string]ui.Rect, len(historyTypographySamples))
-				for _, sample := range historyTypographySamples {
-					bounds, ok := tester.Find(sample.name)
-					if !ok {
-						return fmt.Errorf("no history card named %s", sample.name)
+			if g.fixture == "history-typography" || g.fixture == "history-preview-status" {
+				names := make([]string, 0, 5)
+				if g.fixture == "history-typography" {
+					for _, sample := range historyTypographySamples {
+						names = append(names, sample.name)
 					}
-					cards[sample.name] = bounds
+				} else {
+					for _, sample := range historyPreviewStatusSamples {
+						names = append(names, sample.name)
+					}
+				}
+				cards := make(map[string]ui.Rect, len(names))
+				for _, name := range names {
+					bounds, ok := tester.Find(name)
+					if !ok {
+						return fmt.Errorf("no history card named %s", name)
+					}
+					cards[name] = bounds
 				}
 				result = struct {
 					Texts []string

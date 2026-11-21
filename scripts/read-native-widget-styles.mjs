@@ -224,6 +224,9 @@ const samples = [
   }],
   ["history-card", "selected", { historyCardSelected: [".history-item.selected"] }],
   ["history-typography", "default", { historyConcealed: [".privacy-hidden-content"] }],
+  ["history-preview-status", "compact", {
+    historyCompactPin: [".compact-pinned-indicator"], historyPreviewPlaceholder: [".history-preview-placeholder"],
+  }],
   ["history-rich-text", "default", { historyRichContent: [".history-rich-preview"] }],
   ["history-rich-text", "compact", { historyRichContentCompact: [".history-rich-preview"] }],
   ["history-ocr", "expanded", {

@@ -1,21 +1,34 @@
 import type { ButtonHTMLAttributes, ComponentPropsWithoutRef, ReactNode, Ref } from "react";
-import { motion, type HTMLMotionProps } from "framer-motion";
-import { ImageOff } from "lucide-react";
+import { isMotionValue, motion, type HTMLMotionProps } from "framer-motion";
+import { FileText, ImageOff } from "lucide-react";
 
 export interface HistoryCardProps extends HTMLMotionProps<"div"> {
   selected?: boolean;
   compact?: boolean;
   pinned?: boolean;
+  pinnedLabel?: string;
   disableLayout?: boolean;
   ref?: Ref<HTMLDivElement>;
 }
 
-export function HistoryCard({ selected, compact, pinned, disableLayout, className = "", ...props }: HistoryCardProps) {
+export function HistoryCard({ selected, compact, pinned, pinnedLabel, disableLayout, className = "", children, ...props }: HistoryCardProps) {
   const classes = ["history-item", selected && "selected", compact && "compact", pinned && "pinned", className]
     .filter(Boolean).join(" ");
+  const content = compact && pinned ? <>
+    <span className="compact-pinned-indicator" title={pinnedLabel} aria-hidden="true" />
+    {isMotionValue(children) ? <motion.span>{children}</motion.span> : children}
+  </> : children;
   return <motion.div {...props} data-test-clipboard-item className={classes}
     layout={!disableLayout} initial={false} animate={disableLayout ? undefined : { marginBottom: 0 }}
-    exit={disableLayout ? undefined : { opacity: 0, scale: 0.95 }} transition={disableLayout ? undefined : { duration: 0.1 }} />;
+    exit={disableLayout ? undefined : { opacity: 0, scale: 0.95 }} transition={disableLayout ? undefined : { duration: 0.1 }}>
+    {content}
+  </motion.div>;
+}
+
+export function HistoryPreviewPlaceholder({ label }: { label: string }) {
+  return <div className="history-preview-placeholder" role="status">
+    <FileText size={14} aria-hidden="true" /><span>{label}</span>
+  </div>;
 }
 
 export function HistoryCardContent({ rich, concealed, className = "", children, ...props }: ComponentPropsWithoutRef<"div"> & {

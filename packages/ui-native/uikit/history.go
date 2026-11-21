@@ -4,29 +4,32 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/go-text/typesetting/segmenter"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 )
 
 type HistoryCardOptions struct {
-	Source    string
-	Time      string
-	Summary   string
-	Selected  bool
-	Compact   bool
-	Concealed bool
-	First     bool
-	Pinned    bool
-	Actions   []HeaderAction
-	Tags      []HistoryTag
-	Match     string
-	TextFont  string
-	TextSize  float32
-	TextRows  int
-	TagSize   float32
-	Rich      *HistoryRichText
-	Body      func()
-	OCRBadge  *HistoryOCRBadgeOptions
-	OCRResult *HistoryOCRResultOptions
+	Source  string
+	Time    string
+	Summary string
+	// Placeholder describes an unavailable, loading or empty text preview.
+	Placeholder string
+	Selected    bool
+	Compact     bool
+	Concealed   bool
+	First       bool
+	Pinned      bool
+	Actions     []HeaderAction
+	Tags        []HistoryTag
+	Match       string
+	TextFont    string
+	TextSize    float32
+	TextRows    int
+	TagSize     float32
+	Rich        *HistoryRichText
+	Body        func()
+	OCRBadge    *HistoryOCRBadgeOptions
+	OCRResult   *HistoryOCRResultOptions
 	// Media draws using the width remaining after the card's margins, frame and leading controls.
 	Media    func(contentWidth float32)
 	Width    float32
@@ -49,6 +52,7 @@ type HistoryReorder struct {
 }
 
 var historyGrip = icon("GripHorizontal")
+var historyFileText = icon("FileText")
 
 type HistoryTag struct {
 	Name  string
@@ -72,7 +76,11 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 	} else {
 		card = ui.ButtonBase(c)
 	}
-	card.Role(ui.RoleGroup).Label(options.Summary)
+	label := options.Summary
+	if label == "" && !options.Concealed {
+		label = options.Placeholder
+	}
+	card.Role(ui.RoleGroup).Label(label)
 	style := k.style("historyCard")
 	hoverStyle := "historyCardHover"
 	if options.Compact {
@@ -137,8 +145,6 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 					width -= 28
 				case options.Compact && options.Reorder != nil:
 					width -= 20
-				case options.Compact && options.Pinned:
-					width -= 14
 				}
 				if options.Media != nil {
 					options.Media(max(1, width))
@@ -155,19 +161,21 @@ func (k Kit) HistoryCard(c *ui.Context, options HistoryCardOptions) ui.Element {
 				k.HistoryCardTags(c, options.Tags, options.TagSize, false, 0)
 			}
 		}
-		if options.Leading != nil || options.Compact && (options.Reorder != nil || options.Pinned) {
+		if options.Leading != nil || options.Compact && options.Reorder != nil {
 			ui.Row(c).Grow(1).Gap(4).AlignItems(ui.Center).Children(func() {
 				if options.Leading != nil {
 					options.Leading()
-				} else if options.Reorder != nil {
-					k.historyReorderGrip(c, options.Reorder, k.style("historySource"), 22)
 				} else {
-					ui.Icon(c, headerIcons["pin"]).Size(10, 10).TextColor(c.Theme().TextMuted).PassThrough()
+					k.historyReorderGrip(c, options.Reorder, k.style("historySource"), 22)
 				}
 				ui.Column(c).Grow(1).MinWidth(0).Children(contentColumn)
 			})
 		} else {
 			ui.Column(c).Grow(1).MinWidth(0).Children(contentColumn)
+		}
+		if options.Compact && options.Pinned {
+			pin := k.style("historyCompactPin")
+			paint(ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(pin.Width).PassThrough(), pin)
 		}
 		if options.Compact && len(options.Tags) > 0 {
 			width := options.Width
@@ -210,13 +218,28 @@ func (k Kit) historyCardText(c *ui.Context, options HistoryCardOptions) {
 		}
 		return false
 	}), " ")
+	if summary == "" && options.Placeholder != "" && !options.Concealed {
+		placeholder := k.style("historyPreviewPlaceholder")
+		placeholder.Size, placeholder.LineHeight = content.Size, content.LineHeight
+		ui.Row(c).FillWidth().MinWidth(0).AlignItems(ui.Center).Gap(placeholder.ColumnGap).
+			Padding(content.Padding[:]...).MinHeight(minHeight).Children(func() {
+			ui.Icon(c, historyFileText).Size(14, 14).TextColor(styleColor(placeholder.Text)).Shrink(0).PassThrough()
+			text(c, options.Placeholder, placeholder).MinWidth(0).Wrap().Role(ui.RoleStatus).PassThrough()
+		})
+		return
+	}
 	var label ui.Element
 	if spans := k.matchSpans(summary, options.Match); spans != nil {
 		label = styledText(ui.RichText(c, spans...), content)
 	} else {
 		label = text(c, summary, content)
 	}
-	label.Padding(content.Padding[:]...).Wrap().MinHeight(minHeight)
+	label.Padding(content.Padding[:]...).MinHeight(minHeight)
+	if historyTextCanWrap(summary) {
+		label.Wrap()
+	} else {
+		label.NoWrap().FillWidth().MinWidth(0).ClipX()
+	}
 	maxLines := content.MaxLines
 	if options.TextRows > 0 {
 		maxLines = options.TextRows
@@ -225,6 +248,16 @@ func (k Kit) historyCardText(c *ui.Context, options HistoryCardOptions) {
 	if content.MaxHeight > 0 {
 		label.MaxHeight(content.MaxHeight).Clip()
 	}
+}
+
+// A single run with no Unicode line break opportunity clips horizontally in WebView.
+func historyTextCanWrap(summary string) bool {
+	var boundaries segmenter.Segmenter
+	if err := boundaries.InitWithString(summary); err != nil {
+		return true
+	}
+	lines := boundaries.LineIterator()
+	return lines.Next() && lines.Next()
 }
 
 // HistoryCardTags draws the colored labels on a clipboard entry. In a compact

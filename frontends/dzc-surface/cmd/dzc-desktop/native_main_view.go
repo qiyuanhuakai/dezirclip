@@ -254,7 +254,6 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 				pinIcon = "unpin"
 			}
 			actions := make([]uikit.HeaderAction, 0, 6)
-			summary := nativeCardSummary(row, n.language())
 			if batch == nil && nativeConcealed(row) {
 				n.revealTaggedRow(row, generation)
 			}
@@ -262,6 +261,7 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 			if batch != nil {
 				protected = nil
 			}
+			summary, placeholder := n.cardPresentation(row, protected)
 			contentVisible := !nativeConcealed(row) || protected != nil
 			if editableHistoryKind(row.ContentType) && contentVisible {
 				actions = append(actions, uikit.HeaderAction{Icon: "edit", Label: n.text("edit_item"),
@@ -271,7 +271,6 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 			if nativeConcealed(row) {
 				actions = append(actions, n.protectedRowAction(row, generation))
 				if protected != nil {
-					summary = protected.summary
 					if row.ContentType == "image" && row.Id > 0 {
 						actions = append(actions, uikit.HeaderAction{Icon: "scan", Label: n.text("native_ocr_recognize"),
 							Disabled: !n.eligibleOCR(row, generation) || n.private || n.ocrJob.status == "processing" || protected.ocrStatus == "processing",
@@ -298,15 +297,20 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 			)
 			if batch != nil {
 				focus := n.focusList && cell.Index == n.history.selected
+				selectionLabel := summary
+				if selectionLabel == "" {
+					selectionLabel = placeholder
+				}
 				kit.TagHistoryEntry(cell.Context, uikit.HistoryCardOptions{
 					Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
-					Pinned: row.IsPinned, Compact: compact, Concealed: !contentVisible,
+					Placeholder: placeholder,
+					Pinned:      row.IsPinned, Compact: compact, Concealed: !contentVisible,
 					TextSize: float32(itemSize), Match: n.history.filter.query, Width: width,
 					Rich:  n.cardRichText(row, protected),
 					Media: n.cardBody(cell.Context, kit, row, protected, compact, float32(itemSize)),
 					Tags:  n.cardTags(row.Tags), TagSize: float32(tagSize),
 				}, &uikit.TagHistorySelection{
-					Label:   n.text("tag_select_entry") + ": " + summary,
+					Label:   n.text("tag_select_entry") + ": " + selectionLabel,
 					Checked: batch.selection.includes(row.Id), Disabled: row.Id <= 0 || !n.tagBatchReady(batch),
 					Focus: focus, OnToggle: func() { n.toggleTagBatchRow(batch, row.Id, generation) },
 					OnNavigate: func(key ui.Key) { n.navigateTagBatchRow(cell.Index, key) },
@@ -319,7 +323,8 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 			ocrBadge, ocrResult := n.cardOCR(row, protected, generation)
 			options := uikit.HistoryCardOptions{
 				Source: row.SourceApp, Time: time.UnixMilli(row.Timestamp).Format("15:04"), Summary: summary,
-				Pinned: row.IsPinned, Selected: cell.Selected(), Compact: compact, First: cell.Index == first,
+				Placeholder: placeholder,
+				Pinned:      row.IsPinned, Selected: cell.Selected(), Compact: compact, First: cell.Index == first,
 				Match:     n.history.filter.query,
 				Concealed: !contentVisible,
 				TextSize:  float32(itemSize),

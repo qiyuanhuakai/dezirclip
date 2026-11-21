@@ -8,6 +8,41 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
 
+func TestNativePreviewRecoversReadableTextAndKeepsProtectedRowsHidden(t *testing.T) {
+	const invisible = "\u200b\u200e\ufeff\uFE0F\t"
+	const body = "真实文本"
+	n := nativeMain{preferences: map[string]string{"app.language": "en"}}
+	row := protocol.DesktopEntry{Id: 2, Timestamp: 10, ContentType: "text", Tags: []string{}, Preview: invisible}
+	row.Content = invisible + strings.Repeat(body, 200)
+	if summary, placeholder := n.cardPresentation(row, nil); !strings.HasPrefix(summary, body) ||
+		len([]rune(summary)) != 500 || placeholder != "" {
+		t.Fatalf("expected readable text capped at 500 runes, got %d runes and %q", len([]rune(summary)), placeholder)
+	}
+	row.Content = ""
+	if summary, placeholder := n.cardPresentation(row, nil); summary != "" || placeholder != n.text("clipboard_preview_empty") {
+		t.Fatalf("empty card: %q, %q", summary, placeholder)
+	}
+	n.session, n.library = context.Background(), &Library{}
+	n.history.state.ServiceInstanceId = "preview-fixture"
+	key := nativeCardKey{row.Id, row.Timestamp}
+	n.cardMedia.begin(key)
+	if _, placeholder := n.cardPresentation(row, nil); placeholder != n.text("clipboard_preview_loading") {
+		t.Fatalf("pending card: %q", placeholder)
+	}
+	n.cardMedia.finish(key, nativeCardMedia{failed: true})
+	if _, placeholder := n.cardPresentation(row, nil); placeholder != n.text("clipboard_preview_unavailable") {
+		t.Fatalf("failed card: %q", placeholder)
+	}
+	n.cardMedia.finish(key, nativeCardMedia{summary: body})
+	if summary, placeholder := n.cardPresentation(row, nil); summary != body || placeholder != "" {
+		t.Fatalf("hydrated card: %q, %q", summary, placeholder)
+	}
+	row.Tags = nil
+	if summary, placeholder := n.cardPresentation(row, nil); summary != "Sensitive content hidden" || placeholder != "" {
+		t.Fatalf("protected preview reused the public cache: %q, %q", summary, placeholder)
+	}
+}
+
 func TestNativeProtectedRowsExpireOutsideTheirVisibleVersion(t *testing.T) {
 	visible := protocol.DesktopEntry{Id: 3, Timestamp: 22}
 	changed := protocol.DesktopEntry{Id: 4, Timestamp: 32}

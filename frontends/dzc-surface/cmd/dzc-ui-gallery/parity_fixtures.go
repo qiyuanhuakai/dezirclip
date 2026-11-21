@@ -117,6 +117,8 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 		})
 	case "history-typography":
 		g.historyTypographyFixture(c, kit)
+	case "history-preview-status":
+		g.historyPreviewStatusFixture(c, kit)
 	case "history-rich-text":
 		kit.HistoryCard(c, uikit.HistoryCardOptions{
 			Source: "Editor", Time: "12:30", Summary: "Formatted clipboard card",
@@ -367,9 +369,42 @@ func (g *gallery) historyTypographyFixture(c *ui.Context, kit uikit.Kit) {
 	}
 	ui.Column(c).Width(336).Gap(gap).AlignItems(ui.Stretch).Children(func() {
 		for _, sample := range historyTypographySamples {
+			summary := sample.body
+			if sample.name == "wrapped" && strings.HasSuffix(g.state, "token") {
+				summary = strings.Repeat("Ab09", 66)
+			}
 			kit.HistoryCard(c, uikit.HistoryCardOptions{
-				Source: "Editor", Time: "12:30", Summary: sample.body, TextSize: size,
+				Source: "Editor", Time: "12:30", Summary: summary, TextSize: size,
 				Compact: compact, Concealed: sample.name == "concealed",
+				Actions: []uikit.HeaderAction{{Icon: "pin", Label: "Pin"}, {Icon: "tag", Label: "Tags"}, {Icon: "hide", Label: "Delete"}},
+			}).Label(sample.name)
+		}
+	})
+}
+
+var historyPreviewStatusSamples = []struct{ name, label string }{
+	{"loading", "Loading preview…"},
+	{"empty", "No text preview available"},
+	{"error", "Text preview is currently unavailable"},
+	{"reference", ""},
+	{"pinned", ""},
+}
+
+func (g *gallery) historyPreviewStatusFixture(c *ui.Context, kit uikit.Kit) {
+	compact := g.state == "compact"
+	gap := float32(4)
+	if compact {
+		gap = 2
+	}
+	ui.Column(c).Width(336).Gap(gap).AlignItems(ui.Stretch).Children(func() {
+		for _, sample := range historyPreviewStatusSamples {
+			summary := ""
+			if sample.label == "" {
+				summary = "A clipboard preview keeps the same width when a card is pinned."
+			}
+			kit.HistoryCard(c, uikit.HistoryCardOptions{
+				Source: "Editor", Time: "12:30", Summary: summary, Placeholder: sample.label,
+				Compact: compact, Pinned: sample.name == "pinned",
 				Actions: []uikit.HeaderAction{{Icon: "pin", Label: "Pin"}, {Icon: "tag", Label: "Tags"}, {Icon: "hide", Label: "Delete"}},
 			}).Label(sample.name)
 		}

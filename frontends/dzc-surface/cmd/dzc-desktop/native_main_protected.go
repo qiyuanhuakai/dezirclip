@@ -174,7 +174,7 @@ func newProtectedBody(row protocol.DesktopEntry, language nativeLanguage) *nativ
 			break
 		}
 	}
-	body := &nativeProtectedBody{summary: summary}
+	body := &nativeProtectedBody{summary: strings.Clone(summary)}
 	switch row.ContentType {
 	case "image":
 		body.image = decodePreviewSource(row.Content, historyImageEncodedLimit)

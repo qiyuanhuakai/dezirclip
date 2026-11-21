@@ -1,5 +1,5 @@
 import { HistoryOCRBadge, HistoryOCRResult } from "@deziro/ui-react/components/HistoryOCR";
-import { HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryCardTag, HistoryCardTags, HistoryImagePreview, HistoryRichTextPreview } from "@deziro/ui-react/components/HistoryCard";
+import { HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryCardTag, HistoryCardTags, HistoryImagePreview, HistoryPreviewPlaceholder, HistoryRichTextPreview } from "@deziro/ui-react/components/HistoryCard";
 import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
 import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
 import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
@@ -15,7 +15,6 @@ import {
     ExternalLink,
     Tag,
     X,
-    FileText,
     Plus,
     GripVertical,
     Edit2
@@ -868,6 +867,7 @@ const ClipboardItem = ({
             selected={isSelected}
             compact={compactMode}
             pinned={item.is_pinned}
+            pinnedLabel={t("pinned")}
             disableLayout={disableLayout}
             className={className}
             onMouseDown={(e) => {
@@ -1008,11 +1008,6 @@ const ClipboardItem = ({
                 time={getConciseTime(item.timestamp, language)}
             />
 
-            {compactMode && item.is_pinned && (
-                <div className="compact-pinned-indicator" title={t('pinned')}>
-                    <Pin size={10} fill="currentColor" />
-                </div>
-            )}
             <HistoryCardContent rich={item.content_type === "rich_text"} concealed={isSensitiveHidden}
                 data-privacy-protected={isSensitiveEntry(item) ? "true" : undefined}
                 onDragStart={event => { if (isSensitiveEntry(item)) event.preventDefault(); }}>
@@ -1093,9 +1088,7 @@ const ClipboardItem = ({
                                 </span>}
                             </div>
                         )
-                        : hasHistoryPreviewText(displayPreview) ? displayPreview : <div className="history-preview-placeholder" role="status">
-                            <FileText size={14} aria-hidden="true" /><span>{emptyPreviewLabel}</span>
-                        </div>
+                        : hasHistoryPreviewText(displayPreview) ? displayPreview : <HistoryPreviewPlaceholder label={emptyPreviewLabel} />
                 )}
             </HistoryCardContent>
 
