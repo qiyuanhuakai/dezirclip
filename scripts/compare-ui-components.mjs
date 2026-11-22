@@ -41,9 +41,9 @@ const cases = {
   "tag-history-entry": { states: ["default", "compact", "browse"], text: "Release checklist" },
   "tag-batch-toolbar": { states: ["default", "selected", "narrow"], text: "selected" },
   "tag-search": { states: ["default"], text: "Work" },
-  "font-select": { states: ["default", "open"], text: "Georgia" },
+  "font-select": { states: ["default", "open", "keyboard-long"], text: "Georgia" },
   "preview-text": { states: ["small", "large"], text: "second line stays visible" },
-  "search-select": { states: ["default", "apps-filtered", "empty", "typo", "long-options", "app-inherited", "app-same-name"], text: "Interface font" },
+  "search-select": { states: ["default", "apps-filtered", "empty", "typo", "long-options", "app-inherited", "app-same-name", "accented-app"], text: "Interface font" },
   "tag-suggestions": { states: ["active", "empty"], text: "Tags" },
   "text-fields": { states: ["default"], text: "Idle timeout" },
   "context-menu": { states: ["default", "text", "privacy"], text: "Clipboard entry" },
@@ -542,6 +542,21 @@ try {
                 if (!(await option.evaluate(node => getComputedStyle(node).fontFamily)).includes("Courier New")) {
                   throw Error("The font option does not preview its own family");
                 }
+              } else if (state === "keyboard-long") {
+                const input = page.getByRole("combobox", { name: "Interface font" });
+                await input.focus();
+                await input.press("Enter");
+                const current = page.getByRole("option", { name: "Georgia", exact: true });
+                await page.waitForFunction(() => {
+                  const option = document.querySelector(".dezirclip-select__option--is-selected");
+                  const list = option?.closest(".dezirclip-select__menu-list");
+                  if (!list) return false;
+                  const row = option.getBoundingClientRect(), viewport = list.getBoundingClientRect();
+                  return row.top >= viewport.top - 1 && row.bottom <= viewport.bottom + 1;
+                }, undefined, { timeout: 4000 });
+                if (!(await current.evaluate(node => getComputedStyle(node).fontFamily)).includes("Georgia")) {
+                  throw Error("Keyboard opening lost the selected family preview");
+                }
               }
             }
             if (fixture === "preview-text") {
@@ -562,7 +577,7 @@ try {
             } else if (fixture === "search-select" && state !== "default") {
               const input = page.getByRole("combobox", { name: "Images" });
               await input.click();
-              if (state !== "long-options") await input.fill(({ empty: "zzzz0000", typo: "Photo Veiwer" })[state] ?? "viewer");
+              if (state !== "long-options") await input.fill(({ empty: "zzzz0000", typo: "Photo Veiwer", "accented-app": "Cafe Editeur" })[state] ?? "viewer");
               if (state === "long-options") {
                 const field = await page.locator(".dezirclip-select__control").last().boundingBox();
                 const menu = await page.locator(".dezirclip-select__menu").boundingBox();
@@ -573,7 +588,8 @@ try {
               } else if (state === "empty") {
                 await page.getByText("No matching applications", { exact: true }).waitFor();
               } else {
-                await page.getByRole("option", { name: "Photo Viewer", exact: true }).waitFor();
+                const label = state === "accented-app" ? "Café Éditeur" : "Photo Viewer";
+                await page.getByRole("option", { name: label, exact: true }).waitFor();
                 if (await page.getByRole("option", { name: "Archive Manager" }).count()) {
                   throw Error("Unmatched application was still offered");
                 }

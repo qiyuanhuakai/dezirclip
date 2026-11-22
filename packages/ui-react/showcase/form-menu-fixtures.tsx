@@ -311,6 +311,7 @@ export function SearchSelectFixture({ state }: { state: string }) {
     <div className="setting-item column">
       <span className="item-label" style={{ textTransform: "uppercase", fontSize: "11px", opacity: 0.8 }}>{appLabel}</span>
       <ThemedSelect options={[{ value: "", label: fallback },
+        ...(state === "accented-app" ? [{ value: "/example/Café/Éditeur", label: "Café Éditeur" }] : []),
         ...(narrow ? [{ value: "/example/long", label: "Example Windows application with a very long display name for editing and browsing images" }] : []),
         ...(code ? [
           { value: "C:/Apps/CodeEditor.exe", label: "Code Editor (C:/Apps/CodeEditor.exe)" },

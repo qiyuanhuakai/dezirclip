@@ -494,6 +494,14 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 		}
 		return nil
 	}
+	if g.fixture == "font-select" && g.state == "keyboard-long" {
+		tester.Key(0, ui.KeyTab)
+		tester.Key(0, ui.KeyEnter)
+		row, ok := tester.Find("Example family 29")
+		if !ok || row.H <= 0 || row.Y+row.H > 420 {
+			return fmt.Errorf("the keyboard did not reveal the current font's part of the menu")
+		}
+	}
 	if g.fixture == "font-select" && g.state == "open" {
 		value, ok := tester.Find("Georgia")
 		if !ok {
@@ -537,12 +545,14 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 				return fmt.Errorf("no-results notice did not appear")
 			}
 		} else {
-			query := "viewer"
+			query, label := "viewer", "Photo Viewer"
 			if g.state == "typo" {
 				query = "Photo Veiwer"
+			} else if g.state == "accented-app" {
+				query, label = "Cafe Editeur", "Café Éditeur"
 			}
 			tester.Type(query)
-			if _, found := tester.Find("Photo Viewer"); !found {
+			if _, found := tester.Find(label); !found {
 				return fmt.Errorf("filtered application did not appear")
 			}
 		}

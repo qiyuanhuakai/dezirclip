@@ -1,6 +1,6 @@
-import { useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import Select from "react-select";
-import type { FilterOptionOption, SingleValue } from "react-select";
+import type { FilterOptionOption, SelectInstance, SingleValue } from "react-select";
 import { FuzzyIndex } from "../fuzzy";
 
 export interface ThemedSelectOption {
@@ -38,6 +38,22 @@ const ThemedSelect = ({
   onActivate,
 }: ThemedSelectProps) => {
   const selected = options.find((option) => option.value === value) ?? null;
+  const control = useRef<SelectInstance<ThemedSelectOption, false>>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+    const frame = requestAnimationFrame(() => {
+      if (control.current?.inputRef?.value) return;
+      const list = control.current?.menuListRef;
+      const choice = list?.querySelector('[role="option"][aria-selected="true"]');
+      if (!list || !choice) return;
+      const row = choice.getBoundingClientRect(), viewport = list.getBoundingClientRect();
+      if (row.top < viewport.top) list.scrollTop += row.top - viewport.top;
+      else if (row.bottom > viewport.bottom) list.scrollTop += row.bottom - viewport.bottom;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [menuOpen]);
 
   const index = useMemo(
     () =>
@@ -47,6 +63,7 @@ const ThemedSelect = ({
           { name: "value", weight: 1 }
         ],
         threshold: 0.4,
+        ignoreDiacritics: true,
         minMatchCharLength: 1
       }),
     [options]
@@ -78,6 +95,7 @@ const ThemedSelect = ({
       onFocus={onActivate}
     >
       <Select
+        ref={control}
         aria-label={ariaLabel}
         inputId={inputId}
         classNamePrefix="dezirclip-select"
@@ -92,6 +110,14 @@ const ThemedSelect = ({
         menuPortalTarget={document.body}
         menuPosition="fixed"
         filterOption={filterOption}
+        onMenuOpen={() => setMenuOpen(true)}
+        onMenuClose={() => setMenuOpen(false)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing && !isDisabled && !menuOpen) {
+            event.preventDefault();
+            control.current?.openMenu("first");
+          }
+        }}
         onChange={(option: SingleValue<ThemedSelectOption>) => {
           if (!option) return;
           void onChange(option.value);

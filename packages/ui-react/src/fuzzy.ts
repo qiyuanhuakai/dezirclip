@@ -15,6 +15,7 @@ export interface FuzzyIndexOptions {
   keys: FuzzyKey[];
   threshold?: number;
   ignoreLocation?: boolean;
+  ignoreDiacritics?: boolean;
   minMatchCharLength?: number;
 }
 
@@ -40,6 +41,7 @@ export class FuzzyIndex<T> {
       keys: this.options.keys,
       threshold: this.options.threshold,
       ignoreLocation: this.options.ignoreLocation,
+      ignoreDiacritics: this.options.ignoreDiacritics,
       minMatchCharLength: this.options.minMatchCharLength,
       includeScore: true,
       includeMatches: true

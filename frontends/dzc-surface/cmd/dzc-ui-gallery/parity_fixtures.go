@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -164,10 +165,21 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 		ui.Column(c).Width(350).Gap(6).Padding(6, 0).Children(func() {
 			kit.SettingsLabel(c, "Interface font")
 			value := "Georgia"
+			georgia := uikit.SelectOption{Value: "Georgia", Label: "Georgia", FontFamily: "Georgia, serif"}
+			courier := uikit.SelectOption{Value: "Courier New", Label: "Courier New", FontFamily: "Courier New, monospace"}
+			options := []uikit.SelectOption{{Label: "Default font"}}
+			if g.state == "keyboard-long" {
+				options = append(options, courier)
+				for i := range 30 {
+					label := fmt.Sprintf("Example family %02d", i)
+					options = append(options, uikit.SelectOption{Value: label, Label: label})
+				}
+				options = append(options, georgia)
+			} else {
+				options = append(options, georgia, courier)
+			}
 			kit.SearchSelect(c, uikit.SearchSelectOptions{Label: "Interface font", Value: &value,
-				Choices: []uikit.SelectOption{{Label: "Default font"},
-					{Value: "Georgia", Label: "Georgia", FontFamily: "Georgia, serif"},
-					{Value: "Courier New", Label: "Courier New", FontFamily: "Courier New, monospace"}}})
+				Choices: options})
 		})
 	case "preview-text":
 		appearance := *c.Theme()
@@ -196,6 +208,9 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			}
 			choices = append(choices, uikit.SelectOption{Value: "/example/photo-viewer", Label: "Photo Viewer"},
 				uikit.SelectOption{Value: "/example/archive", Label: "Archive Manager"})
+			if g.state == "accented-app" {
+				choices = append(choices, uikit.SelectOption{Value: "/example/Café/Éditeur", Label: "Café Éditeur"})
+			}
 		}
 		scope.Children(func() {
 			ui.Column(c).FillWidth().Gap(6).Padding(6, 0).Children(func() {

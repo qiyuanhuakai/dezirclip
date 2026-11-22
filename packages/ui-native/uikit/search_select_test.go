@@ -115,3 +115,44 @@ func TestSearchSelectFiltersByPathAndCommitsOnlyAListedValue(t *testing.T) {
 		t.Fatal("choosing the system default did not clear the path")
 	}
 }
+
+func TestSearchSelectOpensFromTheKeyboardAndShowsTheCommittedChoice(t *testing.T) {
+	selected := "font-27"
+	var options []SelectOption
+	for i := range 30 {
+		options = append(options, SelectOption{Value: fmt.Sprintf("font-%d", i), Label: fmt.Sprintf("Example family %02d", i)})
+	}
+	view := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Width(220).Children(func() {
+			Kit{}.SearchSelect(c, SearchSelectOptions{Label: "Interface font", Value: &selected, Choices: options})
+		})
+	}, 340, 300)
+	view.Key(0, ui.KeyTab)
+	if !view.Focused("Interface font") {
+		t.Fatal("the font selector did not receive keyboard focus")
+	}
+	view.Key(0, ui.KeyEnter)
+	anchor, _ := view.Find("Interface font")
+	// The previous family only appears in the popup, near the choice shown in the field.
+	row, ok := view.Find("Example family 26")
+	if !ok || row.H <= 0 || row.Y < anchor.Y+anchor.H || row.Y+row.H > 300 {
+		t.Fatalf("the current font was not visible in the opened list: %+v, found=%t", row, ok)
+	}
+	view.Key(0, ui.KeyEnter)
+	if selected != "font-27" {
+		t.Fatalf("closing the open list changed the committed choice to %q", selected)
+	}
+	if _, ok := view.Find("Example family 26"); ok {
+		t.Fatal("confirming the displayed choice should close the font list")
+	}
+}
+
+func TestSearchSelectMatchesAccentsWithoutChangingTheStoredPath(t *testing.T) {
+	choices := []SelectOption{
+		{Value: "/apps/other/editor", Label: "Other editor"},
+		{Value: "/apps/Café/Éditeur", Label: "Café Éditeur"},
+	}
+	if got := filterSearchChoices(choices, "Cafe editeur"); len(got) != 1 || got[0] != choices[1] {
+		t.Fatalf("accented application search = %#v", got)
+	}
+}

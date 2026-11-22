@@ -230,11 +230,17 @@ function TagHistoryEntriesFixture() {
 
 function FontPickerFixture() {
   const [selected, setSelected] = useState("Georgia");
+  const georgia = { value: "Georgia", label: "Georgia", fontFamily: "Georgia, serif" };
+  const courier = { value: "Courier New", label: "Courier New", fontFamily: '"Courier New", monospace' };
+  const catalog = Array.from({ length: 30 }, (_, n) => {
+    const label = "Example family " + String(n).padStart(2, "0");
+    return { value: label, label };
+  });
   return <div style={{ width: 350 }} className="setting-item column">
     <span className="item-label">Interface font</span>
     <ThemedSelect value={selected} onChange={setSelected} ariaLabel="Interface font" width="100%" searchable
-      options={[{ value: "", label: "Default font" }, { value: "Georgia", label: "Georgia", fontFamily: "Georgia, serif" },
-        { value: "Courier New", label: "Courier New", fontFamily: '"Courier New", monospace' }]} />
+      options={[{ value: "", label: "Default font" },
+        ...(state === "keyboard-long" ? [courier, ...catalog, georgia] : [georgia, courier])]} />
   </div>;
 }
 
