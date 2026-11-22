@@ -457,8 +457,9 @@ function readStyles(sample) {
     const headingShift = id.startsWith("settingsGroupHeader")
       ? (number(text.paddingTop) - number(text.paddingBottom)) / 2 : 0;
     const marginBottom = number(style.marginBottom);
-    const backdropBlur = id === "backupDialog" ? number(style.backdropFilter.match(/blur\(([^)]+)\)/)?.[1]) : 0;
-    const backdropBlurOpacity = backdropBlur ? Number(style.backdropFilter.match(/opacity\(([^)]+)\)/)?.[1] ?? 1) : 0;
+    const glassFilter = style.backdropFilter.match(/^blur\(([\d.]+)px\) opacity\(([\d.]+)\)$/);
+    const backdropBlur = number(glassFilter?.[1]);
+    const backdropBlurOpacity = number(glassFilter?.[2]);
     const bounds = element.getBoundingClientRect();
     const switchFace = /^settingsSwitch(Left|Right)/.test(id);
     const switchBounds = switchFace ? element.parentElement.getBoundingClientRect() : null;

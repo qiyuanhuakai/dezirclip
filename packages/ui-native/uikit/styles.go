@@ -149,7 +149,15 @@ func paint(element ui.Element, style theme.WidgetStyle) ui.Element {
 	if style.Dashed {
 		element.BorderStyle(ui.BorderDashed)
 	}
-	if gradient := style.Gradient; gradient != nil {
+	if style.BackdropBlur > 0 {
+		strength := float32(1)
+		if style.BackdropBlurOpacity != nil {
+			strength = *style.BackdropBlurOpacity
+		}
+		element.Material(glassMaterial{
+			radius: style.BackdropBlur, strength: strength, tint: styleColor(style.Fill), gradient: style.Gradient,
+		})
+	} else if gradient := style.Gradient; gradient != nil {
 		element.Gradient(styleColor(gradient.From), styleColor(gradient.To), gradient.Angle)
 	}
 	for _, shadow := range style.Shadows {

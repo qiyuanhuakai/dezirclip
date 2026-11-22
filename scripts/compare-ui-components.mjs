@@ -304,7 +304,7 @@ try {
                     return getComputedStyle(document.querySelector("#root")).backdropFilter === "none" &&
                       scrim.backdropFilter === "none" &&
                       scrim.backgroundColor === "rgba(0, 0, 0, 0)" &&
-                      getComputedStyle(dialog).backdropFilter === "blur(1px) opacity(0.13)";
+                      getComputedStyle(dialog).backdropFilter === "blur(0.8px) opacity(0.14)";
                   } finally {
                     document.body.classList.remove("has-custom-bg");
                     root.style.removeProperty("--custom-bg-image");

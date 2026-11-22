@@ -369,9 +369,8 @@
 }
 
 .theme-liquid-glass .data-modal-content {
-  /* Soften the immediate edge of backdrop details without washing out fine strokes. */
-  backdrop-filter: blur(1px) opacity(0.13);
-  -webkit-backdrop-filter: blur(1px) opacity(0.13);
+  backdrop-filter: var(--lg-backdrop-filter);
+  -webkit-backdrop-filter: var(--lg-backdrop-filter);
 }
 
 :is(.theme-macos, .theme-liquid-glass) .data-modal-title {

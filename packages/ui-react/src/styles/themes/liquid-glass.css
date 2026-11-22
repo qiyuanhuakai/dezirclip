@@ -175,18 +175,10 @@ body.theme-liquid-glass {
   --lg-history-action-btn-active-text: #0a84ff;
   --lg-history-action-btn-active-shadow: none;
 
-  /* Dialog / Modal — light mode.
-     `--lg-dialog-bg` is the MATERIAL's tint, not a transparency knob. At 0.52
-     the sheet simply mixed toward grey and inherited whatever hue sat behind
-     it — a yellow wallpaper gave a yellow card, a blue one a blue card — which
-     is the one thing a material is not. The blur plus a high saturate is what
-     is supposed to carry the see-through; the tint only sets the value the text
-     sits on, so it carries enough weight to keep `--text-primary` legible over
-     the darkest backdrop the shell can end up against.
-     `--lg-dialog-blur` is Apple's pairing: a wide blur with a saturate well
-     past 100%, so refracted colour comes through more vivid instead of washing
-     out. 180% is the value that kept the backdrop's hue recognisable here. */
-  --lg-dialog-blur: blur(30px) saturate(180%);
+  /* Mix a lightly softened sample into the original backdrop.
+     Keep the backdrop's text and fine edges visible through the glass. */
+  --lg-backdrop-filter: blur(0.8px) opacity(0.14);
+  --compact-btn-backdrop: var(--lg-backdrop-filter);
   --lg-dialog-bg:
     linear-gradient(rgba(255, 255, 255, 0.50), rgba(255, 255, 255, 0.50)),
     rgba(255, 255, 255, calc(0.28 * var(--surface-layer-scale, 1)));
@@ -253,7 +245,6 @@ body.theme-liquid-glass {
     linear-gradient(rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.62)),
     rgba(255, 255, 255, calc(0.26 * var(--surface-layer-scale, 1)));
   --lg-float-border: rgba(60, 60, 67, 0.10);
-  --lg-float-blur: blur(24px) saturate(170%);
   --lg-float-shadow:
     0 8px 28px rgba(20, 30, 60, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.70),
@@ -448,7 +439,6 @@ body.dark-mode.theme-liquid-glass {
   /* Dialog / Modal — dark. Same material as light mode, inverted: the tint
      holds the value up rather than down, so it needs more of it, and the
      specular rim inverts with it (bright top edge, darker underside). */
-  --lg-dialog-blur: blur(30px) saturate(180%);
   --lg-dialog-bg:
     linear-gradient(rgba(38, 41, 52, 0.42), rgba(38, 41, 52, 0.42)),
     rgba(38, 41, 52, calc(0.34 * var(--surface-layer-scale, 1)));
@@ -498,7 +488,6 @@ body.dark-mode.theme-liquid-glass {
     linear-gradient(rgba(35, 38, 48, 0.72), rgba(35, 38, 48, 0.72)),
     rgba(35, 38, 48, calc(0.28 * var(--surface-layer-scale, 1)));
   --lg-float-border: rgba(255, 255, 255, 0.07);
-  --lg-float-blur: blur(24px) saturate(170%);
   --lg-float-shadow:
     0 8px 28px rgba(0, 0, 0, 0.32),
     inset 0 1px 0 rgba(255, 255, 255, 0.10),
@@ -559,16 +548,6 @@ body.has-custom-bg.theme-liquid-glass::before {
   pointer-events: none;
   border-radius: var(--radius-window);
   clip-path: inset(0 round var(--radius-window));
-}
-
-/* Keep the wallpaper sharp through the window and its ordinary controls.
-   Backup sheets still apply their own local frost. */
-body.has-custom-bg.theme-liquid-glass #root,
-body.has-custom-bg.theme-liquid-glass #root :where(:not(.data-modal-content)),
-body.has-custom-bg.theme-liquid-glass #root *::before,
-body.has-custom-bg.theme-liquid-glass #root *::after {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
 }
 
 /* ============================================================
@@ -645,8 +624,8 @@ body.theme-liquid-glass:not(.hide-app-border) {
 .theme-liquid-glass header {
   background: var(--glass-header-bg) !important;
   border-bottom: 1px solid var(--border-dark) !important;
-  backdrop-filter: blur(16px) saturate(130%);
-  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  backdrop-filter: var(--lg-backdrop-filter);
+  -webkit-backdrop-filter: var(--lg-backdrop-filter);
   box-shadow:
     inset 0 1px 0 var(--glass-edge-top),
     inset 0 -1px 0 var(--glass-edge-bottom) !important;
@@ -866,8 +845,8 @@ body.theme-liquid-glass:not(.hide-app-border) {
 .theme-liquid-glass .dezirclip-select__menu {
   border-radius: 10px !important;
   overflow: hidden !important;
-  backdrop-filter: blur(22px) saturate(140%);
-  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  backdrop-filter: var(--lg-backdrop-filter);
+  -webkit-backdrop-filter: var(--lg-backdrop-filter);
 }
 
 .theme-liquid-glass .dezirclip-select__menu-list {
@@ -1220,6 +1199,9 @@ body.theme-liquid-glass:not(.hide-app-border) {
    full-window blur pass per open dialog. */
 .theme-liquid-glass .modal-overlay {
   background: rgba(0, 0, 0, 0.18) !important;
+}
+
+.theme-liquid-glass :is(.modal-overlay, .qr-dialog-overlay) {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
@@ -1231,8 +1213,8 @@ body.theme-liquid-glass:not(.hide-app-border) {
   border-radius: 16px !important;
   box-shadow: var(--lg-dialog-shadow) !important;
   padding: 20px 22px !important;
-  backdrop-filter: var(--lg-dialog-blur);
-  -webkit-backdrop-filter: var(--lg-dialog-blur);
+  backdrop-filter: var(--lg-backdrop-filter);
+  -webkit-backdrop-filter: var(--lg-backdrop-filter);
 }
 
 .theme-liquid-glass .confirm-dialog-title {
@@ -1316,8 +1298,8 @@ body.theme-liquid-glass:not(.hide-app-border) {
   background: var(--lg-dialog-bg) !important;
   box-shadow: var(--lg-dialog-shadow) !important;
   padding: 18px !important;
-  backdrop-filter: var(--lg-dialog-blur);
-  -webkit-backdrop-filter: var(--lg-dialog-blur);
+  backdrop-filter: var(--lg-backdrop-filter);
+  -webkit-backdrop-filter: var(--lg-backdrop-filter);
 }
 
 .theme-liquid-glass .app-selector-modal .modal-title {
@@ -1472,8 +1454,8 @@ body.dark-mode .theme-liquid-glass .confirm-dialog {
   border: 1px solid var(--lg-dialog-border) !important;
   box-shadow: var(--lg-dialog-shadow) !important;
   color: var(--text-primary) !important;
-  backdrop-filter: var(--lg-dialog-blur) !important;
-  -webkit-backdrop-filter: var(--lg-dialog-blur) !important;
+  backdrop-filter: var(--lg-backdrop-filter) !important;
+  -webkit-backdrop-filter: var(--lg-backdrop-filter) !important;
 }
 
 body.dark-mode.theme-liquid-glass .confirm-dialog-title,
@@ -1538,19 +1520,8 @@ body.dark-mode.theme-liquid-glass .confirm-dialog-button.primary {
 /* ============================================================
    21. Context menu — floating glass chrome
 
-   This was labelled "opaque glass to avoid transparency bleed", and the label
-   was accurate about the effect: at 0.95 alpha the blur underneath is almost
-   entirely masked, so the menu paid for a backdrop-filter it could not see
-   through. A menu is floating chrome — Apple classes menus with tab bars and
-   toolbars, and reserves lensing for exactly those — so the blur is what it
-   should be showing, not what it was hiding behind.
-
-   Readability is the constraint, not opacity. There is no scrim behind a menu,
-   the text is the smallest in the app, and the menu can open past the window
-   edge onto the wallpaper. So the material keeps a higher floor than the
-   dialog's, and `--lg-menu-bg` is a floor plus a slider-driven tint rather
-   than one alpha. Verified across the slider's whole travel and over both
-   extremes; see the numbers in the commit message.
+   The translucent tint keeps menu labels readable over both light and dark
+   backgrounds. The local filter adds slight softness while preserving detail.
 
    Menu and submenu are separate: the submenu renders through a portal, so
    neither samples the other's glass.
@@ -1558,13 +1529,8 @@ body.dark-mode.theme-liquid-glass .confirm-dialog-button.primary {
 .theme-liquid-glass .item-context-menu,
 .theme-liquid-glass .item-context-menu__submenu {
   background: var(--lg-menu-bg) !important;
-  /* Blur radius stays at the 20px the rule already used: the blur pass was
-     already being paid for at 0.95 alpha, so this change makes it *visible*
-     without making it more expensive. Only saturate moves, and that is a colour
-     matrix rather than a kernel — it is what turns a now-visible blur into
-     Apple's vibrant tint rather than a grey wash. */
-  backdrop-filter: blur(20px) saturate(170%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(170%) !important;
+  backdrop-filter: var(--lg-backdrop-filter) !important;
+  -webkit-backdrop-filter: var(--lg-backdrop-filter) !important;
   border: 1px solid rgba(60, 60, 67, 0.12) !important;
   box-shadow:
     0 8px 32px rgba(20, 30, 60, 0.18),
@@ -1639,8 +1605,8 @@ body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item--active {
   border: 1px solid var(--lg-dialog-border) !important;
   border-radius: 16px !important;
   box-shadow: var(--lg-dialog-shadow) !important;
-  backdrop-filter: var(--lg-dialog-blur);
-  -webkit-backdrop-filter: var(--lg-dialog-blur);
+  backdrop-filter: var(--lg-backdrop-filter);
+  -webkit-backdrop-filter: var(--lg-backdrop-filter);
 }
 
 .theme-liquid-glass .qr-dialog__image {
@@ -1701,8 +1667,8 @@ body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item--active {
   border: 1px solid var(--lg-dialog-border) !important;
   border-radius: 16px !important;
   box-shadow: var(--lg-dialog-shadow) !important;
-  backdrop-filter: var(--lg-dialog-blur);
-  -webkit-backdrop-filter: var(--lg-dialog-blur);
+  backdrop-filter: var(--lg-backdrop-filter);
+  -webkit-backdrop-filter: var(--lg-backdrop-filter);
 }
 
 .theme-liquid-glass .announcement-header {
@@ -1773,8 +1739,8 @@ body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item--active {
   border-bottom: 1px solid var(--lg-float-border) !important;
   border-radius: 12px !important;
   box-shadow: var(--lg-float-shadow) !important;
-  backdrop-filter: var(--lg-float-blur);
-  -webkit-backdrop-filter: var(--lg-float-blur);
+  backdrop-filter: var(--lg-backdrop-filter);
+  -webkit-backdrop-filter: var(--lg-backdrop-filter);
 }
 
 /* --- Segmented control: a pill track with a lifted active segment --- */
@@ -1816,8 +1782,8 @@ body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item--active {
   border: 1px solid var(--lg-float-border) !important;
   border-radius: 14px !important;
   box-shadow: var(--lg-float-shadow) !important;
-  backdrop-filter: var(--lg-float-blur);
-  -webkit-backdrop-filter: var(--lg-float-blur);
+  backdrop-filter: var(--lg-backdrop-filter);
+  -webkit-backdrop-filter: var(--lg-backdrop-filter);
 }
 
 .theme-liquid-glass .progress-toast {
@@ -1825,8 +1791,8 @@ body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item--active {
   border: 1px solid var(--lg-float-border) !important;
   border-radius: 14px !important;
   box-shadow: var(--lg-float-shadow) !important;
-  backdrop-filter: var(--lg-float-blur);
-  -webkit-backdrop-filter: var(--lg-float-blur);
+  backdrop-filter: var(--lg-backdrop-filter);
+  -webkit-backdrop-filter: var(--lg-backdrop-filter);
 }
 
 .theme-liquid-glass .progress-toast--error {
@@ -1860,8 +1826,8 @@ body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item--active {
   border: 1px solid var(--lg-float-border) !important;
   border-radius: 14px !important;
   box-shadow: var(--lg-float-shadow) !important;
-  backdrop-filter: var(--lg-float-blur);
-  -webkit-backdrop-filter: var(--lg-float-blur);
+  backdrop-filter: var(--lg-backdrop-filter);
+  -webkit-backdrop-filter: var(--lg-backdrop-filter);
 }
 
 /* --- Search-history dropdown: same menu material as the tags dropdown --- */
@@ -1872,8 +1838,8 @@ body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item--active {
   box-shadow:
     0 12px 36px rgba(20, 30, 60, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.32) !important;
-  backdrop-filter: blur(22px) saturate(140%);
-  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  backdrop-filter: var(--lg-backdrop-filter);
+  -webkit-backdrop-filter: var(--lg-backdrop-filter);
 }
 
 .theme-liquid-glass .search-history__item:hover {

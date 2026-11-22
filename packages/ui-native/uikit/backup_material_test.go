@@ -19,11 +19,11 @@ func TestBackupGlassSoftensOnlyTheAreaCoveredByTheDialog(t *testing.T) {
 func verifyBackupGlassStrokes(t *testing.T, tint [4]uint8) {
 	t.Helper()
 	open := false
-	blurOpacity := float32(0.13)
+	blurOpacity := float32(0.14)
 	kit := Kit{widgets: map[string]theme.WidgetStyle{
 		"backupBackdrop": {Opacity: 1},
 		"backupDialog": {
-			Width: 220, Radius: 16, BackdropBlur: 1, BackdropBlurOpacity: &blurOpacity,
+			Width: 220, Radius: 16, BackdropBlur: 0.8, BackdropBlurOpacity: &blurOpacity,
 			Opacity: 1, Fill: tint,
 		},
 	}}

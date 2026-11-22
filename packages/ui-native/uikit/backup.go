@@ -1,31 +1,6 @@
 package uikit
 
-import (
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/shader"
-)
-
-var backupBackdropBlur = shader.MustCompile(`package main
-var Strength float
-
-func Fragment(dst vec4, pos vec2) vec4 {
-	return backdropSample(pos) * Strength
-}
-`)
-
-type backupSheetMaterial struct {
-	radius, strength float32
-	tint             ui.Color
-}
-
-func (material backupSheetMaterial) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
-	backupBackdropBlur.Draw(p, box, shader.Options{
-		Radius:       radii[0],
-		BackdropBlur: material.radius,
-		Uniforms:     map[string]any{"Strength": material.strength},
-	})
-	p.Fill(box, material.tint, radii[0])
-}
+import "github.com/egoist/mygo/ui"
 
 func (k Kit) BackupDialog(c *ui.Context, open *bool, title string, busy bool, body, footer func()) {
 	style := k.style("backupDialog")
@@ -33,13 +8,6 @@ func (k Kit) BackupDialog(c *ui.Context, open *bool, title string, busy bool, bo
 		backdrop.Background(styleColor(k.style("backupBackdrop").Fill))
 		width, height := c.Size()
 		paint(panel.Label(title).Width(min(style.Width, max(0, width-40))), style)
-		if style.BackdropBlur > 0 {
-			strength := float32(1)
-			if style.BackdropBlurOpacity != nil {
-				strength = *style.BackdropBlurOpacity
-			}
-			panel.Material(backupSheetMaterial{radius: style.BackdropBlur, strength: strength, tint: styleColor(style.Fill)})
-		}
 		if busy && panel.Dismissed() {
 			*open = true
 		}
