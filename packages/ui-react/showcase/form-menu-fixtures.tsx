@@ -43,7 +43,7 @@ const items: Record<string, string[]> = {
 };
 
 export function ContextMenuFixture({ state }: { state: string }) {
-  const [active, setActive] = useState("");
+  const [active, setActive] = useState(menuItems[0]);
   const [submenuTop, setSubmenuTop] = useState(0);
   return <div className="showcase-fields">
     <div data-menu-anchor>Clipboard entry</div>

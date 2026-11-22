@@ -60,3 +60,80 @@ func TestContextMenuKeepsSubmenuInSameSurface(t *testing.T) {
 		t.Fatalf("a lower root item was inaccessible with the submenu open: selected=%d, %v", selected, err)
 	}
 }
+
+func TestContextPrivacyActionsAreReachableByKeyboard(t *testing.T) {
+	var menu ContextMenu
+	var selected []string
+	view := ui.NewTester(func(c *ui.Context) {
+		kit := Kit{}
+		anchor := kit.Button(c, ButtonOptions{Label: "Clipboard entry"}).Absolute().Right(9).Bottom(9).AutoFocus()
+		if anchor.RightClicked() {
+			menu.Open(anchor, func() []MenuAction {
+				return []MenuAction{
+					{Label: "Copy"},
+					{Label: "Not available", Disabled: true},
+					{Label: "Privacy", Children: []MenuAction{
+						{Label: "Keep this entry"},
+						{Label: "Protected action", Disabled: true},
+						{Label: "Ignore this source"},
+						{Label: "Protect this source"},
+						{Label: "Manage privacy rules", Run: func() { selected = append(selected, "rules") }},
+					}},
+					{Label: "Delete", Run: func() { selected = append(selected, "delete") }},
+				}
+			})
+		}
+		kit.ContextMenu(c, &menu, "Close menu")
+	}, 260, 125)
+
+	openPrivacy := func() {
+		t.Helper()
+		if err := view.RightClick("Clipboard entry"); err != nil {
+			t.Fatal(err)
+		}
+		view.Key(0, ui.KeyDown)
+		if !view.Focused("Privacy") {
+			t.Fatal("Down did not skip the disabled root action")
+		}
+		view.Key(0, ui.KeyRight)
+		if !view.Focused("Keep this entry") {
+			t.Fatal("Right did not open the privacy submenu at its first action")
+		}
+	}
+
+	openPrivacy()
+	view.Key(0, ui.KeyDown)
+	if !view.Focused("Ignore this source") {
+		t.Fatal("Down did not skip the disabled privacy action")
+	}
+	view.Key(0, ui.KeyUp)
+	view.Key(0, ui.KeyUp)
+	bounds, visible := view.Find("Manage privacy rules")
+	if !view.Focused("Manage privacy rules") || !visible || bounds.Y < 6 || bounds.Y+bounds.H > 119 {
+		t.Fatalf("wrapping to the last action did not scroll it into view: %+v", bounds)
+	}
+	view.Key(0, ui.KeyEnter)
+	if menu.Active() || len(selected) != 1 || selected[0] != "rules" {
+		t.Fatalf("Enter did not dispatch the highlighted submenu action once: %v", selected)
+	}
+
+	openPrivacy()
+	view.Key(0, ui.KeyLeft)
+	if view.HasText("Keep this entry") || !view.Focused("Privacy") {
+		t.Fatal("Left did not close the submenu and return focus to its parent")
+	}
+	view.Key(0, ui.KeyDown)
+	if !view.Focused("Delete") {
+		t.Fatal("the lower root action was not reachable after closing the submenu")
+	}
+	view.Key(0, ui.KeyEnter)
+	if menu.Active() || len(selected) != 2 || selected[1] != "delete" {
+		t.Fatalf("Enter did not dispatch the highlighted root action once: %v", selected)
+	}
+
+	openPrivacy()
+	view.Key(0, ui.KeyEscape)
+	if menu.Active() || !view.Focused("Clipboard entry") || len(selected) != 2 {
+		t.Fatalf("Escape did not dismiss the entire menu and restore focus: open=%t anchor focused=%t actions=%v", menu.Active(), view.Focused("Clipboard entry"), selected)
+	}
+}

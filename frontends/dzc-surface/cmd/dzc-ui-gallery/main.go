@@ -483,7 +483,16 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 			if !ok {
 				return fmt.Errorf("submenu trigger absent: %s", label)
 			}
-			tester.Move(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
+			if g.state == "privacy" {
+				tester.Key(0, ui.KeyDown)
+				tester.Key(0, ui.KeyDown)
+				tester.Key(0, ui.KeyRight)
+				if !tester.Focused("Ignore this source") {
+					return fmt.Errorf("keyboard did not focus the first privacy action")
+				}
+			} else {
+				tester.Move(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
+			}
 			if later, _ := tester.Find("Delete"); previous != later {
 				return fmt.Errorf("opening a submenu moved the following root item")
 			}
