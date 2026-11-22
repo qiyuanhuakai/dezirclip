@@ -185,6 +185,7 @@ const ClipboardItem = ({
     compactMode,
     className,
     disableLayout,
+    hideActions,
     onQRCode,
     onTransformItem,
     onTransformItemError,
@@ -197,6 +198,7 @@ const ClipboardItem = ({
     previewContent?: HistoryPreviewContent;
     compactMode?: boolean;
     className?: string;
+    hideActions?: boolean;
     onQRCode?: () => void;
     onTransformItem?: (kind: string) => void;
     onTransformItemError?: (kind: string, message: string) => void;
@@ -959,7 +961,7 @@ const ClipboardItem = ({
                     )}
                 sourceIcon={<>{item.is_pinned && !dragControls && <Pin size={10} style={{ color: 'var(--accent-color)', marginRight: '-2px' }} />}
                         {renderSourceAppIcon(sourceAppIcon, item.content_type, item.source_app)}</>}
-                actions={<>{onEdit && !isSensitiveHidden && (item.content_type === "text" || item.content_type === "code") && (
+                actions={!hideActions && <>{onEdit && !isSensitiveHidden && (item.content_type === "text" || item.content_type === "code") && (
                             <HistoryCardAction title={t('common_edit')} onClick={(event) => {
                                 event.stopPropagation();
                                 onEdit();

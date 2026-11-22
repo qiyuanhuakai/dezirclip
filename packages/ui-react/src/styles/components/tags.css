@@ -116,7 +116,6 @@
 }
 .tag-history-row-content { flex: 1; min-width: 0; }
 .tag-history-row--managing .tag-history-row-content { pointer-events: none; }
-.tag-history-row--managing .history-item .item-meta .item-actions { display: none !important; }
 .tag-manager .tag-manager-picker-trigger { flex: 1; width: auto; min-width: 0; height: 27px; padding: 3px 6px; justify-content: flex-start; text-align: left; }
 .tag-manager-picker-trigger > span { flex: 1; }
 .tag-manager-picker.item-context-menu { position: absolute; top: calc(100% + 3px); left: 3px; right: 7px; min-width: 0; max-height: none; overflow: hidden; padding: 7px; text-align: left; }
@@ -141,7 +140,7 @@
 .tag-manager .tag-manager-clear { position: absolute; right: 11px; top: 4px; width: 23px; height: 23px; }
 .tag-manager-results { min-height: 0; min-width: 0; overflow: hidden; }
 .tag-history-row { padding: 0 7px 4px 3px; }
-.tag-history-row .tag-history-row-content .history-item { width: 100%; margin-left: 0 !important; margin-right: 0 !important; }
+.tag-history-row .tag-history-row-content .history-item { --history-card-inline-margin: 0px; width: 100%; margin-inline: var(--history-card-inline-margin); }
 .tag-manager-menu.item-context-menu { position: absolute; top: calc(100% + 3px); right: 6px; left: auto; max-height: min(240px, calc(100vh - 100px)); overflow-y: auto; }
 .tag-manager-menu > button { width: 100%; border: 0; font: inherit; text-align: left; }
 .tag-manager-menu > button:hover:not(:disabled), .tag-manager-menu > button:focus-visible { background: var(--select-option-focused-bg, var(--bg-hover)); }

@@ -263,7 +263,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
             previewState={needsResource ? resource?.phase ?? 'loading' : undefined}
             previewContent={resourcePreview ?? undefined}
             tagInput={tagInput} theme={theme} language={language} t={t} tagColors={tagColors}
-            compactMode={compactMode} richTextSnapshotPreview={richTextSnapshotPreview} disableLayout
+            compactMode={compactMode} richTextSnapshotPreview={richTextSnapshotPreview} hideActions={managementMode} disableLayout
             onSelect={() => { if (!managing.current) onSelect(item.id); }} onCopy={copy}
             onToggleReveal={toggleReveal}
             onOpen={event => {

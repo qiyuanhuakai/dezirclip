@@ -228,7 +228,7 @@ body:not(.compact-mode) .theme-acrylic .item-actions .btn-icon {
   box-shadow: none !important;
   background: var(--modern-history-bg) !important;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  margin: 0 8px 2px 8px !important;
+  margin: 0 var(--history-card-inline-margin, 8px) 2px !important;
   padding: 8px 12px 6px 12px !important;
   /* Added from original */
   transform: none !important;

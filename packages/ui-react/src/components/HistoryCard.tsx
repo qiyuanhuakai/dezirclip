@@ -98,7 +98,7 @@ export function HistoryCardMeta({ source, sourceIcon, leading, actions, status, 
       <div className="app-info">{sourceIcon}<span>{source}</span></div>
     </div>
     <div className="history-card-meta-right" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-      <HistoryCardActions>{actions}</HistoryCardActions>
+      {actions && <HistoryCardActions>{actions}</HistoryCardActions>}
       <div className="app-info" style={{ opacity: 0.6, fontSize: "10px", display: "flex", gap: "6px", alignItems: "center" }}>
         {status}<span>{time}</span>
       </div>
