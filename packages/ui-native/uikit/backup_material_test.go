@@ -8,13 +8,23 @@ import (
 )
 
 func TestBackupGlassSoftensOnlyTheAreaCoveredByTheDialog(t *testing.T) {
+	t.Run("light", func(t *testing.T) {
+		verifyBackupGlassStrokes(t, [4]uint8{255, 255, 255, 69})
+	})
+	t.Run("dark", func(t *testing.T) {
+		verifyBackupGlassStrokes(t, [4]uint8{16, 18, 24, 84})
+	})
+}
+
+func verifyBackupGlassStrokes(t *testing.T, tint [4]uint8) {
+	t.Helper()
 	open := false
-	blurOpacity := float32(0.24)
+	blurOpacity := float32(0.13)
 	kit := Kit{widgets: map[string]theme.WidgetStyle{
 		"backupBackdrop": {Opacity: 1},
 		"backupDialog": {
-			Width: 220, Radius: 16, BackdropBlur: 2.5, BackdropBlurOpacity: &blurOpacity,
-			Opacity: 1, Fill: [4]uint8{255, 255, 255, 84},
+			Width: 220, Radius: 16, BackdropBlur: 1, BackdropBlurOpacity: &blurOpacity,
+			Opacity: 1, Fill: tint,
 		},
 	}}
 	view := ui.NewTester(func(c *ui.Context) {
@@ -46,8 +56,8 @@ func TestBackupGlassSoftensOnlyTheAreaCoveredByTheDialog(t *testing.T) {
 	dark, bright := int(withDialog.RGBAAt(210, 140).R), int(withDialog.RGBAAt(165, 140).R)
 	single := int(withDialog.RGBAAt(158, 140).R)
 	contrast := float64(bright - dark)
-	if contrast < 145 || float64(bright-single) < 0.74*contrast || float64(bright-stroke) < 0.78*contrast ||
-		float64(bright-edge) < 0.02*contrast || float64(bright-edge) > 0.16*contrast {
+	if contrast < 158 || float64(bright-single) < 0.90*contrast || float64(bright-stroke) < 0.93*contrast ||
+		float64(bright-edge) < 0.015*contrast || float64(bright-edge) > 0.075*contrast {
 		t.Errorf("glass should retain narrow strokes with softened edges: single=%d, double=%d, edge=%d, dark=%d, light=%d", single, stroke, edge, dark, bright)
 	}
 }

@@ -189,9 +189,9 @@ async function verifyGlassStrokes(page, panel) {
     }, screenshot.toString("base64"));
     const [outside, [bright, edge, single, double, dark]] = samples;
     const range = bright - dark;
-    if (outside.join() !== "255,255,0,0,0" || range < 130
-      || (bright - edge) / range < 0.02 || (bright - edge) / range > 0.16
-      || (bright - single) / range < 0.74 || (bright - double) / range < 0.78) {
+    if (outside.join() !== "255,255,0,0,0" || range < 145
+      || (bright - edge) / range < 0.015 || (bright - edge) / range > 0.075
+      || (bright - single) / range < 0.90 || (bright - double) / range < 0.93) {
       throw Error("The glass must retain narrow backdrop strokes, soften their edges, and leave pixels outside untouched: " + JSON.stringify(samples));
     }
   } finally {
@@ -304,7 +304,7 @@ try {
                     return getComputedStyle(document.querySelector("#root")).backdropFilter === "none" &&
                       scrim.backdropFilter === "none" &&
                       scrim.backgroundColor === "rgba(0, 0, 0, 0)" &&
-                      getComputedStyle(dialog).backdropFilter === "blur(2.5px) opacity(0.24)";
+                      getComputedStyle(dialog).backdropFilter === "blur(1px) opacity(0.13)";
                   } finally {
                     document.body.classList.remove("has-custom-bg");
                     root.style.removeProperty("--custom-bg-image");

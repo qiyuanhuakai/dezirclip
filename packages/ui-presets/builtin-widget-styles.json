@@ -37509,12 +37509,12 @@
         "opacity": 1
       },
       "backupDialog": {
-        "fill": [255, 255, 255, 84],
+        "fill": [255, 255, 255, 69],
         "text": [17, 18, 23, 255],
         "border": [58, 58, 66, 31],
         "borderWidth": 1,
-        "backdropBlur": 2.5,
-        "backdropBlurOpacity": 0.24,
+        "backdropBlur": 1,
+        "backdropBlurOpacity": 0.13,
         "radius": 16,
         "width": 500,
         "height": 237,
@@ -37537,20 +37537,20 @@
           }
         ],
         "fillRange": {
-          "clear": [255, 255, 255, 77],
-          "full": [255, 255, 255, 88],
+          "clear": [255, 255, 255, 61],
+          "full": [255, 255, 255, 73],
           "stops": [
             {
               "percent": 0,
-              "rgba": [255, 255, 255, 77]
+              "rgba": [255, 255, 255, 61]
             },
             {
               "percent": 65,
-              "rgba": [255, 255, 255, 84]
+              "rgba": [255, 255, 255, 69]
             },
             {
               "percent": 100,
-              "rgba": [255, 255, 255, 88]
+              "rgba": [255, 255, 255, 73]
             }
           ]
         }
@@ -46363,12 +46363,12 @@
         "opacity": 1
       },
       "backupDialog": {
-        "fill": [15, 17, 25, 102],
+        "fill": [15, 18, 24, 84],
         "text": [249, 250, 255, 255],
         "border": [255, 255, 255, 20],
         "borderWidth": 1,
-        "backdropBlur": 2.5,
-        "backdropBlurOpacity": 0.24,
+        "backdropBlur": 1,
+        "backdropBlurOpacity": 0.13,
         "radius": 16,
         "width": 500,
         "height": 237,
@@ -46391,20 +46391,20 @@
           }
         ],
         "fillRange": {
-          "clear": [16, 19, 24, 94],
-          "full": [17, 17, 24, 106],
+          "clear": [17, 17, 23, 77],
+          "full": [17, 17, 23, 88],
           "stops": [
             {
               "percent": 0,
-              "rgba": [16, 19, 24, 94]
+              "rgba": [17, 17, 23, 77]
             },
             {
               "percent": 65,
-              "rgba": [15, 17, 25, 102]
+              "rgba": [15, 18, 24, 84]
             },
             {
               "percent": 100,
-              "rgba": [17, 17, 24, 106]
+              "rgba": [17, 17, 23, 88]
             }
           ]
         }
