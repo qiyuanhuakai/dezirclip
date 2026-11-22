@@ -59,7 +59,7 @@ const cases = {
   "history-list": { states: ["default", "selected"], text: "Release checklist and verification notes" },
   "history-typography": { states: ["default", "small", "large", "compact", "compact-large", "custom", "token", "compact-token"], text: "Font sample: Wm12" },
   "history-preview-status": { states: ["default", "compact"], text: "No text preview available" },
-  "history-rich-text": { states: ["default", "compact"], text: "Release checklist" },
+  "history-rich-text": { states: ["default", "compact", "code", "code-compact", "code-inline", "code-custom"], text: "Release checklist" },
   "settings-rail": { states: ["default", "selected", "long-label"], text: "Appearance" },
   "settings-footer": { states: ["default", "compact"], text: "Reset defaults" },
   "history-card": { states: ["default", "selected", "pinned", "action-hover", "active", "active-hover", "action-pressed",
@@ -958,14 +958,36 @@ try {
             }
             if (fixture === "history-rich-text") {
               const content = page.locator(".history-rich-preview");
-              const cap = state === "compact" ? 40 : 64;
-              if (await content.evaluate(element => element.clientHeight) !== cap) throw Error("Rich text preview does not use the card height limit");
+              const isCode = state.startsWith("code");
+              const cap = state === "compact" || state === "code-compact" ? 40 : 64;
+              if (!isCode && await content.evaluate(element => element.clientHeight) !== cap) {
+                throw Error("Rich text preview does not use the card height limit");
+              }
+              if (isCode) {
+                const code = content.locator(state === "code-inline" ? "code" : "pre");
+                const typography = await code.evaluate(element => {
+                  const style = getComputedStyle(element);
+                  const probe = document.createElement("span");
+                  probe.style.fontFamily = "var(--font-mono)";
+                  element.closest(".history-rich-preview").appendChild(probe);
+                  const expectedFont = getComputedStyle(probe).fontFamily;
+                  probe.remove();
+                  return { font: style.fontFamily, expectedFont, line: parseFloat(style.lineHeight),
+                    size: parseFloat(style.fontSize), height: element.offsetHeight };
+                });
+                if (typography.font !== typography.expectedFont || typography.size !== 13) {
+                  throw Error("Rich code did not use its theme or saved monospace font at the item size: " + JSON.stringify(typography));
+                }
+                if (state !== "code-inline" && Math.abs(typography.height - 3 * typography.line) > 1) {
+                  throw Error("The blank code line did not retain its height: " + JSON.stringify(typography));
+                }
+              }
               const webCard = await page.locator("[data-test-clipboard-item]").boundingBox();
               const nativeCard = inspection.Cards["Formatted clipboard card"];
               if (!webCard || !nativeCard || Math.abs(webCard.height - nativeCard.H) > 2) {
                 throw Error(`Rich text card height differs: WebView ${webCard?.height}, Native ${nativeCard?.H}`);
               }
-              if (!comparable(nativeText, "Review notes") || !comparable(nativeText, "open the draft.")) {
+              if (!isCode && (!comparable(nativeText, "Review notes") || !comparable(nativeText, "open the draft."))) {
                 throw Error("Native rich text is missing the second paragraph");
               }
             }

@@ -92,6 +92,8 @@ const figures = [
   ["history-typography", "custom", 292, 0, "history-typography-custom"],
   ["history-rich-text", "default", 150, 0, "history-rich-text"],
   ["history-rich-text", "compact", 112, 0, "history-rich-text-compact"],
+  ["history-rich-text", "code-custom", 150, 0, "history-rich-code"],
+  ["history-rich-text", "code-compact", 112, 0, "history-rich-code-compact"],
   ["history-card-meta", "default", 90],
   ["search-bar", "filled", 110],
   ["search-history", "default", 135],

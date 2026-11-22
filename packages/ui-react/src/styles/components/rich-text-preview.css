@@ -26,6 +26,16 @@
   margin-top: 0;
 }
 
+.history-rich-preview :is(code, pre, kbd, samp, tt) {
+  font-family: var(--font-mono);
+  font-size: inherit;
+}
+
+.history-rich-preview pre {
+  margin: 0;
+  line-height: inherit;
+}
+
 .rich-text-preview table {
   border-collapse: collapse;
   width: 100%;

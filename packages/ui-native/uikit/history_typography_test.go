@@ -115,3 +115,28 @@ func TestCompactHistoryPinKeepsTextWidthAndHeight(t *testing.T) {
 		t.Fatal("the pin marker intercepted activation")
 	}
 }
+
+func TestRichHistoryCodeKeepsBlankLineHeight(t *testing.T) {
+	kit := Kit{widgets: map[string]theme.WidgetStyle{
+		"historyRichContent": {Size: 13, LineHeight: 1.4, MaxHeight: 64, Opacity: 1},
+		"historyCode":        {Font: "monospace", UsesMonoFont: true},
+	}}.WithMonospaceFont("Courier New")
+	if got := kit.style("historyCode").Font; got != "Courier New" {
+		t.Fatalf("code font = %q", got)
+	}
+	height := func(markup string) float32 {
+		card := HistoryCardOptions{Summary: "Code card", Rich: ParseHistoryRichText(markup), Width: 320}
+		view := ui.NewTester(func(c *ui.Context) { kit.HistoryCard(c, card) }, 320, 240)
+		bounds, ok := view.Find(card.Summary)
+		if !ok {
+			t.Fatal("rich code card is missing")
+		}
+		return bounds.H
+	}
+	const lineHeight = 13 * 1.4
+	withoutBlank := height("<pre>first command\nsecond command</pre>")
+	withBlank := height("<pre>first command\n\nsecond command</pre>")
+	if delta := withBlank - withoutBlank; delta < lineHeight-1 || delta > lineHeight+1 {
+		t.Fatalf("code blank line added %.2f pixels, want %.2f", delta, lineHeight)
+	}
+}

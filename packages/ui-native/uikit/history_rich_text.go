@@ -85,10 +85,7 @@ func (k Kit) historyRichText(c *ui.Context, options HistoryCardOptions, width fl
 	if options.TextSize > 0 {
 		style.Size = options.TextSize
 	}
-	mono := k.monospaceFont
-	if mono == "" {
-		mono = "monospace"
-	}
+	mono := k.style("historyCode").Font
 	paint(ui.Column(c).FillWidth().MinWidth(0).MaxHeight(style.MaxHeight).Clip().PassThrough(), style).
 		Margin(style.MarginTop, 0, style.MarginBottom).Effect(historyRichFade).Children(func() {
 		number := 0
@@ -102,12 +99,21 @@ func (k Kit) historyRichText(c *ui.Context, options HistoryCardOptions, width fl
 				number = 0
 			}
 			spans := richParagraphPrefix(paragraph.Style, number)
+			if paragraph.Style.CodeBlock && len(paragraph.Runs) == 0 {
+				// Empty lines inside preformatted text still occupy one line.
+				spans = []ui.Span{{Text: "\u00a0", Font: mono}}
+			}
 			draw := func() {
 				if len(spans) == 0 {
 					return
 				}
 				row := styledText(ui.RichText(c, spans...), style).FillWidth().MinWidth(0).
-					Wrap().TextAlign(paragraph.Style.Align).PassThrough()
+					TextAlign(paragraph.Style.Align).PassThrough()
+				if paragraph.Style.CodeBlock {
+					row.NoWrap()
+				} else {
+					row.Wrap()
+				}
 				if paragraph.Style.Heading > 0 {
 					row.FontWeight(700).Margin(2, 0)
 				}

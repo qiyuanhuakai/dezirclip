@@ -121,15 +121,25 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 	case "history-preview-status":
 		g.historyPreviewStatusFixture(c, kit)
 	case "history-rich-text":
-		kit.HistoryCard(c, uikit.HistoryCardOptions{
-			Source: "Editor", Time: "12:30", Summary: "Formatted clipboard card",
-			Actions: []uikit.HeaderAction{{Icon: "pin", Label: "Pin"}, {Icon: "tag", Label: "Tags"}, {Icon: "hide", Label: "Delete"}},
-			Compact: g.state == "compact",
-			Rich: uikit.ParseHistoryRichText(`<p><strong>Release checklist</strong> <em>from the editor</em></p>
+		html := `<p><strong>Release checklist</strong> <em>from the editor</em></p>
 <p><u>Review notes</u> and <a href="#details">open the draft.</a></p>
 <p>Check the Windows and Linux packages.</p>
 <p>Ask for feedback after the preview.</p>
-<p>Keep the original file with the notes.</p>`),
+<p>Keep the original file with the notes.</p>`
+		if strings.HasPrefix(g.state, "code") {
+			html = "<pre>Release checklist\n\nverify preview packages</pre>"
+		}
+		if g.state == "code-inline" {
+			html = `<p><strong>Release checklist</strong> <code>pnpm run build</code></p>`
+		}
+		if g.state == "code-custom" {
+			kit = kit.WithInterfaceFont("Georgia").WithMonospaceFont("Courier New")
+		}
+		kit.HistoryCard(c, uikit.HistoryCardOptions{
+			Source: "Editor", Time: "12:30", Summary: "Formatted clipboard card",
+			Actions: []uikit.HeaderAction{{Icon: "pin", Label: "Pin"}, {Icon: "tag", Label: "Tags"}, {Icon: "hide", Label: "Delete"}},
+			Compact: g.state == "compact" || g.state == "code-compact",
+			Rich:    uikit.ParseHistoryRichText(html),
 		})
 	case "backup-dialog":
 		g.backupDialogFixture(c, kit)

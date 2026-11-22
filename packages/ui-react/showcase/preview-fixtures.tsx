@@ -81,8 +81,13 @@ export function HistoryOCRFixture({ state }: { state: string }) {
 }
 
 export function HistoryRichTextFixture({ state }: { state: string }) {
-  const compact = state === "compact";
-  return <HistoryCard compact={compact} disableLayout>
+  const compact = state === "compact" || state === "code-compact";
+  const isCode = state.startsWith("code");
+  const fonts = state === "code-custom" ? {
+    "--font-main": '"Georgia", serif',
+    "--font-mono": '"Courier New", monospace',
+  } as React.CSSProperties : undefined;
+  return <HistoryCard compact={compact} style={fonts} disableLayout>
     <HistoryCardMeta source="Editor" time="12:30" actions={<>
       <HistoryCardAction title="Pin"><Pin size={12} /></HistoryCardAction>
       <HistoryCardAction title="Tags"><Tag size={12} /></HistoryCardAction>
@@ -91,11 +96,15 @@ export function HistoryRichTextFixture({ state }: { state: string }) {
     <HistoryCardContent rich>
       <HistoryRichTextPreview compact={compact}>
         <div className="rich-text-preview">
-          <p><strong>Release checklist</strong> <em>from the editor</em></p>
-          <p><u>Review notes</u> and <a href="#details" tabIndex={-1}>open the draft.</a></p>
-          <p>Check the Windows and Linux packages.</p>
-          <p>Ask for feedback after the preview.</p>
-          <p>Keep the original file with the notes.</p>
+          {state === "code-inline" ? <p><strong>Release checklist</strong> <code>pnpm run build</code></p>
+            : isCode ? <pre>{"Release checklist\n\nverify preview packages"}</pre>
+            : <>
+              <p><strong>Release checklist</strong> <em>from the editor</em></p>
+              <p><u>Review notes</u> and <a href="#details" tabIndex={-1}>open the draft.</a></p>
+              <p>Check the Windows and Linux packages.</p>
+              <p>Ask for feedback after the preview.</p>
+              <p>Keep the original file with the notes.</p>
+            </>}
         </div>
       </HistoryRichTextPreview>
     </HistoryCardContent>

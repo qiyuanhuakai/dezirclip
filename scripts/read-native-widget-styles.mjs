@@ -230,6 +230,7 @@ const samples = [
   }],
   ["history-rich-text", "default", { historyRichContent: [".history-rich-preview"] }],
   ["history-rich-text", "compact", { historyRichContentCompact: [".history-rich-preview"] }],
+  ["history-rich-text", "code", { historyCode: [".history-rich-preview pre"] }],
   ["history-ocr", "expanded", {
     historyOCRBadgeDone: [".ocr-badge"], historyOCRSection: [".ocr-text-section"],
     historyOCRButton: [".ocr-text-toggle"], historyOCRContent: [".ocr-text-content"],
@@ -410,7 +411,7 @@ function readStyles(sample) {
     const text = label ? getComputedStyle(document.querySelector(label)) : style;
     const historyContent = id === "historyContent" || id === "historyContentCompact";
     let usesMonoFont = false;
-    if (historyContent) {
+    if (historyContent || id === "historyCode") {
       const roots = [document.documentElement.style, document.body.style];
       const saved = roots.map(root => [root.getPropertyValue("--font-mono"), root.getPropertyPriority("--font-mono")]);
       try {
@@ -486,6 +487,7 @@ function readStyles(sample) {
         ...(number(style.maxHeight) ? { maxHeight: number(style.maxHeight) } : {}),
         ...(usesMonoFont ? { usesMonoFont } : {}),
       } : {}),
+      ...(id === "historyCode" ? { usesMonoFont } : {}),
       ...(id.startsWith("historyRichContent") ? { maxHeight: number(style.maxHeight) } : {}),
       ...(id === "historyOCRContent" ? { maxHeight: number(style.maxHeight), usesMonoFont: true } : {}),
       ...(/^(backupInput|settingsDataPath)(Focus|Hover)?$/.test(id) ? { usesMonoFont: true } : {}),

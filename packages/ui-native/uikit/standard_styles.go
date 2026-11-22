@@ -595,6 +595,8 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		} else if widget == "historyCardCompact" {
 			style.Height, style.Padding = 44, [4]float32{4, 8, 4, 8}
 		}
+	case "historyCode":
+		style.Font, style.UsesMonoFont = "monospace", true
 	case "historyMeta":
 		style.Height = 22
 	case "tagHeading":
