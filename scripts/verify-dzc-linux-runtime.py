@@ -18,7 +18,8 @@ def verify(archive, version=None):
     script = r'''
 set -eu
 if command -v dnf >/dev/null 2>&1; then
-    dnf install -y python39 dbus-libs libgcc >/dev/null
+    . /source/scripts/compat/almalinux8-repositories.sh
+    almalinux_dnf install -y python39 dbus-libs libgcc >/dev/null
     python=python3.9
 else
     apt-get update -qq

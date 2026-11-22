@@ -1166,6 +1166,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } 'Quick Paste opened from the native main window but did not dismiss'
         Write-Host 'Verified Quick Paste from the native main window'
         if ($installer) {
+            $null = $resident.Handle
+            $null = $main.Handle
             $guide = Join-Path (Split-Path $exe) 'skills/dzc-cli/SKILL.md'
             $guideHash = (Get-FileHash -LiteralPath $guide).Hash
             Add-Content -LiteralPath $guide -Value 'Synthetic pre-update package marker'
@@ -1177,7 +1179,9 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             if ((Get-FileHash -LiteralPath $guide).Hash -eq $guideHash) { throw 'Installer replaced files before the resident exited' }
             Invoke-ResidentTrayExit $resident
             $null = Wait-Until { $resident.HasExited -and $main.HasExited } 'Original desktop did not exit for the update'
-            if ($resident.ExitCode -ne 0 -or $main.ExitCode -ne 0) { throw 'Original desktop failed to close cleanly for the update' }
+            if ($resident.ExitCode -ne 0 -or $main.ExitCode -ne 0) {
+                throw "Original desktop failed to close cleanly for the update (resident=$($resident.ExitCode), main=$($main.ExitCode))"
+            }
             if (!$update.WaitForExit(30000) -or $update.ExitCode -ne 0) { throw 'Silent installer handoff failed' }
             $resident = Wait-Until {
                 Get-DesktopProcesses @($update.Id) -Since $updateStarted | Where-Object {
