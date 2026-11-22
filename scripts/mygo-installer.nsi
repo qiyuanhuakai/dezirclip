@@ -67,11 +67,24 @@ Var UpdateParent
 
 !macro Unlocked FILE
   ${If} ${FileExists} "$INSTDIR\${FILE}"
-  System::Call 'kernel32::CreateFileW(w "$INSTDIR\${FILE}", i 0xC0000000, i 0, p 0, i 3, i 0, p 0) p.r0'
-  ${If} $0 == -1
-    !insertmacro UpdateFailure 2 "Close DezirClip MyGo, its background Service and CLI before continuing."
-  ${EndIf}
-  System::Call 'kernel32::CloseHandle(p r0)'
+    StrCpy $R5 0
+    ${Do}
+      System::Call 'kernel32::CreateFileW(w "$INSTDIR\${FILE}", i 0xC0000000, i 0, p 0, i 3, i 0, p 0) p.r0 ?e'
+      Pop $R6
+      ${If} $0 != -1
+        System::Call 'kernel32::CloseHandle(p r0)'
+        ${ExitDo}
+      ${EndIf}
+      ${If} $R5 >= 20
+        !insertmacro UpdateFailure 2 "Could not access ${FILE} (Windows error $R6). Close DezirClip MyGo and its background Service and CLI."
+      ${EndIf}
+      ${If} $R6 != 32
+      ${AndIf} $R6 != 33
+        !insertmacro UpdateFailure 2 "Could not access ${FILE} (Windows error $R6). Check that you have permission to update the installation."
+      ${EndIf}
+      IntOp $R5 $R5 + 1
+      Sleep 100
+    ${Loop}
   ${EndIf}
 !macroend
 
