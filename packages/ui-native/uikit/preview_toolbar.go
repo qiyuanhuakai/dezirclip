@@ -31,7 +31,7 @@ func (k Kit) PreviewToolbar(c *ui.Context, options PreviewToolbarOptions) ui.Ele
 	width, _ := c.Size()
 	stackZoom := options.Image != nil && width <= 420
 	drawRow := func() {
-		title := ui.Row(c).MinWidth(20).Shrink(1).Gap(6).AlignItems(ui.Center).AlignSelf(ui.Stretch).Clip()
+		title := ui.Row(c).MinWidth(20).Grow(1).Shrink(1).Gap(6).AlignItems(ui.Center).AlignSelf(ui.Stretch).Clip()
 		if options.Pinned {
 			title.DragWindow().Tooltip(options.DragLabel)
 		}
@@ -40,14 +40,12 @@ func (k Kit) PreviewToolbar(c *ui.Context, options PreviewToolbarOptions) ui.Ele
 			ui.Icon(c, previewGrip).Size(14, 14).TextColor(c.Theme().TextMuted).PassThrough()
 			text(c, options.Title, style).SingleLine().MinWidth(0).Shrink(1).PassThrough()
 		})
-		ui.Row(c).Grow(1).MinWidth(0).Gap(6).AlignItems(ui.Center).Justify(ui.End).Children(func() {
-			if options.Opacity != nil {
-				k.previewOpacity(c, options)
-			}
-			if options.Image != nil && !stackZoom {
-				k.previewZoom(c, options.Image, options.ImageLabels)
-			}
-		})
+		if options.Opacity != nil {
+			k.previewOpacity(c, options)
+		}
+		if options.Image != nil && !stackZoom {
+			k.previewZoom(c, options.Image, options.ImageLabels)
+		}
 		ui.Row(c).Shrink(0).Gap(6).AlignItems(ui.Center).Children(func() {
 			label, run := options.PinLabel, options.OnPin
 			if options.Pinned {
@@ -134,7 +132,7 @@ func (k Kit) previewOpacity(c *ui.Context, options PreviewToolbarOptions) {
 }
 
 func (k Kit) previewZoom(c *ui.Context, image *PreviewImage, labels ImageZoomLabels) {
-	ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Shrink(0).Gap(4).AlignItems(ui.Center).Children(func() {
 		scale, fitted := image.Zoom()
 		if scale == 0 {
 			// Use the WebView's initial scale until the viewport is measured.

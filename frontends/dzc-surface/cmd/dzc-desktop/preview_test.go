@@ -260,6 +260,12 @@ func TestPinnedPreviewSharesToolbarWithWorkingOpacityAndZoom(t *testing.T) {
 					t.Fatalf("%s is clipped in the toolbar at width %d: %+v", label, width, box)
 				}
 			}
+			actual, _ := view.Find("Actual size")
+			closeButton, _ := view.Find("Close preview")
+			if actual.Y < closeButton.Y+closeButton.H && closeButton.Y < actual.Y+actual.H &&
+				actual.X < closeButton.X+closeButton.W && closeButton.X < actual.X+actual.W {
+				t.Fatalf("Actual size and Close preview overlap at width %d: %+v and %+v", width, actual, closeButton)
+			}
 			if err := view.Click("Actual size"); err != nil {
 				t.Fatal(err)
 			}
