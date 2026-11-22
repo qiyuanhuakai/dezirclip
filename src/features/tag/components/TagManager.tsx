@@ -9,7 +9,7 @@ import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } 
 import { isSensitiveEntry } from '../../../shared/lib/privacyRuntime';
 import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
 import { useTagLibrary } from '../hooks/useTagLibrary';
-import { TagDialog } from './TagDialog';
+import { TagConfirmation, TagDialog } from "@deziro/ui-react/components/TagDialog";
 import { TagHistoryRow } from './TagHistoryRow';
 import { useSettingsLayout } from '../../settings/hooks/useSettingsLayout';
 import { emptyTagSelection, MAX_TAG_BATCH_IDS, selectAllTagEntries, tagEntrySelected, tagSelectionCount, toggleTagEntry, type TagBatchSelection } from '../utils/tagBatchSelection';
@@ -483,7 +483,12 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
             {(batchFeedback || actionError) && <div className="tag-manager-notice" role={batchFeedback && !batchFeedback.error ? 'status' : 'alert'}>{batchFeedback?.message ?? t('tag_action_failed')}
                 <button type="button" className="btn-icon" aria-label={t('common_close')} onClick={() => { setActionError(false); setBatchFeedback(null); }}><X size={13} /></button></div>}
         </section>
-        {dialog && <TagDialog title={dialogTitle} closeLabel={t('common_close')} busy={busy} onClose={closeDialog}
+        {dialog && (dialog.kind === 'deleteItem' || dialog.kind === 'deleteSelection'
+            ? <TagConfirmation title={dialogTitle} closeLabel={t('common_close')} busy={busy} onClose={closeDialog}
+                message={dialog.kind === 'deleteItem' ? t('confirm_delete_desc') : t(dialog.selection.mode === 'all' ? 'tag_batch_delete_all_confirm' : 'tag_batch_delete_confirm')
+                    .replace('{count}', String(dialog.count)).replace('{tag}', dialog.tag)}
+                error={dialogError} cancelLabel={t('cancel')} confirmLabel={t('common_delete')} onConfirm={() => void saveDialog()} />
+            : <TagDialog title={dialogTitle} closeLabel={t('common_close')} busy={busy} onClose={closeDialog}
             wide={isTextDialog} initialFocus={isNameDialog ? tagNameInput : isTextDialog ? tagTextInput : undefined}>
             <form onSubmit={event => { event.preventDefault(); void saveDialog(); }}>
                 {isNameDialog && <label className="tag-manager-field"><span>{t('tag_name')}</span><input ref={tagNameInput} className="search-input" value={value} maxLength={80} readOnly={busy} onChange={event => setValue(event.target.value)} /></label>}
@@ -495,19 +500,16 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     <p className="privacy-manual-hint">{t(dialog.kind === 'editItem' ? 'privacy_manual_edit_hint' : 'privacy_manual_hint')}</p>
                 </>}
                 {dialog.kind === 'removeTag' && <p className="confirm-dialog-message">{t(destructiveTag ? 'tag_sensitive_delete_hint' : 'tag_remove_hint')}</p>}
-                {dialog.kind === 'deleteItem' && <p className="confirm-dialog-message">{t('confirm_delete_desc')}</p>}
-                {dialog.kind === 'deleteSelection' && <p className="confirm-dialog-message">{t(dialog.selection.mode === 'all' ? 'tag_batch_delete_all_confirm' : 'tag_batch_delete_confirm')
-                    .replace('{count}', String(dialog.count)).replace('{tag}', dialog.tag)}</p>}
                 {dialogError && <p className="tag-manager-dialog-error" role="alert">{dialogError}</p>}
                 <div className="confirm-dialog-buttons">
                     <button type="button" className="confirm-dialog-button" disabled={busy} onClick={closeDialog}>{t('cancel')}</button>
                     <button type="submit" className="confirm-dialog-button primary" disabled={busy || ((isNameDialog || isTextDialog) && !value.trim())
                         || (isTextDialog && (privacy.phase !== 'ready' || (privacyActive && !confirmPersistence)))}>
-                        {t(dialog.kind === 'deleteItem' || dialog.kind === 'deleteSelection' || destructiveTag ? 'common_delete' : dialog.kind === 'removeTag' ? 'tag_remove' : dialog.kind === 'createTag' ? 'tag_create' : 'common_save')}
+                        {t(destructiveTag ? 'common_delete' : dialog.kind === 'removeTag' ? 'tag_remove' : dialog.kind === 'createTag' ? 'tag_create' : 'common_save')}
                     </button>
                 </div>
             </form>
-        </TagDialog>}
+        </TagDialog>)}
         {qrEntry && <Suspense fallback={null}><QrCodeDialog entry={qrEntry} onClose={() => setQrEntry(null)} /></Suspense>}
     </div>;
 }

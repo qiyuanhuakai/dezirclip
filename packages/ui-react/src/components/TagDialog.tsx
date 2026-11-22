@@ -11,6 +11,27 @@ export interface TagDialogProps {
     initialFocus?: RefObject<HTMLElement | null>;
 }
 
+export interface TagConfirmationProps extends Pick<TagDialogProps, 'title' | 'closeLabel' | 'busy' | 'onClose'> {
+    message: string;
+    cancelLabel: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+    error?: string | null;
+}
+
+export function TagConfirmation({ message, cancelLabel, confirmLabel, onConfirm, error, ...dialog }: TagConfirmationProps) {
+    return <TagDialog {...dialog}>
+        <form onSubmit={event => { event.preventDefault(); if (!dialog.busy) onConfirm(); }}>
+            <p className="confirm-dialog-message">{message}</p>
+            {error && <p className="tag-manager-dialog-error" role="alert">{error}</p>}
+            <div className="confirm-dialog-buttons">
+                <button type="button" className="confirm-dialog-button" disabled={dialog.busy} onClick={dialog.onClose}>{cancelLabel}</button>
+                <button type="submit" className="confirm-dialog-button primary" disabled={dialog.busy}>{confirmLabel}</button>
+            </div>
+        </form>
+    </TagDialog>;
+}
+
 export function TagDialog({ title, closeLabel, busy, onClose, children, wide = false, initialFocus }: TagDialogProps) {
     const dialog = useRef<HTMLDialogElement>(null);
     const titleId = useId();

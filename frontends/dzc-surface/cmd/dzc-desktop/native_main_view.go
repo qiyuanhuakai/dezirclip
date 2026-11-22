@@ -174,6 +174,9 @@ func (n *nativeMain) view(c *ui.Context) {
 		n.tagEditorView(c, kit, n.tags)
 	}
 	if tags := n.tagLibrary; tags != nil {
+		if tags.entryDelete != nil {
+			n.tagEntryDeleteDialog(c, kit, tags)
+		}
 		if tags.dialog != nil {
 			n.tagLibraryDialog(c, kit, tags)
 		}
@@ -276,7 +279,7 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 				uikit.HeaderAction{Icon: "tag", Label: n.text("native_edit_tags"), Active: len(row.Tags) != 0, Disabled: !n.canOpenHistoryDialog(),
 					Run: func() { n.editTags(row, generation) }},
 				uikit.HeaderAction{Icon: "hide", Label: n.text("delete", "Delete entry"), Disabled: n.mutating,
-					Run: func() { n.rowAction(row, generation, nativeDelete) }},
+					Run: func() { n.requestRowDeletion(row, generation) }},
 			)
 			if batch != nil {
 				focus := n.focusList && cell.Index == n.history.selected

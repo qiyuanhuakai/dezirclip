@@ -488,7 +488,7 @@ func (n *nativeMain) removePrivacyRule(id string) {
 				n.privacyRules.actionFailed = true
 				return
 			}
-			n.reloadViewSettings()
+			n.prepare(n.resume)
 			n.notice = n.text("privacy_feedback_done")
 		})
 	}()

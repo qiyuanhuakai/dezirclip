@@ -4,7 +4,7 @@ import { Pin, Tag, X } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import { AppHeader, CharacterPanel, CharacterSearch, ClipboardSearch, ConfirmDialog, EmojiGrid, EmojiTabs, FilterChips, HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryCardTag, HistoryCardTags, HistoryPreviewPlaceholder, HotkeyBinding, MatchHighlight,
   PreviewText, ProgressToast, QuickPastePanel, QuickPasteRow, QuickPasteSearch, ScrollToTopButton, SearchBar, SearchHistory, SettingHelp, SettingsDisclosure, SettingsFooter, SettingsRail, SettingsSectionCard,
-  SettingsSlider, SettingsToggle, SettingsToggleField, TagDialog, TagHistoryEntry, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
+  SettingsSlider, SettingsToggle, SettingsToggleField, TagConfirmation, TagDialog, TagHistoryEntry, ThemedSelect, ToastContainer, VirtualClipboardList, type EmojiTab, type SearchMode } from "../src";
 import { isBuiltinTheme, loadBuiltinTheme } from "../src/themes";
 import { nativeUiPalette } from "../src/native-appearance";
 import { BackgroundSettingsFixture, ThemeManagerFixture } from "./appearance-fixtures";
@@ -379,10 +379,13 @@ function Showcase() {
     toast: <ToastContainer toasts={toastVisible ? [{ id: 1, msg: "Copied to clipboard" }] : []} />,
     confirm: <ConfirmDialog open={opened} title="Clear history" message="Clear all unpinned entries?"
       themeClass={"theme-" + theme} confirmLabel="Clear" cancelLabel="Cancel" onConfirm={() => setOpened(false)} onClose={() => setOpened(false)} />,
-    "tag-dialog": opened && <TagDialog title="Create tag" closeLabel="Close" busy={state === "busy"}
+    "tag-dialog": opened && (state === "delete-entry" || state === "delete-busy" ?
+      <TagConfirmation title="Delete this entry?" message="Are you sure you want to delete this record?" closeLabel="Close"
+        cancelLabel="Cancel" confirmLabel="Delete" busy={state === "delete-busy"}
+        onClose={() => setOpened(false)} onConfirm={() => setOpened(false)} /> : <TagDialog title="Create tag" closeLabel="Close" busy={state === "busy"}
       initialFocus={tagName} onClose={() => setOpened(false)}><form><label className="tag-manager-field">
         <span>Name</span><input ref={tagName} className="search-input" maxLength={80} readOnly={state === "busy"} defaultValue="Work" />
-      </label></form></TagDialog>,
+      </label></form></TagDialog>),
   };
 
   if (fixture in examples) {

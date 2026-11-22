@@ -103,6 +103,7 @@ const figures = [
   ["help", "expanded", 105],
   ["confirm", "default", 285, 65],
   ["tag-dialog", "default", 285, 65],
+  ["tag-dialog", "delete-entry", 285, 65, "tag-entry-delete"],
   ["toast", "default", 130],
   ["progress", "default", 140],
   ["attachment-preview", "media", 180],

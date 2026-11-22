@@ -56,6 +56,9 @@ func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, act
 	n.mutating, n.notice = true, ""
 	n.closePreview()
 	session, state, preferences := n.session, n.history.state, n.preferences
+	fromTagLibrary := n.tagLibrary != nil
+	deleteAfterPaste := !fromTagLibrary && preferences["app.delete_after_paste"] == "true"
+
 	timeout := 4 * time.Second
 	if action == nativeOpen {
 		timeout = nativeExternalApplicationTimeout
@@ -63,7 +66,7 @@ func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, act
 	go func() {
 		ctx, cancel := context.WithTimeout(session, timeout)
 		defer cancel()
-		pasted, notice, err := n.runRowAction(ctx, row, state, preferences, action, reveal)
+		pasted, notice, err := n.runRowAction(ctx, row, state, preferences, action, reveal, deleteAfterPaste)
 		n.update(session, func() {
 			n.mutating = false
 			if err != nil {
@@ -72,7 +75,9 @@ func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, act
 			}
 			n.notice = notice
 			if pasted {
-				n.query = ""
+				if !fromTagLibrary {
+					n.query = ""
+				}
 				if !n.pinned {
 					n.shell.hideMain(n.window)
 				}
@@ -107,7 +112,7 @@ func (n *nativeMain) dropFiles(paths []string) {
 	}()
 }
 
-func (n *nativeMain) runRowAction(ctx context.Context, row protocol.DesktopEntry, state protocol.RuntimeState, preferences map[string]string, action nativeRowAction, reveal bool) (bool, string, error) {
+func (n *nativeMain) runRowAction(ctx context.Context, row protocol.DesktopEntry, state protocol.RuntimeState, preferences map[string]string, action nativeRowAction, reveal, deleteAfterPaste bool) (bool, string, error) {
 	switch action {
 	case nativeOpen:
 		err := n.library.OpenEntry(ctx, protocol.ExternalOpenParams{
@@ -125,11 +130,11 @@ func (n *nativeMain) runRowAction(ctx context.Context, row protocol.DesktopEntry
 		_, err := n.library.MutateEntry(ctx, params)
 		return false, "", err
 	default:
-		return n.transferRow(ctx, row.Id, state, preferences, action, reveal)
+		return n.transferRow(ctx, row.Id, state, preferences, action, reveal, deleteAfterPaste)
 	}
 }
 
-func (n *nativeMain) transferRow(ctx context.Context, id int64, state protocol.RuntimeState, preferences map[string]string, action nativeRowAction, reveal bool) (bool, string, error) {
+func (n *nativeMain) transferRow(ctx context.Context, id int64, state protocol.RuntimeState, preferences map[string]string, action nativeRowAction, reveal, deleteAfterPaste bool) (bool, string, error) {
 	params := protocol.DesktopCopyParams{Id: id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Reveal: reveal}
 	if action == nativePaste || action == nativeRichPaste {
 		paste, err := n.canAutoPaste(ctx)
@@ -147,8 +152,7 @@ func (n *nativeMain) transferRow(ctx context.Context, id int64, state protocol.R
 		params.ImageAsBase64 = &base64
 	}
 	if params.Paste {
-		deleteAfterUse := preferences["app.delete_after_paste"] == "true"
-		params.DeleteAfterUse = &deleteAfterUse
+		params.DeleteAfterUse = &deleteAfterPaste
 	}
 	outcome, err := n.actions.CopyEntry(ctx, params)
 	if err != nil {

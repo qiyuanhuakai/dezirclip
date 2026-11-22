@@ -602,6 +602,9 @@ func run() error {
 									native.openSettings()
 								case "search":
 									native.showSettings, native.showEmoji, native.focusSearch = false, false, true
+									if native.tagLibrary != nil {
+										native.closeTagLibrary()
+									}
 								}
 							}
 							shell.requestShow(win)

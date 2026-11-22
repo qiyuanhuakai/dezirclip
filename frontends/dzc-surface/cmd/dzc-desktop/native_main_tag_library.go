@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
@@ -15,6 +16,7 @@ type nativeTagLibrary struct {
 	selected, query, sort, nameQuery string
 	railCollapsed, focusRailSearch   bool
 	dialog                           *nativeTagDialog
+	entryDelete                      *nativeTagEntryDeletion
 	batch                            nativeTagBatch
 	reveal                           map[nativeCardKey]bool
 	revealGeneration                 uint64
@@ -23,6 +25,12 @@ type nativeTagLibrary struct {
 type nativeTagDialog struct {
 	action, tag, value, message string
 	open, focus                 bool
+}
+
+type nativeTagEntryDeletion struct {
+	row        protocol.DesktopEntry
+	generation uint64
+	open       bool
 }
 
 func (n *nativeMain) historyQuery() string {
@@ -34,7 +42,7 @@ func (n *nativeMain) historyQuery() string {
 
 func (n *nativeMain) hasHistoryDialog() bool {
 	return n.tags != nil || n.editor != nil || n.qr != nil || n.privacyDialog != nil ||
-		n.tagLibrary != nil && (n.tagLibrary.dialog != nil || n.tagLibrary.batch.pending != nil)
+		n.tagLibrary != nil && (n.tagLibrary.dialog != nil || n.tagLibrary.entryDelete != nil || n.tagLibrary.batch.pending != nil)
 }
 
 func (n *nativeMain) openTagLibrary() {
@@ -252,6 +260,43 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 		}
 		ui.Text(c, label).TextColor(c.Theme().TextMuted).Padding(8)
 	}
+}
+
+func (n *nativeMain) requestRowDeletion(row protocol.DesktopEntry, generation uint64) {
+	tags := n.tagLibrary
+	if tags == nil {
+		n.rowAction(row, generation, nativeDelete)
+		return
+	}
+	if row.Id == 0 || !n.canOpenHistoryDialog() || n.history.generation != generation || tags.batch.enabled {
+		return
+	}
+	n.resetPreviewSelection()
+	tags.entryDelete = &nativeTagEntryDeletion{row: row, generation: generation, open: true}
+}
+
+func (n *nativeMain) tagEntryDeleteDialog(c *ui.Context, kit uikit.Kit, tags *nativeTagLibrary) {
+	dialog := tags.entryDelete
+	kit.TagConfirmation(c, &dialog.open, uikit.TagConfirmationOptions{
+		Title: n.text("confirm_delete"), Message: n.text("confirm_delete_desc"),
+		CloseLabel: n.text("common_close"), CancelLabel: n.text("common_cancel"), ConfirmLabel: n.text("common_delete"),
+		Busy: n.mutating, Confirm: func() { n.confirmTagEntryDelete(tags, dialog) },
+	})
+	if !dialog.open {
+		tags.entryDelete = nil
+	}
+}
+
+func (n *nativeMain) confirmTagEntryDelete(tags *nativeTagLibrary, dialog *nativeTagEntryDeletion) {
+	if n.tagLibrary != tags || tags.entryDelete != dialog || n.mutating {
+		return
+	}
+	dialog.open = false
+	if dialog.generation != n.history.generation {
+		n.notice = n.text("tag_selection_changed")
+		return
+	}
+	n.rowAction(dialog.row, dialog.generation, nativeDelete)
 }
 
 func (n *nativeMain) startTagDialog(tags *nativeTagLibrary, action string) {

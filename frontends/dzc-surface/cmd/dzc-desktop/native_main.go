@@ -152,7 +152,14 @@ func (n *nativeMain) stopSession() {
 	}
 	n.queueCount = nativeQueueCount{}
 	n.privacyRules = nativePrivacyRules{}
-	n.tagLibrary = nil
+	if tags := n.tagLibrary; tags != nil {
+		// Navigation outlives a hidden window, while confirmations, selection
+		// and revealed contents are bound to the retired session.
+		n.tagLibrary = &nativeTagLibrary{
+			selected: tags.selected, query: tags.query, sort: tags.sort, nameQuery: tags.nameQuery,
+			railCollapsed: tags.railCollapsed,
+		}
+	}
 	n.tagCatalog = nativeTagCatalog{}
 	n.tagSuggestions = nativeTagSuggestions{}
 	n.fileGesture = nativeFileGesture{}
@@ -173,19 +180,6 @@ func (n *nativeMain) prepare(request uint64) {
 	n.session, n.stop, n.resume = session, cancel, request
 	n.reading = true
 	go n.open(session)
-}
-
-func (n *nativeMain) reloadViewSettings() {
-	tags := n.tagLibrary
-	n.prepare(n.resume)
-	if tags != nil && n.tagLibrary == nil {
-		// Keep the navigation after the settings refresh. Dialogs, batch
-		// selections and revealed contents belong to the retired session.
-		n.tagLibrary = &nativeTagLibrary{
-			selected: tags.selected, query: tags.query, sort: tags.sort, nameQuery: tags.nameQuery,
-			railCollapsed: tags.railCollapsed,
-		}
-	}
 }
 
 func (n *nativeMain) open(session context.Context) {
@@ -417,7 +411,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 					n.appearanceSync = true
 					continue
 				}
-				n.reloadViewSettings()
+				n.prepare(n.resume)
 				return
 			case "application_settings_reset":
 				n.prepare(n.resume)
@@ -552,7 +546,7 @@ func (n *nativeMain) writeSettingWithResult(timeout time.Duration, write func(co
 				n.notice = n.text("native_setting_save_failed")
 				return
 			}
-			n.reloadViewSettings()
+			n.prepare(n.resume)
 		})
 	}()
 }

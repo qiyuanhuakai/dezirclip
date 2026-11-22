@@ -7,7 +7,7 @@ export { default as ThemedSelect, type ThemedSelectOption, type ThemedSelectProp
 export { FilterChips, type FilterChipsProps } from "./components/FilterChips";
 export { SearchBar, type SearchBarProps, type SearchMode } from "./components/SearchBar";
 export { SearchHistory, type SearchHistoryProps } from "./components/SearchHistory";
-export { TagDialog, type TagDialogProps } from "./components/TagDialog";
+export { TagConfirmation, TagDialog, type TagConfirmationProps, type TagDialogProps } from "./components/TagDialog";
 export { default as ToastContainer, type ToastItem } from "./components/ToastContainer";
 export { default as AppHeader, type AppHeaderProps, type HeaderTagFilter } from "./components/AppHeader";
 export { TagSuggestion, TagSuggestions, TagSuggestionRetry, TagSuggestionStatus } from "./components/TagSuggestions";

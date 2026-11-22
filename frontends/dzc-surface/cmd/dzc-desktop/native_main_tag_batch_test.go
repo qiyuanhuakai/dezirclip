@@ -86,3 +86,59 @@ func TestNativeTagBatchIncludesUnloadedMatchesAndPreservesExclusions(t *testing.
 		t.Fatal("the stale confirmation remained actionable")
 	}
 }
+
+func TestNativeTagEntryDeleteRequiresConfirmation(t *testing.T) {
+	tags := &nativeTagLibrary{selected: "Work", sort: "time"}
+	n := nativeMain{
+		session: context.Background(), tagLibrary: tags,
+		preferences: map[string]string{"app.language": "en", "app.arrow_key_selection": "true"},
+	}
+	n.tagCatalog.fresh = true
+	n.history.reset(protocol.RuntimeState{ServiceInstanceId: "fixture", PrivacyEpoch: 1}, n.historyFilter())
+	n.history.rows = []protocol.DesktopEntry{{Id: 9, ContentType: "text", Preview: "Tagged fixture", Tags: []string{"Work"}}}
+	n.history.total = 1
+	n.cardTagColors = map[string]string{}
+
+	view := ui.NewTester(n.view, 740, 400)
+	view.Key(0, ui.KeyDown)
+	view.Key(0, ui.KeyDelete)
+	if tags.entryDelete == nil || tags.entryDelete.row.Id != 9 || n.mutating {
+		t.Fatal("Delete did not request confirmation for the selected row")
+	}
+	view.Frame()
+	if !view.HasText("Are you sure you want to delete this item?") ||
+		!view.HasText("Are you sure you want to delete this record?") {
+		t.Fatal("the tag entry confirmation did not show its title and message")
+	}
+	if err := view.Click(n.text("common_cancel")); err != nil || tags.entryDelete != nil || n.mutating {
+		t.Fatalf("Cancel did not dismiss the delete request without mutating history: %v", err)
+	}
+
+	row := n.history.rows[0]
+	n.requestRowDeletion(row, n.history.generation)
+	dialog := tags.entryDelete
+	n.history.generation++
+	n.confirmTagEntryDelete(tags, dialog)
+	if dialog.open || n.mutating || n.notice != n.text("tag_selection_changed") {
+		t.Fatal("an obsolete selection could still dispatch a deletion")
+	}
+}
+
+func TestNativeHiddenTagLibraryKeepsNavigationButDismissesActions(t *testing.T) {
+	tags := &nativeTagLibrary{
+		selected: "Work", sort: "count", query: "meeting", nameQuery: "work",
+		railCollapsed: true, batch: nativeTagBatch{enabled: true},
+		entryDelete: &nativeTagEntryDeletion{open: true},
+		reveal:      map[nativeCardKey]bool{{id: 7}: true},
+	}
+	n := nativeMain{tagLibrary: tags}
+	n.stopSession()
+	restored := n.tagLibrary
+	if restored == nil || restored.selected != "Work" || restored.sort != "count" ||
+		restored.query != "meeting" || restored.nameQuery != "work" || !restored.railCollapsed {
+		t.Fatalf("tag navigation was lost when retiring the visible session: %+v", restored)
+	}
+	if restored.batch.enabled || restored.entryDelete != nil || restored.reveal != nil {
+		t.Fatal("an action or reveal survived beyond its presentation session")
+	}
+}

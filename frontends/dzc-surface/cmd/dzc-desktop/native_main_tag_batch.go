@@ -204,16 +204,10 @@ func (n *nativeMain) confirmTagBatch(batch *nativeTagBatch) {
 func (n *nativeMain) tagBatchDialog(c *ui.Context, kit uikit.Kit, tags *nativeTagLibrary) {
 	batch := &tags.batch
 	dialog := batch.pending
-	kit.Dialog(c, &dialog.open, n.text("tag_batch_delete_title"), n.text("common_close"), n.mutating, func() {
-		kit.SettingsLabel(c, dialog.message).Wrap()
-		ui.Row(c).Gap(6).Justify(ui.End).Children(func() {
-			if kit.Button(c, uikit.ButtonOptions{Label: n.text("common_cancel"), Disabled: n.mutating}).Clicked() {
-				dialog.open = false
-			}
-			if kit.Button(c, uikit.ButtonOptions{Label: n.text("common_delete"), Disabled: n.mutating}).Clicked() {
-				n.deleteTagBatch(tags, dialog)
-			}
-		})
+	kit.TagConfirmation(c, &dialog.open, uikit.TagConfirmationOptions{
+		Title: n.text("tag_batch_delete_title"), Message: dialog.message,
+		CloseLabel: n.text("common_close"), CancelLabel: n.text("common_cancel"), ConfirmLabel: n.text("common_delete"),
+		Busy: n.mutating, Confirm: func() { n.deleteTagBatch(tags, dialog) },
 	})
 	if !dialog.open {
 		batch.pending = nil

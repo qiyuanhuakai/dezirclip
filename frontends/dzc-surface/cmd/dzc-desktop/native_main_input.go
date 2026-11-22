@@ -220,6 +220,13 @@ func (n *nativeMain) historyShortcuts(c *ui.Context, queryFocused bool) {
 	}
 	if !batch {
 		c.OnShortcut(ui.Ctrl, ui.KeyC, func() { n.selectedAction(nativeCopy) })
+		if n.tagLibrary != nil && n.keyboard {
+			c.OnShortcut(0, ui.KeyDelete, func() {
+				if row, ok := n.selectedEntry(); ok {
+					n.requestRowDeletion(row, n.history.generation)
+				}
+			})
+		}
 	}
 	c.OnShortcut(0, ui.KeyEscape, func() {
 		if n.closePreview() {
@@ -301,7 +308,8 @@ func (n *nativeMain) entryMenuActions(row protocol.DesktopEntry, generation uint
 		share = nativeRichCopy
 	}
 	actions = append(actions,
-		action(n.text("delete", "Delete entry"), disabled, nativeDelete),
+		uikit.MenuAction{Label: n.text("delete", "Delete entry"), Disabled: disabled,
+			Run: func() { n.requestRowDeletion(row, generation) }},
 		action(pinLabel, disabled, nativePin),
 		action(n.text("native_share"), contentDisabled, share))
 	if textTools && contentVisible {

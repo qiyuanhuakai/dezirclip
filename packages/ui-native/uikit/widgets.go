@@ -339,6 +339,29 @@ func (k Kit) Dialog(c *ui.Context, open *bool, title, closeLabel string, busy bo
 	k.dialog(c, open, title, closeLabel, busy, "tag", body)
 }
 
+type TagConfirmationOptions struct {
+	Title, Message, CloseLabel, CancelLabel, ConfirmLabel string
+	Busy                                                  bool
+	Confirm                                               func()
+}
+
+// TagConfirmation renders the tag dialog's message and confirmation controls.
+func (k Kit) TagConfirmation(c *ui.Context, open *bool, options TagConfirmationOptions) {
+	k.Dialog(c, open, options.Title, options.CloseLabel, options.Busy, func() {
+		message := k.style("tagConfirmMessage")
+		text(c, options.Message, message).Wrap().Margin(0, 0, max(0, message.MarginBottom-12))
+		actions := k.style("tagConfirmActions")
+		ui.Row(c).Gap(actions.ColumnGap).Justify(ui.End).Children(func() {
+			if k.button(c, options.CancelLabel, "tagConfirmCancel").Disabled(options.Busy).Clicked() {
+				*open = false
+			}
+			if k.button(c, options.ConfirmLabel, "tagConfirmPrimary").Disabled(options.Busy).Clicked() && options.Confirm != nil {
+				options.Confirm()
+			}
+		})
+	})
+}
+
 // TagNameField renders a labeled name editor in a tag dialog.
 func (k Kit) TagNameField(c *ui.Context, value *string, label string, readOnly bool) ui.Element {
 	field, labelStyle, style := k.style("tagField"), k.style("tagFieldLabel"), k.style("tagInput")

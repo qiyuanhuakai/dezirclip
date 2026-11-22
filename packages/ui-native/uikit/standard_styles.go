@@ -481,13 +481,13 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.Width, style.Height, style.Radius = 18, 18, 9
 		style.Border, style.BorderWidth = border, 2
 	case "filter", "filterSelected", "filterAction", "headerFilter", "headerFilterSelected", "searchMode", "searchModeSelected",
-		"confirmPrimary", "confirmCancel", "settingsRailItem", "settingsRailActive", "settingsFooterCard":
+		"confirmPrimary", "confirmCancel", "tagConfirmPrimary", "tagConfirmCancel", "settingsRailItem", "settingsRailActive", "settingsFooterCard":
 		surface()
 		style.Height, style.Padding = 32, [4]float32{0, 10, 0, 10}
 		if widget == "filterSelected" || widget == "headerFilterSelected" || widget == "searchModeSelected" || widget == "settingsRailActive" {
 			style.Fill, style.Border = selected, accent
 		}
-		if widget == "confirmPrimary" {
+		if widget == "confirmPrimary" || widget == "tagConfirmPrimary" {
 			style.Fill, style.Border = accent, accent
 			style.Text = rgba(ui.LightTheme().AccentText)
 		}
@@ -596,6 +596,10 @@ func DefaultWidgetStyle(widget string, palette theme.Tokens) theme.WidgetStyle {
 		style.Height = 22
 	case "tagHeading":
 		style.ColumnGap = 6
+	case "tagConfirmMessage":
+		style.Size, style.MarginBottom = 13, 16
+	case "tagConfirmActions":
+		style.ColumnGap = 8
 	case "tagField":
 		style.RowGap, style.MarginBottom = 7, 16
 	case "tagFieldLabel":

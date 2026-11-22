@@ -334,6 +334,12 @@ const samples = [
     tagHeading: [".tag-manager-dialog-heading"], tagCloseIcon: [".tag-manager-dialog-heading svg"],
     tagField: [".tag-manager-field"], tagFieldLabel: [".tag-manager-field span"], tagInput: [".tag-manager-field input"],
   }],
+  ["tag-dialog", "delete-entry", {
+    tagConfirmMessage: [".tag-manager-dialog .confirm-dialog-message"],
+    tagConfirmActions: [".tag-manager-dialog .confirm-dialog-buttons"],
+    tagConfirmCancel: [".tag-manager-dialog .confirm-dialog-button:not(.primary)"],
+    tagConfirmPrimary: [".tag-manager-dialog .confirm-dialog-button.primary"],
+  }],
 ];
 
 // Chromium returns the input's style for its internal range pseudo-elements.

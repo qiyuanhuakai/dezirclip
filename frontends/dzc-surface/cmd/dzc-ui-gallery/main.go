@@ -324,6 +324,14 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 	case "confirm":
 		kit.ConfirmDialog(c, &g.dialog, "Clear history", "Clear all unpinned entries?", "Cancel", "Clear", func() {})
 	case "tag-dialog":
+		if strings.HasPrefix(g.state, "delete-") {
+			kit.TagConfirmation(c, &g.dialog, uikit.TagConfirmationOptions{
+				Title: "Delete this entry?", Message: "Are you sure you want to delete this record?", CloseLabel: "Close",
+				CancelLabel: "Cancel", ConfirmLabel: "Delete", Busy: g.state == "delete-busy",
+				Confirm: func() { g.dialog = false },
+			})
+			return
+		}
 		kit.Dialog(c, &g.dialog, "Create tag", "Close", g.state == "busy", func() {
 			field := kit.TagNameField(c, &g.query, "Name", g.state == "busy")
 			if g.focusTagName {

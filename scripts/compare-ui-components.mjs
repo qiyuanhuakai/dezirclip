@@ -76,7 +76,7 @@ const cases = {
   progress: { states: ["default", "done", "error"], text: "Importing" },
   toast: { states: ["default"], text: "Copied to clipboard" },
   confirm: { states: ["default"], text: "Clear history" },
-  "tag-dialog": { states: ["default", "busy"], text: "Create tag" },
+  "tag-dialog": { states: ["default", "busy", "delete-entry", "delete-busy"], text: "" },
 };
 const additionalExamples = {
   "character-search": { states: ["default", "filled"], text: "Search symbols" },
@@ -855,7 +855,23 @@ try {
               await page.getByText("Not set", { exact: true }).waitFor();
               if (await clear.count()) throw Error("Clearing the binding left the action available");
             }
-            if (fixture === "tag-dialog") {
+            if (fixture === "tag-dialog" && state.startsWith("delete-")) {
+              const dialog = page.getByRole("dialog", { name: "Delete this entry?" });
+              const remove = dialog.getByRole("button", { name: "Delete", exact: true });
+              const cancel = dialog.getByRole("button", { name: "Cancel", exact: true });
+              if (!comparable(nativeText, "Delete") || !comparable(nativeText, "Cancel") ||
+                  !comparable(nativeText, "Are you sure you want to delete this record?")) {
+                throw Error("Native tag confirmation lost a message or action");
+              }
+              if (state === "delete-busy") {
+                if (await remove.isEnabled() || await cancel.isEnabled()) throw Error("Pending deletion left a control active");
+                await page.keyboard.press("Escape");
+                if (!await dialog.isVisible()) throw Error("Pending deletion closed on Escape");
+              } else {
+                await cancel.click();
+                await dialog.waitFor({ state: "hidden" });
+              }
+            } else if (fixture === "tag-dialog") {
               const dialog = page.getByRole("dialog", { name: "Create tag" });
               const input = dialog.getByRole("textbox", { name: "Name" });
               const close = dialog.getByRole("button", { name: "Close" });
