@@ -1203,6 +1203,18 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             }
             if ((Get-FileHash -LiteralPath $guide).Hash -ne $guideHash) { throw 'Installer did not replace the staged payload' }
             Write-Host 'Verified the installer waits for native desktop exit, replaces the payload and reopens the original history'
+            $newService = Get-Process -Id $newEndpoint.pid
+            $null = $resident.Handle
+            $null = $main.Handle
+            $null = $newService.Handle
+            try {
+                Invoke-ResidentTrayExit $resident
+                $null = Wait-Until { $resident.HasExited -and $main.HasExited -and $newService.HasExited } 'Updated desktop or Service remained active before uninstall'
+                if ($resident.ExitCode -ne 0 -or $main.ExitCode -ne 0 -or $newService.ExitCode -ne 0) {
+                    throw "Updated desktop did not exit cleanly (resident=$($resident.ExitCode), main=$($main.ExitCode), service=$($newService.ExitCode))"
+                }
+                $quitVerified = $true
+            } finally { $newService.Dispose() }
         }
         return
     }
