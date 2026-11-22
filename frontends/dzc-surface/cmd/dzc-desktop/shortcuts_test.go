@@ -156,3 +156,59 @@ func TestMainHotkeysReleaseRemovedClaimsOnlyAfterSaving(t *testing.T) {
 		t.Fatalf("clear failed: %v", err)
 	}
 }
+func TestNativeShortcutRecordingStaysWithItsSetting(t *testing.T) {
+	for _, cancelBy := range []string{"Escape", "Switch section"} {
+		t.Run(cancelBy, func(t *testing.T) {
+			cancelled := false
+			form := &nativeShortcutForm{
+				key: "app.search_hotkey", open: true, listening: true, focus: true,
+				cancel: func() { cancelled = true },
+			}
+			n := nativeMain{
+				showSettings: true, settingsSection: "clipboard", shortcut: form,
+				preferences: map[string]string{"app.language": "en", "app.search_hotkey": "Ctrl+Shift+F9"},
+			}
+			view := ui.NewTester(n.view, 820, 760)
+			recording, found := view.Find("RECORDING...")
+			label, shown := view.Find("Search Hotkey")
+			if !found || !shown || recording.W <= 0 || recording.H <= 0 || recording.X+recording.W > 820 || recording.Y < label.Y-25 || recording.Y > label.Y+45 {
+				t.Fatalf("recording was not in the settings row: field=%+v, label=%+v, texts=%q", recording, label, view.Texts())
+			}
+			manual, available := view.Find("Enter shortcut manually")
+			if !available || manual.W <= 0 || manual.X+manual.W > 820 {
+				t.Fatalf("the manual recording control lies outside settings: %+v", manual)
+			}
+			if cancelBy == "Escape" {
+				view.Key(0, ui.KeyEscape)
+			} else if err := view.Click("General"); err != nil {
+				t.Fatal(err)
+			}
+			view.Frame()
+			if !cancelled || form.open || !n.showSettings || view.HasText("RECORDING...") {
+				t.Fatal("leaving the recorder failed to cancel it while keeping Settings open")
+			}
+			if n.preferences["app.search_hotkey"] != "Ctrl+Shift+F9" {
+				t.Fatal("cancelling the recorder changed the saved binding")
+			}
+		})
+	}
+}
+
+func TestNativeShortcutKeepsCapturedChordDuringFocusTransition(t *testing.T) {
+	cancelled := false
+	form := &nativeShortcutForm{
+		key: "app.hotkey", open: true, received: true, focused: true,
+		cancel: func() { cancelled = true },
+	}
+	n := nativeMain{
+		showSettings: true, settingsSection: "clipboard", shortcut: form,
+		preferences: map[string]string{"app.language": "en"},
+	}
+	view := ui.NewTester(n.view, 820, 760)
+	if !form.open || cancelled {
+		t.Fatal("a focus change discarded the chord before the recorder acknowledged it")
+	}
+	if err := view.Click("General"); err != nil || !cancelled {
+		t.Fatalf("leaving the settings section did not cancel the pending recorder: %v", err)
+	}
+}

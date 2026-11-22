@@ -65,6 +65,10 @@ export function HotkeyList({ platform, values, emptyLabel, removeLabel, disabled
   </div>;
 }
 
+export function HotkeyError({ message }: { message?: string | null }) {
+  return message ? <p className="hotkey-recording-error" role="alert">{message}</p> : null;
+}
+
 export function HotkeyBinding(props: HotkeyBindingProps) {
   const active = props.recording && !props.disabled;
   const keys = props.value ? hotkeyKeys(props.value, props.platform) : [];
@@ -82,6 +86,7 @@ export function HotkeyBinding(props: HotkeyBindingProps) {
     </div>
     <div className="hotkey-binding">
       <div className={`key-group ${active ? "recording" : ""}`} role="button" aria-label={props.label}
+        aria-description={active ? props.recordingLabel : keys.length ? keys.join("+") : undefined}
         aria-pressed={active} aria-busy={props.busy} aria-disabled={props.disabled} tabIndex={props.disabled ? -1 : 0}
         onClick={props.onClick} onKeyDown={props.onKeyDown} onMouseDown={props.onMouseDown} onBlur={props.onBlur}>
         {active || keys.length === 0
@@ -91,6 +96,6 @@ export function HotkeyBinding(props: HotkeyBindingProps) {
           : keys.map((key, index) => <div key={`${key}-${index}`} className="key-cap">{key}</div>)}
       </div>
     </div>
-    {props.error && <p className="hotkey-recording-error" role="alert">{props.error}</p>}
+    <HotkeyError message={props.error} />
   </div>;
 }

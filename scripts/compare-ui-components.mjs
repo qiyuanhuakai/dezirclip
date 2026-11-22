@@ -86,7 +86,7 @@ const additionalExamples = {
   "settings-toggle-help": { states: ["default", "expanded"], text: "Move pasted entries to top" },
   "settings-keyboard-preview": { states: ["default", "enabled"], text: "Preview keyboard selection" },
   "settings-slider": { states: ["default", "keyboard"], text: "Opacity 72%" },
-  "hotkey-binding": { states: ["default", "recording", "narrow"], text: "Quick Paste" },
+  "hotkey-binding": { states: ["default", "recording", "narrow", "conflict"], text: "Quick Paste" },
   "hotkey-optional": { states: ["default", "options"], text: "Privacy session shortcut" },
   "scroll-to-top": { states: ["default", "hover"], text: "Clipboard history" },
   "emoji-tabs": { states: ["default", "favorites"], text: "Favorites" },
@@ -679,6 +679,13 @@ try {
               }[state]
               : state === "southeast" ? "SouthEast" : state === "scrolled" ? "1 scroll" : "";
             const expectedState = comparable(webText, extra) && comparable(nativeText, extra);
+            if (fixture === "hotkey-binding" && state === "conflict") {
+              const alert = page.getByRole("alert");
+              const error = "This shortcut is already in use.";
+              if (await alert.textContent() !== error || !comparable(nativeText, error)) {
+                throw Error("The shortcut conflict was not announced beside the saved binding");
+              }
+            }
             const dialog = fixture === "backup-dialog" ? await page.locator(".data-modal-content").boundingBox() : undefined;
             const pixels = await page.evaluate(comparePixels, { web: webImage.toString("base64"), native: nativeImage.toString("base64"), dialog });
             if (fixture === "cli-settings") {

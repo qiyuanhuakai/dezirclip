@@ -42,6 +42,7 @@ const figures = [
   ["hotkey-list", "win-v", 120, 0, "hotkey-list-win-v"],
   ["hotkey-list", "extended", 120, 0, "hotkey-list-extended"],
   ["hotkey-optional", "options", 124],
+  ["hotkey-binding", "conflict", 104, 0, "hotkey-binding-conflict"],
   ["emoji-favorites", "default", 145],
   ["emoji-favorites", "empty", 225, 0, "emoji-favorites-empty"],
   ["emoji-favorites", "hover", 145, 0, "emoji-favorites-hover"],

@@ -95,7 +95,7 @@ func (k Kit) HotkeyRow(c *ui.Context, label string, controls func()) {
 
 type HotkeyRowOptions struct {
 	HelpLabel, Description string
-	ClearLabel             string
+	ClearLabel, Error      string
 	Disabled               bool
 	OnClear                func()
 }
@@ -103,8 +103,8 @@ type HotkeyRowOptions struct {
 // HotkeyRowWithOptions places the clear action for an optional binding inside its help.
 func (k Kit) HotkeyRowWithOptions(c *ui.Context, label string, options HotkeyRowOptions, controls func()) {
 	style := k.style("hotkeyRow")
-	ui.Column(c).FillWidth().Padding(style.Margin[:]...).Children(func() {
-		row := ui.Row(c).FillWidth().Wrap().
+	ui.Column(c).MinWidth(0).Padding(style.Margin[:]...).Children(func() {
+		row := ui.Row(c).Wrap().
 			GapX(max(6, style.ColumnGap)).GapY(max(6, style.RowGap)).AlignItems(ui.Center)
 		paint(row, style).Children(func() {
 			var clear func()
@@ -118,12 +118,27 @@ func (k Kit) HotkeyRowWithOptions(c *ui.Context, label string, options HotkeyRow
 			k.settingsFieldLabel(c, label, options.HelpLabel, options.Description, clear).Grow(1).MinWidth(100)
 			controls()
 		})
+		k.HotkeyError(c, options.Error)
 	})
+}
+
+// HotkeyError displays the reason a shortcut could not be registered.
+func (k Kit) HotkeyError(c *ui.Context, message string) {
+	if message == "" {
+		return
+	}
+	style := k.style("hotkeyError")
+	text(c, message, style).FillWidth().Wrap().Margin(style.Margin[:]...).Role(ui.RoleStatus)
 }
 
 func (k Kit) HotkeyBinding(c *ui.Context, label, value, placeholder string, recording, disabled bool) ui.Element {
 	field := ui.ButtonBase(c).Label(label).FocusRing(true).Disabled(disabled).
 		MaxWidthPercent(100).Wrap()
+	if recording {
+		field.Description(placeholder)
+	} else if value != "" {
+		field.Description(k.hotkeyLabel(value))
+	}
 	return k.hotkeyCaps(c, field, value, placeholder, recording)
 }
 

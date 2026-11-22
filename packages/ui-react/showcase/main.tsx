@@ -47,6 +47,7 @@ function ShortcutBindingFixture() {
   const field = <HotkeyBinding label="Quick Paste" value={narrow ? "Ctrl+Alt+Shift+Super+NumpadSubtract" : "Ctrl+Shift+V"}
     platform={narrow ? "windows" : undefined} placeholder="Set shortcut" recordingLabel="Press a shortcut"
     recording={state === "recording"} busy={false} disabled={false} onClick={undefined} onKeyDown={undefined}
+    error={state === "conflict" ? "This shortcut is already in use." : undefined}
     onMouseDown={undefined} onBlur={undefined} />;
   return narrow ? <div className="showcase-hotkey-narrow">{field}</div> : field;
 }

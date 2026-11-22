@@ -1,4 +1,4 @@
-import { HotkeyList, HotkeyListLayout } from "@deziro/ui-react/components/HotkeyBinding";
+import { HotkeyError, HotkeyList, HotkeyListLayout } from "@deziro/ui-react/components/HotkeyBinding";
 import { useRef, useState } from "react";
 import HotkeyRecorder from "./HotkeyRecorder";
 
@@ -32,6 +32,6 @@ export default function HotkeyListEditor({ t, labelKey, hotkeys, recording, setR
     <HotkeyList values={hotkeys} emptyLabel={t("not_set")} removeLabel={t("delete")}
       disabled={disabled || saving} canRemove={canRemove}
       onRemove={value => { void changeBinding(() => onRemove(value)); }} />
-    {error && <p className="hotkey-recording-error" role="alert">{error}</p>}
+    <HotkeyError message={error} />
   </HotkeyListLayout>;
 }

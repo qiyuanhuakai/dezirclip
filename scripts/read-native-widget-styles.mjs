@@ -198,6 +198,7 @@ const samples = [
     hotkeyRow: [".hotkey-recorder"], hotkeyGroup: [".key-group"], hotkeyCap: [".key-cap"],
   }],
   ["hotkey-binding", "recording", { hotkeyCapRecording: [".key-cap"] }],
+  ["hotkey-binding", "conflict", { hotkeyError: [".hotkey-recording-error"] }],
   ["character-search", "default", {
     characterInput: [".emoji-search .search-input"],
     characterInputPlaceholder: [".emoji-search .search-input", null, "::placeholder"],

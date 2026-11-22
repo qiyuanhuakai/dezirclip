@@ -186,7 +186,11 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 	case "hotkey-binding":
 		chord := "Ctrl+Shift+V"
 		draw := func() {
-			kit.HotkeyRow(c, "Quick Paste", func() {
+			options := uikit.HotkeyRowOptions{}
+			if g.state == "conflict" {
+				options.Error = "This shortcut is already in use."
+			}
+			kit.HotkeyRowWithOptions(c, "Quick Paste", options, func() {
 				kit.HotkeyBinding(c, "Quick Paste", chord, "Press a shortcut", g.state == "recording", false)
 			})
 		}

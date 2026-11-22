@@ -78,6 +78,8 @@ type nativeMain struct {
 	privacyRules          nativePrivacyRules
 	privacyDialog         *nativePrivacyDialog
 	shortcut              *nativeShortcutForm
+	shortcutErrKey        string
+	shortcutErrText       string
 	queueCount            nativeQueueCount
 	applications          nativeApplicationCatalog
 	profile               nativeProfileSettings
@@ -147,6 +149,7 @@ func (n *nativeMain) stopSession() {
 	n.closeBackup()
 	n.closePrivacyDialog()
 	n.cancelShortcut()
+	n.shortcutErrKey, n.shortcutErrText = "", ""
 	if !n.winV.changing {
 		n.winV = nativeWinVState{}
 	}

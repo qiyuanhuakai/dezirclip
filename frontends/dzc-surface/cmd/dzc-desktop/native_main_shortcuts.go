@@ -15,11 +15,15 @@ import (
 const mainShortcutSetting = "app.hotkey"
 
 type nativeShortcutForm struct {
-	key, label string
+	received   bool
+	key        string
 	open       bool
 	listening  bool
 	focus      bool
 	manual     bool
+	rendered   bool
+	focused    bool
+	focusInRow bool
 	typed      string
 	cancel     context.CancelFunc
 	captured   chan string
@@ -44,10 +48,9 @@ func (n *nativeMain) globalShortcutSettings(c *ui.Context) {
 	disabled := !n.shortcutAvailable()
 	ui.Column(c).ColumnSpan(-1).Children(func() {
 		kit.HotkeyListEditor(c, label, func() {
-			if kit.HotkeyBinding(c, "+ "+label, "", "+ "+label, false, disabled).Clicked() {
-				n.openShortcut(mainShortcutSetting, label)
-			}
+			n.shortcutBinding(c, kit, mainShortcutSetting, "+ "+label, "", "+ "+label)
 		}, func() {
+			n.shortcutControls(c, kit, mainShortcutSetting)
 			kit.HotkeyListWithOptions(c, uikit.HotkeyListOptions{
 				Values: bindings, Placeholder: n.text("not_set"), RemoveLabel: n.text("delete"),
 				Disabled: disabled, CanRemove: n.canRemoveMainShortcut,
@@ -56,6 +59,7 @@ func (n *nativeMain) globalShortcutSettings(c *ui.Context) {
 					n.saveNativeShortcut(mainShortcutSetting, strings.Join(updated, "\n"))
 				},
 			})
+			kit.HotkeyError(c, n.shortcutFeedback(mainShortcutSetting))
 		})
 	})
 	n.winVSettings(c, kit)
@@ -76,28 +80,28 @@ func (n *nativeMain) shortcutSetting(c *ui.Context, key, label, fallback string)
 func (n *nativeMain) shortcutSettingWithOptions(c *ui.Context, key, label, fallback string, options uikit.HotkeyRowOptions) {
 	value := n.shortcutValue(key, fallback)
 	options.Disabled = !n.shortcutAvailable()
+	options.Error = n.shortcutFeedback(key)
 	if value == "" {
 		options.OnClear = nil
 	}
 	kit := n.mainKit()
-	kit.HotkeyRowWithOptions(c, label, options, func() {
-		control := kit.HotkeyBinding(c, label, value, n.text("not_set"), false, options.Disabled).
-			Tooltip(n.text("hotkey_click_hint"))
-		if control.Clicked() {
-			n.openShortcut(key, label)
-		}
+	ui.Column(c).MinWidth(0).Children(func() {
+		kit.HotkeyRowWithOptions(c, label, options, func() {
+			n.shortcutBinding(c, kit, key, label, value, n.text("not_set"))
+		})
+		n.shortcutControls(c, kit, key)
 	})
 }
 
-func (n *nativeMain) openShortcut(key, label string) {
+func (n *nativeMain) openShortcut(key string) {
 	if !n.shortcutAvailable() || n.window == nil || !mainWindowFocused(n.window) {
 		return
 	}
-	n.notice = ""
+	n.shortcutErrKey, n.shortcutErrText = "", ""
 	session, state := n.session, n.history.state
 	lifetime, cancel := context.WithTimeout(session, 45*time.Second)
 	form := &nativeShortcutForm{
-		key: key, label: label, open: true, cancel: cancel, captured: make(chan string, 1),
+		key: key, open: true, focus: true, rendered: true, cancel: cancel, captured: make(chan string, 1),
 	}
 	n.shortcut = form
 	go n.recordNativeShortcut(session, lifetime, state, form)
@@ -115,7 +119,7 @@ func (n *nativeMain) recordNativeShortcut(session, lifetime context.Context, sta
 	if err == nil {
 		n.update(session, func() {
 			if n.shortcut == form && form.open && lifetime.Err() == nil {
-				form.listening, form.focus = true, true
+				form.listening = true
 				n.installShortcutInput()
 			}
 		})
@@ -159,7 +163,7 @@ func (n *nativeMain) finishNativeShortcut(session, lifetime context.Context, for
 			return
 		}
 		if err != nil {
-			n.notice = n.shortcutError(err)
+			n.reportShortcutError(form.key, n.shortcutError(err))
 			return
 		}
 		if chord != "" {
@@ -192,43 +196,79 @@ func (n *nativeMain) captureNativeShortcut(form *nativeShortcutForm, chord strin
 			n.cancelShortcut()
 			return
 		}
-		form.listening = false
+		form.listening, form.received = false, true
 		form.captured <- chord
 	}
 }
 
-func (n *nativeMain) drawShortcutRecorder(c *ui.Context, kit uikit.Kit, form *nativeShortcutForm) {
-	kit.Dialog(c, &form.open, form.label, "", false, func() {
-		if form.manual {
-			n.drawTypedShortcut(c, form)
-		} else {
-			n.drawRecordedShortcut(c, form)
+func (n *nativeMain) shortcutBinding(c *ui.Context, kit uikit.Kit, key, label, value, placeholder string) {
+	form := n.shortcut
+	active := form != nil && form.key == key && form.open
+	if !active {
+		if kit.HotkeyBinding(c, label, value, placeholder, false, !n.shortcutAvailable()).
+			Tooltip(n.text("hotkey_click_hint")).Clicked() {
+			n.openShortcut(key)
 		}
-		ui.Row(c).Gap(6).Wrap().Children(func() {
-			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_cancel")}).Clicked() {
-				form.open = false
-			}
-			mode := n.text("native_shortcut_type")
-			if form.manual {
-				mode = n.text("native_shortcut_record")
-			}
-			if n.mainKit().Button(c, uikit.ButtonOptions{Label: mode, Disabled: !form.listening}).Clicked() {
-				form.manual = !form.manual
-				form.focus = true
-			}
-		})
-	})
-	if !form.open {
-		n.cancelShortcut()
+		return
 	}
-}
 
-func (n *nativeMain) drawRecordedShortcut(c *ui.Context, form *nativeShortcutForm) {
+	form.rendered = true
+	if form.manual {
+		n.drawTypedShortcut(c, kit, form)
+		return
+	}
+
 	status := n.text("common_loading")
 	if form.listening {
 		status = n.text("waiting_for_input")
 	}
-	field := n.mainKit().HotkeyBinding(c, status, "", status, true, false).FillWidth()
+	field := kit.HotkeyBinding(c, label, "", status, true, false).
+		Tooltip(n.text("hotkey_recording_esc"))
+	n.recordShortcutInput(field, form)
+	form.focusInRow = field.Focused()
+}
+
+func (n *nativeMain) shortcutControls(c *ui.Context, kit uikit.Kit, key string) {
+	form := n.shortcut
+	if form == nil || form.key != key || !form.open {
+		return
+	}
+	ui.Row(c).FillWidth().Gap(6).Wrap().Justify(ui.End).Children(func() {
+		mode := n.text("native_shortcut_type")
+		if form.manual {
+			mode = n.text("native_shortcut_record")
+			chord := typedShortcutChord(form.typed)
+			save := kit.SettingsDataAction(c, n.text("common_save"), "", !form.listening || chord == "")
+			form.focusInRow = form.focusInRow || save.Focused()
+			if save.Clicked() {
+				n.captureNativeShortcut(form, chord)
+			}
+		}
+		switchMode := kit.SettingsDataAction(c, mode, "", !form.listening)
+		cancel := kit.SettingsDataAction(c, n.text("common_cancel"), "", false)
+		form.focusInRow = form.focusInRow || switchMode.Focused() || cancel.Focused()
+		if switchMode.Clicked() {
+			form.manual = !form.manual
+			form.focused, form.focus = false, true
+		}
+		if cancel.Clicked() {
+			n.cancelShortcut()
+		}
+	})
+}
+
+func (n *nativeMain) shortcutFeedback(key string) string {
+	if n.shortcutErrKey == key {
+		return n.shortcutErrText
+	}
+	return ""
+}
+
+func (n *nativeMain) reportShortcutError(key, message string) {
+	n.shortcutErrKey, n.shortcutErrText = key, message
+}
+
+func (n *nativeMain) recordShortcutInput(field ui.Element, form *nativeShortcutForm) {
 	field.HandleInput(func(event ui.InputEvent) bool {
 		switch {
 		case event.Kind == ui.InputKeyDown && event.Key == ui.KeyEscape && event.Mods == 0:
@@ -250,20 +290,24 @@ func (n *nativeMain) drawRecordedShortcut(c *ui.Context, form *nativeShortcutFor
 		field.Focus()
 		form.focus = false
 	}
-	ui.Text(c, n.text("hotkey_recording_esc")).TextColor(c.Theme().TextMuted).Wrap()
 }
 
-func (n *nativeMain) drawTypedShortcut(c *ui.Context, form *nativeShortcutForm) {
-	field := n.mainKit().TextField(c, &form.typed, n.text("native_shortcut_input")).FillWidth().Placeholder("Ctrl+Alt+K")
+func (n *nativeMain) drawTypedShortcut(c *ui.Context, kit uikit.Kit, form *nativeShortcutForm) {
+	field := kit.TextField(c, &form.typed, n.text("native_shortcut_input")).
+		MinWidth(136).Placeholder("Ctrl+Alt+K").HandleInput(func(event ui.InputEvent) bool {
+		if event.Kind == ui.InputKeyDown && event.Key == ui.KeyEscape && event.Mods == 0 {
+			n.cancelShortcut()
+			return true
+		}
+		return false
+	})
 	if form.focus {
 		field.Focus()
 		form.focus = false
 	}
-	chord := typedShortcutChord(form.typed)
-	if n.mainKit().Button(c, uikit.ButtonOptions{
-		Label: n.text("common_save"), Primary: true, Disabled: !form.listening || chord == "",
-	}).Clicked() || field.Submitted() {
-		n.captureNativeShortcut(form, chord)
+	form.focusInRow = field.Focused()
+	if field.Submitted() {
+		n.captureNativeShortcut(form, typedShortcutChord(form.typed))
 	}
 }
 
@@ -318,7 +362,7 @@ func (n *nativeMain) applyRecordedShortcut(key, recorded string) {
 	chord := mainShortcutName(recorded)
 	if key != mainShortcutSetting {
 		if chord == "MouseMiddle" {
-			n.notice = n.text("hotkey_unavailable")
+			n.reportShortcutError(key, n.text("hotkey_unavailable"))
 			return
 		}
 		if chord != mainShortcutName(n.shortcutValue(key, "")) {
@@ -328,7 +372,7 @@ func (n *nativeMain) applyRecordedShortcut(key, recorded string) {
 	}
 	chords := nativeMainChords(n.shortcutValue(key, ""))
 	if slices.Contains(chords, chord) {
-		n.notice = n.text("privacy_hotkey_busy")
+		n.reportShortcutError(key, n.text("hotkey_unavailable"))
 		return
 	}
 	n.saveNativeShortcut(key, strings.Join(append(chords, chord), "\n"))
@@ -348,7 +392,8 @@ func (n *nativeMain) saveNativeShortcut(key, value string) {
 		return
 	}
 	session, state := n.session, n.history.state
-	n.mutating, n.notice = true, ""
+	n.mutating = true
+	n.shortcutErrKey, n.shortcutErrText = "", ""
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 15*time.Second)
 		defer cancel()
@@ -368,7 +413,7 @@ func (n *nativeMain) saveNativeShortcut(key, value string) {
 		n.update(session, func() {
 			n.mutating = false
 			if err != nil {
-				n.notice = n.shortcutError(err)
+				n.reportShortcutError(key, n.shortcutError(err))
 				return
 			}
 			n.prepare(n.resume)

@@ -22,6 +22,9 @@ func (n *nativeMain) mainKit() uikit.Kit {
 }
 
 func (n *nativeMain) view(c *ui.Context) {
+	if n.shortcut != nil {
+		n.shortcut.rendered, n.shortcut.focusInRow = false, false
+	}
 	preset := n.preset()
 	kit := n.mainKit()
 	kit.Apply(c)
@@ -196,8 +199,13 @@ func (n *nativeMain) view(c *ui.Context) {
 	if n.privacyDialog != nil {
 		n.privacyDialogView(c, kit, n.privacyDialog)
 	}
-	if n.shortcut != nil && n.shortcut.open {
-		n.drawShortcutRecorder(c, kit, n.shortcut)
+	if form := n.shortcut; form != nil && form.open {
+		// X11 may briefly move widget focus while releasing the captured shortcut.
+		lostFocus := !form.received && form.focused && !form.focusInRow && !form.focus
+		if !form.rendered || lostFocus {
+			n.cancelShortcut()
+		}
+		form.focused = form.focusInRow
 	}
 	if n.showSettings && n.resetOpen {
 		kit.ConfirmDialog(c, &n.resetOpen, n.text("reset_defaults"), n.text("reset_confirm"),
