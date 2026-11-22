@@ -8,6 +8,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { EmojiAddTile, EmojiFavoritesPanel, EmojiFavoriteTile } from "@deziro/ui-react/components/EmojiFavoriteTiles";
 import { schedulePreview } from "../../../shared/lib/previewQueue";
 import { characterPageSize, searchCharacters } from "../characterCatalog";
+import { emojiPreview, hasSymbolPreview, symbolPreview } from "../characterPreview";
 
 interface EmojiPanelProps {
   t: (key: string) => string;
@@ -157,11 +158,16 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(characterPageSize);
   const loadMore = useCallback(() => setLimit(amount => amount + characterPageSize), []);
-  const matches = useMemo(() => activeTab === "favorites" ? [] : searchCharacters(activeTab, query), [activeTab, query]);
+  const matches = useMemo(() => {
+    if (activeTab === "favorites") return [];
+    const groups = searchCharacters(activeTab, query);
+    if (activeTab !== "symbols" || query.trim()) return groups;
+    return groups.map(group => ({ ...group, entries: group.entries.filter(entry => hasSymbolPreview(entry.value)) }));
+  }, [activeTab, query]);
   const count = matches.reduce((total, group) => total + group.entries.length, 0);
   let remaining = limit;
   const visibleGroups = matches.flatMap(group => {
-    if (remaining <= 0) return [];
+    if (remaining <= 0 || !group.entries.length) return [];
     const emojis = group.entries.slice(0, remaining);
     remaining -= emojis.length;
     return [{ name: t(`emoji_group_${group.id.toLowerCase()}`), emojis }];
@@ -493,6 +499,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
           onChange={value => { setQuery(value); setLimit(characterPageSize); }} />
         <EmojiGrid groups={visibleGroups} empty={t("emoji_search_empty")} key={`${activeTab}:${query}`}
           onSelect={value => handleSend(value, "text")}
+          getPreview={activeTab === "symbols" ? symbolPreview : emojiPreview}
           onLoadMore={count > limit ? loadMore : undefined} />
       </>}
 

@@ -1,0 +1,23 @@
+@font-face {
+  font-family: "DezirClip Symbols Preview";
+  src: url("../../../frontends/dzc-surface/cmd/dzc-desktop/character-assets/symbols.ttf") format("truetype");
+  font-display: block;
+}
+
+@font-face {
+  font-family: "DezirClip Music Preview";
+  src: url("../../../frontends/dzc-surface/cmd/dzc-desktop/character-assets/music.ttf") format("truetype");
+  font-display: block;
+}
+
+@font-face {
+  font-family: "DezirClip Math Preview";
+  src: url("../../../frontends/dzc-surface/cmd/dzc-desktop/character-assets/math.ttf") format("truetype");
+  font-display: block;
+}
+
+@font-face {
+  font-family: "DezirClip Text Preview";
+  src: url("../../../frontends/dzc-surface/cmd/dzc-desktop/character-assets/text.ttf") format("truetype");
+  font-display: block;
+}

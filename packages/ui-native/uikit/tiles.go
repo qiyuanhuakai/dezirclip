@@ -1,14 +1,26 @@
 package uikit
 
-import "github.com/egoist/mygo/ui"
+import (
+	"slices"
+
+	"github.com/egoist/mygo/ui"
+)
 
 type CharacterTab struct {
 	ID, Label string
 }
 
 type CharacterChoice struct {
-	Value string `json:"value"`
-	Name  string `json:"name"`
+	Value   string            `json:"value"`
+	Name    string            `json:"name"`
+	Preview *CharacterPreview `json:"-"`
+}
+
+// CharacterPreview changes the tile artwork while Value remains its text action.
+type CharacterPreview struct {
+	Bitmap func() *ui.Bitmap
+	Font   string
+	Code   string
 }
 
 // CharacterPanel reserves the same outer padding and section gaps as the Web picker.
@@ -75,7 +87,7 @@ func (k Kit) CharacterContent(c *ui.Context, width float32, draw func(float32)) 
 func (k Kit) CharacterGrid(c *ui.Context, label string, entries []CharacterChoice, width float32, disabled bool, onSelect func(string)) {
 	title, group, grid := k.style("emojiGroupTitle"), k.style("emojiGroup"), k.style("emojiGrid")
 	gap := grid.ColumnGap
-	columns := characterColumnCount(width, gap)
+	columns := characterChoiceColumns(width, gap, entries)
 	ui.Column(c).FillWidth().Gap(group.RowGap).Children(func() {
 		paint(text(c, label, title).FillWidth(), title)
 		tileRows(c, len(entries), columns, width, gap, func(index int, cellWidth float32) {
@@ -88,14 +100,50 @@ func characterColumnCount(width, gap float32) int {
 	return max(1, int((width+gap)/(34+gap)))
 }
 
+func characterChoiceColumns(width, gap float32, entries []CharacterChoice) int {
+	if slices.ContainsFunc(entries, func(entry CharacterChoice) bool {
+		return entry.Preview != nil && entry.Preview.Code != ""
+	}) {
+		return max(1, int((width+gap)/(88+gap)))
+	}
+	return characterColumnCount(width, gap)
+}
+
 func (k Kit) characterTile(c *ui.Context, entry CharacterChoice, width float32, disabled bool, onSelect func(string)) {
 	tile := k.style("emojiTile")
 	button := ui.ButtonBase(c).Label(entry.Value).Size(width, tile.Height).Center().FocusRing(true).Disabled(disabled)
-	if entry.Name != "" {
-		button.Description(entry.Name).Tooltip(entry.Name)
+	description := entry.Name
+	preview := entry.Preview
+	if preview != nil && preview.Code != "" {
+		description += " · " + preview.Code
+	}
+	if description != "" {
+		button.Description(description).Tooltip(description)
 	}
 	style := k.interactive(c, button, tile, false)
-	paint(button, style).Children(func() { text(c, entry.Value, style).SingleLine().PassThrough() })
+	paint(button, style).Children(func() {
+		if preview != nil {
+			if preview.Bitmap != nil {
+				if bitmap := preview.Bitmap(); bitmap != nil {
+					ui.Image(c, bitmap).Size(24, 24).PassThrough()
+					return
+				}
+			}
+			if preview.Code != "" {
+				style.Size = 9
+				ui.Column(c).FillWidth().Padding(0, 2).Gap(1).Center().PassThrough().Children(func() {
+					text(c, preview.Code, style).FillWidth().SingleLine().TextAlign(ui.Center).PassThrough()
+					text(c, entry.Name, style).FillWidth().SingleLine().TextAlign(ui.Center).PassThrough()
+				})
+				return
+			}
+			if preview.Font != "" {
+				style.Font = preview.Font
+				style.Weight = 400
+			}
+		}
+		text(c, entry.Value, style).SingleLine().PassThrough()
+	})
 	if button.Clicked() && onSelect != nil {
 		onSelect(entry.Value)
 	}

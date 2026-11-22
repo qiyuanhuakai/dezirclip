@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -61,7 +63,11 @@ func (n *nativeMain) drawEmojiResults(c *ui.Context, kit uikit.Kit, tab string, 
 	panel := n.emojiPanel()
 	kit.CharacterSearch(c, &panel.query, n.text("emoji_search"), func(composing bool) {
 		if !composing && (panel.tab != tab || panel.searched != panel.query) {
-			panel.matches = searchCharacters(tab, panel.query)
+			panel.matches = slices.Clone(searchCharacters(tab, panel.query))
+			for i := range panel.matches {
+				group := &panel.matches[i]
+				group.choices = previewCharacterChoices(group.choices, tab, strings.TrimSpace(panel.query) != "")
+			}
 			panel.tab, panel.searched = tab, panel.query
 			panel.characters = ui.ListState{}
 		}

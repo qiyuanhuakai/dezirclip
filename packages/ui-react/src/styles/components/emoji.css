@@ -87,6 +87,34 @@
   gap: 6px;
 }
 
+.emoji-grid--descriptions {
+  grid-template-columns: repeat(auto-fill, minmax(min(88px, 100%), 1fr));
+}
+
+.emoji-glyph-sprite {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  display: block;
+  background-repeat: no-repeat;
+}
+
+.emoji-glyph-description {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  font-size: 9px;
+  line-height: 1.1;
+}
+
+.emoji-glyph-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .emoji-btn{
   height: 32px;
   color: var(--text-primary);

@@ -16,3 +16,8 @@ cargo run --locked --manifest-path scripts/emoji-catalog/Cargo.toml -- \
 The SHA-256 hashes are `8d2dfe9bf41894bd17c9c1a1906a31bf0ccc06204bf4b77c2ab2b0d8f79a5fdf` for `zh` and `59158786a4a0b0937a7f3a370cbe5bc79ae7f3a6155edd55914dceadf0f0a35f` for zh-Hant. The English file is f22083cb86dffb63a643d5bacb5d9899f82d2fa5d388ad4f3aed72184acef505.
 
 Both renderers rank glyph and whole-name matches before word fragments. If there are no direct results, one English word or Chinese phrase of four or more characters can differ by one insertion, deletion, replacement or adjacent swap.
+
+Regenerate the shared flag atlas and preview fonts with
+`python scripts/emoji-catalog/build-previews.py` (requires Pillow and fontTools).
+The artwork credits and font notices are in
+[character-assets/NOTICE.md](../../frontends/dzc-surface/cmd/dzc-desktop/character-assets/NOTICE.md).

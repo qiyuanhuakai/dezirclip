@@ -15,6 +15,7 @@ type characterListRow struct {
 	title   string
 	choices []CharacterChoice
 	top     float32
+	cell    float32
 }
 
 // CharacterList renders visible glyph rows across all groups in one scrollable
@@ -24,8 +25,6 @@ func (k Kit) CharacterList(c *ui.Context, state *ui.ListState, width float32, gr
 	title, group, grid := k.style("emojiGroupTitle"), k.style("emojiGroup"), k.style("emojiGrid")
 	width = max(1, width-content.Padding[1]-content.Padding[3])
 	gap := grid.ColumnGap
-	columns := characterColumnCount(width, gap)
-	cell := (width - float32(columns-1)*gap) / float32(columns)
 	var rows []characterListRow
 	for _, section := range groups {
 		if len(section.Choices) == 0 {
@@ -36,12 +35,14 @@ func (k Kit) CharacterList(c *ui.Context, state *ui.ListState, width float32, gr
 			top = content.RowGap
 		}
 		rows = append(rows, characterListRow{title: section.Label, top: top})
+		columns := characterChoiceColumns(width, gap, section.Choices)
+		cell := (width - float32(columns-1)*gap) / float32(columns)
 		for choices := range slices.Chunk(section.Choices, columns) {
 			top := grid.ColumnGap
 			if len(rows[len(rows)-1].choices) == 0 {
 				top = 0
 			}
-			rows = append(rows, characterListRow{choices: choices, top: top})
+			rows = append(rows, characterListRow{choices: choices, top: top, cell: cell})
 		}
 	}
 	if len(rows) == 0 {
@@ -59,7 +60,7 @@ func (k Kit) CharacterList(c *ui.Context, state *ui.ListState, width float32, gr
 			}
 			ui.Row(ctx).FillWidth().Padding(item.top, 0, 0).Gap(gap).Children(func() {
 				for _, entry := range item.choices {
-					k.characterTile(ctx, entry, cell, disabled, onSelect)
+					k.characterTile(ctx, entry, item.cell, disabled, onSelect)
 				}
 			})
 		})

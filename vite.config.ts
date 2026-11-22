@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // https://vite.dev/config/
@@ -10,7 +11,21 @@ export default defineConfig(async ({ mode }) => {
   const shellModule = (name: string) => fileURLToPath(new URL(`./src/shared/mygo/${name}.ts`, import.meta.url));
 
   return {
-    plugins: [react(), ...(mygo ? [{
+    plugins: [react(), {
+      name: "character-preview-notices",
+      generateBundle() {
+        const directory = new URL("./frontends/dzc-surface/cmd/dzc-desktop/character-assets/", import.meta.url);
+        for (const name of readdirSync(directory)) {
+          if (name === "NOTICE.md" || name.endsWith(".txt")) {
+            this.emitFile({
+              type: "asset",
+              fileName: `licenses/character-previews/${name}`,
+              source: readFileSync(new URL(name, directory)),
+            });
+          }
+        }
+      },
+    }, ...(mygo ? [{
       name: "mygo-local-content",
       transformIndexHtml() {
         return [{ tag: "meta", injectTo: "head-prepend" as const, attrs: {
