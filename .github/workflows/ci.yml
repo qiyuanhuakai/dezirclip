@@ -23,9 +23,14 @@ jobs:
           $stage = "$env:RUNNER_TEMP/probe-stage"
           & 'C:/Program Files/7-Zip/7z.exe' x $source "-o$stage" '-ir!dzc*.exe' '-ir!skills\*' -y
           $env:CGO_ENABLED='0'
+          $identity='github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo'
+          $revision='94f49244ac1012ae13cc1c0e731239b414bac318'
+          $version='0.2.0-beta.5'
+          $toolkit=(Get-Content frontends/dzc-surface/internal/buildinfo/mygo-toolkit.json -Raw | ConvertFrom-Json).id
+          $flags="-H windowsgui -X $identity.Version=$version -X $identity.SourceRevision=$revision -X $identity.SourceState=verified_checkout -X $identity.BuildID=$version@$revision -X $identity.Target=x86_64-pc-windows-msvc -X $identity.ToolkitPatch=$toolkit"
           Push-Location frontends/dzc-surface
           try {
-            go build -trimpath -ldflags '-H windowsgui' -o "$stage/dzc-desktop.exe" ./cmd/dzc-desktop
+            go build -trimpath -ldflags $flags -o "$stage/dzc-desktop.exe" ./cmd/dzc-desktop
           } finally {
             Pop-Location
           }
