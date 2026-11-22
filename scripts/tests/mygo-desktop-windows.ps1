@@ -1120,17 +1120,21 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         if (Get-DesktopProcesses @($resident.Id, $main.Id) | Where-Object Name -eq 'msedgewebview2.exe') {
             throw 'Default main window started a WebView2 process'
         }
+        $localePath = Join-Path $PSScriptRoot '../../frontends/dzc-surface/cmd/dzc-desktop/native-main-messages.json'
+        $messages = (Get-Content -Raw -Encoding UTF8 -LiteralPath $localePath | ConvertFrom-Json).en
+        $privacySection = $messages.privacy_settings
+        $privacySession = $messages.privacy_session_title
+        if ([string]::IsNullOrWhiteSpace($privacySection) -or [string]::IsNullOrWhiteSpace($privacySession)) { throw 'Missing native Privacy accessibility labels' }
         Click-Control $main (Get-ControlPoint $root 'Settings')
-        $null = Get-ControlPoint $root 'Privacy'
-        $protection = 'Protect sensitive clipboard content'
-        if (Get-SettingsCheckbox $root $protection) { throw 'Privacy expanded on entering Settings' }
-        Click-Control $main (Get-ControlPoint $root 'Privacy')
-        $null = Get-ControlPoint $root $protection
+        $privacyPoint = Get-ControlPoint $root $privacySection
+        if (Get-SettingsCheckbox $root $privacySession) { throw 'Privacy expanded on entering Settings' }
+        Click-Control $main $privacyPoint
+        $null = Get-ControlPoint $root $privacySession ([Windows.Automation.ControlType]::CheckBox)
         Click-Control $main (Get-ControlPoint $root 'Back')
         $null = Get-ControlPoint $root $marker
         Click-Control $main (Get-ControlPoint $root 'Settings')
-        $null = Get-ControlPoint $root 'Privacy'
-        if (Get-SettingsCheckbox $root $protection) { throw 'Privacy expanded on reopening Settings' }
+        $null = Get-ControlPoint $root $privacySection
+        if (Get-SettingsCheckbox $root $privacySession) { throw 'Privacy expanded on reopening Settings' }
         Click-Control $main (Get-ControlPoint $root 'Close')
         $null = Get-ControlPoint $root $marker
         Write-Host 'Verified native history, Settings close, and collapsed Privacy'
