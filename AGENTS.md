@@ -65,8 +65,8 @@ Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows v
 ### Single gitignored pattern: AI-tool artifacts
 `.gitignore` excludes `.trae/`, `.opencode/`, `.omo/`, `CLAUDE.md`, `AGENTS.md`. These are session-local. **The committed AGENTS.md is the curated knowledge base; CLAUDE.md / session-specific notes are not committed.**
 
-### Manual Vite chunk splitting
-`vite.config.ts` splits output by feature (`settings`, `tag`, `emoji`, `compact-preview`) and by vendor (`vendor-react-select`, `vendor-motion`, `vendor-virtuoso`, `vendor-tauri`, `vendor-react`). When adding a heavy new feature, add a `manualChunks` entry to keep cold-start parse time bounded.
+### Production WebView chunking
+Split optional features at `lazy` and `import()` boundaries. Run `node scripts/tests/verify-desktop-web.mjs` after `pnpm run build` to check that the production main window and lazy Settings bundle load in Chromium.
 
 ### Linux service opt-out via env var
 `TIEZ_DISABLE_LINUX_SERVICES=window_tracker,edge_docking,mouse_hotkey` skips three Linux-specific background services. Used in `pnpm run tauri:dev:safe`. Pattern: any new Linux service must support this kill switch.

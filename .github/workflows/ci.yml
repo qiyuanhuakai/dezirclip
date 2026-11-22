@@ -206,6 +206,13 @@ jobs:
       - name: Build frontend
         run: pnpm run build
 
+      - name: Verify production WebView startup
+        run: |
+          if [[ ! -x /usr/bin/google-chrome ]]; then
+            pnpm exec playwright install chromium --only-shell
+          fi
+          node scripts/tests/verify-desktop-web.mjs
+
   native-file-drag:
     if: github.event_name == 'workflow_dispatch' && inputs.native_file_drag_only
     runs-on: ${{ matrix.os }}

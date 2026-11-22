@@ -308,6 +308,14 @@ jobs:
         run: |
           pnpm run build
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if ($env:TARGET_TRIPLE -eq 'x86_64-unknown-linux-gnu') {
+            if (!(Test-Path /usr/bin/google-chrome)) {
+              pnpm exec playwright install chromium --only-shell
+              if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            }
+            node scripts/tests/verify-desktop-web.mjs
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
           $build = @('build', '--locked', '--release', '--manifest-path', 'src-tauri/Cargo.toml',
                      '--bin', 'dezirclip', '--features', 'tauri/custom-protocol', '--target', $env:TARGET_TRIPLE)
           cargo @build
