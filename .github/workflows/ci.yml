@@ -36,22 +36,18 @@ jobs:
           }
           choco install nsis --no-progress -y
       - name: Exercise the installed native desktop and trace the installer
-        shell: pwsh
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
-          $env:DZC_INSTALL_PROBE_TRACE = "$env:RUNNER_TEMP/probe-trace.txt"
-          $env:DZC_INSTALL_PROBE_STAGE = "$env:RUNNER_TEMP/probe-stage"
-          $env:DZC_INSTALL_PROBE_INSTALLER = "$env:RUNNER_TEMP/DezirClip-native-handoff-probe.exe"
-          try {
-            @'
+          set -euo pipefail
+          export DZC_INSTALL_PROBE_TRACE="$RUNNER_TEMP/probe-trace.txt"
+          export DZC_INSTALL_PROBE_STAGE="$RUNNER_TEMP/probe-stage"
+          export DZC_INSTALL_PROBE_INSTALLER="$RUNNER_TEMP/DezirClip-native-handoff-probe.exe"
+          trap 'if [[ -f "$DZC_INSTALL_PROBE_TRACE" ]]; then cat "$DZC_INSTALL_PROBE_TRACE"; fi' EXIT
+          python - <<'PY'
           import os, runpy
           from pathlib import Path
           stage = Path(os.environ["DZC_INSTALL_PROBE_STAGE"])
           installer = Path(os.environ["DZC_INSTALL_PROBE_INSTALLER"])
           runpy.run_path("scripts/build-mygo-installer.py")["build"](stage, installer, "0.2.0-beta.6", fast_compression=True)
           runpy.run_path("scripts/tests/mygo-installer-windows.py")["verify"](installer, stage, native_main=True, focused=True)
-          '@ | python -
-          } finally {
-            if (Test-Path $env:DZC_INSTALL_PROBE_TRACE) { Get-Content $env:DZC_INSTALL_PROBE_TRACE }
-          }
+          PY
