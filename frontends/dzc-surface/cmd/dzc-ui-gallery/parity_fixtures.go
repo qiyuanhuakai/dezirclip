@@ -34,7 +34,7 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 				}})
 			})
 			kit.SettingsField(c, uikit.SettingsFieldOptions{}).Children(func() {
-				kit.SettingsFieldLabel(c, "Idle timeout", "", "").Grow(1)
+				kit.SettingsInlineLabel(c, "Idle timeout", "", "")
 				timeout := "30"
 				input, _ := kit.SettingsNumberField(c, &timeout, "Idle timeout", false)
 				input.Width(112)

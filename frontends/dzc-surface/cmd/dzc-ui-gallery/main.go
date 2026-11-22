@@ -163,7 +163,11 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 	case "settings-toggle":
 		kit.SettingsToggle(c, &g.settingEnabled, "Keep clipboard history")
 	case "settings-toggle-help":
-		ui.Column(c).Width(330).Gap(8).Children(func() {
+		width := float32(330)
+		if g.state == "narrow" {
+			width = 150
+		}
+		ui.Column(c).Width(width).Gap(8).Children(func() {
 			kit.SettingsToggleField(c, &g.settingEnabled, "Move pasted entries to top", "Setting help: Move pasted entries to top",
 				"After pasting, move the item to the top of the list.", false)
 			winV := false
@@ -394,7 +398,7 @@ func (g *gallery) prepare(tester *ui.Tester) error {
 	if g.fixture == "privacy-detection" && g.state == "focus" {
 		return tester.Click("Patterns")
 	}
-	if g.fixture == "settings-toggle-help" && g.state == "expanded" {
+	if g.fixture == "settings-toggle-help" && (g.state == "expanded" || g.state == "narrow") {
 		if err := tester.Click("Setting help: Move pasted entries to top"); err != nil {
 			return err
 		}
@@ -700,6 +704,15 @@ func run() error {
 		tester.Advance(time.Duration(transition) * time.Millisecond)
 		if *inspect {
 			var result any = tester.Texts()
+			if g.fixture == "settings-toggle-help" && g.state == "narrow" {
+				label, _ := tester.Find("Move pasted entries to top")
+				description, _ := tester.Find("After pasting, move the item to the top of the list.")
+				result = struct {
+					Texts       []string
+					Label       ui.Rect
+					Description ui.Rect
+				}{tester.Texts(), label, description}
+			}
 			if g.fixture == "history-typography" || g.fixture == "history-preview-status" {
 				names := make([]string, 0, 5)
 				if g.fixture == "history-typography" {

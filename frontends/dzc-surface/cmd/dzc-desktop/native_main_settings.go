@@ -234,7 +234,7 @@ func (n *nativeMain) generalSettings(c *ui.Context) {
 func (n *nativeMain) adminRestartSetting(c *ui.Context, kit uikit.Kit) {
 	label := n.text("restart_as_admin")
 	kit.SettingsField(c.Key("restart-as-admin"), uikit.SettingsFieldOptions{}).Children(func() {
-		kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), n.text("restart_as_admin_hint")).Grow(1)
+		kit.SettingsInlineLabel(c, label, n.settingsHelpLabel(label), n.text("restart_as_admin_hint"))
 		if kit.SettingsDataAction(c, n.text("restart"), "", n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating).Clicked() {
 			n.restartingAdmin, n.mutating, n.adminRestartFailed = true, true, false
 			window := n.window

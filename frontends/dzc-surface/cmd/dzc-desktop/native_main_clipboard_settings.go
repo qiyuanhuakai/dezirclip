@@ -34,7 +34,7 @@ func (n *nativeMain) pasteMethodSetting(c *ui.Context, kit uikit.Kit) {
 	}
 	selected, label := saved, n.text("paste_method")
 	kit.SettingsField(c, uikit.SettingsFieldOptions{}).Children(func() {
-		kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), n.text("paste_method_hint")).Grow(1).MinWidth(110)
+		kit.SettingsInlineLabel(c, label, n.settingsHelpLabel(label), n.text("paste_method_hint"))
 		if kit.Select(c, &selected, label, options, n.mutating).Changed() && selected != saved {
 			if selected == "game_mode" {
 				n.enableGameMode(saved)
@@ -239,7 +239,7 @@ func (n *nativeMain) numberSetting(c *ui.Context, key, label, hint string, fallb
 		draft.value, draft.saved = saved, saved
 	}
 	row.Children(func() {
-		kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), hint).Grow(1).MinWidth(110)
+		kit.SettingsInlineLabel(c, label, n.settingsHelpLabel(label), hint)
 		input, committed := kit.SettingsNumberField(c, &draft.value, label, n.mutating)
 		input.Width(112)
 		if !committed {

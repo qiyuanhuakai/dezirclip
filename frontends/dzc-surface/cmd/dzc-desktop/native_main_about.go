@@ -342,7 +342,7 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		channelHint = n.text("updater_preview_hint")
 	}
 	kit.SettingsField(c, uikit.SettingsFieldOptions{}).Children(func() {
-		kit.SettingsFieldLabel(c, channelLabel, n.settingsHelpLabel(channelLabel), channelHint).Grow(1).MinWidth(110)
+		kit.SettingsInlineLabel(c, channelLabel, n.settingsHelpLabel(channelLabel), channelHint)
 		kit.SettingsChoices(c, channelLabel, u.channel, []uikit.SelectOption{
 			{Value: "stable", Label: n.text("updater_channel_stable_name")},
 			{Value: "preview", Label: n.text("updater_channel_preview_name")},

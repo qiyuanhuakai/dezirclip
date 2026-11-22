@@ -154,7 +154,8 @@ func (k Kit) settingsSectionCard(c *ui.Context, title string, open *bool, column
 			if columns > 1 {
 				body.Grid().Columns(columns).AlignItems(ui.Start).GapX(20)
 			}
-			paint(body.FillWidth().GapY(8), k.style("settingsGroupContent")).Children(content)
+			contentStyle := k.style("settingsGroupContent")
+			paint(body.FillWidth().GapY(contentStyle.RowGap), contentStyle).Children(content)
 		}
 	})
 }

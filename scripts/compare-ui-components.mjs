@@ -83,7 +83,7 @@ const additionalExamples = {
   "character-panel": { states: ["default", "after-scroll"], text: "Symbols" },
   "clipboard-search": { states: ["default", "selected"], text: "富文本" },
   "settings-toggle": { states: ["enabled", "default"], text: "Keep clipboard history" },
-  "settings-toggle-help": { states: ["default", "expanded"], text: "Move pasted entries to top" },
+  "settings-toggle-help": { states: ["default", "expanded", "narrow"], text: "Move pasted entries to top" },
   "settings-keyboard-preview": { states: ["default", "enabled"], text: "Preview keyboard selection" },
   "settings-slider": { states: ["default", "keyboard"], text: "Opacity 72%" },
   "hotkey-binding": { states: ["default", "recording", "narrow", "conflict"], text: "Quick Paste" },
@@ -240,7 +240,7 @@ try {
                 await page.mouse.move(450, 390);
               }
             }
-            if (fixture === "settings-toggle-help" && state === "expanded") {
+            if (fixture === "settings-toggle-help" && (state === "expanded" || state === "narrow")) {
               await page.getByRole("button", { name: "Setting help: Move pasted entries to top" }).click();
               await page.getByText("After pasting, move the item to the top of the list.").waitFor();
               await page.mouse.move(450, 390);
@@ -602,6 +602,17 @@ try {
             const { stdout } = await execute(resolve(native), nativeArgs, { timeout: 10000 });
             const nativeImage = await readFile(target);
             const inspection = JSON.parse(stdout);
+            if (fixture === "settings-toggle-help" && state === "narrow") {
+              const wraps = await page.locator(".showcase-toggle-help .setting-item").first().evaluate(row => {
+                const label = row.querySelector(".item-label-group").getBoundingClientRect();
+                const toggle = row.querySelector(".switch").getBoundingClientRect();
+                return label.width >= 149 && toggle.top > label.bottom && toggle.right <= row.getBoundingClientRect().right;
+              });
+              if (!wraps || inspection.Label?.W < 149 || inspection.Description?.W < 149 ||
+                !inspection.Label?.W || !inspection.Description?.W) {
+                throw Error("The switch squeezed the text in the narrow settings field");
+              }
+            }
             const nativeText = (Array.isArray(inspection) ? inspection : inspection.Texts).join(" ");
             let webText = await page.locator("body").innerText();
             if (fixture === "privacy-rules") {
@@ -661,7 +672,7 @@ try {
               : comparable(webText, marker) && comparable(nativeText, marker);
             const extra = state === "popup" || fixture === "surface-opacity" ? "Light"
               : fixture === "hotkey-optional" && state === "options" ? "Clear shortcut"
-              : fixture === "settings-toggle-help" && state === "expanded" ? "After pasting, move the item to the top of the list."
+              : fixture === "settings-toggle-help" && (state === "expanded" || state === "narrow") ? "After pasting, move the item to the top of the list."
               : fixture === "character-panel" ? state === "after-scroll" ? "Mathematics" : "Arrows"
               : fixture === "settings-field" && state === "expanded" ? "Use the theme font by default."
               : state === "expanded" && fixture === "disclosure" ? "Preview channel"

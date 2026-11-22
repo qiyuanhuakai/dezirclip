@@ -37,8 +37,8 @@ func (k Kit) settingsToggleField(c *ui.Context, on *bool, label, helpLabel, desc
 	switchStyle := k.style("settingsSwitch")
 	changed := false
 	k.SettingsField(c, field).Children(func() {
-		k.SettingsFieldLabel(c, label, helpLabel, description).Grow(1)
-		ui.Box(c).Size(switchStyle.Width, switchStyle.Height).Margin(0, 0, 0, 12).Shrink(0).Children(func() {
+		k.SettingsInlineLabel(c, label, helpLabel, description)
+		ui.Box(c).Size(switchStyle.Width, switchStyle.Height).MarginStart(12).Shrink(0).Children(func() {
 			control := ui.CheckboxBase(c, on).Label(label).Fill().Disabled(disabled).FocusRing(true)
 			face := ui.Box(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).PassThrough()
 			k.paintSettingsSwitch(c, face, *on)

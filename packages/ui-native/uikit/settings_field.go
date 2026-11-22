@@ -32,6 +32,13 @@ func (k Kit) SettingsFieldLabel(c *ui.Context, label, helpLabel, description str
 	return k.settingsFieldLabel(c, label, helpLabel, description, nil)
 }
 
+// SettingsInlineLabel keeps nine ems for the label before its row wraps the control.
+func (k Kit) SettingsInlineLabel(c *ui.Context, label, helpLabel, description string) ui.Element {
+	basis := 9 * k.style("settingsToggleRow").Size
+	return k.SettingsFieldLabel(c, label, helpLabel, description).
+		Basis(basis).Grow(1).Shrink(0).MaxWidthPercent(100)
+}
+
 func (k Kit) settingsFieldLabel(c *ui.Context, label, helpLabel, description string, action func()) ui.Element {
 	if description == "" && action == nil {
 		return k.SettingsLabel(c, label).MinWidth(0).Wrap()

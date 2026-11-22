@@ -314,7 +314,8 @@ function Showcase() {
       <SettingsToggleField detail label="Preview keyboard selection" helpLabel="Setting help"
         description="Show the selected item's preview when using arrow keys." defaultChecked={state === "enabled"} disabled={!enabled} />
     </div>,
-    "settings-toggle-help": <div className="showcase-fields settings-view showcase-toggle-help">
+    "settings-toggle-help": <div className="showcase-fields settings-view showcase-toggle-help"
+      style={state === "narrow" ? { width: 150 } : undefined}>
       <SettingsToggleField label="Move pasted entries to top" helpLabel="Setting help"
         description="After pasting, move the item to the top of the list." checked={enabled}
         onChange={event => setEnabled(event.currentTarget.checked)} />

@@ -14,6 +14,7 @@ if (!artifacts) throw Error("Pass results=<directory written by compare-ui-compo
 // state, trimmed to keep its visible controls legible in the README.
 const figures = [
   ["settings-toggle-help", "expanded", 165],
+  ["settings-toggle-help", "narrow", 260, 0, "settings-toggle-help-narrow", 188],
   ["settings-keyboard-preview", "default", 155],
   ["character-panel", "after-scroll", 310, 0, "character-panel-scroll"],
   ["settings-field", "expanded", 200],
@@ -135,13 +136,13 @@ await mkdir(destination, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1156, height: 485 }, deviceScaleFactor: 1 });
-  for (const [component, state, height, offset = 0, basename = component] of figures) {
+  for (const [component, state, height, offset = 0, basename = component, width = 560] of figures) {
     const id = [theme, mode, component, state].join("_");
     const [web, native] = await Promise.all([capture(id, "web"), capture(id, "native")]);
     await page.setContent(`<!doctype html><html lang="en"><meta charset="utf-8"><style>
       * { box-sizing: border-box }
       body { margin: 0; font: 600 15px system-ui, sans-serif; color: #162238; background: #e7ebf2 }
-      main { display: grid; grid-template-columns: repeat(2, 560px); gap: 12px; width: 1156px; padding: 12px }
+      main { display: grid; grid-template-columns: repeat(2, ${width}px); gap: 12px; width: ${width * 2 + 36}px; padding: 12px }
       figure { margin: 0; overflow: hidden; border-radius: 8px; background: #fff }
       figcaption { padding: 10px 14px; border-bottom: 1px solid #d8dfea }
       .view { height: ${height}px; overflow: hidden }
