@@ -14,7 +14,7 @@ func (k Kit) SettingsToggle(c *ui.Context, on *bool, label string) ui.Element {
 	rowStyle := k.style("settingsToggleRow")
 	switchStyle := k.style("settingsSwitch")
 	row := paint(ui.CheckboxBase(c, on).Label(label).FillWidth().MinHeight(rowStyle.Height).
-		Gap(10).AlignItems(ui.Center).FocusRing(true), rowStyle)
+		Gap(10).AlignItems(ui.Center).FocusRing(true).Cursor(ui.CursorPointer), rowStyle)
 	row.Children(func() {
 		k.SettingsLabel(c, label).Grow(1).Wrap().PassThrough()
 		track := ui.Box(c).Size(switchStyle.Width, switchStyle.Height).Shrink(0).PassThrough()
@@ -39,7 +39,7 @@ func (k Kit) settingsToggleField(c *ui.Context, on *bool, label, helpLabel, desc
 	k.SettingsField(c, field).Children(func() {
 		k.SettingsInlineLabel(c, label, helpLabel, description)
 		ui.Box(c).Size(switchStyle.Width, switchStyle.Height).MarginStart(12).Shrink(0).Children(func() {
-			control := ui.CheckboxBase(c, on).Label(label).Fill().Disabled(disabled).FocusRing(true)
+			control := ui.CheckboxBase(c, on).Label(label).Fill().Disabled(disabled).FocusRing(true).Cursor(actionCursor(disabled))
 			face := ui.Box(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).PassThrough()
 			k.paintSettingsSwitch(c, face, *on)
 			if disabled {
@@ -133,7 +133,7 @@ func (k Kit) HotkeyError(c *ui.Context, message string) {
 
 func (k Kit) HotkeyBinding(c *ui.Context, label, value, placeholder string, recording, disabled bool) ui.Element {
 	field := ui.ButtonBase(c).Label(label).FocusRing(true).Disabled(disabled).
-		MaxWidthPercent(100).Wrap()
+		MaxWidthPercent(100).Wrap().Cursor(actionCursor(disabled))
 	if recording {
 		field.Description(placeholder)
 	} else if value != "" {
@@ -197,7 +197,7 @@ func (k Kit) HotkeyListWithOptions(c *ui.Context, options HotkeyListOptions) {
 
 func (k Kit) HotkeyRemoveButton(c *ui.Context, label string, disabled bool) ui.Element {
 	style := k.style("hotkeyRemove")
-	button := ui.ButtonBase(c).Size(style.Width, style.Height).Label(label).Tooltip(label).Center().Disabled(disabled)
+	button := ui.ButtonBase(c).Size(style.Width, style.Height).Label(label).Tooltip(label).Center().Disabled(disabled).Cursor(actionCursor(disabled))
 	paint(button, k.interactive(c, button, style, false)).Children(func() {
 		ui.Icon(c, shortcutRemoveIcon).Size(12, 12).TextColor(styleColor(style.Text)).PassThrough()
 	})
@@ -265,7 +265,7 @@ func (k Kit) hotkeyCaps(c *ui.Context, field ui.Element, value, placeholder stri
 func (k Kit) Checkbox(c *ui.Context, checked *bool, label string) ui.Element {
 	style := k.style("select")
 	row := ui.CheckboxBase(c, checked).Label(label).FillWidth().MinHeight(32).
-		AlignItems(ui.Center).Gap(8).FocusRing(true)
+		AlignItems(ui.Center).Gap(8).FocusRing(true).Cursor(ui.CursorPointer)
 	row.Children(func() {
 		fill, border := c.Theme().Surface, c.Theme().Border
 		if *checked {

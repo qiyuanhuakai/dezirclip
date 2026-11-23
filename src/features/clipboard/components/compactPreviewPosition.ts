@@ -100,6 +100,17 @@ export const pickPreviewPosition = ({
   }
 
   if (anchorRect) {
+    const centeredX = (anchorRect.left + anchorRect.right - widthPx) / 2;
+    const nextToItem = [
+      { x: anchorRect.right + offset, y: upwardY },
+      { x: anchorRect.left - widthPx - offset, y: upwardY },
+      { x: centeredX, y: anchorRect.top - heightPx - offset },
+      { x: centeredX, y: anchorRect.bottom + offset },
+    ].map(clampPoint);
+    for (const p of nextToItem) {
+      if (p.x >= anchorRect.right || p.x + widthPx <= anchorRect.left
+        || p.y >= anchorRect.bottom || p.y + heightPx <= anchorRect.top) return p;
+    }
     return clampPoint(candidates[1]);
   }
 

@@ -172,7 +172,6 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const toggleManagement = () => {
         detailSequence.current += 1;
         setManagementMode(current => !current); clearSelection(); setBatchFeedback(null); setMenuOpen(false); setPickerOpen(false);
-        setRevealedScope(null);
     };
 
     const openDialog = useCallback((next: Dialog) => {
@@ -413,7 +412,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     {compactMode ? <List size={16} /> : <ListCollapse size={16} />}
                 </button>
                 <button type="button" className={`btn-icon${revealAll ? ' active' : ''}`}
-                    disabled={busy || !selectedTag || managementMode || library.loading || library.error || library.total === 0 || privacy.phase !== 'ready'}
+                    disabled={busy || !selectedTag || library.loading || library.error || library.total === 0 || privacy.phase !== 'ready'}
                     aria-pressed={revealAll} title={t(revealAll ? 'tag_hide_all' : 'tag_reveal_all')} aria-label={t(revealAll ? 'tag_hide_all' : 'tag_reveal_all')}
                     onClick={() => {
                         clearRevealError();
@@ -478,7 +477,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                             richTextSnapshotPreview={richTextSnapshotPreview} theme={theme} language={language} t={t} tagColors={colors}
                             onSelect={setSelectedId} onEdit={editItem} onDelete={deleteItem} onQRCode={setQrEntry} onChanged={changed} onError={notifyError} onRevealAction={clearRevealError} />}
                         components={{ Footer: () => library.loadingMore ? <div className="tag-manager-loading"><LoaderCircle size={15} className="tag-manager-spinner" /></div> : null }} /></div>
-                        : <div className="tag-manager-empty">{t(library.error || library.metadataError ? 'tag_load_failed' : !selectedTag ? 'tag_library_empty' : library.query ? 'tag_no_matching_entries' : 'tag_no_entries')}</div>}
+                        : <div className="tag-manager-empty">{t(library.error || library.metadataError ? 'tag_load_failed' : !selectedTag ? (library.tags.length ? 'tag_select_hint' : 'tag_library_empty') : library.query ? 'tag_no_matching_entries' : 'tag_no_entries')}</div>}
             </div>
             {(batchFeedback || actionError) && <div className="tag-manager-notice" role={batchFeedback && !batchFeedback.error ? 'status' : 'alert'}>{batchFeedback?.message ?? t('tag_action_failed')}
                 <button type="button" className="btn-icon" aria-label={t('common_close')} onClick={() => { setActionError(false); setBatchFeedback(null); }}><X size={13} /></button></div>}

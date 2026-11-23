@@ -92,7 +92,7 @@ func (k Kit) appearanceAction(c *ui.Context, label string, disabled, compact boo
 }
 
 func (k Kit) settingsAction(c *ui.Context, label string, disabled bool, height float32, padding *[4]float32, glyph *ui.SVG) ui.Element {
-	button := ui.ButtonBase(c).Label(label).Disabled(disabled).FocusRing(true).Center()
+	button := ui.ButtonBase(c).Label(label).Disabled(disabled).FocusRing(true).Center().Cursor(actionCursor(disabled))
 	widget := "updateAction"
 	if disabled {
 		widget += "Disabled"

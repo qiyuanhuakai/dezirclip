@@ -24,6 +24,11 @@ describe("searchCharacters", () => {
     ["emoji", "笑到打滾", "🤣"],
     ["emoji", "puppy eyes", "🥺"],
     ["emoji", "buterfly", "🦋"],
+    ["emoji", "点赞", "👍"],
+    ["emoji", "比個心", "🫶"],
+    ["emoji", "中国国旗", "🇨🇳"],
+    ["emoji", "英國旗幟", "🇬🇧"],
+    ["emoji", "EU flag", "🇪🇺"],
   ] as const)("finds %s for %s", (tab, query, value) => {
     const entries = searchCharacters(tab, query).flatMap(group => group.entries);
     expect(entries.map(entry => entry.value)).toContain(value);

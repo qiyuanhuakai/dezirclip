@@ -47,7 +47,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
     managementMode = false, selectedForDeletion = false, onToggleSelection, revealAll = false,
     bulkRevealExcluded = false, onExcludeBulkReveal }: TagHistoryRowProps) {
     const [detailState, setDetailState] = useState<{ source: ClipboardEntry; value: ClipboardEntry; bulkReveal: boolean } | null>(null);
-    const detail = !managementMode && detailState?.source === item && detailState.bulkReveal === revealAll ? detailState.value : null;
+    const detail = (!managementMode || revealAll) && detailState?.source === item && detailState.bulkReveal === revealAll ? detailState.value : null;
     const setDetail = (value: ClipboardEntry | null) => setDetailState(value ? { source: item, value, bulkReveal: revealAll } : null);
     const privacy = usePrivacySession();
     const [resourceState, setResourceState] = useState<{ source: ClipboardEntry; epoch: number; phase: HistoryPreviewPhase; value: HistoryPreviewContent | null } | null>(null);
@@ -110,14 +110,15 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
     }), []);
 
     useEffect(() => {
+        if (managementMode) { setEditingTags(false); setTagInput(''); }
+        if (revealAll) return;
         detailGeneration.current += 1;
         pendingReveal.current = null;
         setRevealPending(false);
         fullItem.current = null;
         forgetPrivacyReveal(currentItem.current);
         setDetail(null);
-        if (managementMode) { setEditingTags(false); setTagInput(''); }
-    }, [managementMode]);
+    }, [managementMode, revealAll]);
 
     useEffect(() => {
         detailGeneration.current += 1;
@@ -178,7 +179,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
             }
         }
         return () => { disposed = true; };
-    }, [revealAll, bulkRevealExcluded, managementMode, compactMode, item, sensitive, loadFullItem, onError]);
+    }, [revealAll, bulkRevealExcluded, compactMode, item, sensitive, loadFullItem, onError]);
 
     const copy = (pasteWithFormat = false, pasteImageAsBase64 = false) => {
         if (managing.current) return;

@@ -56,10 +56,7 @@ func (k Kit) CaptureEngineStatus(c *ui.Context, options CaptureEngineStatusOptio
 func (k Kit) SettingsStatusBadge(c *ui.Context, label string, available bool) {
 	color := c.Theme().TextMuted
 	if available {
-		color = ui.Hex("#26724a")
-		if k.Mode == "dark" {
-			color = ui.Hex("#70d69b")
-		}
+		color = ui.Hex("#34c759")
 	}
 	ui.Row(c).AlignItems(ui.Center).Padding(4, 10).Gap(6).Radius(999).
 		Border(1, color.Alpha(.28)).Background(color.Alpha(.14)).Role(ui.RoleStatus).Label(label).Children(func() {

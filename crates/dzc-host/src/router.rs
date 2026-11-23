@@ -378,6 +378,7 @@ impl Host {
                 methods.push("desktop.appearance.background");
                 methods.push("desktop.applications.select");
                 methods.push("desktop.history.open");
+                if cfg!(any(target_os = "linux", target_os = "windows")) { methods.push("desktop.history.share"); }
                 methods.push("desktop.files.drag");
                 if self.actions.can_copy() { methods.push("desktop.files.drop"); }
                 methods.push("desktop.settings.preferences");
@@ -452,7 +453,7 @@ impl Host {
     pub(crate) fn independent_dispatch(method: Method) -> bool {
         matches!(method, Method::Health | Method::ServiceStatus | Method::PrivacyGet |
             Method::DesktopScreenBegin | Method::DesktopScreenRead | Method::DesktopScreenCrop | Method::DesktopScreenCancel | Method::DesktopScreenFinish |
-            Method::DesktopHistoryOpen | Method::DesktopFilesDrop | Method::DesktopFilesDrag | Method::DesktopApplicationsSelect | Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
+            Method::DesktopHistoryOpen | Method::DesktopHistoryShare | Method::DesktopFilesDrop | Method::DesktopFilesDrag | Method::DesktopApplicationsSelect | Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
             Method::DesktopWindowPaste | Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
             Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview | Method::DesktopBackupInspect | Method::DesktopSystemExplorerRestart)
     }
@@ -611,6 +612,10 @@ impl Host {
             Method::DesktopHistoryOpen => {
                 self.open_history_item(session, params(request.params)?)?;
                 result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopHistoryShare => {
+                let performed = self.share_history_item(session, params(request.params)?)?;
+                result("OperationResult", OperationResult { performed })
             }
             Method::DesktopFilesDrop => {
                 self.drop_files(session, params(request.params)?)?;

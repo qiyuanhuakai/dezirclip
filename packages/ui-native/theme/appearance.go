@@ -39,6 +39,9 @@ func (a Appearance) Valid() bool {
 func Apply(t *ui.Theme, tokens Tokens) {
 	t.Background, t.Surface = ui.Hex(tokens.Background), ui.Hex(tokens.Panel)
 	t.Text, t.TextMuted = ui.Hex(tokens.Text), ui.Hex(tokens.Muted)
+	// Tooltips use this pair even when their host window paints a transparent root.
+	t.Inverse, t.InverseText = t.Text, t.Background
+	t.Inverse.A, t.InverseText.A = 255, 255
 	t.Accent, t.Selection, t.Border = ui.Hex(tokens.Accent), ui.Hex(tokens.Selected), ui.Hex(tokens.Border)
 	t.Radius, t.FontSize = float32(tokens.Radius), float32(tokens.FontSize)
 	if len(tokens.FontFamilies) > 0 {

@@ -1,4 +1,5 @@
-!include "LogicLib.nsh"
+!include "${__FILEDIR__}\appearance.nsh"
+SetFont /LANG=1028 "Microsoft JhengHei UI" 10
 
 ; Every packaged file is required, including during a silent update.
 AllowSkipFiles off

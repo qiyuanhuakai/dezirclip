@@ -64,7 +64,8 @@
       "TransitionMs": 120,
       "RegularWeight": 400,
       "EmphasisWeight": 600,
-      "SurfaceTint": "#fcfcfc"
+      "SurfaceTint": "#fcfcfc",
+      "SystemBackdropTintPower": 2
     },
     "dark": {
       "Background": "#181a20",
@@ -86,7 +87,8 @@
       "TransitionMs": 120,
       "RegularWeight": 400,
       "EmphasisWeight": 600,
-      "SurfaceTint": "#141414"
+      "SurfaceTint": "#141414",
+      "SystemBackdropTintPower": 2
     }
   },
   "acrylic": {
@@ -110,7 +112,8 @@
       "TransitionMs": 120,
       "RegularWeight": 400,
       "EmphasisWeight": 600,
-      "SurfaceTint": "#ffffff"
+      "SurfaceTint": "#ffffff",
+      "SystemBackdropTintPower": 3
     },
     "dark": {
       "Background": "#14161c",
@@ -132,7 +135,8 @@
       "TransitionMs": 120,
       "RegularWeight": 400,
       "EmphasisWeight": 600,
-      "SurfaceTint": "#191919"
+      "SurfaceTint": "#191919",
+      "SystemBackdropTintPower": 3
     }
   },
   "liquid-glass": {

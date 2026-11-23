@@ -58,6 +58,9 @@ func (n *nativeMain) loadTagCatalog() {
 			if err == nil {
 				catalog.counts, catalog.names = counts, names
 				catalog.revision++
+				if n.selectInitialTag() {
+					n.editQuery(false)
+				}
 			}
 		})
 	}()

@@ -36,7 +36,7 @@ func Button(c *ui.Context, options ButtonOptions) ui.Element {
 func (k Kit) Button(c *ui.Context, options ButtonOptions) ui.Element {
 	palette := c.Theme()
 	control := ui.ButtonBase(c).Label(options.Label).Height(32).PaddingX(12).
-		Radius(palette.Radius).FocusRing(true).Disabled(options.Disabled)
+		Radius(palette.Radius).FocusRing(true).Disabled(options.Disabled).Cursor(actionCursor(options.Disabled))
 	fill, text := palette.Surface, palette.Text
 	switch {
 	case options.Primary:
@@ -92,7 +92,7 @@ func (k Kit) Select(c *ui.Context, selected *string, label string, options []Sel
 		return trigger
 	}
 	parts := ui.SelectBase(c, selected)
-	trigger := parts.Trigger.Label(label)
+	trigger := parts.Trigger.Label(label).Cursor(ui.CursorPointer)
 	style := k.style("select")
 	switch {
 	case trigger.Focused() || parts.Open():
@@ -117,7 +117,7 @@ func (k Kit) Select(c *ui.Context, selected *string, label string, options []Sel
 						continue
 					}
 					style := k.style("selectOption")
-					item := parts.Item(option.Value).Label(option.Label)
+					item := parts.Item(option.Value).Label(option.Label).Cursor(ui.CursorPointer)
 					if option.Value == *selected {
 						style = k.style("selectSelected")
 					} else if item.Hovered() {
@@ -228,7 +228,7 @@ func (k Kit) SearchHistory(c *ui.Context, entries []string, emptyLabel string, o
 		style := k.style("historyItem")
 		symbol := k.style("historyIcon")
 		for _, entry := range entries {
-			row := paint(ui.ButtonBase(c).Label(entry).Justify(ui.Start).Height(style.Height).Gap(style.ColumnGap), style)
+			row := paint(ui.ButtonBase(c).Label(entry).Justify(ui.Start).Height(style.Height).Gap(style.ColumnGap).Cursor(ui.CursorPointer), style)
 			row.Children(func() {
 				ui.Icon(c, historyClock).Size(symbol.Width, symbol.Height).TextColor(styleColor(symbol.Text)).Opacity(symbol.Opacity)
 				text(c, entry, style)
@@ -247,7 +247,7 @@ func (k Kit) SettingsDisclosure(c *ui.Context, title string, open *bool, content
 		if *open {
 			arrow = chevronDown
 		}
-		row := ui.ButtonBase(c).Label(title).FillWidth().Height(style.Height).Justify(ui.Start).Gap(8).FocusRing(true)
+		row := ui.ButtonBase(c).Label(title).FillWidth().Height(style.Height).Justify(ui.Start).Gap(8).FocusRing(true).Cursor(ui.CursorPointer)
 		paint(row, style)
 		row.Children(func() {
 			chevron := k.style("disclosureChevron")
@@ -276,7 +276,7 @@ func (k Kit) SettingHelp(c *ui.Context, label string, open *bool, help string) {
 
 func (k Kit) settingsHelpButton(c *ui.Context, label string, open *bool) {
 	style := k.style("help")
-	control := ui.ButtonBase(c).Label(label).Expanded(*open).FocusRing(true).Shrink(0)
+	control := ui.ButtonBase(c).Label(label).Expanded(*open).FocusRing(true).Shrink(0).Cursor(ui.CursorPointer)
 	if control.Hovered() {
 		style = k.style("helpActive")
 	}
@@ -352,10 +352,10 @@ func (k Kit) TagConfirmation(c *ui.Context, open *bool, options TagConfirmationO
 		text(c, options.Message, message).Wrap().Margin(0, 0, max(0, message.MarginBottom-12))
 		actions := k.style("tagConfirmActions")
 		ui.Row(c).Gap(actions.ColumnGap).Justify(ui.End).Children(func() {
-			if k.button(c, options.CancelLabel, "tagConfirmCancel").Disabled(options.Busy).Clicked() {
+			if k.button(c, options.CancelLabel, "tagConfirmCancel").Disabled(options.Busy).Cursor(actionCursor(options.Busy)).Clicked() {
 				*open = false
 			}
-			if k.button(c, options.ConfirmLabel, "tagConfirmPrimary").Disabled(options.Busy).Clicked() && options.Confirm != nil {
+			if k.button(c, options.ConfirmLabel, "tagConfirmPrimary").Disabled(options.Busy).Cursor(actionCursor(options.Busy)).Clicked() && options.Confirm != nil {
 				options.Confirm()
 			}
 		})
@@ -401,7 +401,7 @@ func (k Kit) tagHeading(c *ui.Context, open *bool, title, label string, busy boo
 	ui.Row(c).FillWidth().MinHeight(heading.Height).AlignItems(ui.Start).Gap(heading.ColumnGap).Children(func() {
 		text(c, title, k.style("tagTitle")).Grow(1)
 		style, symbol := k.style("tagClose"), k.style("tagCloseIcon")
-		button := paint(ui.ButtonBase(c).Label(label).Tooltip(label).Size(style.Width, style.Height).Center().Disabled(busy), style)
+		button := paint(ui.ButtonBase(c).Label(label).Tooltip(label).Size(style.Width, style.Height).Center().Disabled(busy).Cursor(actionCursor(busy)), style)
 		button.Children(func() {
 			ui.Icon(c, closeIcon).Size(symbol.Width, symbol.Height).TextColor(styleColor(symbol.Text)).PassThrough()
 		})

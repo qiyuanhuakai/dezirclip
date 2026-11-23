@@ -21,7 +21,7 @@ func (k Kit) UpdateActions(c *ui.Context, draw func()) {
 }
 
 func (k Kit) UpdateAction(c *ui.Context, action UpdateAction, label string, disabled bool) ui.Element {
-	button := ui.ButtonBase(c).Label(label).Disabled(disabled).FocusRing(true).AlignItems(ui.Center)
+	button := ui.ButtonBase(c).Label(label).Disabled(disabled).FocusRing(true).AlignItems(ui.Center).Cursor(actionCursor(disabled))
 	widget := "updateAction"
 	switch {
 	case disabled:

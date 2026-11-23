@@ -35,7 +35,7 @@ func (k Kit) TagSuggestions(c *ui.Context, anchor ui.Element, open *bool, option
 		})
 		if options.Retry != "" {
 			style := k.style("tagSuggestionRetry")
-			retry := ui.ButtonBase(c).FillWidth().Label(options.Retry).FocusRing(true)
+			retry := ui.ButtonBase(c).FillWidth().Label(options.Retry).FocusRing(true).Cursor(ui.CursorPointer)
 			paint(retry, k.interactive(c, retry, style, false)).Children(func() {
 				text(c, options.Retry, style).Wrap().PassThrough()
 			})
@@ -59,7 +59,7 @@ func (k Kit) TagSuggestions(c *ui.Context, anchor ui.Element, open *bool, option
 			name := options.Names[cell.Index]
 			paint(ui.Column(cell.Context).FillWidth().Height(rowStyle.Height), rowStyle).Children(func() {
 				button := ui.ButtonBase(cell.Context).FillWidth().MinWidth(0).Label(name).
-					Selected(cell.Selected()).AlignItems(ui.Center).FocusRing(true)
+					Selected(cell.Selected()).AlignItems(ui.Center).FocusRing(true).Cursor(ui.CursorPointer)
 				style := k.style("tagSuggestionOption")
 				if cell.Selected() || button.Hovered() || button.FocusVisible() {
 					style = k.style("tagSuggestionOptionActive")

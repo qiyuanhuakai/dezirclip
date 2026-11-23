@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"strings"
 	"time"
 
@@ -303,15 +304,11 @@ func (n *nativeMain) entryMenuActions(row protocol.DesktopEntry, generation uint
 	if row.IsPinned {
 		pinLabel = n.text("unpin")
 	}
-	share := nativeCopy
-	if row.ContentType == "rich_text" {
-		share = nativeRichCopy
-	}
 	actions = append(actions,
 		uikit.MenuAction{Label: n.text("delete", "Delete entry"), Disabled: disabled,
 			Run: func() { n.requestRowDeletion(row, generation) }},
 		action(pinLabel, disabled, nativePin),
-		action(n.text("native_share"), contentDisabled, share))
+		action(n.shareLabel(), contentDisabled || row.Id == 0, nativeShare))
 	if textTools && contentVisible {
 		toolsDisabled := contentDisabled || concealed && !n.canUseProtectedRow(row)
 		choices := make([]uikit.MenuAction, 0, len(n.transformKinds))
@@ -342,4 +339,11 @@ func (n *nativeMain) entryMenuActions(row protocol.DesktopEntry, generation uint
 			Children: privacy})
 	}
 	return actions
+}
+
+func (n *nativeMain) shareLabel() string {
+	if runtime.GOOS == "linux" {
+		return n.text("native_share_email")
+	}
+	return n.text("native_share")
 }

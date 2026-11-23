@@ -34,13 +34,50 @@ try {
       }
       output[theme][mode] = appearance.Tokens;
       if (["mica", "acrylic", "liquid-glass"].includes(theme)) {
-        const rgb = await page.evaluate(() =>
-          getComputedStyle(document.documentElement).getPropertyValue("--surface-shell-rgb").trim());
+        const { rgb, power } = await page.evaluate(() => {
+          const style = getComputedStyle(document.documentElement);
+          return {
+            rgb: style.getPropertyValue("--surface-shell-rgb").trim(),
+            power: Number(style.getPropertyValue("--system-backdrop-tint-power").trim()),
+          };
+        });
         const channels = rgb.split(/\s+/).map(Number);
         if (channels.length !== 3 || channels.some(value => !Number.isInteger(value) || value < 0 || value > 255)) {
           throw Error("Invalid window tint for " + theme + " " + mode);
         }
         output[theme][mode].SurfaceTint = "#" + channels.map(value => value.toString(16).padStart(2, "0")).join("");
+        if (power) {
+          const matches = await page.evaluate(power => {
+            const root = document.documentElement;
+            const body = document.body;
+            const shell = document.getElementById("root");
+            const savedOpacity = root.style.getPropertyValue("--surface-opacity");
+            const context = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+            const paintedAlpha = () => {
+              context.clearRect(0, 0, 1, 1);
+              context.fillStyle = getComputedStyle(shell).backgroundColor;
+              context.fillRect(0, 0, 1, 1);
+              return context.getImageData(0, 0, 1, 1).data[3] / 255;
+            };
+            const sameAlpha = (actual, expected) => Math.abs(actual - expected) <= 1 / 255;
+            root.classList.add("windows-11");
+            try {
+              return [0, 0.2, 0.65, 0.85, 1].every(opacity => {
+                body.classList.remove("has-custom-bg");
+                root.style.setProperty("--surface-opacity", String(opacity));
+                const system = paintedAlpha();
+                body.classList.add("has-custom-bg");
+                return sameAlpha(system, opacity ** power) && sameAlpha(paintedAlpha(), opacity);
+              });
+            } finally {
+              root.classList.remove("windows-11");
+              body.classList.remove("has-custom-bg");
+              root.style.setProperty("--surface-opacity", savedOpacity);
+            }
+          }, power);
+          if (!matches) throw Error("Invalid Windows backdrop tint for " + theme + " " + mode);
+          output[theme][mode].SystemBackdropTintPower = power;
+        }
       }
       widgets[theme][mode] = await readNativeWidgetStyles(page, url, theme, mode);
     }

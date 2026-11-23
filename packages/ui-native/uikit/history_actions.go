@@ -47,7 +47,7 @@ func (k Kit) historyCardActions(c *ui.Context, row ui.Element, actions []HeaderA
 		for _, action := range actions {
 			style := k.style(widget)
 			button := ui.ButtonBase(c).Label(action.Label).Tooltip(action.Label).Size(style.Width, style.Height).
-				Disabled(action.Disabled || fading).Selected(action.Active).FocusRing(true).Center()
+				Disabled(action.Disabled || fading).Selected(action.Active).FocusRing(true).Center().Cursor(actionCursor(action.Disabled || fading))
 			state := widget
 			if action.Active {
 				state += "Active"

@@ -30,7 +30,7 @@ const labels = {
 };
 
 export function PreviewToolbarFixture({ state }: { state: string }) {
-  const [pinned, setPinned] = useState(state === "pinned");
+  const [pinned, setPinned] = useState(state.startsWith("pinned"));
   const [opacity, setOpacity] = useState(72);
   const [zoom, setZoom] = useState<PreviewZoom>("fit");
   return <PreviewToolbar pinned={pinned} opacity={opacity} image={pinned} zoom={zoom} labels={labels}

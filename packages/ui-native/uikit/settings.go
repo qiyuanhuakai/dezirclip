@@ -2,6 +2,7 @@ package uikit
 
 import (
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
@@ -10,6 +11,15 @@ import (
 type SettingsSection struct {
 	ID    string
 	Label string
+}
+
+const SettingsStackMaxWidth = 420
+
+// SettingsSectionStack centers the narrow layout and applies its inter-card gap.
+func SettingsSectionStack(c *ui.Context, content func()) {
+	ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
+		ui.Column(c).FillWidth().MaxWidth(SettingsStackMaxWidth).Gap(4).Children(content)
+	})
 }
 
 // SettingsSectionContentWidth accounts for the card frame and its content padding.
@@ -59,7 +69,7 @@ func (k Kit) SettingsDataActions(c *ui.Context, content func()) {
 func (k Kit) SettingsDataAction(c *ui.Context, label, action string, disabled bool) ui.Element {
 	style := k.style("settingsDataAction")
 	button := ui.ButtonBase(c).Label(label).Disabled(disabled).
-		Height(style.Height).AlignItems(ui.Center).Gap(style.ColumnGap).FocusRing(true)
+		Height(style.Height).AlignItems(ui.Center).Gap(style.ColumnGap).FocusRing(true).Cursor(actionCursor(disabled))
 	if !disabled && (button.Hovered() || button.FocusVisible()) {
 		style = k.style("settingsDataActionHover")
 	}
@@ -89,7 +99,7 @@ func (k Kit) SettingsRemoveButton(c *ui.Context, label string, iconOnly, disable
 	}
 	style := k.style(widget)
 	button := ui.ButtonBase(c).Label(label).Tooltip(label).Height(style.Height).Disabled(disabled).
-		AlignItems(ui.Center).Gap(5)
+		AlignItems(ui.Center).Gap(5).Cursor(actionCursor(disabled))
 	if iconOnly {
 		button.Width(style.Width).Center()
 	}
@@ -127,15 +137,23 @@ func (k Kit) settingsSectionCard(c *ui.Context, title string, open *bool, column
 		suffix = "Open"
 	}
 	surface, header := k.style("settingsGroup"+suffix), k.style("settingsGroupHeader"+suffix)
-	paint(ui.Column(c).FillWidth(), surface).Children(func() {
+	card := ui.Column(c).FillWidth().Margin(surface.MarginTop, 0, surface.MarginBottom, 0)
+	duration := time.Duration(k.palette().TransitionMs) * time.Millisecond
+	var opening bool
+	if open != nil && duration > 0 {
+		wasExpanded := ui.Local(card, "settings-section-expanded", func() bool { return expanded })
+		opening = expanded && !*wasExpanded
+		*wasExpanded = expanded
+		card.Transition(ui.ElementTransition{Position: true, Size: true, Duration: duration})
+	}
+	paint(card, surface).Children(func() {
 		var row ui.Element
 		if open == nil {
 			row = ui.Row(c)
 		} else {
-			row = ui.ButtonBase(c).Label(title).Expanded(expanded).FocusRing(true)
-			header = k.interactive(c, row, header, expanded)
+			row = ui.ButtonBase(c).Label(title).Expanded(expanded).FocusRing(true).Cursor(ui.CursorPointer)
 		}
-		paint(row.FillWidth().Height(header.Height).AlignItems(ui.Center).Gap(8), header).Children(func() {
+		paint(row.FillWidth().Height(header.Height).AlignItems(ui.Center).Gap(8), k.animatePaint(row, header)).Children(func() {
 			text(c, title, header).Grow(1).Wrap().Translate(0, header.TranslateY).PassThrough()
 			if open != nil {
 				arrow := chevronRight
@@ -150,12 +168,29 @@ func (k Kit) settingsSectionCard(c *ui.Context, title string, open *bool, column
 			*open = !*open
 		}
 		if expanded {
-			body := ui.Column(c)
+			body := ui.Column(c.Key("settings-section-content"))
+			if open != nil && duration > 0 {
+				body.Transition(ui.ElementTransition{Size: true, Duration: duration})
+			}
 			if columns > 1 {
 				body.Grid().Columns(columns).AlignItems(ui.Start).GapX(20)
 			}
 			contentStyle := k.style("settingsGroupContent")
-			paint(body.FillWidth().GapY(contentStyle.RowGap), contentStyle).Children(content)
+			paint(body.FillWidth().GapY(contentStyle.RowGap), contentStyle)
+			if entrance := contentStyle.Enter; open != nil && duration > 0 && entrance != nil {
+				const key = "settings-content-entrance"
+				if opening {
+					card.Jump(key, 0)
+				}
+				animation := ui.Animation{Duration: time.Duration(entrance.DurationMs) * time.Millisecond}
+				if ease := entrance.Ease; ease != nil {
+					animation.Ease = ui.CubicBezier(ease[0], ease[1], ease[2], ease[3])
+				}
+				remaining := 1 - card.AnimateTo(key, 1, animation)
+				body.TransformOrigin(0.5, 0).Translate(0, entrance.Y*remaining).Scale(1, 1+(entrance.ScaleY-1)*remaining).
+					Opacity(contentStyle.Opacity * (1 + (entrance.Opacity-1)*remaining))
+			}
+			body.Children(content)
 		}
 	})
 }
@@ -181,9 +216,13 @@ func (k Kit) SettingsChoices(c *ui.Context, label, active string, options []Sele
 func (k Kit) settingsChoiceButton(c *ui.Context, widget, active string, option SelectOption, wrapCard, disabled bool, onSelect func(string)) {
 	selected := option.Value == active
 	button := ui.ButtonBase(c.Key(option.Value)).Label(option.Label).Selected(selected).
-		Disabled(disabled || option.Disabled).Center().FocusRing(true).MinWidth(0).MaxWidthPercent(100).Grow(1)
+		Disabled(disabled || option.Disabled).Center().FocusRing(true).MinWidth(0).MaxWidthPercent(100).Grow(1).Cursor(actionCursor(disabled || option.Disabled))
 	if widget == "settingsSegment" {
-		button.Width(64).Shrink(1)
+		normal, selected := k.style(widget), k.style(widget+"Active")
+		width := func(style theme.WidgetStyle) float32 {
+			return settingsTextWidth(c, option.Label, style) + style.Padding[1] + style.Padding[3] + horizontalBorders(style)
+		}
+		button.Width(max(64, width(normal), width(selected))).Shrink(1)
 	}
 	if selected {
 		widget += "Active"
@@ -217,13 +256,15 @@ func (k Kit) SettingsRail(c *ui.Context, label, active string, sections []Settin
 	rail := k.style("settingsRail")
 	paint(ui.Column(c).Width(rail.Width).Gap(4).Label(label), rail).Children(func() {
 		for _, section := range sections {
-			style := k.style("settingsRailItem")
+			widget := "settingsRailItem"
 			if section.ID == active {
-				style = k.style("settingsRailActive")
+				widget = "settingsRailActive"
 			}
-			button := ui.ButtonBase(c).FillWidth().MinHeight(style.Height).Label(section.Label)
-			style = k.interactive(c, button, style, section.ID == active)
-			paint(button, style)
+			style := k.style(widget)
+			button := ui.ButtonBase(c).FillWidth().MinHeight(style.Height).Label(section.Label).
+				Selected(section.ID == active).Cursor(ui.CursorPointer)
+			style = k.buttonInteraction(button, widget, style)
+			k.paintTranslated(button, style)
 			button.Children(func() {
 				ui.Row(c).FillWidth().Children(func() { text(c, section.Label, style).MinWidth(0).Wrap().PassThrough() })
 			})
@@ -281,10 +322,11 @@ func (k Kit) SettingsFooter(c *ui.Context, options SettingsFooterOptions) {
 }
 
 func (k Kit) settingsFooterCard(c *ui.Context, label string, symbol *ui.SVG, disabled bool, run func()) {
-	style := k.style("settingsFooterCard")
-	button := ui.ButtonBase(c).Height(style.Height).Label(label).Disabled(disabled)
-	style = k.interactive(c, button, style, false)
-	paint(button, style)
+	const widget = "settingsFooterCard"
+	style := k.style(widget)
+	button := ui.ButtonBase(c).Height(style.Height).Label(label).Disabled(disabled).Cursor(actionCursor(disabled))
+	style = k.buttonInteraction(button, widget, style)
+	k.paintTranslated(button, style)
 	button.Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, symbol).Size(16, 16).TextColor(styleColor(style.Text))
@@ -297,9 +339,11 @@ func (k Kit) settingsFooterCard(c *ui.Context, label string, symbol *ui.SVG, dis
 }
 
 func (k Kit) settingsFooterLink(c *ui.Context, label string, symbol *ui.SVG, run func()) {
-	style := k.style("settingsFooterLink")
-	button := ui.ButtonBase(c).Height(style.Height).Label(label)
-	style = k.interactive(c, button, style, false)
+	const widget = "settingsFooterLink"
+	style := k.style(widget)
+	button := ui.ButtonBase(c).Height(style.Height).Label(label).Cursor(ui.CursorPointer)
+	style = k.buttonInteraction(button, widget, style)
+	style.Opacity = button.Animate("footer-link-opacity", style.Opacity, 120*time.Millisecond)
 	paint(button, style)
 	button.Children(func() {
 		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {

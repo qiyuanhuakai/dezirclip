@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
 
@@ -134,5 +135,106 @@ func TestNativeHistoryFencesRowsAcrossPresentationAndPrivacyChanges(t *testing.T
 		if history.apply(first, initialPage) || len(history.rows) != 0 || history.selected != -1 {
 			t.Fatalf("previous presentation committed after reset to %+v", changed)
 		}
+	}
+}
+
+func TestNativeHistoryReflowsWithoutBlankingUnchangedCards(t *testing.T) {
+	const untouched = "The card that stays visible"
+	state := protocol.RuntimeState{ServiceInstanceId: "host-a", PrivacyEpoch: 7, HistoryRevision: 10}
+	n := nativeMain{preferences: map[string]string{"app.language": "en"}}
+	n.history.reset(state, nativeHistoryFilter{})
+	n.history.rows = []protocol.DesktopEntry{
+		{Id: 1, ContentType: "text", Preview: "Delete this card", Tags: []string{}},
+		{Id: 2, ContentType: "text", Preview: untouched, Tags: []string{}},
+		{Id: 3, ContentType: "text", Preview: "Paste this card", Tags: []string{}},
+	}
+	n.history.selected = 1
+	view := ui.NewTester(n.view, 400, 480)
+	if !view.HasText(untouched) {
+		t.Fatal("fixture card is not visible")
+	}
+	oldRead := n.history.request()
+	state.HistoryRevision++
+	deleteID, pasteID, usage := int64(1), int64(3), "usage_changed"
+	n.applyEvents(protocol.EventsResult{State: state, Events: []protocol.Event{
+		{Event: protocol.EventKindEntryDeleted, State: state, Data: protocol.EventData{EntryId: &deleteID}},
+		{Event: protocol.EventKindEntryUpdated, State: state, Data: protocol.EventData{EntryId: &pasteID, Status: &usage}},
+	}})
+	n.reading = true
+	view.Frame()
+	if !view.HasText(untouched) || !view.HasText("Paste this card") || view.HasText("Delete this card") {
+		t.Fatalf("visible cards were not reconciled immediately: %v", view.Texts())
+	}
+	if n.history.accepts(oldRead) || n.history.request().offset != 0 {
+		t.Fatal("refresh did not retire requests using the old offset")
+	}
+	reordered := []protocol.DesktopEntry{n.history.rows[1], n.history.rows[0]}
+	if !n.history.apply(n.history.request(), nativeHistoryPage{state: state, rows: reordered}) || n.history.selected != 1 {
+		t.Fatal("the replacement lost the selected entry or used the wrong order")
+	}
+	n.reading = false
+	view.Frame()
+	if !view.HasText(untouched) || view.HasText("Delete this card") {
+		t.Fatal("the refreshed view lost an unchanged entry or brought a deleted one back")
+	}
+}
+
+func TestNativeHistoryKeepsNoRowsAcrossUnknownRevisions(t *testing.T) {
+	current := protocol.RuntimeState{ServiceInstanceId: "host-a", PrivacyEpoch: 7, HistoryRevision: 10}
+	next := current
+	next.HistoryRevision += 2
+	id := int64(3)
+	if _, ok := historyRefreshEntries(current, protocol.EventsResult{State: next, Events: []protocol.Event{
+		{Event: protocol.EventKindEntryUpdated, State: next, Data: protocol.EventData{EntryId: &id}},
+	}}); ok {
+		t.Fatal("an unaccounted-for revision permitted stale rows to remain visible")
+	}
+	next.HistoryRevision--
+	if affected, ok := historyRefreshEntries(current, protocol.EventsResult{State: next, Events: []protocol.Event{
+		{Event: protocol.EventKindEntryUpdated, State: next, Data: protocol.EventData{EntryId: &id}},
+	}}); !ok || len(affected) != 1 {
+		t.Fatal("a changed entry must be dropped pending its new authorized body")
+	}
+	next.PrivacyEpoch++
+	if _, ok := historyRefreshEntries(current, protocol.EventsResult{State: next}); ok {
+		t.Fatal("a privacy epoch change permitted stale rows to remain visible")
+	}
+}
+
+func TestNativeHistoryRangeDoesNotMixRevisions(t *testing.T) {
+	state := protocol.RuntimeState{ServiceInstanceId: "host-a", PrivacyEpoch: 7, HistoryRevision: 20}
+	for _, drift := range []bool{false, true} {
+		request := nativeHistoryRequest{state: state, refreshLimit: 2}
+		page, err := readNativeHistoryRange(context.Background(), request, func(_ context.Context, request nativeHistoryRequest) (nativeHistoryPage, error) {
+			next := state
+			if request.offset == 1 && drift {
+				next.HistoryRevision++
+			}
+			return nativeHistoryPage{state: next, rows: []protocol.DesktopEntry{{Id: int64(request.offset) + 1}}, more: request.offset == 0}, nil
+		})
+		if drift && err == nil || !drift && (err != nil || len(page.rows) != 2 || page.rows[1].Id != 2) {
+			t.Fatalf("revision drift=%t: collected %+v, err=%v", drift, page, err)
+		}
+	}
+}
+
+func TestNativePreviewOpacityPreservesLivePresentation(t *testing.T) {
+	current := map[string]string{"app.theme": "macos", "app.preview_opacity": "65"}
+	next := map[string]string{"app.theme": "macos", "app.preview_opacity": "24"}
+	if !sameSettingsExceptPreviewOpacity(current, next) ||
+		sameSettingsExceptPreviewOpacity(current, map[string]string{"app.theme": "mica", "app.preview_opacity": "24"}) {
+		t.Fatal("view settings comparison did not isolate preview opacity")
+	}
+	session := context.Background()
+	control := &previewOpacityControl{value: 65, committed: 65, slider: 65}
+	n := nativeMain{session: session, preferences: current, preview: &Preview{entryID: 7, opacity: control}}
+	n.history.rows = []protocol.DesktopEntry{{Id: 7, Preview: "Still visible"}}
+	n.history.generation = 2
+	n.applyPreviewViewSettings(next)
+	if n.session != session || n.history.generation != 2 || len(n.history.rows) != 1 || n.preview.entryID != 7 {
+		t.Fatal("preview opacity restarted the live presentation")
+	}
+	if control.value != 24 || control.committed != 24 || current["app.preview_opacity"] != "65" {
+		t.Fatal("preview opacity did not apply in place, or rewrote an existing preference snapshot")
 	}
 }

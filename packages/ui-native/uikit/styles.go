@@ -193,9 +193,16 @@ func text(c *ui.Context, value string, style theme.WidgetStyle) ui.Element {
 	return styledText(ui.Text(c, value), style)
 }
 
+func actionCursor(disabled bool) ui.Cursor {
+	if disabled {
+		return ui.CursorDefault
+	}
+	return ui.CursorPointer
+}
+
 func (k Kit) button(c *ui.Context, label, widget string) ui.Element {
 	style := k.style(widget)
-	button := ui.ButtonBase(c).Label(label).Height(style.Height)
+	button := ui.ButtonBase(c).Label(label).Height(style.Height).Cursor(ui.CursorPointer)
 	paint(button, k.interactive(c, button, style, false))
 	button.Children(func() { text(c, label, style) })
 	return button
@@ -219,6 +226,29 @@ func (k Kit) interactive(c *ui.Context, control ui.Element, style theme.WidgetSt
 		}
 	}
 	return k.animatePaint(control, style)
+}
+
+func (k Kit) buttonInteraction(button ui.Element, widget string, style theme.WidgetStyle) theme.WidgetStyle {
+	if !button.IsDisabled() {
+		state := ""
+		if button.Pressed() {
+			state = "Pressed"
+		} else if button.Hovered() {
+			state = "Hover"
+		}
+		if _, ok := k.widgets[widget+state]; state != "" && ok {
+			style = k.style(widget + state)
+		}
+		return k.animatePaint(button, style)
+	}
+	return style
+}
+
+func (k Kit) paintTranslated(element ui.Element, style theme.WidgetStyle) ui.Element {
+	duration := time.Duration(k.palette().TransitionMs) * time.Millisecond
+	x := element.Animate("deziro-x", style.TranslateX, duration)
+	y := element.Animate("deziro-y", style.TranslateY, duration)
+	return paint(element, style).Translate(x, y)
 }
 
 func (k Kit) animatePaint(control ui.Element, style theme.WidgetStyle) theme.WidgetStyle {

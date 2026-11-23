@@ -30,13 +30,14 @@ html body.quick-paste #root:has(.quick-paste-window)::before {
 
 .quick-paste-window {
   --quick-paste-panel-radius: 12px;
+  --quick-paste-opacity: calc(0.82 + 0.18 * var(--surface-opacity));
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: var(--dc-material-window);
+  background: color-mix(in srgb, var(--dc-surface-window) calc(var(--quick-paste-opacity) * 100%), transparent);
   border: none;
   border-radius: var(--quick-paste-panel-radius);
   box-shadow: none;
@@ -57,12 +58,11 @@ html body.quick-paste #root:has(.quick-paste-window)::before {
 }
 
 :is(.theme-mica, .theme-acrylic, .theme-liquid-glass):not(.theme-custom) .quick-paste-window {
-  background: var(--surface-shell-root-bg);
+  background: rgb(var(--surface-shell-rgb) / var(--quick-paste-opacity));
 }
 
 .theme-custom .quick-paste-window {
   --quick-paste-panel-radius: var(--dc-radius);
-  background: var(--dc-material-window);
 }
 
 /* ── Search ─────────────────────────────────────────────────── */

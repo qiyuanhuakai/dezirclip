@@ -15,6 +15,11 @@ header {
   cursor: default;
 }
 
+header:has([data-clipboard-search] .dc-tag-filter-picker) {
+  position: relative;
+  z-index: 2;
+}
+
 .header-top {
   display: flex;
   justify-content: space-between;

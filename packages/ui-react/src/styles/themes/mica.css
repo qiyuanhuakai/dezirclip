@@ -2,6 +2,8 @@
 :root.theme-mica,
 body.theme-mica {
   background-color: transparent !important;
+  --system-backdrop-tint-power: 2;
+
   --font-main: "Segoe UI Variable Text", "Segoe UI", "Inter", "Noto Sans", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   --font-mono: "Cascadia Code", "Cascadia Mono", "JetBrains Mono", "Noto Sans Mono", "Consolas", monospace;
   --bg-window: transparent !important;

@@ -145,6 +145,13 @@ type ExternalOpenParams struct {
     Reveal bool `json:"reveal"`
 }
 
+type ShareEntryParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Id int64 `json:"id"`
+    Reveal bool `json:"reveal"`
+}
+
 type ApplicationSelection struct {
     ServiceInstanceId string `json:"service_instance_id"`
     ExpectedEpoch uint64 `json:"expected_epoch"`
@@ -435,6 +442,7 @@ const (
     MethodDesktopProfileMove Method = "desktop.profile.move"
     MethodDesktopAppearanceBackground Method = "desktop.appearance.background"
     MethodDesktopHistoryOpen Method = "desktop.history.open"
+    MethodDesktopHistoryShare Method = "desktop.history.share"
     MethodDesktopFilesDrop Method = "desktop.files.drop"
     MethodDesktopFilesDrag Method = "desktop.files.drag"
     MethodDesktopApplicationsSelect Method = "desktop.applications.select"

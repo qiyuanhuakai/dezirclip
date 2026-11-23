@@ -46,7 +46,7 @@ func (k Kit) BackupChoices(c *ui.Context, label string, selected *string, option
 		ui.RadioGroup(c, func() {
 			for _, option := range options {
 				radio := ui.RadioBase(c, selected, option.Value).Label(option.Label).
-					Disabled(disabled || option.Disabled).FocusRing(true).AlignItems(ui.Center)
+					Disabled(disabled || option.Disabled).FocusRing(true).AlignItems(ui.Center).Cursor(actionCursor(disabled || option.Disabled))
 				widget := "backupChoice"
 				if *selected == option.Value {
 					widget += "Selected"
@@ -80,7 +80,7 @@ func (k Kit) BackupReplaceConfirmation(c *ui.Context, checked *bool, label strin
 	}
 	style := k.style(widget)
 	row := ui.CheckboxBase(c, checked).Label(label).FillWidth().Disabled(disabled).FocusRing(true).
-		MinHeight(style.MinHeight).Margin(0, 0, style.MarginBottom).Gap(style.ColumnGap).AlignItems(ui.Center)
+		MinHeight(style.MinHeight).Margin(0, 0, style.MarginBottom).Gap(style.ColumnGap).AlignItems(ui.Center).Cursor(actionCursor(disabled))
 	paint(row, k.animatePaint(row, style)).Children(func() {
 		widget := "backupReplaceMark"
 		if *checked {
@@ -178,7 +178,7 @@ func (k Kit) BackupActions(c *ui.Context, cancel, submit string, busy, disabled 
 }
 
 func (k Kit) backupButton(c *ui.Context, widget, label string, disabled bool) ui.Element {
-	button := ui.ButtonBase(c).Label(label).Disabled(disabled).AlignItems(ui.Center).FocusRing(true)
+	button := ui.ButtonBase(c).Label(label).Disabled(disabled).AlignItems(ui.Center).FocusRing(true).Cursor(actionCursor(disabled))
 	style := k.style(widget)
 	if disabled {
 		if disabledStyle, themed := k.widgets[widget+"Disabled"]; themed {

@@ -286,6 +286,7 @@ fn main() {
             app::commands::get_file_size,
             app::commands::file_transfer_cmd::copy_dropped_files,
             app::commands::file_transfer_cmd::start_file_drag,
+            app::commands::file_transfer_cmd::share_history_entry,
             app::commands::show_quick_paste,
             app::commands::hide_quick_paste,
             app::commands::is_quick_paste_visible,

@@ -14,11 +14,7 @@
 }
 
 .capture-engine-badge--available {
-  --capture-badge-color: #26724a;
-}
-
-.dark-mode .capture-engine-badge--available {
-  --capture-badge-color: #70d69b;
+  --capture-badge-color: #34c759;
 }
 
 .capture-engine-badge__dot {

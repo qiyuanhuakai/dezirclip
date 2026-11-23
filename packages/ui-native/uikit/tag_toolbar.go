@@ -106,7 +106,7 @@ func (k Kit) TagHistoryEntry(c *ui.Context, cardOptions HistoryCardOptions, sele
 	row.Children(func() {
 		checked := selection.Checked
 		box := ui.CheckboxBase(c, &checked).Size(checkStyle.Width, checkStyle.Height).Center().
-			Label(selection.Label).Cursor(ui.CursorPointer).FocusRing(true).Disabled(selection.Disabled)
+			Label(selection.Label).Cursor(actionCursor(selection.Disabled)).FocusRing(true).Disabled(selection.Disabled)
 		face := checkStyle
 		if checked {
 			face = k.style("tagHistorySelectionChecked")
@@ -128,7 +128,7 @@ func (k Kit) TagHistoryEntry(c *ui.Context, cardOptions HistoryCardOptions, sele
 		// The row target covers the preview so clicking anywhere on the card
 		// selects the entry.
 		target := ui.ButtonBase(c).Absolute().Left(style.Padding[3] + checkStyle.Width).
-			Right(0).Top(0).Bottom(0).Label(options.Summary).Cursor(ui.CursorPointer).FocusRing(true).Disabled(selection.Disabled)
+			Right(0).Top(0).Bottom(0).Label(options.Summary).Cursor(actionCursor(selection.Disabled)).FocusRing(true).Disabled(selection.Disabled)
 		if selection.Focus && !selection.Disabled {
 			target.Focus()
 		}
@@ -143,7 +143,7 @@ func (k Kit) TagHistoryEntry(c *ui.Context, cardOptions HistoryCardOptions, sele
 func (k Kit) tagBatchButton(c *ui.Context, widget, label string, selected, disabled bool) ui.Element {
 	style := k.style(widget)
 	button := ui.ButtonBase(c).Label(label).Height(style.Height).Shrink(0).
-		Selected(selected).Disabled(disabled).Center().FocusRing(true)
+		Selected(selected).Disabled(disabled).Center().FocusRing(true).Cursor(actionCursor(disabled))
 	paint(button, k.interactive(c, button, style, false)).Children(func() {
 		text(c, label, style).SingleLine().PassThrough()
 	})
@@ -157,7 +157,7 @@ func (k Kit) TagToolbarButton(c *ui.Context, action HeaderAction) ui.Element {
 	}
 	button := ui.ButtonBase(c).Label(action.Label).Tooltip(action.Label).Size(style.Width, style.Height).
 		Selected(action.Active).Center().Shrink(0).Disabled(action.Disabled).FocusRing(true).
-		Translate(style.TranslateX, style.TranslateY)
+		Translate(style.TranslateX, style.TranslateY).Cursor(actionCursor(action.Disabled))
 	paint(button, k.interactive(c, button, style, action.Active)).Children(func() {
 		if symbol := headerIcons[action.Icon]; symbol != nil {
 			ui.Icon(c, symbol).Size(14, 14).TextColor(styleColor(style.Text)).PassThrough()
@@ -201,7 +201,7 @@ func (k Kit) TagSearch(c *ui.Context, options TagSearchOptions) ui.Element {
 				}
 				style := k.style("tagSearchClear")
 				button := ui.ButtonBase(c).Absolute().Right(4).Top(4).Size(style.Width, style.Height).
-					Label(options.ClearLabel).Center()
+					Label(options.ClearLabel).Center().Cursor(ui.CursorPointer)
 				paint(button, k.interactive(c, button, style, false)).Children(func() {
 					size := k.style("tagSearchClearIcon")
 					ui.Icon(c, closeIcon).Size(size.Width, size.Height).TextColor(styleColor(style.Text)).PassThrough()
@@ -238,7 +238,7 @@ func (k Kit) TagNavigation(c *ui.Context, options TagNavigationOptions) (ui.Elem
 		}
 	}
 	trigger := ui.ButtonBase(c).Height(27).Grow(1).MinWidth(72).AlignItems(ui.Center).Gap(5).
-		Label(options.Label + ": " + current).Tooltip(current)
+		Label(options.Label + ": " + current).Tooltip(current).Cursor(ui.CursorPointer)
 	type pickerState struct {
 		open, focus          bool
 		query, previousQuery string
@@ -354,8 +354,11 @@ func (k Kit) tagChoice(c *ui.Context, choice TagChoice, selected, active, collap
 		}
 	}
 	style := k.style(widget)
+	if popup {
+		style.Radius = k.style("tagSuggestionOption").Radius
+	}
 	button := ui.ButtonBase(c).FillWidth().Height(34).Label(choice.Label).Tooltip(choice.Label).
-		Selected(selected).AlignItems(ui.Center).Gap(4)
+		Selected(selected).AlignItems(ui.Center).Gap(4).Cursor(ui.CursorPointer)
 	paint(button, k.interactive(c, button, style, selected)).Children(func() {
 		if collapsed {
 			for _, initial := range choice.Label {

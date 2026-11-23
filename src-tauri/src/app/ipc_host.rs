@@ -472,6 +472,11 @@ impl DesktopHost {
         }
         let mut client=self.service_client().await?;
         if client.hello.state.service_instance_id!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
+        #[cfg(target_os="windows")]
+        if method == Method::DesktopHistoryShare {
+            let pid = client.peer.pid().ok_or("ClipboardHostUnavailable")?;
+            dzc_platform::apps::grant_windows_share_activation(pid).map_err(|_| "ShareWindowUnavailable")?;
+        }
         client.call(method,params,schema).await.map_err(|error| {
             match serde_json::from_str::<WireErrorCode>(&error.to_string()) {
                 Ok(code) => method_error(method, code),

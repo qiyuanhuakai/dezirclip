@@ -1,3 +1,12 @@
+/* Windows already supplies the wallpaper tint or the frosted backdrop. A
+   lighter app tint lets that material show through. The image slider and
+   endpoints continue to use their ordinary opacity. */
+@supports (opacity: pow(0.5, 2)) {
+  :root.windows-11 body:not(.has-custom-bg):is(.theme-mica, .theme-acrylic) #root {
+    --surface-shell-root-bg: rgb(var(--surface-shell-rgb) / pow(var(--surface-opacity), var(--system-backdrop-tint-power)));
+  }
+}
+
 :is(.theme-mica, .theme-acrylic) .key-cap {
   background-color: var(--surface-key-cap-bg) !important;
   border: 1px solid var(--surface-key-cap-border) !important;

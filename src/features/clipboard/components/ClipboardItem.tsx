@@ -743,22 +743,30 @@ const ClipboardItem = ({
             const access = beginPrivacyAccess();
             if (!access || isSensitiveHidden) { onTransformItemError?.("privacy_read", t("privacy_reveal_first")); return; }
             const generation = contentIdentity.current.generation;
-            if (navigator.share) {
+            if (item.host_instance_id && item.id !== 0 && import.meta.env.MODE !== "mygo") {
+                try {
+                    await invoke<boolean>("share_history_entry", {
+                        id: item.id,
+                        expectedHostInstanceId: item.host_instance_id,
+                        expectedPrivacyEpoch: access.epoch,
+                        allowSensitive: isSensitiveEntry(item),
+                    });
+                } catch {
+                    if (access.isCurrent() && generation === contentIdentity.current.generation) {
+                        onTransformItemError?.("share", t("native_share_unavailable"));
+                    }
+                }
+                return;
+            }
+            if (navigator.share && !["image", "video", "file", "files"].includes(item.content_type)) {
                 const content = loadFullItem ? (await loadFullItem()).content : item.content;
                 if (!access.isCurrent() || generation !== contentIdentity.current.generation || hiddenRef.current) return;
                 await navigator.share({ text: content });
                 return;
             }
-            if (!access.isCurrent()) return;
-            await invoke("copy_to_clipboard", {
-                id: item.id, content: "", contentType: item.content_type, paste: false,
-                deleteAfterUse: false, pasteWithFormat: item.content_type === "rich_text", moveToTop: false,
-                pasteImageAsBase64: false,
-                expectedHostInstanceId: item.host_instance_id,
-                expectedPrivacyEpoch: isSensitiveEntry(item) ? access.epoch : undefined,
-                ...(import.meta.env.MODE === "mygo" ? { viewEpoch: access.epoch } : {}),
-            });
+            onTransformItemError?.("share", t("native_share_unavailable"));
         } catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError") return;
             const msg = err instanceof Error ? err.message : String(err);
             onTransformItemError?.("share", msg);
         } finally {

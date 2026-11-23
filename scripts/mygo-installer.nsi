@@ -20,6 +20,12 @@ SetCompressor /SOLID lzma
 !define MUI_ABORTWARNING
 !define MUI_ICON "${APP_ICON}"
 !define MUI_UNICON "${APP_ICON}"
+!include "${__FILEDIR__}\..\src-tauri\nsis\appearance.nsh"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "${__FILEDIR__}\..\src-tauri\nsis\wizard.bmp"
+!define MUI_HEADERIMAGE
+!define MUI_HEADERIMAGE_BITMAP "${__FILEDIR__}\..\src-tauri\nsis\header.bmp"
+!define MUI_HEADERIMAGE_UNBITMAP "${__FILEDIR__}\..\src-tauri\nsis\header.bmp"
+BrandingText " "
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH

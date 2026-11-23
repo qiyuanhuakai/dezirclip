@@ -54,10 +54,14 @@ func (n *nativeMain) view(c *ui.Context) {
 	shell := ui.Box(c).Fill().Clip()
 	queryFocused := false
 	shell.Children(func() {
-		n.drawBackground(c, preset.Tokens().Radius)
+		hasBackground := n.drawBackground(c, preset.Tokens().Radius)
 		background := c.Theme().Background
 		if surfaceOpacity != nil {
-			background = preset.WindowBackground(*surfaceOpacity)
+			if n.windows11 && !hasBackground {
+				background = preset.SystemBackdropBackground(*surfaceOpacity)
+			} else {
+				background = preset.WindowBackground(*surfaceOpacity)
+			}
 		}
 		main := ui.Column(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).
 			Gap(6).Background(background)
@@ -262,11 +266,11 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 				pinIcon = "unpin"
 			}
 			actions := make([]uikit.HeaderAction, 0, 6)
-			if batch == nil && nativeConcealed(row) {
+			if nativeConcealed(row) {
 				n.revealTaggedRow(row, generation)
 			}
 			protected := n.protectedBody(row)
-			if batch != nil {
+			if batch != nil && (n.tagLibrary.reveal == nil || n.tagLibrary.revealGeneration != generation) {
 				protected = nil
 			}
 			summary, placeholder := n.cardPresentation(row, protected)

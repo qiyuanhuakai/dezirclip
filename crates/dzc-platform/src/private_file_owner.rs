@@ -1,8 +1,11 @@
 //! A separate descriptor table prevents old export URIs from aliasing later Host exports.
 use std::{
     collections::HashSet,
+    ffi::CString,
     fs::File,
     os::fd::AsRawFd,
+    os::unix::ffi::OsStrExt,
+    path::Path,
     sync::{Mutex, OnceLock},
 };
 
@@ -14,6 +17,38 @@ pub(super) struct Owner {
     pid: libc::pid_t,
     control: Option<File>,
     process: File,
+    cleans_named_files: bool,
+}
+
+struct NamedCleanup {
+    files: Vec<CString>,
+    directories: Vec<CString>,
+}
+
+impl NamedCleanup {
+    fn new(root: &Path, paths: &[String]) -> Result<Self, String> {
+        let c_path = |path: &Path| -> Result<CString, String> {
+            CString::new(path.as_os_str().as_bytes()).map_err(|_| "PrivateExportRejected".into())
+        };
+        let mut directories = Vec::with_capacity(paths.len() + 1);
+        let mut files = Vec::with_capacity(paths.len());
+        for path in paths.iter().map(Path::new) {
+            directories.push(c_path(path.parent().ok_or("PrivateExportRejected")?)?);
+            files.push(c_path(path)?);
+        }
+        directories.push(c_path(root)?);
+        Ok(Self { files, directories })
+    }
+
+    fn remove(&self) {
+        // These names were prepared before clone. The child uses no allocator or Rust locks.
+        for file in &self.files {
+            unsafe { libc::unlink(file.as_ptr()) };
+        }
+        for directory in &self.directories {
+            unsafe { libc::rmdir(directory.as_ptr()) };
+        }
+    }
 }
 
 impl Owner {
@@ -22,7 +57,7 @@ impl Owner {
     }
 
     pub(super) fn start(files: &[File]) -> Result<Self, String> {
-        Self::start_checked(files, None, |pid| {
+        Self::start_checked(files, None, None, |pid| {
             USED_PIDS
                 .get_or_init(Default::default)
                 .lock()
@@ -31,8 +66,14 @@ impl Owner {
         })
     }
 
+    pub(super) fn start_named(root: &Path, paths: &[String]) -> Result<Self, String> {
+        let cleanup = NamedCleanup::new(root, paths)?;
+        Self::start_checked(&[], Some(&cleanup), None, |_| true)
+    }
+
     fn start_checked(
         files: &[File],
+        cleanup: Option<&NamedCleanup>,
         before_close: Option<&dyn Fn(libc::pid_t)>,
         approve: impl Fn(libc::pid_t) -> bool,
     ) -> Result<Self, String> {
@@ -73,8 +114,10 @@ impl Owner {
         } as libc::pid_t;
         if pid == 0 {
             unsafe {
-                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) < 0
-                    || libc::getppid() != parent
+                // The named-file owner must run after parent death to unlink the export.
+                if cleanup.is_none()
+                    && (libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) < 0
+                        || libc::getppid() != parent)
                 {
                     libc::_exit(1);
                 }
@@ -99,7 +142,7 @@ impl Owner {
                 {
                     libc::_exit(1);
                 }
-                if libc::prctl(libc::PR_SET_DUMPABLE, 1) < 0
+                if (cleanup.is_none() && libc::prctl(libc::PR_SET_DUMPABLE, 1) < 0)
                     || !child_send(ready_write.as_raw_fd(), 2)
                 {
                     libc::_exit(1);
@@ -115,6 +158,9 @@ impl Owner {
                 };
                 // EOF, revocation, or a bounded lifetime all close the complete owner FD table.
                 libc::poll(&mut wait, 1, 300_000);
+                if let Some(cleanup) = cleanup {
+                    cleanup.remove();
+                }
                 libc::_exit(0);
             }
         }
@@ -133,6 +179,7 @@ impl Owner {
             pid,
             control: Some(control_write),
             process: unsafe { File::from_raw_fd(process_fd) },
+            cleans_named_files: cleanup.is_some(),
         };
         restored?;
         if let Some(probe) = before_close {
@@ -170,14 +217,16 @@ impl Owner {
     pub(super) fn stop(&mut self) -> Result<(), String> {
         self.control.take();
         // pidfd addresses the original process even if another SIGCHLD handler has reaped it.
-        unsafe {
-            libc::syscall(
-                libc::SYS_pidfd_send_signal,
-                self.process.as_raw_fd(),
-                libc::SIGKILL,
-                std::ptr::null::<libc::siginfo_t>(),
-                0u32,
-            );
+        if !self.cleans_named_files {
+            unsafe {
+                libc::syscall(
+                    libc::SYS_pidfd_send_signal,
+                    self.process.as_raw_fd(),
+                    libc::SIGKILL,
+                    std::ptr::null::<libc::siginfo_t>(),
+                    0u32,
+                );
+            }
         }
         let mut wait = libc::pollfd {
             fd: self.process.as_raw_fd(),
@@ -331,7 +380,7 @@ mod tests {
             assert_parent_restored();
         };
         let owner =
-            Owner::start_checked(std::slice::from_ref(&member), Some(&probe), |_| true).unwrap();
+            Owner::start_checked(std::slice::from_ref(&member), None, Some(&probe), |_| true).unwrap();
         assert_parent_restored();
         assert!(File::open(format!("/proc/{}/fd/{}", owner.pid(), member.as_raw_fd())).is_ok());
         assert!(File::open(format!(
@@ -393,7 +442,7 @@ mod tests {
             assert!(File::open(format!("/proc/{pid}/fd/{}", member.as_raw_fd())).is_err());
         };
         assert!(
-            Owner::start_checked(std::slice::from_ref(&member), Some(&probe), |_| false).is_err()
+            Owner::start_checked(std::slice::from_ref(&member), None, Some(&probe), |_| false).is_err()
         );
         assert_eq!(member.metadata().unwrap().len(), 0);
         assert_parent_restored();

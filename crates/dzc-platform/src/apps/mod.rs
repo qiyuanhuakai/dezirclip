@@ -2,11 +2,19 @@
 mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::*;
+#[cfg(target_os = "linux")]
+mod share_email;
+#[cfg(target_os = "linux")]
+pub use share_email::compose_share_email;
 
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
 pub use windows::*;
+#[cfg(target_os = "windows")]
+mod share_windows;
+#[cfg(target_os = "windows")]
+pub use share_windows::{WindowsShare, grant_windows_share_activation, show_windows_share};
 #[cfg(target_os = "windows")]
 mod windows_icon;
 #[cfg(target_os = "windows")]

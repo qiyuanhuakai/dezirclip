@@ -75,6 +75,7 @@
         "desktop.profile.move",
         "desktop.appearance.background",
         "desktop.history.open",
+        "desktop.history.share",
         "desktop.files.drop",
         "desktop.files.drag",
         "desktop.applications.select",
@@ -970,6 +971,10 @@
         {
           "if": { "properties": { "method": { "const": "desktop.history.open" } }, "required": ["method"] },
           "then": { "properties": { "params": { "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/ExternalOpenParams" } } }
+        },
+        {
+          "if": { "properties": { "method": { "const": "desktop.history.share" } }, "required": ["method"] },
+          "then": { "properties": { "params": { "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/ShareEntryParams" } } }
         },
         {
           "if": { "properties": { "method": { "const": "desktop.applications.select" } }, "required": ["method"] },

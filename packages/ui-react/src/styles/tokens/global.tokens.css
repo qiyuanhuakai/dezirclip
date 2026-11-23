@@ -33,13 +33,10 @@
   --clipboard-tag-font-size: 10px;
 
   /* Shell opacity control.
-     `--surface-opacity` is the ABSOLUTE alpha of the outermost window surface
-     (0 = fully see-through, 1 = fully opaque) and is written from the
-     `app.surface_opacity` setting. It is deliberately not a multiplier on a
-     per-theme base: with a base multiplier the same slider value produced a
-     different-looking shell in every theme and in each colour mode, and the top
-     of the range was never opaque. Themes only supply the tint below, so one
-     number means one thing everywhere.
+     `--surface-opacity` is written from `app.surface_opacity`. The ordinary
+     shell and custom backgrounds use it as the tint alpha (0 = clear tint,
+     1 = opaque tint). Windows 11 system materials use a lighter intermediate
+     tint so the OS backdrop remains visible.
      `--surface-shell-rgb` is the per-theme / per-mode tint, overridden by the
      `theme-*` blocks. */
   --surface-opacity: 0.65;

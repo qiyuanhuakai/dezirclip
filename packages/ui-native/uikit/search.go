@@ -80,7 +80,7 @@ func (k Kit) SearchBar(c *ui.Context, options SearchOptions) {
 
 func (k Kit) searchModeButton(c *ui.Context, mode SearchMode, widget string) ui.Element {
 	style := k.style(widget)
-	button := paint(ui.ButtonBase(c).Label(mode.Label).Height(style.Height), style)
+	button := paint(ui.ButtonBase(c).Label(mode.Label).Height(style.Height).Cursor(ui.CursorPointer), style)
 	glyph := mode.Label
 	switch mode.ID {
 	case "fuzzy":

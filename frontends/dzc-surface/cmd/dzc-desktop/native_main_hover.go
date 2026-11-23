@@ -36,7 +36,17 @@ func (n *nativeMain) hoverPreview(row protocol.DesktopEntry, generation uint64, 
 		return
 	}
 	active := h.owns(n.preview)
-	if active && row.Id != 0 && n.preview.entryID != row.Id {
+	if active && n.preview.entryID != row.Id {
+		if n.preview.window != nil {
+			// Moving toward a flyout can cross other cards, especially
+			// when the monitor edge puts it above or below its source.
+			firstExit := h.row == n.preview.entryID
+			h.row, h.bounds = row.Id, bounds
+			if firstExit || h.timer == nil {
+				n.waitForHoverExit(n.session, h.ticket, 500*time.Millisecond)
+			}
+			return
+		}
 		n.closePreview()
 		active = false
 	}
@@ -47,9 +57,6 @@ func (n *nativeMain) hoverPreview(row protocol.DesktopEntry, generation uint64, 
 		h.preview = previous
 	}
 	if row.Id == 0 {
-		if active {
-			n.waitForHoverExit(n.session, h.ticket)
-		}
 		return
 	}
 	if bounds.W <= 0 || bounds.H <= 0 || n.preview.entryID != 0 {
@@ -70,9 +77,9 @@ func (n *nativeMain) hoverPreview(row protocol.DesktopEntry, generation uint64, 
 	})
 }
 
-func (n *nativeMain) waitForHoverExit(session context.Context, ticket uint64) {
+func (n *nativeMain) waitForHoverExit(session context.Context, ticket uint64, delay time.Duration) {
 	h := &n.hover
-	h.timer = time.AfterFunc(180*time.Millisecond, func() {
+	h.timer = time.AfterFunc(delay, func() {
 		n.update(session, func() {
 			if h.ticket != ticket || !h.owns(n.preview) {
 				return
@@ -81,7 +88,7 @@ func (n *nativeMain) waitForHoverExit(session context.Context, ticket uint64) {
 				bounds, pointer, ok := previewPointer(w)
 				if ok && pointer.X >= bounds.X && pointer.X < bounds.X+bounds.Width &&
 					pointer.Y >= bounds.Y && pointer.Y < bounds.Y+bounds.Height {
-					n.waitForHoverExit(session, ticket)
+					n.waitForHoverExit(session, ticket, 180*time.Millisecond)
 					return
 				}
 			}

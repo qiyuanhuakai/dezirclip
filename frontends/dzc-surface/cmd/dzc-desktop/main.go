@@ -334,7 +334,10 @@ func run() error {
 			Hidden: true, SkipTaskbar: true, DisableMaximize: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true}
 		var native *nativeMain
 		if useNativeMain {
-			native = &nativeMain{shell: shell, library: library, actions: history, preview: preview, system: systemSettings, systemDark: mygo.Theme.IsDark()}
+			native = &nativeMain{
+				shell: shell, library: library, actions: history, preview: preview, system: systemSettings,
+				systemDark: mygo.Theme.IsDark(), windows11: shell.PlatformInfo().Windows11,
+			}
 			options.Content = ui.View(native.view)
 		}
 		win := mygo.NewWindow(options)

@@ -76,30 +76,43 @@ func attachmentIconKind(name string) string {
 }
 
 const (
-	attachmentChromeHeight  = 90
-	attachmentSummaryHeight = 22
-	attachmentRowHeight     = 30
-	AttachmentMaxNameRows   = 6
+	attachmentChromeHeight    = 90
+	attachmentSummaryHeight   = 22
+	attachmentRowHeight       = 30
+	attachmentThumbnailHeight = 100
+	AttachmentMaxNameRows     = 6
 )
 
-func AttachmentFilenameHeight(count int) int {
-	height := attachmentChromeHeight + attachmentSummaryHeight + min(AttachmentMaxNameRows, count)*attachmentRowHeight
+func attachmentHeaderHeight(count int) int {
+	height := attachmentChromeHeight + attachmentSummaryHeight
 	if count > 1 {
 		height += attachmentSummaryHeight
 	}
 	return height
 }
 
+func AttachmentFilenameHeight(count int) int {
+	return attachmentHeaderHeight(count) + min(AttachmentMaxNameRows, count)*attachmentRowHeight
+}
+
+// AttachmentGalleryHeight fits the gallery's thumbnail row and visible filenames.
+func AttachmentGalleryHeight(width, count int) int {
+	tiles := attachmentTileCount(float32(width), count)
+	return attachmentHeaderHeight(count) + attachmentThumbnailHeight + attachmentRowHeight +
+		min(AttachmentMaxNameRows, count-tiles)*attachmentRowHeight
+}
+
+func attachmentTileCount(width float32, count int) int {
+	return min(count, max(1, min(4, int((width-20)/110))))
+}
+
 func attachmentPreviewCapacity(width, height float32, count int, media bool) (tiles, names int, thumbnail float32) {
 	// The shared preview chrome occupies at most 90 DIPs. Reserve a final
 	// complete text row for overflow instead of clipping the last filename.
-	budget := max(float32(0), height-attachmentChromeHeight) - attachmentSummaryHeight
-	if count > 1 {
-		budget -= attachmentSummaryHeight
-	}
+	budget := max(0, height-float32(attachmentHeaderHeight(count)))
 	if media && budget >= 110 {
-		tiles = min(count, max(1, min(4, int((width-20)/110))))
-		thumbnail = min(float32(100), budget-attachmentRowHeight)
+		tiles = attachmentTileCount(width, count)
+		thumbnail = min(attachmentThumbnailHeight, budget-attachmentRowHeight)
 		budget -= thumbnail + attachmentRowHeight
 	}
 	names = min(count-tiles, max(0, min(AttachmentMaxNameRows, int(budget/attachmentRowHeight))))

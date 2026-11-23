@@ -26,7 +26,7 @@ const cases = {
   "capture-engine": { states: ["available", "unavailable", "loading", "failed"], text: "OCR engine status" },
   "fixed-capture-renderer": { states: ["default"], text: "MyGo Native" },
   "cli-settings": { states: ["default", "narrow", "conflict", "registered", "failed"], text: "PATH status" },
-  "settings-section-card": { states: ["default", "expanded", "wide"], text: "General settings" },
+  "settings-section-card": { states: ["default", "expanded", "wide", "stack", "stack-hover", "stack-open"], text: "General settings" },
   "settings-choices": { states: ["default", "narrow", "disabled"], text: "Update channel" },
   "hotkey-list": { states: ["default", "multiple", "win-v", "extended"], text: "Global hotkey" },
   "emoji-favorites": { states: ["default", "empty", "hover", "drop"], text: "Add emoji" },
@@ -50,7 +50,7 @@ const cases = {
   "attachment-preview": { states: ["default", "compact", "media", "expanded", "narrow", "narrow-media", "compact-media"], text: "" },
   "history-image": { states: ["default", "compact", "pending", "compact-pending", "missing", "compact-missing", "unavailable", "compact-unavailable"], text: "" },
   "history-ocr": { states: ["default", "expanded", "compact-expanded", "processing", "failed", "unsupported"], text: "" },
-  "preview-toolbar": { states: ["default", "pinned"], text: "Content preview" },
+  "preview-toolbar": { states: ["default", "pinned", "hover", "pinned-hover", "pinned-actual-hover"], text: "Content preview" },
   "preview-image": { states: ["default", "zoomed"], text: "Image preview" },
   "preview-resize-handles": { states: ["default", "southeast"], text: "Resize preview" },
   "wheel-hot-zone": { states: ["default", "scrolled"], text: "Wheel input" },
@@ -61,7 +61,7 @@ const cases = {
   "history-preview-status": { states: ["default", "compact"], text: "No text preview available" },
   "history-rich-text": { states: ["default", "compact", "code", "code-compact", "code-inline", "code-custom"], text: "Release checklist" },
   "settings-rail": { states: ["default", "selected", "long-label"], text: "Appearance" },
-  "settings-footer": { states: ["default", "compact"], text: "Reset defaults" },
+  "settings-footer": { states: ["default", "compact", "hover-card", "hover-link"], text: "Reset defaults" },
   "history-card": { states: ["default", "selected", "pinned", "action-hover", "active", "active-hover", "action-pressed",
     "active-pressed", "compact", "compact-hover", "compact-action-hover", "compact-active-hover", "compact-action-pressed",
     "compact-active-pressed"], text: "Copied from the active editor" },
@@ -392,7 +392,7 @@ try {
                 throw Error("Clipboard search must show one field and seven ordered content filters");
               }
               if (theme === "macos" && await field.evaluate(element => getComputedStyle(element).borderTopLeftRadius) !== "10px") {
-                throw Error("The macOS clipboard search must retain its rounded corners");
+                throw Error("The FlatWhite clipboard search must retain its rounded corners");
               }
               if (state === "selected") {
                 const image = search.getByRole("button", { name: "图片" });
@@ -597,6 +597,30 @@ try {
             }
             if (fixture === "settings-data" && state === "hover-path") await page.locator(".data-panel").hover();
             if (fixture === "settings-data" && state === "hover-action") await page.locator(".data-actions-row .btn-icon").first().hover();
+            if (fixture === "settings-section-card" && state.startsWith("stack")) {
+              const firstHeader = page.locator(".group-header").first();
+              if (state === "stack-open") await firstHeader.click();
+              if (state === "stack-hover") {
+                await firstHeader.hover();
+                if (await firstHeader.evaluate(element => getComputedStyle(element).cursor) !== "pointer") {
+                  throw Error("Settings card header does not show a hand cursor");
+                }
+              }
+            }
+            if (fixture === "settings-footer" && state.startsWith("hover-")) {
+              const control = page.locator(state === "hover-card" ? ".settings-footer-card" : ".settings-footer-link").first();
+              await control.hover();
+              if (await control.evaluate(element => getComputedStyle(element).cursor) !== "pointer") {
+                throw Error("Settings footer control does not show a hand cursor");
+              }
+            }
+            if (fixture === "preview-toolbar" && state.endsWith("hover")) {
+              const control = page.locator(state === "pinned-actual-hover" ? ".preview-toolbar-actual" : ".preview-toolbar-actions .preview-toolbar-button").first();
+              await control.hover();
+              if (await control.evaluate(element => getComputedStyle(element).cursor) !== "pointer") {
+                throw Error("Preview toolbar control does not show a hand cursor");
+              }
+            }
             const webImage = await page.screenshot({ path: join(output, id + "_web.png"), animations: "disabled" });
             if (pressedHistoryAction) await page.mouse.up();
             const { stdout } = await execute(resolve(native), nativeArgs, { timeout: 10000 });
@@ -614,6 +638,22 @@ try {
               }
             }
             const nativeText = (Array.isArray(inspection) ? inspection : inspection.Texts).join(" ");
+            if (fixture === "settings-section-card" && state.startsWith("stack")) {
+              const headers = await page.locator(".group-header").evaluateAll(elements => elements.map(element => ({
+                label: element.querySelector("h3").textContent,
+                rect: element.getBoundingClientRect().toJSON(),
+              })));
+              const closedHeaders = state === "stack-open" ? headers.slice(1) : headers;
+              const first = closedHeaders[0];
+              for (const { label, rect } of closedHeaders) {
+                const native = inspection.Headers[label];
+                const webOffset = rect.y - first.rect.y;
+                const nativeOffset = native.Y - inspection.Headers[first.label].Y;
+                if (Math.abs(rect.height - native.H) > 1 || Math.abs(webOffset - nativeOffset) > 1) {
+                  throw Error(`Settings header ${label}: WebView height ${rect.height} and offset ${webOffset}, Native ${native.H} and ${nativeOffset}`);
+                }
+              }
+            }
             let webText = await page.locator("body").innerText();
             if (fixture === "privacy-rules") {
               const confirmation = page.getByRole("group", { name: "Remove privacy rule", exact: true });

@@ -30,6 +30,9 @@ func (k Kit) SearchSelect(c *ui.Context, options SearchSelectOptions) (ui.Elemen
 	box.Children(func() {
 		parts := ui.ComboboxBase(c, query)
 		input := parts.Input.Fill().Label(options.Label).Disabled(options.Disabled)
+		if !parts.Open() || options.Disabled {
+			input.Cursor(actionCursor(options.Disabled))
+		}
 		fieldStyle := style
 		switch {
 		case options.Disabled:
@@ -104,7 +107,7 @@ func (k Kit) SearchSelect(c *ui.Context, options SearchSelectOptions) (ui.Elemen
 						} else {
 							selectable++
 							row = parts.Item(searchSelectChoicePrefix + choice.Value).Label(choice.Label).
-								FillWidth().Selected(choice.Value == *options.Value)
+								FillWidth().Selected(choice.Value == *options.Value).Cursor(ui.CursorPointer)
 							hasHighlight = hasHighlight || row.Highlighted()
 							switch {
 							case choice.Value == *options.Value:

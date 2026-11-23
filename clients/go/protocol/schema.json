@@ -578,6 +578,38 @@
       ],
       "additionalProperties": false
     },
+    "ShareEntryParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "reveal": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "id",
+        "reveal"
+      ],
+      "additionalProperties": false
+    },
     "ApplicationSelection": {
       "type": "object",
       "properties": {
@@ -1713,6 +1745,7 @@
         "desktop.profile.move",
         "desktop.appearance.background",
         "desktop.history.open",
+        "desktop.history.share",
         "desktop.files.drop",
         "desktop.files.drag",
         "desktop.applications.select",
@@ -2653,6 +2686,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/ExternalOpenParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.share"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ShareEntryParams"
               }
             }
           }

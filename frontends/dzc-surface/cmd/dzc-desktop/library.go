@@ -165,6 +165,15 @@ func (l *Library) OpenEntry(ctx context.Context, params protocol.ExternalOpenPar
 	return nil
 }
 
+func (l *Library) ShareEntry(ctx context.Context, params protocol.ShareEntryParams) (bool, error) {
+	if params.ServiceInstanceId != l.owner.Hello().State.ServiceInstanceId || params.Id == 0 {
+		return false, client.ErrProtocol
+	}
+	var result protocol.OperationResult
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopHistoryShare, params, "OperationResult", &result)
+	return result.Performed, err
+}
+
 func (l *Library) Summary(ctx context.Context, params protocol.DesktopEntryParams) (hostedEntry, error) {
 	params.Reveal = false
 	params.ThumbnailDimension = nil

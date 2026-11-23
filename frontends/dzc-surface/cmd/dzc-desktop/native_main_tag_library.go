@@ -15,6 +15,7 @@ import (
 type nativeTagLibrary struct {
 	selected, query, sort, nameQuery string
 	railCollapsed, focusRailSearch   bool
+	selectInitial                    bool
 	dialog                           *nativeTagDialog
 	entryDelete                      *nativeTagEntryDeletion
 	batch                            nativeTagBatch
@@ -49,10 +50,27 @@ func (n *nativeMain) openTagLibrary() {
 	if n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating {
 		return
 	}
-	n.tagLibrary = &nativeTagLibrary{sort: "time"}
+	n.tagLibrary = &nativeTagLibrary{sort: "time", selectInitial: true}
 	n.tagSuggestions.dismiss()
-	n.editQuery(false)
-	n.loadTagCatalog()
+	if n.selectInitialTag() {
+		n.editQuery(false)
+	} else {
+		n.resetPreviewSelection()
+		n.loadTagCatalog()
+	}
+}
+
+func (n *nativeMain) selectInitialTag() bool {
+	tags, catalog := n.tagLibrary, &n.tagCatalog
+	if tags == nil || !tags.selectInitial || !catalog.fresh {
+		return false
+	}
+	tags.selectInitial = false
+	if tags.selected != "" || len(catalog.names) == 0 {
+		return false
+	}
+	tags.selected = catalog.names[0]
+	return true
 }
 
 func (n *nativeMain) closeTagLibrary() {
@@ -182,9 +200,9 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 	if tags.batch.enabled {
 		manageIcon, manageLabel = "done", n.text("tag_manage_done")
 	}
-	revealIcon, revealLabel := "reveal", n.text("tag_reveal_all", "Reveal protected items")
+	revealIcon, revealLabel := "reveal", n.text("tag_reveal_all")
 	if tags.reveal != nil {
-		revealIcon, revealLabel = "conceal", n.text("tag_hide_all", "Hide protected items")
+		revealIcon, revealLabel = "conceal", n.text("tag_hide_all")
 	}
 	kit.TagToolbar(c, func() {
 		if width >= nativeSplitWidth {
@@ -217,7 +235,7 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 			n.saveSetting("app.compact_mode", fmt.Sprint(!compact))
 		}},
 		{Icon: revealIcon, Label: revealLabel, Active: tags.reveal != nil,
-			Disabled: !selected || n.mutating || n.reading || n.failed || tags.batch.enabled || len(n.history.rows) == 0,
+			Disabled: !selected || n.mutating || n.reading || n.failed || len(n.history.rows) == 0,
 			Run: func() {
 				n.clearProtectedRows()
 				if revealIcon == "reveal" {
@@ -225,9 +243,11 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 				}
 			}},
 		{Icon: manageIcon, Label: manageLabel, Active: tags.batch.enabled, Disabled: !selected || n.mutating, Run: func() {
-			n.clearProtectedRows()
+			if tags.reveal == nil {
+				n.clearProtectedRows()
+			}
 			tags.batch = nativeTagBatch{enabled: !tags.batch.enabled, generation: n.history.generation}
-			n.resetPreviewSelection()
+			n.resetPreviewInteraction()
 		}},
 		{Icon: "add", Label: n.text("add_item", "Add entry"), Disabled: !selected || n.mutating || tags.batch.enabled,
 			Run: func() { n.addHistoryEntry(tags.selected) }},
@@ -257,6 +277,8 @@ func (n *nativeMain) tagLibraryControls(c *ui.Context, kit uikit.Kit, tags *nati
 		label := n.text("tag_library_empty", "No tags")
 		if catalog.loading {
 			label = n.text("common_loading", "Loading tags…")
+		} else if len(catalog.names) > 0 {
+			label = n.text("tag_select_hint", "Select a tag to see its items")
 		}
 		ui.Text(c, label).TextColor(c.Theme().TextMuted).Padding(8)
 	}

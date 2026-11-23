@@ -5,8 +5,9 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
 )
 
-// QuickPastePanel paints the window backdrop at the requested alpha.
+// QuickPastePanel keeps the theme's tint legible across the window opacity range.
 func (k Kit) QuickPastePanel(c *ui.Context, background ui.Color) ui.Element {
+	background.A = uint8(0.82*255 + 0.18*float32(background.A) + 0.5)
 	return ui.Column(c).Fill().Padding(12).Gap(8).Radius(k.style("tag").Radius).Background(background)
 }
 
@@ -29,7 +30,7 @@ func (k Kit) QuickPasteSearch(c *ui.Context, value *string, label string) ui.Ele
 // QuickPasteRow paints a result and its source using the panel's hover and selection color.
 func (k Kit) QuickPasteRow(c *ui.Context, label, source string, selected bool) ui.Element {
 	palette := c.Theme()
-	row := ui.Column(c).FillWidth().Height(48).Gap(2).Selected(selected)
+	row := ui.Column(c).FillWidth().Height(48).Gap(2).Selected(selected).Cursor(ui.CursorPointer)
 	style := theme.WidgetStyle{Padding: [4]float32{6, 12, 6, 12}, Radius: min(8, k.style("tag").Radius), Opacity: 1}
 	if selected || row.Hovered() {
 		style.Fill = rgba(ui.Hex(k.palette().Selected))

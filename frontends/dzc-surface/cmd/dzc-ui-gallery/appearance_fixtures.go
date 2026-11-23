@@ -23,7 +23,7 @@ func (g *gallery) themeManagerFixture(c *ui.Context, kit uikit.Kit) {
 			Label: "Visual theme", BuiltinLabel: "Built-in themes", ImportedLabel: "Imported themes", Active: active,
 			Builtins: []uikit.SelectOption{
 				{Value: "retro", Label: "Retro"}, {Value: "mica", Label: "Mica"}, {Value: "acrylic", Label: "Acrylic"},
-				{Value: "liquid-glass", Label: "Liquid Glass"}, {Value: "macos", Label: "macOS"}, {Value: "scifi", Label: "Sci-Fi"},
+				{Value: "liquid-glass", Label: "Liquid Glass"}, {Value: "macos", Label: "FlatWhite"}, {Value: "scifi", Label: "Sci-Fi"},
 			},
 			Imported:    []uikit.SelectOption{{Value: "custom:studio", Label: imported}},
 			ImportLabel: "Import theme", ExportLabel: "Export theme", RemoveLabel: "Remove theme",

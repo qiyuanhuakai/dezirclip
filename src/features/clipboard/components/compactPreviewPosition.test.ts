@@ -34,6 +34,7 @@ describe("compact preview positioning", () => {
       avoidRect: { left: 0, top: 0, right: 800, bottom: 640 },
     });
 
-    expect(target.y).toBe(420);
+    expect(target.y + 180).toBe(508);
+    expect(target.x).toBe(192);
   });
 });

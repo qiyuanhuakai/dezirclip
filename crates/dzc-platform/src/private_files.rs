@@ -17,6 +17,18 @@ pub(crate) struct Exports {
     owner: Option<linux_owner::Owner>,
 }
 impl Exports {
+    fn empty() -> Self {
+        Self {
+            #[cfg(target_os = "windows")]
+            guardian: None,
+            handles: Vec::new(),
+            paths: Vec::new(),
+            directory: None,
+            #[cfg(target_os = "linux")]
+            owner: None,
+        }
+    }
+
     #[cfg(any(test, target_os = "linux"))]
     pub(crate) fn create(files: Vec<ClipboardFile>) -> Result<Self, String> {
         Self::create_with_access(files, false)
@@ -42,18 +54,8 @@ impl Exports {
         }
     }
     fn create_with_access(files: Vec<ClipboardFile>, writable: bool) -> Result<Self, String> {
-        if files.is_empty() || files.len() > 64 {
-            return Err("PrivateExportRejected".into());
-        }
-        let mut exports = Self {
-            #[cfg(target_os = "windows")]
-            guardian: None,
-            handles: Vec::new(),
-            paths: Vec::new(),
-            directory: None,
-            #[cfg(target_os = "linux")]
-            owner: None,
-        };
+        validate_files(&files)?;
+        let mut exports = Self::empty();
         #[cfg(target_os = "windows")]
         {
             let directory =
@@ -61,19 +63,7 @@ impl Exports {
             create_private_directory(&directory)?;
             exports.directory = Some(directory);
         }
-        let mut total = 0usize;
         for (index, file) in files.iter().enumerate() {
-            total = total
-                .checked_add(file.bytes.len())
-                .ok_or("PrivateExportRejected")?;
-            if total > MAX_TOTAL
-                || file.name.is_empty()
-                || file.name.contains(['/', '\\', ':'])
-                || file.name.chars().any(char::is_control)
-                || matches!(file.name.as_str(), "." | "..")
-            {
-                return Err("PrivateExportRejected".into());
-            }
             #[cfg(target_os = "linux")]
             let (handle, path) = {
                 let _ = index;
@@ -154,18 +144,65 @@ impl Exports {
         }
         Ok(exports)
     }
+
+    #[cfg(target_os = "linux")]
+    fn email_attachment(files: Vec<ClipboardFile>) -> Result<Self, String> {
+        use std::fs::{DirBuilder, OpenOptions, Permissions};
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+
+        validate_files(&files)?;
+        let root = tempfile::Builder::new()
+            .prefix("dezirclip-mail-")
+            .permissions(Permissions::from_mode(0o700))
+            .tempdir_in(email_export_root()?)
+            .map_err(|_| "PrivateExportRejected")?
+            .keep();
+        let mut exports = Self::empty();
+        exports.directory = Some(root.clone());
+        // Preserve each attachment's name, even when two sources share a basename.
+        for (index, file) in files.iter().enumerate() {
+            let directory = root.join(index.to_string());
+            DirBuilder::new()
+                .mode(0o700)
+                .create(&directory)
+                .map_err(|_| "PrivateExportRejected")?;
+            let path = directory.join(&file.name);
+            exports.paths.push(path.into_os_string().into_string().map_err(|_| "PrivateExportRejected")?);
+        }
+        // Start cleanup before any plaintext can be written.
+        exports.owner = Some(linux_owner::Owner::start_named(&root, &exports.paths)?);
+        for (path, file) in exports.paths.iter().zip(files) {
+            let mut handle = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(path)
+                .map_err(|_| "PrivateExportRejected")?;
+            handle.write_all(&file.bytes).map_err(|_| "PrivateExportRejected")?;
+            handle.set_permissions(Permissions::from_mode(0o400)).map_err(|_| "PrivateExportRejected")?;
+        }
+        Ok(exports)
+    }
+
     pub(crate) fn stop(&mut self) -> Result<(), String> {
-        #[cfg(target_os = "windows")]
+        #[cfg(target_os = "linux")]
+        if let Some(owner) = &mut self.owner {
+            owner.stop()?;
+        }
+        self.remove_named_files()
+    }
+
+    fn remove_named_files(&self) -> Result<(), String> {
+        if self.directory.is_none() {
+            return Ok(());
+        }
         for path in &self.paths {
             if let Err(error) = std::fs::remove_file(path) {
                 if error.kind() != std::io::ErrorKind::NotFound {
                     return Err("PrivateExportRevocationUnconfirmed".into());
                 }
             }
-        }
-        #[cfg(target_os = "linux")]
-        if let Some(owner) = &mut self.owner {
-            owner.stop()?;
         }
         Ok(())
     }
@@ -207,6 +244,58 @@ impl Exports {
     pub(crate) fn paths(&self) -> Vec<String> {
         self.paths.clone()
     }
+}
+
+fn validate_files(files: &[ClipboardFile]) -> Result<(), String> {
+    if files.is_empty() || files.len() > 64 {
+        return Err("PrivateExportRejected".into());
+    }
+    let mut total = 0usize;
+    for file in files {
+        total = total.checked_add(file.bytes.len()).ok_or("PrivateExportRejected")?;
+        if total > MAX_TOTAL
+            || file.name.is_empty()
+            || file.name.contains(['/', '\\', ':'])
+            || file.name.chars().any(char::is_control)
+            || matches!(file.name.as_str(), "." | "..")
+        {
+            return Err("PrivateExportRejected".into());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn email_export_root() -> Result<PathBuf, String> {
+    use std::os::unix::{ffi::OsStrExt, fs::MetadataExt};
+    use std::path::Path;
+
+    let checked_tmpfs = |path: &Path| -> Option<(PathBuf, std::fs::Metadata)> {
+        if !path.is_absolute() {
+            return None;
+        }
+        let path = path.canonicalize().ok()?;
+        let metadata = path.metadata().ok()?;
+        let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+        let mut info = std::mem::MaybeUninit::<libc::statfs>::uninit();
+        if !metadata.is_dir() || unsafe { libc::statfs(c_path.as_ptr(), info.as_mut_ptr()) } != 0
+            || unsafe { info.assume_init().f_type } != libc::TMPFS_MAGIC
+        {
+            return None;
+        }
+        Some((path, metadata))
+    };
+    if let Some((path, metadata)) = std::env::var_os("XDG_RUNTIME_DIR")
+        .and_then(|directory| checked_tmpfs(Path::new(&directory)))
+    {
+        if metadata.uid() == unsafe { libc::geteuid() } && metadata.mode() & 0o777 == 0o700 {
+            return Ok(path);
+        }
+    }
+    checked_tmpfs(Path::new("/dev/shm"))
+        .filter(|(_, metadata)| metadata.uid() == 0 && metadata.mode() & 0o1000 != 0)
+        .map(|(path, _)| path)
+        .ok_or_else(|| "PrivateExportRejected".into())
 }
 #[cfg(target_os = "windows")]
 fn create_private_directory(path: &std::path::Path) -> Result<(), String> {
@@ -308,7 +397,13 @@ pub(crate) struct BoundExport {
     authorization: ClipboardAuthorization,
     retained: bool,
 }
-enum ExportPurpose { Clipboard, Editor, Attachment }
+enum ExportPurpose {
+    Clipboard,
+    Editor,
+    Attachment,
+    #[cfg(target_os = "linux")]
+    EmailAttachment,
+}
 impl BoundExport {
     pub(crate) fn new(
         files: Vec<ClipboardFile>,
@@ -325,6 +420,10 @@ impl BoundExport {
     pub(crate) fn attachment(files: Vec<ClipboardFile>, authorization: ClipboardAuthorization) -> Result<Self, String> {
         Self::with_access(files, authorization, ExportPurpose::Attachment)
     }
+    #[cfg(target_os = "linux")]
+    pub(crate) fn email_attachment(files: Vec<ClipboardFile>, authorization: ClipboardAuthorization) -> Result<Self, String> {
+        Self::with_access(files, authorization, ExportPurpose::EmailAttachment)
+    }
     fn with_access(
         files: Vec<ClipboardFile>,
         authorization: ClipboardAuthorization,
@@ -335,6 +434,8 @@ impl BoundExport {
         }
         let exports = match purpose {
             ExportPurpose::Attachment => Exports::attachment(files)?,
+            #[cfg(target_os = "linux")]
+            ExportPurpose::EmailAttachment => Exports::email_attachment(files)?,
             ExportPurpose::Editor => Exports::create_with_access(files, true)?,
             ExportPurpose::Clipboard => Exports::create_with_access(files, false)?,
         };
@@ -501,8 +602,7 @@ impl Drop for Exports {
         #[cfg(target_os = "linux")]
         self.owner.take();
         self.handles.clear();
-        #[cfg(target_os = "windows")]
-        for path in &self.paths { let _ = std::fs::remove_file(path); }
+        let _ = self.remove_named_files();
         if let Some(directory) = self.directory.take() {
             if let Ok(children) = std::fs::read_dir(&directory) {
                 for child in children.flatten() {
@@ -581,6 +681,89 @@ mod tests {
         assert!(!std::path::Path::new(&path).exists());
     }
     use super::*;
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn named_email_export_revokes_duplicate_names_without_affecting_existing_readers() {
+        use dzc_core::api::{HistoryService, PrivacySessionCommand, SensitiveAccess};
+        use std::os::unix::fs::PermissionsExt;
+
+        let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
+        let entry = serde_json::from_value(serde_json::json!({
+            "id":0, "content_type":"text", "content":"test attachment", "preview":"test attachment",
+            "source_app":"Synthetic", "timestamp":1, "is_pinned":false,
+        })).unwrap();
+        let id = history.save(&entry, None).unwrap();
+        let permit = history.privacy().authorize_selected_copy(id, None, SensitiveAccess::Denied, None, 1).unwrap();
+        let export = history.external_files_authorized(id, &permit, 1).unwrap();
+        let lease = BoundExport::email_attachment(
+            [b"first".to_vec(), b"second".to_vec()].into_iter().map(|bytes| ClipboardFile {
+                name: "capture.png".into(), bytes,
+            }).collect(),
+            export.authorization,
+        ).unwrap();
+        let paths = lease.paths().unwrap();
+        assert_ne!(paths[0], paths[1]);
+        for (path, content) in paths.iter().zip([b"first".as_slice(), b"second"]) {
+            let path = std::path::Path::new(path);
+            assert_eq!(path.file_name().unwrap(), "capture.png");
+            assert_eq!(path.metadata().unwrap().permissions().mode() & 0o777, 0o400);
+            assert_eq!(path.parent().unwrap().metadata().unwrap().permissions().mode() & 0o777, 0o700);
+            assert_eq!(std::fs::read(path).unwrap(), content);
+        }
+        let mut reader = File::open(&paths[0]).unwrap();
+        history.privacy().set_session(PrivacySessionCommand::On { duration_ms: None }, 2).unwrap();
+        assert!(lease.paths().is_err());
+        lease.retain();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while std::path::Path::new(&paths[0]).exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        for path in &paths {
+            assert!(!std::path::Path::new(path).exists());
+        }
+        // An email client that already took the attachment controls its own copy.
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut reader, &mut bytes).unwrap();
+        assert_eq!(bytes, b"first");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn named_email_export_owner_subprocess() {
+        if std::env::var_os("DZC_EMAIL_EXPORT_TEST_CHILD").is_none() { return; }
+        let export = Exports::email_attachment(vec![ClipboardFile {
+            name: "capture.png".into(),
+            bytes: b"fictional screenshot".to_vec(),
+        }]).unwrap();
+        println!("DZC_EXPORT_PATH={}", serde_json::to_string(&export.paths()[0]).unwrap());
+        std::io::stdout().flush().unwrap();
+        loop { std::thread::park(); }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn named_email_export_removes_files_after_abrupt_host_exit() {
+        use std::{io::BufRead, process::{Command, Stdio}};
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "private_files::tests::named_email_export_owner_subprocess", "--nocapture"])
+            .env("DZC_EMAIL_EXPORT_TEST_CHILD", "1")
+            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+        let reader = std::io::BufReader::new(child.stdout.take().unwrap());
+        let path: String = reader.lines().map(Result::unwrap).find_map(|line| line.split_once("DZC_EXPORT_PATH=")
+            .map(|(_, value)| serde_json::from_str(value).unwrap())).expect("owner published fixture path");
+        let contents = std::fs::read(&path);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert_eq!(contents.unwrap(), b"fictional screenshot");
+        let path = std::path::Path::new(&path);
+        let root = path.parent().unwrap().parent().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while root.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(!root.exists(), "the export directory must disappear after a crash");
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn owner_descriptor_table_excludes_the_hosts_other_files() {

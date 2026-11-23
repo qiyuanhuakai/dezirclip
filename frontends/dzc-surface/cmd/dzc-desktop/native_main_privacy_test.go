@@ -202,7 +202,7 @@ func TestNativeClipboardMenuKeepsOnlyPrivacyAndTextProcessingInSubmenus(t *testi
 	}
 	privacy := n.text("privacy_management")
 	assertMenu("text", false, []string{n.text("common_copy"), n.text("native_edit_tags"), n.text("native_qr_code"),
-		n.text("delete", "Delete entry"), n.text("pin"), n.text("native_share")}, []string{n.text("native_transformations"), privacy})
+		n.text("delete", "Delete entry"), n.text("pin"), n.shareLabel()}, []string{n.text("native_transformations"), privacy})
 	assertMenu("rich_text", true, []string{n.text("native_paste_formatted"), n.text("unpin")}, []string{n.text("native_transformations"), privacy})
 	assertMenu("image", false, []string{n.text("native_ocr_recognize"), n.text("native_copy_base64")}, []string{privacy})
 	entry := protocol.DesktopEntry{Id: 18, ContentType: "text"}

@@ -10,6 +10,7 @@ use unicode_general_category::{get_general_category, GeneralCategory};
 
 #[derive(Deserialize)]
 struct AnnotationsFile {
+    #[serde(alias = "annotationsDerived")]
     annotations: AnnotationMap,
 }
 
@@ -20,7 +21,9 @@ struct AnnotationMap {
 
 #[derive(Deserialize)]
 struct Annotation {
+    #[serde(default)]
     default: Vec<String>,
+    #[serde(default)]
     tts: Vec<String>,
 }
 
@@ -105,6 +108,22 @@ fn add_annotations(entry: &mut Entry, locales: &[BTreeMap<String, Annotation>]) 
     }
 }
 
+fn add_flag_search_terms(entry: &mut Entry) {
+    for keyword in entry.keywords.clone() {
+        if let Some(region) = keyword.strip_prefix("旗: ") {
+            add_keyword(entry, region);
+            add_keyword(entry, &format!("{region}国旗"));
+            add_keyword(entry, &format!("{region}旗帜"));
+        } else if let Some(region) = keyword.strip_prefix("旗子：") {
+            add_keyword(entry, region);
+            add_keyword(entry, &format!("{region}國旗"));
+            add_keyword(entry, &format!("{region}旗幟"));
+        } else if let Some(region) = keyword.strip_prefix("flag: ") {
+            add_keyword(entry, &format!("{region} flag"));
+        }
+    }
+}
+
 fn emoji_groups(locales: &[BTreeMap<String, Annotation>]) -> Vec<Group> {
     use emojis::Group::*;
     let groups = [
@@ -131,6 +150,9 @@ fn emoji_groups(locales: &[BTreeMap<String, Annotation>]) -> Vec<Group> {
                         aliases: Vec::new(),
                     };
                     add_annotations(&mut entry, locales);
+                    if group == Flags {
+                        add_flag_search_terms(&mut entry);
+                    }
                     entry
                 })
                 .collect();
@@ -218,14 +240,14 @@ fn symbol_groups(locales: &[BTreeMap<String, Annotation>]) -> Vec<Group> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = env::args_os().skip(1).collect();
-    if args.len() != 4 {
-        return Err("usage: dezirclip-emoji-catalog <zh annotations.json> <zh-Hant annotations.json> <en annotations.json> <output.json>".into());
-    }
-    let locales = [
-        load_annotations(Path::new(&args[0]))?,
-        load_annotations(Path::new(&args[1]))?,
-        load_annotations(Path::new(&args[2]))?,
-    ];
+    let (output, annotations) = args
+        .split_last()
+        .filter(|(_, annotations)| annotations.len() == 6)
+        .ok_or("pass the three base and three derived annotation files followed by output.json")?;
+    let locales = annotations
+        .iter()
+        .map(|path| load_annotations(Path::new(path)))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut catalog = Catalog {
         emoji: emoji_groups(&locales),
         symbols: symbol_groups(&locales),
@@ -242,7 +264,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             entry.aliases.clone_from(words);
         }
     }
-    let mut output = BufWriter::new(File::create(&args[3])?);
+    let mut output = BufWriter::new(File::create(output)?);
     serde_json::to_writer(&mut output, &catalog)?;
     output.write_all(b"\n")?;
     output.flush()?;

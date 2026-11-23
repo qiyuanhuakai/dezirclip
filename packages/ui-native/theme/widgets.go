@@ -78,4 +78,14 @@ type WidgetStyle struct {
 
 	// A nil opacity preserves the full blur used by older theme data.
 	BackdropBlurOpacity *float32
+	Enter               *WidgetEntrance
+}
+
+// WidgetEntrance is the opening frame and timing of the WebView component.
+type WidgetEntrance struct {
+	DurationMs int
+	Y          float32
+	ScaleY     float32
+	Opacity    float32
+	Ease       *[4]float32
 }

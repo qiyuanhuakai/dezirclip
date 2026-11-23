@@ -2,6 +2,19 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use dzc_host::wire::*;
 
 #[tauri::command]
+pub async fn share_history_entry(app: AppHandle, window: WebviewWindow, id: i64, expected_host_instance_id: String, expected_privacy_epoch: u64, allow_sensitive: bool) -> Result<bool, String> {
+    if window.label() != "main" || !window.is_visible().map_err(|error| error.to_string())? {
+        return Err("ShareWindowUnavailable".into());
+    }
+    let result: OperationResult = app.state::<crate::app::ipc_host::DesktopHost>().blocking_call(
+        Method::DesktopHistoryShare,
+        ShareEntryParams { id, service_instance_id: expected_host_instance_id, expected_epoch: expected_privacy_epoch, reveal: allow_sensitive },
+        "OperationResult",
+    ).await?;
+    Ok(result.performed)
+}
+
+#[tauri::command]
 pub async fn copy_dropped_files(app: AppHandle, window: WebviewWindow, paths: Vec<String>, expected_host_instance_id: String, expected_privacy_epoch: u64) -> Result<(), String> {
     if window.label() != "main" { return Err("FileDropWindowUnavailable".into()); }
     if crate::infrastructure::file_drag::active() { return Ok(()); }

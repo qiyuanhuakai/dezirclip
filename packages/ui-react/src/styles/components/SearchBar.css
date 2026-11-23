@@ -160,7 +160,7 @@
   left: 0;
   right: 0;
   z-index: 20;
-  background: var(--search-input-dropdown-open-bg, var(--bg-input));
+  background: var(--select-menu-bg, var(--dc-material-raised));
   border: 1px solid var(--search-input-dropdown-open-border, var(--border-light));
   border-radius: var(--radius-panel, 2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);

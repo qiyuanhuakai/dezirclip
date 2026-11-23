@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"image"
 	"image/color"
@@ -15,6 +16,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/richtext"
+	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
 )
 
@@ -56,10 +58,12 @@ func TestTextPreviewFitsPlainAndStyledParagraphs(t *testing.T) {
 	var short, medium, long, multiline, normal, heading, large, indented int
 	ui.NewTester(func(c *ui.Context) {
 		plain := func(text string) int {
-			return (&previewBody{formatted: previewDocument(richtext.NewText(text))}).textWidth(c.Theme())
+			width, _ := (&previewBody{formatted: previewDocument(richtext.NewText(text))}).textSize(c.Theme(), 560, 560)
+			return width
 		}
 		html := func(text string) int {
-			return (&previewBody{formatted: previewDocument(richtext.ParseHTML(text))}).textWidth(c.Theme())
+			width, _ := (&previewBody{formatted: previewDocument(richtext.ParseHTML(text))}).textSize(c.Theme(), 560, 560)
+			return width
 		}
 		short = plain("短文字")
 		medium = plain(strings.Repeat("M", 32))
@@ -67,7 +71,7 @@ func TestTextPreviewFitsPlainAndStyledParagraphs(t *testing.T) {
 		multiline = plain("第一行\n第二行\n第三行")
 		normal = html("<p>" + strings.Repeat("M", 24) + "</p>")
 		heading = html("<h1>" + strings.Repeat("M", 24) + "</h1>")
-		large = (&previewBody{formatted: previewDocument(richtext.TextOf(richtext.Paragraph{Runs: []richtext.Run{{Text: strings.Repeat("M", 24), Attributes: richtext.Attributes{Size: 30}}}}))}).textWidth(c.Theme())
+		large, _ = (&previewBody{formatted: previewDocument(richtext.TextOf(richtext.Paragraph{Runs: []richtext.Run{{Text: strings.Repeat("M", 24), Attributes: richtext.Attributes{Size: 30}}}}))}).textSize(c.Theme(), 560, 560)
 		indented = html("<blockquote>" + strings.Repeat("M", 32) + "</blockquote>")
 	}, 560, 320)
 	if short != 320 || multiline != short || medium <= short || medium >= 560 || long != 560 {
@@ -75,6 +79,92 @@ func TestTextPreviewFitsPlainAndStyledParagraphs(t *testing.T) {
 	}
 	if heading <= normal || large <= normal || indented <= medium {
 		t.Fatalf("styles lost: normal=%d heading=%d large=%d indented=%d", normal, heading, large, indented)
+	}
+}
+
+func TestHoverPreviewHeightFollowsTextLayout(t *testing.T) {
+	area := mygo.Rectangle{Width: 1920, Height: 1080}
+	style := (&previewAppearance{Opacity: 65}).theme()
+	plain := func(text string) *previewBody {
+		return &previewBody{formatted: previewDocument(richtext.NewText(text))}
+	}
+	_, short := plain("One line").hoverSize(area, style)
+	_, several := plain(strings.Repeat("Another line\n", 8)).hoverSize(area, style)
+	_, many := plain(strings.Repeat("Another line\n", 80)).hoverSize(area, style)
+	_, styled := (&previewBody{formatted: previewDocument(richtext.ParseHTML("<h1>Heading</h1><p>Body</p>"))}).hoverSize(area, style)
+	if short >= several || several >= many || many != 560 || styled <= short {
+		t.Fatalf("unexpected fitted heights: short=%d several=%d long=%d formatted=%d", short, several, many, styled)
+	}
+	wrapped := plain(strings.Repeat("word with several letters ", 12))
+	wideWidth, wide := wrapped.hoverSize(area, style)
+	narrowWidth, narrow := wrapped.hoverSize(mygo.Rectangle{Width: 320, Height: 1080}, style)
+	if narrowWidth >= wideWidth || narrow <= wide {
+		t.Fatalf("a narrower preview did not grow after wrapping: %dx%d vs %dx%d", narrowWidth, narrow, wideWidth, wide)
+	}
+	_, limited := wrapped.hoverSize(mygo.Rectangle{Width: 320, Height: 135}, style)
+	if limited != 135 {
+		t.Fatalf("preview ignored the monitor height: %d", limited)
+	}
+}
+
+func TestPreviewFitsNextToSourceAtEdges(t *testing.T) {
+	row := mygo.Rectangle{X: 450, Y: 235, Width: 330, Height: 36}
+	area := mygo.Rectangle{Width: 800, Height: 580}
+	preferred := mygo.Point{X: 792, Y: 235}
+	left := previewSizedBounds(area, row, preferred, 350, 120)
+	if left.Width != 350 || left.X+left.Width != row.X-4 {
+		t.Fatalf("preview did not switch to the adjacent left side: %+v", left)
+	}
+	row.X, row.Width = 5, 780
+	below := previewSizedBounds(area, row, preferred, 350, 120)
+	if below.X < row.X || below.X+below.Width > row.X+row.Width || below.Y != row.Y+row.Height+4 {
+		t.Fatalf("vertical preview did not line up with the source: %+v", below)
+	}
+}
+
+func TestHoverPreviewFitsAttachmentGalleryRows(t *testing.T) {
+	area := mygo.Rectangle{Width: 1920, Height: 1080}
+	appearance := previewAppearance{Title: "Content preview", Opacity: 65}
+	bitmap := ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 30, 30)))
+	for _, count := range []int{2, 9} {
+		rows := make([]uikit.PreviewAttachment, count)
+		for i := range rows {
+			rows[i] = uikit.PreviewAttachment{Name: fmt.Sprintf("File %d.png", i), Bitmap: bitmap}
+		}
+		body := &previewBody{attachments: rows}
+		width, height := body.hoverSize(area, appearance.theme())
+		panel := &pinnedPreview{body: body, ticket: pinPreviewRequest{Appearance: appearance}}
+		view := ui.NewTester(panel.view, width, height)
+		for _, row := range rows {
+			if bounds, ok := view.Find(row.Name); !ok || bounds.Y+bounds.H > float32(height) {
+				t.Fatalf("%s did not fit in %dx%d: %+v", row.Name, width, height, bounds)
+			}
+		}
+	}
+}
+
+func TestNativeHoverRetainsPreviewWhileCrossingAnotherCard(t *testing.T) {
+	session, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	n := nativeMain{
+		session: session, window: new(mygo.Window),
+		preview: &Preview{entryID: 7, generation: 3, window: new(mygo.Window)},
+		hover:   nativeHoverPreview{row: 7, preview: 3},
+	}
+	defer n.hover.reset()
+	bounds := ui.Rect{X: 8, Y: 24, W: 100, H: 32}
+	n.hoverPreview(protocol.DesktopEntry{Id: 8}, 0, bounds)
+	timer := n.hover.timer
+	if timer == nil || !n.hover.owns(n.preview) {
+		t.Fatal("leaving the source card immediately closed its preview")
+	}
+	n.hoverPreview(protocol.DesktopEntry{Id: 9}, 0, bounds)
+	if n.hover.timer != timer {
+		t.Fatal("passing another card restarted the handoff delay")
+	}
+	n.hoverPreview(protocol.DesktopEntry{Id: 7}, 0, bounds)
+	if n.hover.timer != nil || !n.hover.owns(n.preview) {
+		t.Fatal("returning to the source did not cancel the handoff")
 	}
 }
 

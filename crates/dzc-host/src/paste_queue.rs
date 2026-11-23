@@ -472,13 +472,7 @@ impl Host {
                         .ok_or(WireErrorCode::NotFound)?;
                     row.use_count = row.use_count.saturating_add(1);
                     drop(rows);
-                    self.publish(
-                        EventKind::EntryUpdated,
-                        EventData {
-                            entry_id: Some(id),
-                            status: None,
-                        },
-                    )
+                    self.publish_usage_changed(id)
                 })
         } else if !delete {
             now_ms()

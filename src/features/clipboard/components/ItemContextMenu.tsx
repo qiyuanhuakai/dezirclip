@@ -5,6 +5,7 @@ import type { ClipboardEntry } from "../../../shared/types";
 import type { PrivacyFeedbackAction } from "../../../shared/lib/privacySession";
 import { translations } from "../../../locales";
 import { emit } from "@tauri-apps/api/event";
+import { usesEmailSharePortal } from "../../../shared/lib/desktopInvoke";
 import { PRIVACY_RULES_DESTINATION } from "../../../shared/lib/settingsNavigation";
 const privacyActions: PrivacyFeedbackAction[] = ["not_sensitive", "exact_exception", "ignore_source", "protect_source"];
 
@@ -158,7 +159,8 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       }
       items.push({ key: "delete", label: "删除" });
       items.push({ key: "pin", label: entry?.is_pinned ? "取消固定" : "固定" });
-      items.push({ key: "share", label: translations[language].native_share });
+      const shareLabel = entry?.host_instance_id && usesEmailSharePortal() ? "native_share_email" : "native_share";
+      items.push({ key: "share", label: translations[language][shareLabel] });
       if (isTransformable) {
         items.push({ key: "transforms", label: "文本转换 →", hasSubmenu: true });
       }
@@ -166,7 +168,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
         items.push({ key: "privacy", label: translations[language].privacy_management, hasSubmenu: true });
       }
       return items;
-    }, [entry?.is_pinned, entry?.content_type, entry?.id, ocrRunning, ocrText, onEdit, editLabel, onPrivacyFeedback, language]);
+    }, [entry?.is_pinned, entry?.content_type, entry?.id, entry?.host_instance_id, ocrRunning, ocrText, onEdit, editLabel, onPrivacyFeedback, language]);
 
 	    const totalItems = menuItems.length;
 	    const menuHeight = totalItems * MENU_ITEM_HEIGHT + MENU_PADDING * 2;

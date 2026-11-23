@@ -72,6 +72,22 @@ func TestSearchSelectFiltersByPathAndCommitsOnlyAListedValue(t *testing.T) {
 	if err := view.Click("Images"); err != nil {
 		t.Fatal(err)
 	}
+	field, ok := view.Find("Images")
+	if !ok {
+		t.Fatal("search field disappeared when opened")
+	}
+	view.Move(field.X+field.W/2, field.Y+field.H/2)
+	if cursor := view.Cursor(); cursor != ui.CursorText {
+		t.Fatalf("open search field cursor = %v, want text cursor", cursor)
+	}
+	choice, ok := view.Find("Image Viewer")
+	if !ok {
+		t.Fatal("search options did not open")
+	}
+	view.Move(choice.X+choice.W/2, choice.Y+choice.H/2)
+	if cursor := view.Cursor(); cursor != ui.CursorPointer {
+		t.Fatalf("option cursor = %v, want hand cursor", cursor)
+	}
 	view.Type("second viewer")
 	if value != "" {
 		t.Fatal("filtering changed the saved choice")

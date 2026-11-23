@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"maps"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -55,6 +56,7 @@ type nativeMain struct {
 	appearanceSync        bool
 	background            nativeBackground
 	systemDark            bool
+	windows11             bool
 	focusSearch           bool
 	temporarySearch       bool
 	showSettings          bool
@@ -67,6 +69,9 @@ type nativeMain struct {
 	clearHistoryOpen      bool
 	menu                  uikit.ContextMenu
 	menuTransformsLoading bool
+	readingViewSettings   bool
+	viewSettingsRevision  uint64
+	cardMediaRevision     uint64
 	resetOpen             bool
 	privacyKindsOpen      bool
 	privacyCustomOpen     bool
@@ -139,7 +144,7 @@ func (n *nativeMain) stopSession() {
 	n.profile.reading = false
 	n.resetOpen = false
 	n.clearHistoryOpen = false
-	n.menuTransformsLoading = false
+	n.menuTransformsLoading, n.readingViewSettings = false, false
 	n.appearanceBusy, n.appearanceSync = false, false
 	n.resetOpacityPreviews()
 	n.background.pause()
@@ -159,7 +164,7 @@ func (n *nativeMain) stopSession() {
 		// Navigation outlives a hidden window, while confirmations, selection
 		// and revealed contents are bound to the retired session.
 		n.tagLibrary = &nativeTagLibrary{
-			selected: tags.selected, query: tags.query, sort: tags.sort, nameQuery: tags.nameQuery,
+			selected: tags.selected, query: tags.query, sort: tags.sort, nameQuery: tags.nameQuery, selectInitial: tags.selectInitial,
 			railCollapsed: tags.railCollapsed,
 		}
 	}
@@ -315,7 +320,7 @@ func (n *nativeMain) loadPage() {
 	n.stopRead, n.reading, n.failed = cancel, true, false
 	go func() {
 		defer cancel()
-		page, err := n.library.nativeHistoryPage(read, request)
+		page, err := readNativeHistoryRange(read, request, n.library.nativeHistoryPage)
 		n.update(session, func() {
 			if !n.history.accepts(request) {
 				return
@@ -323,8 +328,11 @@ func (n *nativeMain) loadPage() {
 			n.reading = false
 			if err != nil || !n.history.apply(request, page) {
 				n.failed = true
+				if request.refreshLimit > 0 {
+					n.history.clear()
+				}
 				if !n.window.IsVisible() && n.resume != 0 {
-					n.retryPending(session, request)
+					n.retryPending(session, n.history.request())
 				}
 				return
 			}
@@ -414,6 +422,10 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 					n.appearanceSync = true
 					continue
 				}
+				if *event.Data.Status == "view_settings_changed" {
+					n.refreshViewSettings()
+					continue
+				}
 				n.prepare(n.resume)
 				return
 			case "application_settings_reset":
@@ -424,10 +436,16 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 	}
 	if next.HistoryRevision > current.HistoryRevision {
 		n.resetPreviewSelection()
-		n.history.reset(next, n.history.filter)
-		if n.historyScroll.Y <= 0 {
-			n.list.Reset()
+		affected, canReflow := historyRefreshEntries(current, events)
+		if canReflow {
+			n.history.reflow(next, affected)
+		} else {
+			n.history.reset(next, n.history.filter)
+			if n.historyScroll.Y <= 0 {
+				n.list.Reset()
+			}
 		}
+		n.invalidateCardMedia(affected)
 		if n.searchTimer == nil {
 			n.loadPage()
 		}
@@ -498,8 +516,12 @@ func searchTagName(query string) (string, bool) {
 }
 
 func (n *nativeMain) resetPreviewSelection() {
-	n.menu.Close()
 	n.clearProtectedRows()
+	n.resetPreviewInteraction()
+}
+
+func (n *nativeMain) resetPreviewInteraction() {
+	n.menu.Close()
 	n.closeOCRPreview()
 	n.keyboard = false
 	n.previewSelection = 0
@@ -508,9 +530,26 @@ func (n *nativeMain) resetPreviewSelection() {
 }
 
 func (n *nativeMain) saveSetting(key, value string) {
-	n.writeSetting(func(ctx context.Context, epoch uint64) error {
+	write := func(ctx context.Context, epoch uint64) error {
 		return n.library.SetSetting(ctx, key, value, epoch)
-	})
+	}
+	if key == nativePreviewOpacity.key {
+		initial := n.preferences[key]
+		n.performSettingWrite(4*time.Second, write, func(err error) {
+			if err != nil {
+				return
+			}
+			if n.preferences[key] == initial {
+				settings := make(map[string]string, len(n.preferences)+1)
+				maps.Copy(settings, n.preferences)
+				settings[key] = value
+				n.applyPreviewViewSettings(settings)
+			}
+			n.refreshViewSettings()
+		})
+		return
+	}
+	n.writeSetting(write)
 }
 
 func (n *nativeMain) togglePin() {
@@ -533,6 +572,15 @@ func (n *nativeMain) writeSettingWithEffect(write func(context.Context, uint64) 
 }
 
 func (n *nativeMain) writeSettingWithResult(timeout time.Duration, write func(context.Context, uint64) error, onFinished func(error)) {
+	n.performSettingWrite(timeout, write, func(err error) {
+		onFinished(err)
+		if err == nil {
+			n.prepare(n.resume)
+		}
+	})
+}
+
+func (n *nativeMain) performSettingWrite(timeout time.Duration, write func(context.Context, uint64) error, onFinished func(error)) {
 	if n.session == nil || n.mutating || n.history.state.ServiceInstanceId == "" {
 		return
 	}
@@ -547,9 +595,7 @@ func (n *nativeMain) writeSettingWithResult(timeout time.Duration, write func(co
 			onFinished(err)
 			if err != nil {
 				n.notice = n.text("native_setting_save_failed")
-				return
 			}
-			n.prepare(n.resume)
 		})
 	}()
 }

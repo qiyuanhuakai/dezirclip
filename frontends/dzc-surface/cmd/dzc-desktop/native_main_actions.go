@@ -18,6 +18,7 @@ const (
 	nativeRichPaste nativeRowAction = "rich-paste"
 	nativeBase64    nativeRowAction = "base64"
 	nativeOpen      nativeRowAction = "open"
+	nativeShare     nativeRowAction = "share"
 	nativePin       nativeRowAction = "pin"
 	nativeDelete    nativeRowAction = "delete"
 )
@@ -60,8 +61,11 @@ func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, act
 	deleteAfterPaste := !fromTagLibrary && preferences["app.delete_after_paste"] == "true"
 
 	timeout := 4 * time.Second
-	if action == nativeOpen {
+	switch action {
+	case nativeOpen:
 		timeout = nativeExternalApplicationTimeout
+	case nativeShare:
+		timeout = 16 * time.Second
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(session, timeout)
@@ -70,7 +74,11 @@ func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, act
 		n.update(session, func() {
 			n.mutating = false
 			if err != nil {
-				n.notice = n.text("privacy_action_failed", "Clipboard action failed")
+				if action == nativeShare {
+					n.notice = n.text("native_share_unavailable", "Sharing is unavailable")
+				} else {
+					n.notice = n.text("privacy_action_failed", "Clipboard action failed")
+				}
 				return
 			}
 			n.notice = notice
@@ -114,6 +122,11 @@ func (n *nativeMain) dropFiles(paths []string) {
 
 func (n *nativeMain) runRowAction(ctx context.Context, row protocol.DesktopEntry, state protocol.RuntimeState, preferences map[string]string, action nativeRowAction, reveal, deleteAfterPaste bool) (bool, string, error) {
 	switch action {
+	case nativeShare:
+		_, err := n.library.ShareEntry(ctx, protocol.ShareEntryParams{
+			Id: row.Id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Reveal: reveal,
+		})
+		return false, "", err
 	case nativeOpen:
 		err := n.library.OpenEntry(ctx, protocol.ExternalOpenParams{
 			Id: row.Id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Reveal: reveal,

@@ -64,7 +64,7 @@ func (k Kit) PrivacyRuleCard(c *ui.Context, options PrivacyRuleCardOptions) {
 func (k Kit) privacyRuleAction(c *ui.Context, label, widget string, disabled bool) ui.Element {
 	style := k.style(widget)
 	button := ui.ButtonBase(c).Label(label).Height(style.Height).AlignSelf(ui.Start).Center().
-		FocusRing(true).Disabled(disabled)
+		FocusRing(true).Disabled(disabled).Cursor(actionCursor(disabled))
 	paint(button, k.interactive(c, button, style, false)).
 		Children(func() { text(c, label, style).SingleLine().PassThrough() })
 	return button
@@ -89,7 +89,7 @@ func (k Kit) PrivacyDetectionOptions(c *ui.Context, options []PrivacyDetectionOp
 			for _, option := range options {
 				checked := option.Checked
 				control := ui.CheckboxBase(c.Key(option.Value), &checked).Label(option.Label).
-					AlignItems(ui.Center).Gap(optionStyle.ColumnGap).FocusRing(true).Disabled(disabled)
+					AlignItems(ui.Center).Gap(optionStyle.ColumnGap).FocusRing(true).Disabled(disabled).Cursor(actionCursor(disabled))
 				control.Children(func() {
 					track := ui.Box(c).Size(switchStyle.Width, switchStyle.Height).Shrink(0).PassThrough()
 					if disabled {

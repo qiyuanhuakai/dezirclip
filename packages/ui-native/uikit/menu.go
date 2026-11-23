@@ -208,7 +208,7 @@ func (k Kit) menuItem(c *ui.Context, menu *ContextMenu, action MenuAction, subme
 	}
 	style := k.style(widget)
 	item := ui.ButtonBase(c).Label(action.Label).Tooltip(action.Label).FillWidth().Height(style.Height).
-		Role(ui.RoleMenuItem).Disabled(action.Disabled)
+		Role(ui.RoleMenuItem).Disabled(action.Disabled).Cursor(actionCursor(action.Disabled))
 	if len(action.Children) > 0 {
 		item.Expanded(expanded)
 	}

@@ -31,6 +31,8 @@
 .update-settings h4 { margin: 8px 0; font-size: var(--font-size-md); }
 .update-note { color: var(--text-secondary); font-size: var(--font-size-sm); line-height: 1.5; margin: 6px 0; overflow-wrap: anywhere; }
 .update-channel-row { gap: 8px; flex-wrap: wrap; }
+.update-channel-row .segmented-control { flex: none; }
+.update-channel-row .segment-btn { white-space: nowrap; }
 .update-version-row { display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; font-size: var(--font-size-sm); margin: 8px 0; overflow-wrap: anywhere; }
 .update-actions { margin: 10px 0; }
 .update-status { font-size: var(--font-size-sm); }
@@ -518,6 +520,23 @@
 
 .settings-group:not(.collapsed) .group-header svg {
   display: inline-block;
+}
+
+/* The same accordion row height is used at fractional display scales and
+   with the interface font selected by the user. Long titles can still wrap. */
+:is(.theme-macos, .theme-liquid-glass, .theme-scifi) .settings-group.collapsed {
+  display: flex;
+  flex-direction: column;
+  min-height: 43px;
+}
+
+:is(.theme-macos, .theme-liquid-glass, .theme-scifi) .settings-group.collapsed .group-header {
+  flex: 1 0 auto;
+}
+
+:is(.theme-macos, .theme-liquid-glass, .theme-scifi) .settings-group .group-header h3 {
+  line-height: 19px;
+  overflow-wrap: anywhere;
 }
 
 .settings-group:not(.collapsed) h3 {

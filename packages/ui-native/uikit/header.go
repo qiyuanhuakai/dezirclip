@@ -63,7 +63,7 @@ func (k Kit) Header(c *ui.Context, options HeaderOptions) {
 			title := k.style("headerTitle")
 			dragArea := ui.Row(c).Grow(1).MinWidth(0).FillHeight().AlignItems(ui.Center)
 			if options.Draggable {
-				dragArea.DragWindow()
+				dragArea.DragWindow().Cursor(ui.CursorGrab)
 			}
 			dragArea.Children(func() {
 				paint(ui.Box(c).PassThrough(), title).Children(func() {
@@ -91,21 +91,19 @@ func (k Kit) IconButton(c *ui.Context, name, label string, active, disabled bool
 }
 
 func (k Kit) iconButton(c *ui.Context, name, label string, active, disabled bool, limit float32) ui.Element {
-	style := k.style("headerButton")
+	widget := "headerButton"
 	if active {
-		style = k.style("headerButtonActive")
+		widget += "Active"
 	}
+	style := k.style(widget)
+	button := ui.ButtonBase(c).Label(label).Tooltip(label).Selected(active).Disabled(disabled).
+		Cursor(actionCursor(disabled)).FocusRing(true)
+	style = k.buttonInteraction(button, widget, style)
 	if limit > 0 && style.Width > limit {
 		style.Width = limit
 		style.Padding[1], style.Padding[3] = 0, 0
 	}
-	button := ui.ButtonBase(c).Label(label).Tooltip(label).Size(style.Width, style.Height).Disabled(disabled)
-	if disabled {
-		paint(button, style)
-	} else {
-		style = k.interactive(c, button, style, active)
-		paint(button, style)
-	}
+	k.paintTranslated(button.Size(style.Width, style.Height), style)
 	button.Children(func() {
 		if image := headerIcons[name]; image != nil {
 			ui.Icon(c, image).Size(16, 16).TextColor(styleColor(style.Text)).PassThrough()
@@ -118,7 +116,7 @@ func (k Kit) iconButton(c *ui.Context, name, label string, active, disabled bool
 
 func (k Kit) ScrollToTopButton(c *ui.Context, label string) ui.Element {
 	style := k.style("scrollToTop")
-	button := ui.ButtonBase(c).Size(style.Width, style.Height).Label(label).Tooltip(label).FocusRing(true)
+	button := ui.ButtonBase(c).Size(style.Width, style.Height).Label(label).Tooltip(label).FocusRing(true).Cursor(ui.CursorPointer)
 	if button.Hovered() || button.FocusVisible() {
 		style = k.style("scrollToTopHover")
 	}
@@ -152,7 +150,7 @@ func (k Kit) ClipboardSearch(c *ui.Context, options HeaderOptions) {
 				if selected {
 					style = k.style("headerFilterSelected")
 				}
-				button := ui.ButtonBase(c).Label(filter.Label).Height(style.Height).Selected(selected)
+				button := ui.ButtonBase(c).Label(filter.Label).Height(style.Height).Selected(selected).Cursor(ui.CursorPointer)
 				style = k.interactive(c, button, style, selected)
 				paint(button, style).Children(func() { text(c, filter.Label, style) })
 				if button.Clicked() {

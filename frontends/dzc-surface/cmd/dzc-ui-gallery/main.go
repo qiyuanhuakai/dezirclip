@@ -353,6 +353,39 @@ func (g *gallery) renderFixture(c *ui.Context, kit uikit.Kit, name string) {
 }
 
 func (g *gallery) prepare(tester *ui.Tester) error {
+	var hoverLabel string
+	switch g.fixture + "/" + g.state {
+	case "preview-toolbar/hover":
+		hoverLabel = "Pin preview"
+	case "preview-toolbar/pinned-hover":
+		hoverLabel = "Close preview"
+	case "preview-toolbar/pinned-actual-hover":
+		hoverLabel = "Actual size"
+	case "settings-footer/hover-card":
+		hoverLabel = "Feedback"
+	case "settings-footer/hover-link":
+		hoverLabel = "Official website"
+	case "settings-section-card/stack-hover":
+		hoverLabel = "General settings"
+	case "settings-section-card/stack-open":
+		if err := tester.Click("General settings"); err != nil {
+			return err
+		}
+		tester.Advance(250 * time.Millisecond)
+		return nil
+	}
+	if hoverLabel != "" {
+		bounds, ok := tester.Find(hoverLabel)
+		if !ok {
+			return fmt.Errorf("hover target %q is absent", hoverLabel)
+		}
+		tester.Move(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
+		if tester.Cursor() != ui.CursorPointer {
+			return fmt.Errorf("hover target %q should show a hand cursor", hoverLabel)
+		}
+		tester.Advance(120 * time.Millisecond)
+		return nil
+	}
 	if g.fixture == "settings-update-actions" && g.state == "hover" {
 		bounds, ok := tester.Find("Check now")
 		if !ok {
@@ -690,7 +723,7 @@ func run() error {
 		g.historySelected = 1
 	}
 	if g.fixture == "preview-toolbar" {
-		g.previewPinned = g.state == "pinned"
+		g.previewPinned = strings.HasPrefix(g.state, "pinned")
 	}
 	if g.fixture == "preview-image" && g.state == "zoomed" {
 		g.previewImage.SetZoom(2)
@@ -745,6 +778,19 @@ func run() error {
 					Texts []string
 					Cards map[string]ui.Rect
 				}{tester.Texts(), cards}
+			} else if g.fixture == "settings-section-card" && strings.HasPrefix(g.state, "stack") {
+				headers := make(map[string]ui.Rect, 3)
+				for _, label := range []string{"General settings", "Clipboard settings", "Privacy settings"} {
+					bounds, ok := tester.Find(label)
+					if !ok {
+						return fmt.Errorf("missing settings header %s", label)
+					}
+					headers[label] = bounds
+				}
+				result = struct {
+					Texts   []string
+					Headers map[string]ui.Rect
+				}{tester.Texts(), headers}
 			} else if g.fixture == "privacy-detection" {
 				options := make(map[string]ui.Rect, 5)
 				for _, label := range []string{"Phone numbers", "Identity numbers", "Email addresses", "Secrets", "Strong passwords", "Patterns"} {

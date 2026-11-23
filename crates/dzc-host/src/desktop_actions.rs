@@ -326,7 +326,10 @@ impl Host {
     pub(super) fn record_desktop_paste(&self, id: i64, move_to_top: Option<bool>) -> Result<(), WireErrorCode> {
         self.history.record_paste_use(id, crate::router::now_ms()?, move_to_top)
             .map_err(|_| WireErrorCode::Unavailable)?;
-        self.publish(EventKind::EntryUpdated, EventData { entry_id: Some(id), status: None })
+        self.publish_usage_changed(id)
+    }
+    pub(super) fn publish_usage_changed(&self, id: i64) -> Result<(), WireErrorCode> {
+        self.publish(EventKind::EntryUpdated, EventData { entry_id: Some(id), status: Some("usage_changed".into()) })
     }
     pub(crate) fn desktop_mutate(&self,session:&Session,parameters:Value)->Result<Value,WireErrorCode> {
         let request:DesktopMutationParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
@@ -356,7 +359,7 @@ impl Host {
             if rows.is_empty() {return Err(WireErrorCode::NotFound);}
             self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
             self.history.increment_use_count(request.id).map_err(|_|WireErrorCode::Unavailable)?;
-            self.publish(EventKind::EntryUpdated,EventData{entry_id:Some(request.id),status:None})?;
+            self.publish_usage_changed(request.id)?;
             return Ok(DesktopMutationResult{id:request.id,performed:true});
         }
         if request.action=="delete" {
@@ -631,7 +634,9 @@ mod queue_completion_tests {
         let query = dzc_core::api::HistoryQuery { id: Some(id), metadata: true, limit: 1, ..Default::default() };
         let epoch = host.snapshot().unwrap().privacy_epoch;
         host.history.update_queue_setting("app.move_to_top_after_paste", "false", epoch).unwrap();
+        let before = host.snapshot().unwrap().history_revision;
         host.record_desktop_paste(id, None).unwrap();
+        assert_eq!(host.snapshot().unwrap().history_revision, before + 1);
         let after = &host.history.query(&query).unwrap()[0];
         assert_eq!((after.timestamp, after.use_count), (1, 1));
         assert_eq!(first_id(), newer_id);
@@ -657,7 +662,10 @@ mod queue_completion_tests {
         assert_eq!((after.timestamp, after.use_count), (3, 5));
         let events: EventsResult = serde_json::from_value(call(&host, &owner, Method::EventsSubscribe,
             serde_json::json!({"after_sequence": cursor, "wait_ms": 0})).result.unwrap()).unwrap();
-        assert_eq!(events.events.iter().filter(|event| event.event == EventKind::EntryUpdated).count(), 5);
+        let updates: Vec<_> = events.events.iter().filter(|event| event.event == EventKind::EntryUpdated).collect();
+        assert_eq!(updates.len(), 5);
+        assert!(updates.iter().all(|event| event.data.entry_id == Some(id) &&
+            event.data.status.as_deref() == Some("usage_changed")));
     }
 
     #[test]

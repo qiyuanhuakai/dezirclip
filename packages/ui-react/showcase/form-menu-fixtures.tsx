@@ -64,11 +64,17 @@ export function ContextMenuFixture({ state }: { state: string }) {
   </div>;
 }
 
-export function SettingsSectionFixture({ open }: { open: boolean }) {
+export function SettingsSectionFixture({ open, stack = false }: { open: boolean; stack?: boolean }) {
   const [collapsed, setCollapsed] = useState(!open);
-  return <SettingsSectionCard title="General settings" collapsed={collapsed} onToggle={() => setCollapsed(value => !value)}>
+  const general = <SettingsSectionCard title="General settings" collapsed={collapsed} onToggle={() => setCollapsed(value => !value)}>
     <p className="item-label">Keep clipboard history</p>
   </SettingsSectionCard>;
+  if (!stack) return general;
+  return <div className="settings-layout--stack">
+    {general}
+    <SettingsSectionCard title="Clipboard settings" collapsed={true} onToggle={() => undefined} />
+    <SettingsSectionCard title="Privacy settings" collapsed={true} onToggle={() => undefined} />
+  </div>;
 }
 
 export function SettingsSectionGridFixture() {

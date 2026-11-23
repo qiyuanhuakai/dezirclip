@@ -50,6 +50,17 @@ func (g *gallery) parityFixture(c *ui.Context, kit uikit.Kit, name string) bool 
 			})
 			break
 		}
+		if strings.HasPrefix(g.state, "stack") {
+			uikit.SettingsSectionStack(c, func() {
+				kit.SettingsSectionCard(c, "General settings", &g.groupOpen, func() {
+					kit.SettingsLabel(c, "Keep clipboard history")
+				})
+				clipboard, privacy := false, false
+				kit.SettingsSectionCard(c, "Clipboard settings", &clipboard, func() {})
+				kit.SettingsSectionCard(c, "Privacy settings", &privacy, func() {})
+			})
+			break
+		}
 		kit.SettingsSectionCard(c, "General settings", &g.groupOpen, func() {
 			kit.SettingsLabel(c, "Keep clipboard history")
 		})

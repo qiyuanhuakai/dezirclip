@@ -3,6 +3,7 @@ package uikit
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -104,5 +105,43 @@ func TestSettingsNumberFieldCommitsAfterFocusLeaves(t *testing.T) {
 	}
 	if len(commits) != 1 || commits[0] != "60" {
 		t.Fatalf("expected one commit with the edited value, got %v", commits)
+	}
+}
+
+func TestTooltipUsesOpaqueTextOnTransparentWindows(t *testing.T) {
+	for _, mode := range []string{"light", "dark"} {
+		t.Run(mode, func(t *testing.T) {
+			const help = "Read more about this setting"
+			kit := Kit{Mode: mode}
+			view := ui.NewTester(func(c *ui.Context) {
+				kit.Apply(c)
+				windowTheme := *c.Theme()
+				windowTheme.Background = ui.Transparent
+				c.SetTheme(&windowTheme)
+				ui.Column(c).Padding(50).Children(func() {
+					ui.Button(c, "Details").Tooltip(help)
+				})
+			}, 360, 240)
+			anchor, ok := view.Find("Details")
+			if !ok {
+				t.Fatal("missing tooltip anchor")
+			}
+			view.Move(anchor.X+anchor.W/2, anchor.Y+anchor.H/2)
+			view.Advance(time.Second)
+			text, ok := view.Find(help)
+			if !ok {
+				t.Fatalf("missing tooltip text: %v", view.Texts())
+			}
+			rendered := view.Image()
+			fill := rendered.RGBAAt(int(text.X)-3, int(text.Y+text.H/2))
+			for y := int(text.Y); y < int(text.Y+text.H); y++ {
+				for x := int(text.X); x < int(text.X+text.W); x++ {
+					if pixel := rendered.RGBAAt(x, y); pixel.A == 255 && pixel != fill {
+						return
+					}
+				}
+			}
+			t.Fatal("the tooltip rendered a solid fill with no visible text")
+		})
 	}
 }

@@ -199,6 +199,15 @@ pub struct ExternalOpenParams {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct ShareEntryParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub id: i64,
+    pub reveal: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApplicationSelection {
     pub service_instance_id: String,
     pub expected_epoch: u64,
@@ -610,6 +619,8 @@ pub enum Method {
     DesktopAppearanceBackground,
     #[serde(rename = "desktop.history.open")]
     DesktopHistoryOpen,
+    #[serde(rename = "desktop.history.share")]
+    DesktopHistoryShare,
     #[serde(rename = "desktop.files.drop")]
     DesktopFilesDrop,
     #[serde(rename = "desktop.files.drag")]

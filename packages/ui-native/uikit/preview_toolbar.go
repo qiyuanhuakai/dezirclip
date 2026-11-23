@@ -83,17 +83,18 @@ func (k Kit) PreviewAction(c *ui.Context, name, label string, active, disabled b
 }
 
 func (k Kit) previewButton(c *ui.Context, label, value string, symbol *ui.SVG, active, disabled bool) ui.Element {
-	style := k.style("previewToolbarButton")
+	widget := "previewToolbarButton"
 	if active {
-		style = k.style("previewToolbarActive")
+		widget = "previewToolbarActive"
 	}
 	if symbol == nil {
-		style = k.style("previewToolbarActual")
+		widget = "previewToolbarActual"
 	}
+	style := k.style(widget)
 	button := ui.ButtonBase(c).Label(label).Tooltip(label).MinWidth(style.Width).Height(style.Height).Disabled(disabled).FocusRing(true).
-		Translate(style.TranslateX, style.TranslateY)
-	style = k.interactive(c, button, style, active)
-	paint(button, style)
+		Cursor(actionCursor(disabled))
+	style = k.buttonInteraction(button, widget, style)
+	k.paintTranslated(button, style)
 	button.Children(func() {
 		if symbol != nil {
 			ui.Icon(c, symbol).Size(14, 14).TextColor(styleColor(style.Text)).PassThrough()

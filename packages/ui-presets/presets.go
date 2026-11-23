@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 
 	"github.com/egoist/mygo/ui"
@@ -20,7 +21,8 @@ var widgetJSON []byte
 
 type palette struct {
 	theme.Tokens
-	SurfaceTint string
+	SurfaceTint             string
+	SystemBackdropTintPower float64
 }
 
 var palettes = decode[palette](paletteJSON)
@@ -68,8 +70,21 @@ func (p Preset) SurfaceTint() string { return p.colors.SurfaceTint }
 
 // WindowBackground resolves the shell tint at the given setting. Solid themes keep their background.
 func (p Preset) WindowBackground(percent int) ui.Color {
+	return p.windowBackground(percent, false)
+}
+
+// SystemBackdropBackground paints the app tint above a Windows 11 material.
+func (p Preset) SystemBackdropBackground(percent int) ui.Color {
+	return p.windowBackground(percent, true)
+}
+
+func (p Preset) windowBackground(percent int, systemBackdrop bool) ui.Color {
 	if tint := p.SurfaceTint(); tint != "" {
-		return ui.Hex(tint).Alpha(float32(min(100, max(0, percent))) / 100)
+		alpha := float64(min(100, max(0, percent))) / 100
+		if systemBackdrop && p.colors.SystemBackdropTintPower > 0 {
+			alpha = math.Pow(alpha, p.colors.SystemBackdropTintPower)
+		}
+		return ui.Hex(tint).Alpha(float32(alpha))
 	}
 	return ui.Hex(p.colors.Background)
 }

@@ -102,7 +102,7 @@ function HeaderFixture() {
   const [settings, setSettings] = useState(state === "settings");
   const [tags, setTags] = useState(false);
   const [emoji, setEmoji] = useState(false);
-  const [pinned, setPinned] = useState(state === "pinned");
+  const [pinned, setPinned] = useState(state.startsWith("pinned"));
   const [search, setSearch] = useState("");
   const [isComposing, setIsComposing] = useState(false);
   const [tagFilter, setTagFilter] = useState(false);
@@ -262,7 +262,8 @@ function Showcase() {
     "text-fields": <TextFieldsFixture />,
     "settings-field": <SettingsFieldsFixture />,
     "context-menu": <ContextMenuFixture state={state} />,
-    "settings-section-card": state === "wide" ? <SettingsSectionGridFixture /> : <SettingsSectionFixture open={state === "expanded"} />,
+    "settings-section-card": state === "wide" ? <SettingsSectionGridFixture />
+      : <SettingsSectionFixture open={state === "expanded"} stack={state.startsWith("stack")} />,
     "settings-choices": <SettingsChoicesFixture state={state} />,
     "hotkey-list": <HotkeyListFixture multiple={state === "multiple" || state === "win-v"} extended={state === "extended"} winV={state === "win-v"} />,
     "emoji-favorites": <EmojiFavoritesFixture state={state} />,

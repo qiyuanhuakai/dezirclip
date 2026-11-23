@@ -48,7 +48,7 @@ func TestPanelVisualFixture(t *testing.T) {
 	}
 }
 
-func TestPanelUsesCurrentPresetAndAbsoluteOpacity(t *testing.T) {
+func TestPanelUsesCurrentPresetAndPreservesReadableOpacity(t *testing.T) {
 	panel := &Panel{}
 	panel.model.Visible = true
 	tester := ui.NewTester(panel.view, 560, 440)
@@ -64,7 +64,8 @@ func TestPanelUsesCurrentPresetAndAbsoluteOpacity(t *testing.T) {
 				tester.Frame()
 				frame := tester.Image()
 				got := frame.RGBAAt(550, 220)
-				if math.Abs(float64(got.A)-opacity*255) > 2 {
+				wantAlpha := (0.82 + 0.18*opacity) * 255
+				if math.Abs(float64(got.A)-wantAlpha) > 2 {
 					t.Fatalf("%s %s opacity %.2f painted alpha %d", name, mode, opacity, got.A)
 				}
 				if opacity == 1 {

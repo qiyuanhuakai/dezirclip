@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"math"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -190,13 +191,32 @@ func (n *nativeMain) canLoadCardPreview(row protocol.DesktopEntry) bool {
 	return n.session != nil && n.library != nil && n.history.state.ServiceInstanceId != "" && row.Id != 0
 }
 
+func (n *nativeMain) invalidateCardMedia(affected map[int64]struct{}) {
+	if affected != nil && len(affected) == 0 {
+		return
+	}
+	n.cardMediaRevision++
+	n.cardMedia.pending = nil
+	if affected == nil {
+		n.cardMedia.values, n.cardMedia.recent = nil, nil
+		return
+	}
+	n.cardMedia.recent = slices.DeleteFunc(n.cardMedia.recent, func(key nativeCardKey) bool {
+		if _, changed := affected[key.id]; !changed {
+			return false
+		}
+		delete(n.cardMedia.values, key)
+		return true
+	})
+}
+
 func (n *nativeMain) mediaForCard(row protocol.DesktopEntry) (nativeCardMedia, bool) {
 	key := nativeCardKey{row.Id, row.Timestamp}
 	preview, loaded := n.cardMedia.lookup(key)
 	if loaded || !n.canLoadCardPreview(row) || !n.cardMedia.begin(key) {
 		return preview, loaded
 	}
-	session, state, language := n.session, n.history.state, n.language()
+	session, state, language, revision := n.session, n.history.state, n.language(), n.cardMediaRevision
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 4*time.Second)
 		defer cancel()
@@ -226,7 +246,11 @@ func (n *nativeMain) mediaForCard(row protocol.DesktopEntry) (nativeCardMedia, b
 				preview.attachments = uikit.ParsePreviewAttachments(*result.HtmlContent, result.Preview)
 			}
 		}
-		n.update(session, func() { n.cardMedia.finish(key, preview) })
+		n.update(session, func() {
+			if revision == n.cardMediaRevision {
+				n.cardMedia.finish(key, preview)
+			}
+		})
 	}()
 	return nativeCardMedia{}, false
 }

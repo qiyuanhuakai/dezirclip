@@ -135,13 +135,16 @@ func (n *nativeMain) currentBackgroundOpacity() int {
 	return nativeBackgroundOpacity.value(n.preferences)
 }
 
-func (n *nativeMain) drawBackground(c *ui.Context, radius int) {
+func (n *nativeMain) drawBackground(c *ui.Context, radius int) bool {
 	b := &n.background
-	opacity := n.currentBackgroundOpacity()
-	if b.bitmap != nil && opacity != 0 && b.key == n.backgroundKey(n.history.state) {
+	if b.bitmap == nil || b.key != n.backgroundKey(n.history.state) {
+		return false
+	}
+	if opacity := n.currentBackgroundOpacity(); opacity != 0 {
 		ui.Image(c, b.bitmap).Absolute().Top(0).Right(0).Bottom(0).Left(0).
 			Fit(ui.Cover).Radius(float32(radius)).Opacity(float32(opacity) / 100).PassThrough()
 	}
+	return true
 }
 
 func (n *nativeMain) animateBackground() {

@@ -290,6 +290,27 @@ func TestNativeWideTagLibraryKeepsNavigationBesideHistory(t *testing.T) {
 	}
 }
 
+func TestNativeTagLibrarySelectsFirstCatalogChoiceOnEntry(t *testing.T) {
+	tags := &nativeTagLibrary{selectInitial: true}
+	n := nativeMain{tagLibrary: tags}
+	n.tagCatalog.names = []string{"Personal", "Work"}
+	if n.selectInitialTag() || tags.selected != "" {
+		t.Fatal("the initial choice used an unconfirmed catalog")
+	}
+	n.tagCatalog.fresh = true
+	if !n.selectInitialTag() || tags.selected != "Personal" {
+		t.Fatal("entering the library did not select its first tag")
+	}
+	tags.selected = "Work"
+	if n.selectInitialTag() || tags.selected != "Work" {
+		t.Fatal("a catalog refresh replaced the user's choice")
+	}
+	n.tagLibrary = &nativeTagLibrary{selected: "Work", selectInitial: true}
+	if n.selectInitialTag() || n.tagLibrary.selected != "Work" {
+		t.Fatal("the initial choice replaced a selection made while loading")
+	}
+}
+
 func TestNativeNarrowTagPickerFiltersChoices(t *testing.T) {
 	n := nativeMain{tagLibrary: &nativeTagLibrary{sort: "time"}, preferences: map[string]string{"app.language": "en"}}
 	n.tagCatalog.names, n.tagCatalog.counts, n.tagCatalog.fresh = []string{"Personal", "Work"}, map[string]uint64{"Personal": 1, "Work": 3}, true
@@ -379,6 +400,55 @@ func TestNativeTagBatchPreservesVisiblePreviews(t *testing.T) {
 	}
 }
 
+func TestNativeTagBatchAndBulkRevealAreIndependent(t *testing.T) {
+	for _, revealFirst := range []bool{false, true} {
+		t.Run("revealFirst="+strconv.FormatBool(revealFirst), func(t *testing.T) {
+			tags := &nativeTagLibrary{selected: "Work", sort: "time"}
+			n := nativeMain{tagLibrary: tags, session: context.Background(), preferences: map[string]string{"app.language": "en"}}
+			n.tagCatalog.names, n.tagCatalog.fresh = []string{"Work"}, true
+			n.cardTagColors = map[string]string{}
+			n.history.filter = n.historyFilter()
+			n.history.total = 1
+			n.history.rows = []protocol.DesktopEntry{
+				{Id: 7, Timestamp: 10, ContentType: "text", Preview: "••••••", Tags: []string{"Work", "sensitive"}},
+			}
+			view := ui.NewTester(n.view, 740, 400)
+			click := func(key string) {
+				t.Helper()
+				if err := view.Click(n.text(key)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if revealFirst {
+				click("tag_reveal_all")
+				click("tag_manage")
+			} else {
+				click("tag_manage")
+				click("tag_reveal_all")
+			}
+			if !tags.batch.enabled || tags.reveal == nil {
+				t.Fatal("batch selection and bulk reveal did not stay active together")
+			}
+			// Supply the body that an authorized reveal read would return.
+			n.protectedRows = map[nativeCardKey]*nativeProtectedRow{{id: 7, timestamp: 10}: {
+				cancel: func() {}, body: &nativeProtectedBody{summary: "Revealed Work entry"},
+			}}
+			view.Frame()
+			if _, ok := view.Find("Revealed Work entry"); !ok {
+				t.Fatal("bulk-revealed content was hidden in batch mode")
+			}
+			click("tag_select_all")
+			click("tag_hide_all")
+			if !tags.batch.enabled || !tags.batch.selection.includes(7) || tags.reveal != nil {
+				t.Fatal("hiding protected content changed the batch selection")
+			}
+			if _, ok := view.Find("Revealed Work entry"); ok {
+				t.Fatal("protected content stayed visible after hiding it")
+			}
+		})
+	}
+}
+
 func TestNativeMainUsesSavedInterfaceFont(t *testing.T) {
 	window := nativeMain{theme: "macos", mode: "dark", preferences: map[string]string{"app.font_main": " Custom UI "}}
 	var font string
@@ -393,6 +463,44 @@ func TestNativeMainUsesSavedInterfaceFont(t *testing.T) {
 	tester.Frame()
 	if font != "SF Pro Text" || window.previewAppearance().theme().Font != font {
 		t.Fatal("main and preview did not restore the selected theme font")
+	}
+}
+
+func TestNativeWindowsBackdropTint(t *testing.T) {
+	for _, preset := range []struct {
+		theme string
+		alpha uint8
+	}{
+		{"mica", 108},
+		{"acrylic", 70},
+	} {
+		t.Run(preset.theme, func(t *testing.T) {
+			n := nativeMain{theme: preset.theme, mode: "dark", windows11: true, preferences: map[string]string{
+				"app.language": "en", "app.surface_opacity": "65", "app.custom_background_opacity": "0", backgroundSetting: "fixture.png",
+			}}
+			n.history.state.ServiceInstanceId = "test-host"
+			view := ui.NewTester(n.view, 360, 400)
+			sample := func() uint8 { return view.Image().RGBAAt(340, 380).A }
+			if got := sample(); got != preset.alpha {
+				t.Fatalf("system material tint at 65%% = %d, want %d", got, preset.alpha)
+			}
+			n.background = nativeBackground{
+				key:    n.backgroundKey(n.history.state),
+				bitmap: ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 2, 2))),
+			}
+			view.Frame()
+			if got := sample(); got != 166 {
+				t.Fatalf("custom background tint at 65%% = %d, want 166", got)
+			}
+			n.background = nativeBackground{}
+			for _, percent := range []int{0, 100} {
+				n.preferences["app.surface_opacity"] = strconv.Itoa(percent)
+				view.Frame()
+				if got, want := sample(), uint8(percent*255/100); got != want {
+					t.Fatalf("tint at %d%% = %d, want %d", percent, got, want)
+				}
+			}
+		})
 	}
 }
 

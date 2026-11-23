@@ -44,10 +44,11 @@ func (n *nativeMain) closeSettings() {
 }
 
 func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *int) {
+	const horizontalInset, splitGap = 8, 12
 	width, _ := c.Size()
-	cardWidth := min(width, 420) - 16
+	cardWidth := min(width-2*horizontalInset, uikit.SettingsStackMaxWidth)
 	if width >= nativeSplitWidth {
-		cardWidth = width - 26 - kit.SettingsRailWidth()
+		cardWidth = width - 2*horizontalInset - splitGap - kit.SettingsRailWidth()
 	}
 	if n.preferences["app.show_app_border"] != "false" {
 		cardWidth -= 2
@@ -71,7 +72,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 		n.settingsAccordion(c, kit, panes)
 		return
 	}
-	ui.Row(c).FillWidth().Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Stretch).Gap(10).Padding(8).Children(func() {
+	ui.Row(c).FillWidth().Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Stretch).Gap(splitGap).Padding(12, horizontalInset).Children(func() {
 		sections := make([]uikit.SettingsSection, 0, len(panes))
 		for _, pane := range panes {
 			sections = append(sections, pane.SettingsSection)
@@ -98,7 +99,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 			}
 		}
 	})
-	ui.Box(c).FillWidth().Padding(0, 8, 8).Children(func() { n.settingsFooter(c, kit, true) })
+	ui.Box(c).FillWidth().Padding(0, horizontalInset, 8).Children(func() { n.settingsFooter(c, kit, true) })
 }
 
 func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nativeSettingsPane) {
@@ -110,18 +111,20 @@ func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nat
 		}
 	}
 	ui.Scroll(c).FillWidth().Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Center).TrackScroll(&n.settingsStackScroll).Children(func() {
-		ui.Column(c).FillWidth().MaxWidth(420).Gap(8).Padding(8).Children(func() {
-			for _, pane := range panes {
-				open := n.settingsOpen[pane.ID]
-				wasOpen := *open
-				kit.SettingsSectionCard(c, pane.Label, open, pane.draw)
-				if *open && !wasOpen {
-					n.settingsSection = pane.ID
-				} else if !*open && wasOpen && pane.ID == "appearance" {
-					n.resetOpacityPreviews()
+		ui.Column(c).FillWidth().Padding(12, 8).Children(func() {
+			uikit.SettingsSectionStack(c, func() {
+				for _, pane := range panes {
+					open := n.settingsOpen[pane.ID]
+					wasOpen := *open
+					kit.SettingsSectionCard(c, pane.Label, open, pane.draw)
+					if *open && !wasOpen {
+						n.settingsSection = pane.ID
+					} else if !*open && wasOpen && pane.ID == "appearance" {
+						n.resetOpacityPreviews()
+					}
 				}
-			}
-			n.settingsFooter(c, kit, false)
+				n.settingsFooter(c, kit, false)
+			})
 		})
 	})
 }

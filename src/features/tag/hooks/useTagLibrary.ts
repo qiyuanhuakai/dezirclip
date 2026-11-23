@@ -31,6 +31,7 @@ export function useTagLibrary() {
     const mounted = useRef(false);
     const selected = useRef<string | null>(null);
     const selectionEpoch = useRef(0);
+    const initialSelection = useRef(true);
     const generation = useRef(0);
     const metadataGeneration = useRef(0);
     const pageRef = useRef(page);
@@ -152,8 +153,10 @@ export function useTagLibrary() {
             setTags(nextTags);
             setColors(nextColors ?? {});
             setMetadataError(false);
+            const firstCatalog = initialSelection.current;
+            initialSelection.current = false;
             if (epoch === selectionEpoch.current && !nextTags.some(tag => tag.name === selected.current)) {
-                selectTag(nextTags[0]?.name ?? null);
+                selectTag(firstCatalog && selected.current === null ? nextTags[0]?.name ?? null : null);
             }
         }).catch(() => {
             if (mounted.current && request === metadataGeneration.current) setMetadataError(true);

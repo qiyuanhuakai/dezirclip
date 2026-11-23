@@ -170,14 +170,20 @@ const samples = [
   ["preview-toolbar", "pinned", {
     previewToolbarActive: [".preview-toolbar-button.active"], previewToolbarActual: [".preview-toolbar-actual"],
   }],
+  ["preview-toolbar", "hover", { previewToolbarButtonHover: [".preview-toolbar-actions .preview-toolbar-button"] }],
+  ["preview-toolbar", "pinned-hover", { previewToolbarActiveHover: [".preview-toolbar-actions .preview-toolbar-button.active"] }],
+  ["preview-toolbar", "pinned-actual-hover", { previewToolbarActualHover: [".preview-toolbar-actual"] }],
   ["settings-rail", "default", {
     settingsRail: [".settings-rail"], settingsRailItem: [".settings-rail-item:not(.is-active)"],
     settingsRailActive: [".settings-rail-item.is-active"],
   }],
+  ["settings-rail", "hover", { settingsRailItemHover: [".settings-rail-item:not(.is-active)"] }],
   ["settings-footer", "default", {
     settingsFooterCard: [".settings-footer-card", ".settings-footer-card-label"],
     settingsFooterVersion: [".settings-footer-version"], settingsFooterLink: [".settings-footer-link"],
   }],
+  ["settings-footer", "hover-card", { settingsFooterCardHover: [".settings-footer-card", ".settings-footer-card-label"] }],
+  ["settings-footer", "hover-link", { settingsFooterLinkHover: [".settings-footer-link"] }],
   ["scroll-to-top", "default", { scrollToTop: [".scroll-top-button"] }],
   ["scroll-to-top", "hover", { scrollToTopHover: [".scroll-top-button"] }],
   ["settings-toggle", "default", {
@@ -211,6 +217,8 @@ const samples = [
     emojiContent: [".emoji-content"], emojiGroup: [".emoji-group"], emojiGroupTitle: [".emoji-group-title"],
     emojiTile: [".emoji-btn"], emojiGrid: [".emoji-grid"],
   }],
+  ["emoji-grid", "hover", { emojiTileHover: [".emoji-btn"] }],
+  ["emoji-grid", "pressed", { emojiTilePressed: [".emoji-btn"] }],
   ["history-card", "default", {
     historyCard: [".history-item"], historyMeta: [".item-meta"], historySource: [".item-meta-left .app-info"],
     historyTime: [".item-meta .app-info:last-child span"], historyContent: [".history-item .content-preview"],
@@ -239,6 +247,7 @@ const samples = [
   ["history-ocr", "failed", { historyOCRBadgeFailed: [".ocr-badge"] }],
   ["history-ocr", "unsupported", { historyOCRBadgeUnsupported: [".ocr-badge"] }],
   ["history-card", "hover", { historyCardHover: [".history-item"] }],
+  ["history-card", "pressed", { historyCardPressed: [".history-item"] }],
   ["history-card", "action-hover", { historyActionHover: [".item-actions .btn-icon"] }],
   ["history-card", "active", { historyActionActive: [".item-actions .btn-icon.active"] }],
   ["history-card", "active-hover", { historyActionActiveHover: [".item-actions .btn-icon.active"] }],
@@ -251,6 +260,7 @@ const samples = [
     historyActionCompact: [".item-actions .btn-icon"], historyActionCompactIcon: [".item-actions .btn-icon svg"],
   }],
   ["history-card", "compact-hover", { historyCardCompactHover: [".history-item.compact"] }],
+  ["history-card", "compact-pressed", { historyCardCompactPressed: [".history-item.compact"] }],
   ["history-card", "compact-action-hover", { historyActionCompactHover: [".item-actions .btn-icon"] }],
   ["history-card", "compact-active", { historyActionCompactActive: [".item-actions .btn-icon.active"] }],
   ["history-card", "compact-active-hover", { historyActionCompactActiveHover: [".item-actions .btn-icon.active"] }],
@@ -269,6 +279,10 @@ const samples = [
   }],
   ["clipboard-search", "selected", { headerFilterSelected: [".clipboard-search-types .btn-icon.active"] }],
   ["app-header", "pinned", { headerButtonActive: [".header-top .btn-icon.active"] }],
+  ["app-header", "hover", { headerButtonHover: [".header-top .btn-icon"] }],
+  ["app-header", "pressed", { headerButtonPressed: [".header-top .btn-icon"] }],
+  ["app-header", "pinned-hover", { headerButtonActiveHover: [".header-top .btn-icon.active"] }],
+  ["app-header", "pinned-pressed", { headerButtonActivePressed: [".header-top .btn-icon.active"] }],
   ["select", "default", {
     select: [".dezirclip-select__control", ".dezirclip-select__single-value"],
     selectIndicator: [".dezirclip-select__dropdown-indicator"],
@@ -454,6 +468,8 @@ function readStyles(sample) {
     const transform = style.transform !== "none" ? new DOMMatrixReadOnly(style.transform) : null;
     const translateX = number(transform?.m41);
     const translateY = number(transform?.m42);
+    const widgetMotion = /^(headerButton|emojiTile|historyCard|historyAction(?!s|.*Icon)|settingsRailItem|settingsFooterCard|previewToolbar(?:Active|Actual|Button))/.test(id)
+      || id === "tagToolbarButtonActive";
     const headingShift = id.startsWith("settingsGroupHeader")
       ? (number(text.paddingTop) - number(text.paddingBottom)) / 2 : 0;
     const marginBottom = number(style.marginBottom);
@@ -501,8 +517,8 @@ function readStyles(sample) {
         right, bottom, maxWidthPercent: style.maxWidth.endsWith("%") ? number(style.maxWidth) : 0,
       } : {}),
       ...(/^(historyTag|historyTagCompact)$/.test(id) ? { minHeight: number(style.minHeight) } : {}),
-      ...((/^historyAction(?!s|.*Icon)/.test(id) || /^(previewToolbarActive|tagToolbarButtonActive)$/.test(id)) && translateX ? { translateX } : {}),
-      ...((/^historyAction(?!.*Icon)/.test(id) || /^(previewToolbarActive|tagToolbarButtonActive)$/.test(id)) && translateY ? { translateY } : {}),
+      ...(widgetMotion && translateX ? { translateX } : {}),
+      ...((widgetMotion || id === "historyActionsCompact") && translateY ? { translateY } : {}),
       ...(headingShift ? { translateY: headingShift } : {}),
       ...(id.startsWith("settingsSwitchThumb") ? { left: number(left + translateX) } : {}),
       ...(id.endsWith("InputIcon") ? { left } : {}),
@@ -616,6 +632,13 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
     if (fixture === "emoji-favorites" && state === "hover") {
       await page.getByRole("button", { name: "Add emoji" }).hover();
     }
+    const pressWidget = ["app-header", "emoji-grid"].includes(fixture) && state.endsWith("pressed");
+    if ((fixture === "app-header" || fixture === "emoji-grid") && (state.endsWith("hover") || pressWidget)) {
+      const selector = fixture === "emoji-grid" ? ".emoji-btn"
+        : state.startsWith("pinned") ? ".header-top .btn-icon.active" : ".header-top .btn-icon";
+      await page.locator(selector).first().hover();
+      if (pressWidget) await page.mouse.down();
+    }
     if (fixture === "backup-dialog") {
       await page.locator(".data-modal-overlay[open]").waitFor();
       if (state === "focus-password") {
@@ -632,6 +655,13 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
     }
     if (fixture === "settings-data" && state === "hover-path") await page.locator(".data-panel").hover();
     if (fixture === "settings-data" && state === "hover-action") await page.locator(".data-actions-row .btn-icon").first().hover();
+    if (fixture === "settings-rail" && state === "hover") await page.locator(".settings-rail-item:not(.is-active)").first().hover();
+    if (fixture === "settings-footer" && state.startsWith("hover-")) {
+      await page.locator(state === "hover-card" ? ".settings-footer-card" : ".settings-footer-link").first().hover();
+    }
+    if (fixture === "preview-toolbar" && state.endsWith("hover")) {
+      await page.locator(state === "pinned-actual-hover" ? ".preview-toolbar-actual" : ".preview-toolbar-actions .preview-toolbar-button").first().hover();
+    }
     if (fixture === "settings-update-actions" && state === "hover") await page.getByRole("button", { name: "Check now" }).hover();
     if (fixture === "text-fields" && state.startsWith("focus")) {
       await page.getByRole("textbox", { name: state === "focus-text" ? "Entry name" : "Idle timeout" }).focus();
@@ -641,7 +671,7 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
     }
     const pressHistoryAction = fixture === "history-card" && state.endsWith("pressed");
     if (fixture === "history-card" && (state.endsWith("hover") || pressHistoryAction)) {
-      if (state.startsWith("compact") || state === "hover") await page.locator(".history-item").hover();
+      if (state.startsWith("compact") || ["hover", "pressed"].includes(state)) await page.locator(".history-item").hover();
       if (state.includes("action") || state.includes("active")) {
         await page.getByRole("button", { name: "Pin", exact: true }).hover();
       }
@@ -658,6 +688,27 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
     if (fixture === "toast") {
       await page.waitForFunction(() => getComputedStyle(document.querySelector(".toast-item")).opacity === "1");
     }
+    const sectionEntrance = fixture === "settings-section-card" && state === "expanded"
+      ? await page.locator(".group-content").evaluate(element => {
+        const style = getComputedStyle(element);
+        const name = style.animationName;
+        if (name === "none") return null;
+        // The sample may already have finished while fonts were loading.
+        element.style.setProperty("animation-name", "none", "important");
+        void style.animationName;
+        element.style.removeProperty("animation-name");
+        void style.animationName;
+        const animation = element.getAnimations().find(candidate => candidate.animationName === name);
+        if (!animation?.effect) throw Error("Missing settings entrance " + name);
+        const [first] = animation.effect.getKeyframes();
+        const matrix = new DOMMatrixReadOnly(first.transform === "none" ? undefined : first.transform);
+        const curve = /^cubic-bezier\(([^)]+)\)$/.exec(style.animationTimingFunction);
+        return {
+          durationMs: animation.effect.getTiming().duration,
+          y: matrix.m42, scaleY: matrix.m22, opacity: Number(first.opacity ?? 1),
+          ...(curve ? { ease: curve[1].split(",").map(Number) } : {}),
+        };
+      }) : null;
     await page.addStyleTag({ content: "*, *::before, *::after { transition: none !important; animation: none !important; }" });
     if (fixture === "clipboard-search" && state === "selected") {
       await page.getByRole("button", { name: "图片" }).click();
@@ -703,7 +754,8 @@ export async function readNativeWidgetStyles(page, url, theme, mode) {
       await page.evaluate(prepareSliderSamples, ".preview-toolbar-opacity input[type=range]");
     }
     Object.assign(styles, await page.evaluate(readStyles, { selectors, materialOpacity }));
-    if (pressHistoryAction) await page.mouse.up();
+    if (sectionEntrance) styles.settingsGroupContent.enter = sectionEntrance;
+    if (pressHistoryAction || pressWidget) await page.mouse.up();
   }
   const viewport = page.viewportSize();
   const bounds = await page.locator(".showcase").boundingBox();

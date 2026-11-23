@@ -56,18 +56,33 @@ func previewSizedBounds(area, source mygo.Rectangle, preferred mygo.Point, desir
 		{x1, y1, x2, min(y2, source.Y-gap)}, {x1, max(y1, source.Y+source.Height+gap), x2, y2},
 	}
 	var best mygo.Rectangle
+	var bestBeside bool
 	var distance int64
-	for _, s := range strips {
+	for side, s := range strips {
 		w, h := min(width, s[2]-s[0]), min(height, s[3]-s[1])
 		if w <= 0 || h <= 0 {
 			continue
 		}
-		x, y := max(s[0], min(preferred.X, s[2]-w)), max(s[1], min(preferred.Y, s[3]-h))
+		x := max(s[0], min(source.X+(source.Width-w)/2, s[2]-w))
+		y := max(s[1], min(preferred.Y, s[3]-h))
+		switch side {
+		case 0: // Left: keep the adjoining edges close.
+			x = s[2] - w
+		case 1:
+			x = s[0]
+		case 2:
+			y = s[3] - h
+		case 3:
+			y = s[1]
+		}
 		dx, dy := int64(x-preferred.X), int64(y-preferred.Y)
 		d := dx*dx + dy*dy
-		if w*h > best.Width*best.Height || (w*h == best.Width*best.Height && d < distance) {
+		beside := side < 2
+		sameArea := w*h == best.Width*best.Height
+		betterAlignment := beside && !bestBeside || beside == bestBeside && d < distance
+		if w*h > best.Width*best.Height || sameArea && betterAlignment {
 			best = mygo.Rectangle{X: x, Y: y, Width: w, Height: h}
-			distance = d
+			bestBeside, distance = beside, d
 		}
 	}
 	return best
@@ -421,15 +436,14 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 			source.X += bounds.X
 			source.Y += bounds.Y
 		}
-		width, height := body.preferredSize(area)
 		// Fit the content before mapping the flyout, so its controls do not move under the pointer.
 		theme := appearance.theme()
-		if fitted := body.filenameWidth(theme.Font); fitted > 0 {
-			width, height = min(560, fitted), uikit.AttachmentFilenameHeight(len(body.attachments))
-		} else if fitted := body.textWidth(theme); fitted > 0 {
-			width = fitted
-		}
+		width, height := body.hoverSize(area, theme)
 		frame := previewSizedBounds(area, source, preferred, width, height)
+		if frame.Width > 0 && frame.Width < width && body.formatted != nil {
+			_, height = body.textSize(theme, frame.Width, min(area.Height, 560))
+			frame = previewSizedBounds(area, source, preferred, frame.Width, height)
+		}
 		if frame.Width == 0 {
 			return
 		}

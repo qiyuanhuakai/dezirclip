@@ -1,6 +1,10 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type { ClipboardEntry } from "../types";
 
+export function usesEmailSharePortal() {
+  return import.meta.env.MODE !== "mygo" && /Linux/i.test(navigator.userAgent);
+}
+
 export function derivedCopySource(entry: ClipboardEntry, protectedContent: boolean, epoch: number) {
   const source = { expectedHostInstanceId: entry.host_instance_id, expectedPrivacyEpoch: epoch };
   if (import.meta.env.MODE === "mygo") return { ...source, derivedFromId: entry.id, allowSensitive: protectedContent };
