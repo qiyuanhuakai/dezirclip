@@ -815,9 +815,19 @@ func TestNativePrivacyRulesShortcutRevealsTheManager(t *testing.T) {
 			if !view.Focused(window.text("privacy_rules_manage")) {
 				t.Fatal("the shortcut did not give the rules manager keyboard focus")
 			}
-			view.Scroll(float32(width)*0.7, 160, 0, 120)
-			view.Advance(250 * time.Millisecond)
-			if err := view.Click(window.text("privacy_rule_remove")); err != nil || window.privacyRules.pendingDelete != "example-rule" {
+			remove := window.text("privacy_rule_remove")
+			for range 6 {
+				bounds, found := view.Find(remove)
+				if found && bounds.W > 0 && bounds.H > 0 {
+					break
+				}
+				view.Scroll(float32(width)*0.7, 160, 0, 60)
+				view.Advance(250 * time.Millisecond)
+			}
+			if bounds, found := view.Find(remove); !found || bounds.W <= 0 || bounds.H <= 0 {
+				t.Fatalf("scrolling did not reveal the remove action: %+v", bounds)
+			}
+			if err := view.Click(remove); err != nil || window.privacyRules.pendingDelete != "example-rule" {
 				t.Fatalf("the rule could not be removed from the same viewport: %v", err)
 			}
 		})
