@@ -82,6 +82,17 @@ public static class MyGoInput {
     [StructLayout(LayoutKind.Sequential)]
     public struct Point { public int x, y; }
     public struct Rect { public int left, top, right, bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct CursorInfo { public uint size, flags; public IntPtr handle; public Point position; }
+    [DllImport("user32.dll", SetLastError=true)] static extern bool GetCursorInfo(ref CursorInfo cursor);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr LoadCursor(IntPtr instance, IntPtr name);
+    public static bool HasMoveCursor() {
+        var cursor = new CursorInfo();
+        cursor.size = (uint)Marshal.SizeOf(cursor);
+        if (!GetCursorInfo(ref cursor)) throw new System.ComponentModel.Win32Exception();
+        var move = LoadCursor(IntPtr.Zero, new IntPtr(32646)); // IDC_SIZEALL
+        return move != IntPtr.Zero && cursor.handle == move;
+    }
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
@@ -1147,7 +1158,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         try {
             Start-Sleep -Milliseconds 100
             $null = [MyGoInput]::SetCursorPos(($dragX - 50), ($dragY + 42))
-            Start-Sleep -Milliseconds 100
+            $null = Wait-Until { [MyGoInput]::HasMoveCursor() } 'Dragging the native title bar did not show the move cursor' 2
         } finally {
             [MyGoInput]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
         }
@@ -1156,7 +1167,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             [MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$afterDrag) -and
                 [Math]::Abs($afterDrag.top - $beforeDrag.top) -ge 20
         } 'Dragging the native title bar did not move the window' 5
-        Write-Host 'Verified the native title bar physically moves the window'
+        $null = Wait-Until { ![MyGoInput]::HasMoveCursor() } 'The move cursor remained after the drag ended' 2
+        Write-Host 'Verified movement and cursor restoration when dragging the native title bar'
         if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'The native main window is no longer foreground' }
         [Windows.Forms.SendKeys]::SendWait('^+v')
         $panel = Get-ResidentPanel $resident ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34'))
