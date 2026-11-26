@@ -290,7 +290,7 @@ func run() error {
 	defer func() { close(sizes); <-sizeDone }()
 	mygo.App.WhenReady(func() {
 		windowStarted := time.Now()
-		installMemoryPolicy(func() bool { return false })
+		shell.refreshMemory = installMemoryPolicy(shell.resumePending.Load)
 		options := mygo.WindowOptions{Title: "DezirClip", Width: 352, Height: 380, MinWidth: 250, MinHeight: 300,
 			Hidden: true, SkipTaskbar: true, DisableMaximize: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true}
 		native := &nativeMain{
@@ -315,7 +315,7 @@ func run() error {
 		preview.main = win
 		dock := &shell.dock
 		dock.window, dock.preview, dock.history = win, preview, history
-		dock.show = func() { shell.requestShow(win); shell.resumeDocked = true }
+		dock.show = func() { shell.requestShow(win, false); shell.resumeDocked = true }
 		dock.configure(settings.EdgeDocking == "true")
 		win.OnBlur(func() {
 			preview.clear()
@@ -367,12 +367,18 @@ func run() error {
 			dock.syncPolling()
 			fmt.Fprintln(os.Stdout, "hidden")
 			native.savePrivacyTexts(true)
+			native.retainCardThumbnails()
 			native.stopSession()
 			preview.clear()
 			visibilityChanged.Emit(win, false)
 			fmt.Fprintln(os.Stdout, "recording-cancel")
 		})
-		win.OnMove(func() { preview.clear(); windowMoved.Emit(win, true) })
+		win.OnMove(func() {
+			if native.hover.row != 0 || preview.entryID != 0 {
+				native.hover.reset()
+				preview.clear()
+			}
+		})
 		win.OnFileDrop(func(e *mygo.FileDropEvent) {
 			if fileDragPending.Load() {
 				return
@@ -420,7 +426,7 @@ func run() error {
 		history.rememberTarget(ctx)
 		diagnostics.record("native-content-ready", 0, nil)
 		desktopTiming("child native window creation", windowStarted)
-		shell.requestShow(win)
+		shell.requestShow(win, false)
 		physicalSize := func() mygo.Size {
 			width, height := win.ContentSize()
 			return scaledSize(width, height, mainWindowScale(win))
@@ -513,19 +519,13 @@ func run() error {
 					// Accept the wake before any Host read can outlive the old idle
 					// deadline. The UI-thread generation also invalidates a queued timer.
 					wakeGeneration := shell.idle.acceptWake(mygo.RunOnMain)
-					position := false
-					if !mainWindowFocused(win) {
-						preferences := make(chan windowPreferences, 1)
-						go func() { preferences <- library.windowPreferences(ctx) }()
+					reposition := !mainWindowFocused(win)
+					if reposition {
 						history.rememberTarget(ctx)
-						position = (<-preferences).FollowMouse != "false"
 					}
 					desktopTiming("warm native preparation", wakeStarted)
 					mygo.RunOnMain(func() {
 						if !win.IsDestroyed() && shell.idle.generation == wakeGeneration {
-							if position {
-								placeWindowAtCursor(win)
-							}
 							switch command {
 							case "settings":
 								native.openSettings()
@@ -535,7 +535,7 @@ func run() error {
 									native.closeTagLibrary()
 								}
 							}
-							shell.requestShow(win)
+							shell.requestShow(win, reposition)
 						}
 					})
 				}

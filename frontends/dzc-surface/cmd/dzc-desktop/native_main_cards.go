@@ -114,6 +114,55 @@ type nativeCardMedia struct {
 	failed      bool
 }
 
+type nativeCardThumbnails struct {
+	state  protocol.RuntimeState
+	images map[nativeCardKey]*ui.Bitmap
+}
+
+func (t nativeCardThumbnails) matches(state protocol.RuntimeState) bool {
+	return t.state.ServiceInstanceId != "" && t.state.ServiceInstanceId == state.ServiceInstanceId &&
+		t.state.PrivacyEpoch == state.PrivacyEpoch && t.state.HistoryRevision == state.HistoryRevision
+}
+
+// A quick reopen can reuse a few completed public thumbnails. The next
+// presentation still authorizes and reads its own history page.
+func (n *nativeMain) retainCardThumbnails() {
+	state := n.history.state
+	if state.ServiceInstanceId == "" {
+		return
+	}
+	retained := nativeCardThumbnails{state: state}
+	if !n.private && !n.failed {
+		remaining := 2 << 20
+		previous := n.cardThumbnails
+		for _, row := range n.history.rows[:min(len(n.history.rows), pageSize)] {
+			if row.ContentType != "image" || row.IsExternal || nativeConcealed(row) {
+				continue
+			}
+			key := nativeCardKey{row.Id, row.Timestamp}
+			media, _ := n.cardMedia.lookup(key)
+			bitmap, _ := media.image.(*ui.Bitmap)
+			if bitmap == nil && previous.matches(state) {
+				bitmap = previous.images[key]
+			}
+			if bitmap == nil {
+				continue
+			}
+			width, height := bitmap.Size()
+			cost := width * height * 4
+			if cost <= 0 || cost > remaining {
+				continue
+			}
+			if retained.images == nil {
+				retained.images = make(map[nativeCardKey]*ui.Bitmap)
+			}
+			retained.images[key] = bitmap
+			remaining -= cost
+		}
+	}
+	n.cardThumbnails = retained
+}
+
 const (
 	historyImageDimension     = 384
 	historyImageEncodedLimit  = 1024 * 1024
@@ -213,6 +262,12 @@ func (n *nativeMain) invalidateCardMedia(affected map[int64]struct{}) {
 func (n *nativeMain) mediaForCard(row protocol.DesktopEntry) (nativeCardMedia, bool) {
 	key := nativeCardKey{row.Id, row.Timestamp}
 	preview, loaded := n.cardMedia.lookup(key)
+	if !loaded && row.ContentType == "image" && !row.IsExternal && !nativeConcealed(row) &&
+		!n.private && n.cardThumbnails.matches(n.history.state) {
+		if bitmap := n.cardThumbnails.images[key]; bitmap != nil {
+			return nativeCardMedia{image: bitmap}, true
+		}
+	}
 	if loaded || !n.canLoadCardPreview(row) || !n.cardMedia.begin(key) {
 		return preview, loaded
 	}

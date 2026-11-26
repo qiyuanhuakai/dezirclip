@@ -21,6 +21,8 @@ type DesktopShell struct {
 	resumePending   atomic.Bool
 	resumeStarted   time.Time // UI-thread owned
 	resumeDocked    bool      // UI-thread owned; edge reveal keeps its anchor.
+	resumePosition  bool      // UI-thread owned; apply the fresh follow-pointer setting.
+	refreshMemory   func()
 	nativePrepare   func(uint64)
 	keepMainAlive   func() bool
 	idleCloseDelay  func() (time.Duration, bool)
@@ -74,7 +76,6 @@ func (shell *DesktopShell) ApplyAppearance(ctx context.Context, theme, mode stri
 
 var focusChanged = mygo.NewEvent[bool]("window-focus")
 var visibilityChanged = mygo.NewEvent[bool]("window-visibility")
-var windowMoved = mygo.NewEvent[bool]("window-moved")
 var filesDropped = mygo.NewEvent[[]string]("window-file-drop")
 
 func (*DesktopShell) IsVisible(ctx context.Context) bool {

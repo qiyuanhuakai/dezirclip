@@ -12,10 +12,14 @@ var prepareShow = mygo.NewEvent[uint64]("main-window-prepare-show")
 
 // The request survives listener installation and is retired only after a fresh
 // history page has committed against the same Host and privacy epoch.
-func (s *DesktopShell) requestShow(w *mygo.Window) {
+func (s *DesktopShell) requestShow(w *mygo.Window, reposition bool) {
 	s.idle.cancel()
 	s.resumeDocked = false
+	s.resumePosition = reposition
 	s.resumePending.Store(true)
+	if s.refreshMemory != nil {
+		s.refreshMemory()
+	}
 	s.resumeStarted = time.Now()
 	request := s.resumeSequence.Add(1)
 	if s.nativePrepare != nil {

@@ -34,6 +34,7 @@ type nativeMain struct {
 	resume                uint64
 	history               nativeHistory
 	cardMedia             nativeVisibleCache[nativeCardKey, nativeCardMedia]
+	cardThumbnails        nativeCardThumbnails
 	ocrPreview            *nativeOCRPreview
 	ocrJob                nativeOCRJob
 	ocrEngine             *protocol.OcrEngineInfo
@@ -209,6 +210,15 @@ func (n *nativeMain) open(session context.Context) {
 				n.private = status.Privacy.Active
 				n.privateUntil = status.Privacy.ExpiresAtMs
 				n.history.reset(status.State, n.historyFilter())
+				if n.private || !n.cardThumbnails.matches(status.State) {
+					n.cardThumbnails = nativeCardThumbnails{}
+				}
+				if n.resume != 0 && n.shell.resumePosition {
+					n.shell.resumePosition = false
+					if settings["app.follow_mouse"] != "false" {
+						placeWindowAtCursor(n.window)
+					}
+				}
 				n.loadBackground()
 				n.list.Reset()
 				n.loadPage()
@@ -293,6 +303,9 @@ func (n *nativeMain) applyAppearance() {
 }
 
 func (n *nativeMain) update(session context.Context, fn func()) {
+	if session.Err() != nil {
+		return
+	}
 	n.window.Update(func() {
 		if !n.window.IsDestroyed() && session.Err() == nil && n.session == session {
 			fn()
@@ -392,6 +405,7 @@ func (n *nativeMain) watch(session context.Context, cursor uint64) {
 func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 	current, next := n.history.state, events.State
 	if current.ServiceInstanceId != next.ServiceInstanceId || current.PrivacyEpoch != next.PrivacyEpoch || events.ResyncRequired {
+		n.cardThumbnails = nativeCardThumbnails{}
 		n.clearBackground()
 		n.prepare(n.resume)
 		return
@@ -435,6 +449,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 		}
 	}
 	if next.HistoryRevision > current.HistoryRevision {
+		n.cardThumbnails = nativeCardThumbnails{}
 		affected, canReflow := historyRefreshEntries(current, events)
 		removed := historyDeletionEntries(current.HistoryRevision, events.Events)
 		deletionOnly := len(removed) > 0

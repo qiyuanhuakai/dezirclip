@@ -76,6 +76,9 @@ func (s *DesktopShell) hideMain(w *mygo.Window) {
 		delay, known = s.idleCloseDelay()
 	}
 	w.Hide()
+	if s.refreshMemory != nil {
+		s.refreshMemory()
+	}
 	s.dock.syncPolling()
 	schedule := func(delay time.Duration) {
 		if delay > 0 && generation == s.idle.generation && !w.IsDestroyed() && !w.IsVisible() {

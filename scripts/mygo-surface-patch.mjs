@@ -83,7 +83,10 @@ function windowsPatches(source) {
 		}()
 	}
 	// Keep the native move loop for snapping, release and Escape.
-	procSendMessageW.Call(w.hwnd, wmNCLButtonDown, htCaption, 0)
+	var pos point
+	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pos)))
+	screenPoint := uintptr(uint16(pos.X)) | uintptr(uint16(pos.Y))<<16
+	procSendMessageW.Call(w.hwnd, wmNCLButtonDown, htCaption, screenPoint)
 }`);
   return [[file, Buffer.from(surface)], [windowFile, Buffer.from(window)]];
 }

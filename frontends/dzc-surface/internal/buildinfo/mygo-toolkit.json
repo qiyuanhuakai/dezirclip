@@ -1,5 +1,5 @@
 {
-  "id": "mygo-v0.10.0-native-v2",
+  "id": "mygo-v0.10.0-native-v3",
   "strategy": "isolated_module_copy",
   "module": "github.com/egoist/mygo",
   "version": "v0.10.0",

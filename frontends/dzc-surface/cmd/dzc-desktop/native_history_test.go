@@ -2,12 +2,56 @@ package main
 
 import (
 	"context"
+	"image"
 	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
+
+func TestNativeHiddenThumbnailReuseRequiresCurrentPublicHistory(t *testing.T) {
+	state := protocol.RuntimeState{ServiceInstanceId: "thumbnail-fixture", PrivacyEpoch: 2, HistoryRevision: 5}
+	n := nativeMain{history: nativeHistory{state: state}}
+	bitmap := ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 384, 384)))
+	for id := int64(1); id <= 6; id++ {
+		row := protocol.DesktopEntry{Id: id, Timestamp: 10, ContentType: "image", Tags: []string{}}
+		switch id {
+		case 1:
+			row.Tags = nil
+		case 2:
+			row.IsExternal = true
+		}
+		n.history.rows = append(n.history.rows, row)
+		n.cardMedia.finish(nativeCardKey{row.Id, row.Timestamp}, nativeCardMedia{image: bitmap})
+	}
+	rows := append([]protocol.DesktopEntry(nil), n.history.rows...)
+	n.retainCardThumbnails()
+	n.stopSession()
+	n.history.state, n.history.rows = state, rows
+	for _, row := range rows {
+		media, ready := n.mediaForCard(row)
+		want := row.Id >= 3 && row.Id <= 5
+		if ready != want || (media.image != nil) != want {
+			t.Fatalf("row %d reuse = %v, want %v", row.Id, ready, want)
+		}
+	}
+	row := rows[2]
+	for _, latest := range []protocol.RuntimeState{
+		{ServiceInstanceId: "restarted", PrivacyEpoch: 2, HistoryRevision: 5},
+		{ServiceInstanceId: state.ServiceInstanceId, PrivacyEpoch: 3, HistoryRevision: 5},
+		{ServiceInstanceId: state.ServiceInstanceId, PrivacyEpoch: 2, HistoryRevision: 6},
+	} {
+		n.history.state = latest
+		if _, ready := n.mediaForCard(row); ready {
+			t.Fatalf("reused a thumbnail after the authorized state changed: %+v", latest)
+		}
+	}
+	n.history.state, n.private = state, true
+	if _, ready := n.mediaForCard(row); ready {
+		t.Fatal("reused a thumbnail in a private session")
+	}
+}
 
 func TestNativePreviewRecoversReadableTextAndKeepsProtectedRowsHidden(t *testing.T) {
 	const invisible = "\u200b\u200e\ufeff\uFE0F\t"
