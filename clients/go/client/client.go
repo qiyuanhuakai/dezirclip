@@ -50,6 +50,10 @@ func (client *Client) Call(ctx context.Context, method protocol.Method, params a
     deadline, ok := ctx.Deadline()
     limitDuration := 5 * time.Second
     switch method {
+    case protocol.MethodEventsSubscribe:
+        if subscription, ok := params.(protocol.SubscribeParams); ok && subscription.WaitMs != nil {
+            limitDuration += time.Duration(*subscription.WaitMs) * time.Millisecond
+        }
     case protocol.MethodDesktopHistoryShare:
         if err := grantFocusRestore(client.conn); err != nil { return err }
         limitDuration = 15 * time.Second

@@ -149,3 +149,36 @@ func TestNegotiatedFrameLimitAfterRealHandshake(t *testing.T) {
         })
     }
 }
+
+
+type deadlineProbe struct {
+    net.Conn
+    deadline time.Time
+}
+
+func (probe *deadlineProbe) SetDeadline(deadline time.Time) error {
+    probe.deadline = deadline
+    return net.ErrClosed
+}
+
+func TestEventSubscriptionDeadlineIncludesTheRequestedWait(t *testing.T) {
+    pipe, other := net.Pipe()
+    defer pipe.Close()
+    defer other.Close()
+    conn := &deadlineProbe{Conn: pipe}
+    client := &Client{conn: conn}
+    wait := uint16(60000)
+    params := protocol.SubscribeParams{WaitMs: &wait}
+    var result protocol.EventsResult
+    _ = client.Call(context.Background(), protocol.MethodEventsSubscribe, params, "EventsResult", &result)
+    if remaining := time.Until(conn.deadline); remaining < 64*time.Second || remaining > 65*time.Second {
+        t.Fatalf("a 60-second event subscription got %v", remaining)
+    }
+
+    ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+    defer cancel()
+    _ = client.Call(ctx, protocol.MethodEventsSubscribe, params, "EventsResult", &result)
+    if deadline, _ := ctx.Deadline(); !conn.deadline.Equal(deadline) {
+        t.Fatalf("a subscription ignored the caller's deadline")
+    }
+}
