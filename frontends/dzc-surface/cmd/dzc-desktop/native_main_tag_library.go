@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -16,11 +17,34 @@ type nativeTagLibrary struct {
 	selected, query, sort, nameQuery string
 	railCollapsed, focusRailSearch   bool
 	selectInitial                    bool
+	rail                             nativeTagRail
 	dialog                           *nativeTagDialog
 	entryDelete                      *nativeTagEntryDeletion
 	batch                            nativeTagBatch
 	reveal                           map[nativeCardKey]bool
 	revealGeneration                 uint64
+}
+
+type nativeTagRail struct {
+	list     ui.ListState
+	index    int
+	query    string
+	revision uint64
+	matches  []string
+}
+
+func (rail *nativeTagRail) names(query string, catalog *nativeTagCatalog) []string {
+	if query == "" {
+		rail.query = ""
+		return catalog.names
+	}
+	if rail.query != query || rail.revision != catalog.revision {
+		rail.query, rail.revision = query, catalog.revision
+		rail.matches = slices.DeleteFunc(append(rail.matches[:0], catalog.names...), func(name string) bool {
+			return !uikit.MatchesTagName(name, query)
+		})
+	}
+	return rail.matches
 }
 
 type nativeTagDialog struct {
@@ -183,24 +207,52 @@ func (n *nativeMain) tagLibraryRail(c *ui.Context, kit uikit.Kit, tags *nativeTa
 			}
 			*queryFocused = field.Focused()
 		}
-		ui.Scroll(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
-			ui.Column(c).FillWidth().Gap(4).Children(func() {
-				for _, name := range n.tagCatalog.names {
-					if !uikit.MatchesTagName(name, tags.nameQuery) {
-						continue
-					}
-					choice := uikit.TagChoice{ID: name, Label: name, Count: n.tagCatalog.counts[name]}
-					if kit.TagRailChoice(c, choice, tags.selected == name, tags.railCollapsed).Clicked() {
-						tags.selected = name
-						n.editQuery(false)
-					}
-				}
-			})
-		})
+		n.tagRailChoices(c, kit, tags)
 		if tags.railCollapsed {
 			n.tagRailAdd(c, kit, tags)
 		}
 	})
+}
+
+func (n *nativeMain) tagRailChoices(c *ui.Context, kit uikit.Kit, tags *nativeTagLibrary) {
+	rail := &tags.rail
+	query := strings.TrimSpace(tags.nameQuery)
+	if rail.query != query {
+		rail.list.ScrollTo(0, ui.Start)
+	}
+	names := rail.names(query, &n.tagCatalog)
+	if rail.list.Selected == nil {
+		rail.index = slices.Index(names, tags.selected)
+		rail.list.Selected = &rail.index
+	}
+	rail.list.Key = func(index int) any { return names[index] }
+	rail.list.Label = func(index int) string { return names[index] }
+	selectTag := func(index int) {
+		if index >= 0 && index < len(names) && tags.selected != names[index] {
+			tags.selected = names[index]
+			n.editQuery(false)
+		}
+	}
+
+	appearance := c.Theme()
+	listTheme := *appearance
+	listTheme.Accent, listTheme.SurfaceHover, listTheme.AccentText = ui.Color{}, ui.Color{}, appearance.Text
+	c.SetTheme(&listTheme)
+	list := ui.List(c, &rail.list, len(names)).FillWidth().Grow(1).MinHeight(0).Gap(4).Label(n.text("tags"))
+	list.Rows(func(row ui.ListRow) {
+		row.Context.SetTheme(appearance)
+		name := names[row.Index]
+		choice := uikit.TagChoice{ID: name, Label: name, Count: n.tagCatalog.counts[name]}
+		if kit.TagRailChoice(row.Context, choice, tags.selected == name, tags.railCollapsed).Clicked() {
+			rail.list.Choose(row.Index)
+			selectTag(row.Index)
+		}
+		row.Context.SetTheme(&listTheme)
+	})
+	c.SetTheme(appearance)
+	if list.Changed() || list.Submitted() {
+		selectTag(rail.index)
+	}
 }
 
 func (n *nativeMain) tagRailAdd(c *ui.Context, kit uikit.Kit, tags *nativeTagLibrary) {

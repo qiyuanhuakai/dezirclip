@@ -150,7 +150,7 @@ func (n *nativeMain) drawBackground(c *ui.Context, radius int) bool {
 func (n *nativeMain) animateBackground() {
 	b := &n.background
 	if n.session == nil || b.gif == nil || b.timer != nil || !n.window.IsVisible() ||
-		b.key != n.backgroundKey(n.history.state) || (b.opacityDraft == nil && n.currentBackgroundOpacity() == 0) {
+		b.key != n.backgroundKey(n.history.state) || n.currentBackgroundOpacity() == 0 {
 		return
 	}
 	animation := b.gif
@@ -165,7 +165,7 @@ func (n *nativeMain) animateBackground() {
 				return
 			}
 			b.timer = nil
-			if n.window.IsVisible() {
+			if n.window.IsVisible() && n.currentBackgroundOpacity() != 0 {
 				b.bitmap.Update(animation.advance())
 				n.animateBackground()
 			}

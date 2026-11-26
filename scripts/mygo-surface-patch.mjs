@@ -38,10 +38,54 @@ function replacePatch(source, before, after) {
 function windowsPatches(source) {
   // Clicks on a non-activating native flyout leave focus with its owner.
   const file = 'internal/windows/surface.go';
-  const surface = replacePatch(source(file, '6b9cdb85684b730a94081b632ad82d0affab38310aa2da91e2ca0d9b3d14cf95'),
+  let surface = replacePatch(source(file, '6b9cdb85684b730a94081b632ad82d0affab38310aa2da91e2ca0d9b3d14cf95'),
     '\t\tprocSetFocus.Call(hwnd)\n\t\tif s.buttons == 0 {',
     '\t\tif f := s.w.opts.Flyout; f == nil || f.Focusable {\n\t\t\tprocSetFocus.Call(hwnd)\n\t\t}\n\t\tif s.buttons == 0 {');
-  return [[file, Buffer.from(surface)]];
+  surface = replacePatch(surface,
+    '\tcase wmSetCursor:\n\t\tif loword(lp) == htClient {',
+    `\tcase wmSetCursor:
+		if s.w.dragCursor != 0 {
+			procSetCursor.Call(s.w.dragCursor)
+			return 1, true
+		}
+		if loword(lp) == htClient {`);
+  surface = replacePatch(surface, '\ts.cursor = c\n\tvar pt point', `\ts.cursor = c
+	if s.w.dragCursor != 0 {
+		return
+	}
+	var pt point`);
+
+  const windowFile = 'internal/windows/window.go';
+  let window = source(windowFile, '3684e7e8cab7878d4bf24c88c7b5534ee7a3a3c082ca2503fce1608ec19a6452');
+  window = replacePatch(window, '\tparent *window\n', '\tparent *window\n\tdragCursor uintptr\n');
+  window = replacePatch(window, '\tcase wmMove:\n', `\tcase 0x0216: // WM_MOVING
+		if w.dragCursor != 0 {
+			procSetCursor.Call(w.dragCursor)
+		}
+	case wmSetCursor:
+		if w.dragCursor != 0 {
+			procSetCursor.Call(w.dragCursor)
+			return 1, true
+		}
+	case wmMove:
+`);
+  window = replacePatch(window, `func (w *window) StartDrag() {
+	procReleaseCapture.Call()
+	procSendMessageW.Call(w.hwnd, wmNCLButtonDown, htCaption, 0)
+}`, `func (w *window) StartDrag() {
+	procReleaseCapture.Call()
+	w.dragCursor = cursorHandle(platform.CursorMove)
+	if w.dragCursor != 0 {
+		previous, _, _ := procSetCursor.Call(w.dragCursor)
+		defer func() {
+			w.dragCursor = 0
+			procSetCursor.Call(previous)
+		}()
+	}
+	// Keep the native move loop for snapping, release and Escape.
+	procSendMessageW.Call(w.hwnd, wmNCLButtonDown, htCaption, 0)
+}`);
+  return [[file, Buffer.from(surface)], [windowFile, Buffer.from(window)]];
 }
 
 function linuxPatches(source) {

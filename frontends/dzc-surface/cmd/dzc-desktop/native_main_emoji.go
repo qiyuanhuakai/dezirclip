@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -19,7 +20,10 @@ type nativeEmojiPanel struct {
 	changing             bool
 	loadError            bool
 	query, searched, tab string
+	searching            bool
 	matches              []characterGroup
+	groups               []uikit.CharacterGroup
+	groupLanguage        nativeLanguage
 	characters           ui.ListState
 }
 
@@ -61,27 +65,80 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 
 func (n *nativeMain) drawEmojiResults(c *ui.Context, kit uikit.Kit, tab string, contentWidth float32) {
 	panel := n.emojiPanel()
-	kit.CharacterSearch(c, &panel.query, n.text("emoji_search"), func(composing bool) {
-		if !composing && (panel.tab != tab || panel.searched != panel.query) {
-			panel.matches = slices.Clone(searchCharacters(tab, panel.query))
-			for i := range panel.matches {
-				group := &panel.matches[i]
-				group.choices = previewCharacterChoices(group.choices, tab, strings.TrimSpace(panel.query) != "")
-			}
-			panel.tab, panel.searched = tab, panel.query
-			panel.characters = ui.ListState{}
-		}
+	var composing bool
+	kit.CharacterSearch(c, &panel.query, n.text("emoji_search"), func(editingComposition bool) {
+		composing = editingComposition
 	})
-	groups := make([]uikit.CharacterGroup, 0, len(panel.matches))
-	for _, group := range panel.matches {
-		groups = append(groups, uikit.CharacterGroup{Label: n.emojiGroupName(group.ID), Choices: group.choices})
+	if !composing && (panel.tab != tab || panel.searched != panel.query) {
+		n.refreshEmojiResults(panel, tab)
+	}
+	if panel.tab != tab || !composing && panel.searched != panel.query {
+		kit.SettingsLabel(c, n.text("common_loading", "Loading…")).AlignSelf(ui.Center)
+		return
+	}
+	if language := n.language(); panel.groupLanguage != language || panel.groups == nil {
+		panel.groupLanguage = language
+		panel.groups = make([]uikit.CharacterGroup, 0, len(panel.matches))
+		for _, group := range panel.matches {
+			panel.groups = append(panel.groups, uikit.CharacterGroup{Label: n.emojiGroupName(group.ID), Choices: group.choices})
+		}
 	}
 	label := n.text("emoji_tab")
 	if tab == "symbols" {
 		label = n.text("emoji_symbols_tab")
 	}
-	kit.CharacterList(c, &panel.characters, contentWidth, groups, label,
+	kit.CharacterList(c, &panel.characters, contentWidth, panel.groups, label,
 		n.text("emoji_search_empty"), n.mutating, func(value string) { n.sendEmoji("text", value) })
+}
+
+var (
+	browseEmoji   = sync.OnceValue(func() []characterGroup { return characterChoices("emoji", "") })
+	browseSymbols = sync.OnceValue(func() []characterGroup { return characterChoices("symbols", "") })
+)
+
+func characterChoices(tab, query string) []characterGroup {
+	groups := slices.Clone(searchCharacters(tab, query))
+	searching := strings.TrimSpace(query) != ""
+	for i := range groups {
+		groups[i].choices = previewCharacterChoices(groups[i].choices, tab, searching)
+	}
+	return groups
+}
+
+func (n *nativeMain) refreshEmojiResults(panel *nativeEmojiPanel, tab string) {
+	if panel.searching {
+		return
+	}
+	query := panel.query
+	find := func() []characterGroup {
+		if strings.TrimSpace(query) == "" {
+			if tab == "symbols" {
+				return browseSymbols()
+			}
+			return browseEmoji()
+		}
+		return characterChoices(tab, query)
+	}
+	apply := func(matches []characterGroup) {
+		panel.matches, panel.groups = matches, nil
+		panel.tab, panel.searched = tab, query
+		panel.characters = ui.ListState{}
+	}
+	session := n.session
+	if session == nil {
+		apply(find())
+		return
+	}
+	panel.searching = true
+	go func() {
+		matches := find()
+		n.update(session, func() {
+			panel.searching = false
+			if n.emoji == panel && panel.query == query {
+				apply(matches)
+			}
+		})
+	}()
 }
 
 func (n *nativeMain) emojiGroupName(name string) string {
