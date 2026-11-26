@@ -111,7 +111,39 @@ function linuxPatches(source) {
 		cairoSurfaceFlush(target)
 	}
 	cairoSurfaceDestroy(img)`);
-  return [[surfaceFile, Buffer.from(surface)]];
+  const windowFile = 'internal/linux/window.go';
+  let window = replacePatch(source(windowFile, '6daca09642185068201a1220b1efe08a93a39fd337fa1cc88cb8ced5afacd1fc'),
+    `func (w *window) StartDrag() {
+	if !w.press.hasPressed {
+		return
+	}
+	if !w.undecorated() {`, `func (w *window) StartDrag() {
+	if !w.press.hasPressed {
+		return
+	}
+	// A native X11 title bar with maximization disabled can hand off
+	// the press right away, without waiting for client-side motion.
+	direct := w.b.onX11 && w.surface != nil && !w.opts.Maximizable && !w.IsMaximized()
+	if direct {
+		// A user move takes precedence over any pending placement request.
+		w.requested, w.placing = nil, false
+		w.dragPending = false
+	}
+	if !w.undecorated() || direct {`);
+  window = replacePatch(window, `func (w *window) TitleBarDoubleClicked() {
+	if w.IsMaximized() {
+		w.Unmaximize()
+	} else {
+		w.Maximize()
+	}
+}`, `func (w *window) TitleBarDoubleClicked() {
+	if w.IsMaximized() {
+		w.Unmaximize()
+	} else if !w.b.onX11 || w.surface == nil || w.opts.Maximizable {
+		w.Maximize()
+	}
+}`);
+  return [[surfaceFile, Buffer.from(surface)], [windowFile, Buffer.from(window)]];
 }
 
 export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {

@@ -1,5 +1,5 @@
 {
-  "id": "mygo-v0.10.0-native-v3",
+  "id": "mygo-v0.10.0-native-v4",
   "strategy": "isolated_module_copy",
   "module": "github.com/egoist/mygo",
   "version": "v0.10.0",
@@ -12,6 +12,7 @@
     "app.go",
     "internal/windows/surface.go",
     "internal/windows/window.go",
-    "internal/linux/surface.go"
+    "internal/linux/surface.go",
+    "internal/linux/window.go"
   ]
 }

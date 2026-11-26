@@ -22,7 +22,9 @@ func restoreMainPosition(w *mygo.Window, docked bool) {
 	}
 	bounds := w.Bounds()
 	point := visibleMainPosition(bounds, mygo.Screen.DisplayMatching(bounds).WorkArea, docked)
-	w.SetPosition(point.X, point.Y)
+	if point.X != bounds.X || point.Y != bounds.Y {
+		w.SetPosition(point.X, point.Y)
+	}
 }
 
 func nativeWaylandRequested() bool {
@@ -70,8 +72,11 @@ func readDockSample(w *mygo.Window) (dockSample, bool) {
 		return dockSample{}, false
 	}
 	p, pressed, ok := read()
+	if !ok || pressed {
+		return dockSample{}, false
+	}
 	bounds := w.Bounds()
-	return dockSample{window: bounds, monitor: mygo.Screen.DisplayMatching(bounds).Bounds, cursor: p, pressed: pressed}, ok
+	return dockSample{window: bounds, monitor: mygo.Screen.DisplayMatching(bounds).Bounds, cursor: p}, true
 }
 
 func configureSoftwareWebview(child *exec.Cmd) {
