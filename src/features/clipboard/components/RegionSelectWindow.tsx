@@ -4,7 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import { useAuxiliaryWindowReady } from "../../../shared/hooks/useAuxiliaryWindowReady";
-import { matchesRegionFrameLayout } from "../../../shared/lib/regionFrameLayout";
+import { canDecodeRegionFrame, matchesRegionFrameLayout } from "../../../shared/lib/regionFrameLayout";
 import "@deziro/ui-react/styles/components/RegionSelectWindow.css";
 
 type Selection = {
@@ -30,9 +30,12 @@ type RegionCaptureSession = { token: string; x: number; y: number; width: number
 type RegionSessionChange = { token: string | null; generation: number };
 type RegionBackdrop = { url: string; session: RegionCaptureSession; revision: number };
 
-const matchesFrameLayout = (session: RegionCaptureSession) =>
-  matchesRegionFrameLayout({ frameWidth: session.width, frameHeight: session.height, scale: session.scale,
-    viewportWidth: window.innerWidth, viewportHeight: window.innerHeight });
+const frameLayout = (session: RegionCaptureSession) => ({
+  frameWidth: session.width, frameHeight: session.height, scale: session.scale,
+  viewportWidth: window.innerWidth, viewportHeight: window.innerHeight,
+});
+const matchesFrameLayout = (session: RegionCaptureSession) => matchesRegionFrameLayout(frameLayout(session));
+const canDecodeFrame = (session: RegionCaptureSession) => canDecodeRegionFrame(frameLayout(session), session.presented);
 
 const MIN_SELECTION_SIZE = 10;
 /**
@@ -207,12 +210,12 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
   }, [clearSelection]);
 
   useEffect(() => {
-    if (!backdrop || backdrop.revision !== backdropRevision.current || objectUrl.current !== backdrop.url || !matchesFrameLayout(backdrop.session)) return;
+    if (!backdrop || backdrop.revision !== backdropRevision.current || objectUrl.current !== backdrop.url || !canDecodeFrame(backdrop.session)) return;
     let cancelled = false;
     const image = displayedImage.current;
     if (!image) return;
     void image.decode().then(() => {
-      if (cancelled || backdrop.revision !== backdropRevision.current || objectUrl.current !== backdrop.url || !matchesFrameLayout(backdrop.session)) return;
+      if (cancelled || backdrop.revision !== backdropRevision.current || objectUrl.current !== backdrop.url || !canDecodeFrame(backdrop.session)) return;
       readySession.current = backdrop.session;
       pendingSession.current = null;
       setBackdropReady(true);
@@ -278,7 +281,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
         serverGeneration.current = session.generation;
         announcedSession.current = session.token;
         if (change && (session.token !== change.token || session.generation !== change.generation)) return;
-        if (!matchesFrameLayout(session)) { clearBackdrop(); return; }
+        if (!canDecodeFrame(session)) { clearBackdrop(); return; }
         if (readySession.current?.token === session.token && readySession.current.generation === session.generation) return;
         if (pendingSession.current?.token === session.token && pendingSession.current.generation === session.generation) return;
         clearBackdrop();
@@ -303,7 +306,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
           URL.revokeObjectURL(url);
           return;
         }
-        if (image.naturalWidth !== session.width || image.naturalHeight !== session.height || !matchesFrameLayout(session)) {
+        if (image.naturalWidth !== session.width || image.naturalHeight !== session.height || !canDecodeFrame(session)) {
           clearBackdrop();
           return;
         }

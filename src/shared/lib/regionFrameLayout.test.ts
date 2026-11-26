@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchesRegionFrameLayout, type RegionFrameLayout } from "./regionFrameLayout";
+import { canDecodeRegionFrame, matchesRegionFrameLayout, type RegionFrameLayout } from "./regionFrameLayout";
 
 const highScale: RegionFrameLayout = {
   frameWidth: 2560,
@@ -8,6 +8,16 @@ const highScale: RegionFrameLayout = {
   viewportWidth: 731,
   viewportHeight: 411,
 };
+
+it("decodes a valid frozen frame in a 0×0 viewport only before presentation", () => {
+  const hidden = { ...highScale, viewportWidth: 0, viewportHeight: 0 };
+  expect(canDecodeRegionFrame(hidden, false)).toBe(true);
+  expect(canDecodeRegionFrame(hidden, true)).toBe(false);
+  expect(canDecodeRegionFrame({ ...hidden, frameWidth: 0 }, false)).toBe(false);
+  expect(canDecodeRegionFrame({ ...hidden, viewportWidth: 200 }, false)).toBe(false);
+  expect(canDecodeRegionFrame({ ...highScale, viewportHeight: 400 }, true)).toBe(false);
+  expect(canDecodeRegionFrame(highScale, true)).toBe(true);
+});
 
 describe("matchesRegionFrameLayout", () => {
   it("accepts floor and ceil CSS viewports for an independent 2560×1440 frame at 350%", () => {
