@@ -436,10 +436,15 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 	}
 	if next.HistoryRevision > current.HistoryRevision {
 		affected, canReflow := historyRefreshEntries(current, events)
-		deletionOnly := canReflow && deletionOnlyReflow(current.HistoryRevision, events.Events)
-		if deletionOnly {
+		removed := historyDeletionEntries(current.HistoryRevision, events.Events)
+		deletionOnly := len(removed) > 0
+		var tagReveal map[nativeCardKey]bool
+		if canReflow && deletionOnly {
 			n.resetPreviewInteraction()
 		} else {
+			if tags := n.tagLibrary; deletionOnly && tags != nil && tags.revealGeneration == n.history.generation {
+				tagReveal = tags.reveal
+			}
 			n.resetPreviewSelection()
 		}
 		if canReflow {
@@ -450,6 +455,16 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 			}
 		} else {
 			n.history.reset(next, n.history.filter)
+			if tagReveal != nil {
+				// Fetch the remaining rows and authorize their details again
+				// against the current epoch, keeping the user's tag view choice.
+				for key := range tagReveal {
+					if _, deleted := removed[key.id]; deleted {
+						delete(tagReveal, key)
+					}
+				}
+				n.tagLibrary.reveal, n.tagLibrary.revealGeneration = tagReveal, n.history.generation
+			}
 			if n.historyScroll.Y <= 0 {
 				n.list.Reset()
 			}

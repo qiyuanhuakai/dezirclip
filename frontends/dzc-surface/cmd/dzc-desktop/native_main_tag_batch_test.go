@@ -36,6 +36,30 @@ func TestNativeTagDeletionKeepsBulkRevealAndSelection(t *testing.T) {
 	}
 }
 
+func TestNativeTagDeletionWithTagAssociationsKeepsRevealOnFullRefresh(t *testing.T) {
+	deleted, excluded := nativeCardKey{id: 7}, nativeCardKey{id: 9}
+	state := protocol.RuntimeState{ServiceInstanceId: "host-a", PrivacyEpoch: 4, HistoryRevision: 6}
+	tags := &nativeTagLibrary{selected: "Work", sort: "time"}
+	n := nativeMain{tagLibrary: tags}
+	n.history.reset(state, n.historyFilter())
+	tags.revealGeneration = n.history.generation
+	tags.reveal = map[nativeCardKey]bool{deleted: true, excluded: true}
+	n.history.rows = []protocol.DesktopEntry{{Id: 7}, {Id: 9}}
+	next := state
+	next.HistoryRevision += 2
+	next.EventSequence++
+	id := int64(7)
+	n.applyEvents(protocol.EventsResult{State: next, Events: []protocol.Event{{
+		Event: protocol.EventKindEntryDeleted,
+		State: next,
+		Data:  protocol.EventData{EntryId: &id},
+	}}})
+	if len(n.history.rows) != 0 || tags.revealGeneration != n.history.generation ||
+		!tags.reveal[excluded] || tags.reveal[deleted] {
+		t.Fatalf("tag reveal choice was lost in the full refresh: rows=%v, reveal=%v", n.history.rows, tags.reveal)
+	}
+}
+
 func TestNativeTagBatchIncludesUnloadedMatchesAndPreservesExclusions(t *testing.T) {
 	tags := &nativeTagLibrary{selected: "Work", query: "needle", sort: "time"}
 	n := nativeMain{

@@ -140,21 +140,28 @@ func historyRefreshEntries(current protocol.RuntimeState, result protocol.Events
 	return affected, true
 }
 
-// The caller has already checked that the event stream covers the revision.
-func deletionOnlyReflow(previous uint64, events []protocol.Event) bool {
-	deleted := false
+// Deleting one entry can advance the database revision once for the row
+// and again for each tag association. The service emits one deletion event.
+func historyDeletionEntries(previous uint64, events []protocol.Event) map[int64]struct{} {
+	removed := make(map[int64]struct{})
 	for _, event := range events {
+		if event.Event == protocol.EventKindHistoryReset || event.Event == protocol.EventKindPrivacyStateChanged {
+			return nil
+		}
 		if event.State.HistoryRevision <= previous {
 			continue
 		}
 		switch event.Event {
 		case protocol.EventKindEntryDeleted:
-			deleted = true
+			if event.Data.EntryId == nil || *event.Data.EntryId == 0 {
+				return nil
+			}
+			removed[*event.Data.EntryId] = struct{}{}
 		case protocol.EventKindEntryAdded, protocol.EventKindEntryUpdated:
-			return false
+			return nil
 		}
 	}
-	return deleted
+	return removed
 }
 
 func (h *nativeHistory) reflow(state protocol.RuntimeState, affected map[int64]struct{}) {
