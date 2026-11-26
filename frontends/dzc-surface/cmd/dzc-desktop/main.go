@@ -4,13 +4,10 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"embed"
+	_ "embed"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,9 +20,6 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
 )
-
-//go:embed web
-var web embed.FS
 
 //go:embed tray-icon.png
 var trayIcon []byte
@@ -235,29 +229,7 @@ func run() error {
 	if len(os.Args) == 2 && os.Args[1] == "--build-info" {
 		return json.NewEncoder(os.Stdout).Encode(buildinfo.DesktopReport())
 	}
-	assets, err := fs.Sub(web, "web")
-	if err != nil {
-		return err
-	}
-	if len(os.Args) == 2 && os.Args[1] == "--web-asset-hashes" {
-		hashes := map[string]string{}
-		err := fs.WalkDir(assets, ".", func(path string, entry fs.DirEntry, err error) error {
-			if err != nil || entry.IsDir() {
-				return err
-			}
-			data, err := fs.ReadFile(assets, path)
-			if err == nil {
-				hashes[path] = fmt.Sprintf("%x", sha256.Sum256(data))
-			}
-			return err
-		})
-		if err != nil {
-			return err
-		}
-		return json.NewEncoder(os.Stdout).Encode(hashes)
-	}
-	softwareWindow := runtime.GOOS == "windows" && len(os.Args) == 4 && os.Args[3] == "--software-webview"
-	mainWindow := (len(os.Args) == 3 || softwareWindow) && os.Args[1] == "--main-window"
+	mainWindow := len(os.Args) == 3 && os.Args[1] == "--main-window"
 	minimized := len(os.Args) == 2 && os.Args[1] == "--minimized"
 	activation := ""
 	if len(os.Args) == 2 {
@@ -273,8 +245,6 @@ func run() error {
 	if len(os.Args) != 1 && !mainWindow && !minimized && activation == "" {
 		return fmt.Errorf("unexpected desktop arguments")
 	}
-	// The Desktop always loads the packaged local UI even in a developer shell.
-	os.Unsetenv("MYGO_DEV_URL")
 	var updateWindowPipe *os.File
 	if activation == "show" {
 		updateWindowPipe = takeMyGoUpdateWindowPipe()
@@ -295,9 +265,8 @@ func run() error {
 		return client.ErrProtocol
 	}
 	mygo.App.SetName("DezirClip MyGo")
-	useNativeMain := os.Getenv("DZC_MYGO_NATIVE_MAIN") != "0"
 	if !mainWindow {
-		return runResident(actions, minimized, activation, useNativeMain, updateWindowPipe)
+		return runResident(actions, minimized, activation, updateWindowPipe)
 	}
 	if actions.Hello().State.ServiceInstanceId != os.Args[2] {
 		return client.ErrProtocol
@@ -312,14 +281,6 @@ func run() error {
 	preview := &Preview{owner: actions, resident: &shell.resident}
 	systemSettings := &SystemSettings{owner: actions}
 	defer systemSettings.close()
-	if !useNativeMain {
-		mygo.SetFrontend(assets)
-		mygo.Bind(history)
-		mygo.Bind(library)
-		mygo.Bind(systemSettings)
-		mygo.Bind(shell)
-		mygo.Bind(preview)
-	}
 	settings := library.windowPreferences(ctx)
 	follow := settings.FollowMouse != "false"
 	savedSize := settings.savedSize()
@@ -332,21 +293,16 @@ func run() error {
 		installMemoryPolicy(func() bool { return false })
 		options := mygo.WindowOptions{Title: "DezirClip", Width: 352, Height: 380, MinWidth: 250, MinHeight: 300,
 			Hidden: true, SkipTaskbar: true, DisableMaximize: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true}
-		var native *nativeMain
-		if useNativeMain {
-			native = &nativeMain{
-				shell: shell, library: library, actions: history, preview: preview, system: systemSettings,
-				systemDark: mygo.Theme.IsDark(), windows11: shell.PlatformInfo().Windows11,
-			}
-			options.Content = ui.View(native.view)
+		native := &nativeMain{
+			shell: shell, library: library, actions: history, preview: preview, system: systemSettings,
+			systemDark: mygo.Theme.IsDark(), windows11: shell.PlatformInfo().Windows11,
 		}
+		options.Content = ui.View(native.view)
 		win := mygo.NewWindow(options)
-		if native != nil {
-			native.window = win
-			shell.nativePrepare = native.prepare
-			shell.keepMainAlive = func() bool { return native.updater.keepWindow() || native.winV.changing || native.restartingAdmin }
-			win.OnClosed(mygo.Theme.OnUpdated(native.systemAppearanceChanged))
-		}
+		native.window = win
+		shell.nativePrepare = native.prepare
+		shell.keepMainAlive = func() bool { return native.updater.keepWindow() || native.winV.changing || native.restartingAdmin }
+		win.OnClosed(mygo.Theme.OnUpdated(native.systemAppearanceChanged))
 		if err := win.SetIcon(trayIcon); err != nil {
 			fmt.Fprintf(os.Stderr, "Window icon unavailable: %v\n", err)
 		}
@@ -357,29 +313,27 @@ func run() error {
 		dock.configure(settings.EdgeDocking == "true")
 		win.OnBlur(func() {
 			preview.clear()
-			if native != nil {
-				native.menu.Close()
-				concealed := native.clearProtectedRows()
-				if native.editor != nil && native.editor.protected {
-					native.closeEntryEditor()
-					concealed = true
-				}
-				if native.qr != nil && native.qr.request.Reveal {
-					native.closeQR()
-					concealed = true
-				}
-				if native.backup != nil {
-					concealed = native.backup.clearPreview() || concealed
-				}
-				if concealed {
-					win.Invalidate()
-				}
+			native.menu.Close()
+			concealed := native.clearProtectedRows()
+			if native.editor != nil && native.editor.protected {
+				native.closeEntryEditor()
+				concealed = true
+			}
+			if native.qr != nil && native.qr.request.Reveal {
+				native.closeQR()
+				concealed = true
+			}
+			if native.backup != nil {
+				concealed = native.backup.clearPreview() || concealed
+			}
+			if concealed {
+				win.Invalidate()
 			}
 			focusChanged.Emit(win, false)
 			// X11 passive shortcut grabs briefly blur GTK without switching apps.
 			// Only an actual active-window loss cancels the native recording.
 			if !mainWindowFocused(win) {
-				if native != nil && native.shortcut != nil {
+				if native.shortcut != nil {
 					native.cancelShortcut()
 					win.Invalidate()
 				}
@@ -399,17 +353,13 @@ func run() error {
 			shell.idle.cancel()
 			dock.hidden = false
 			dock.shown = time.Now()
-			if native != nil {
-				native.animateBackground()
-			}
+			native.animateBackground()
 			visibilityChanged.Emit(win, true)
 		})
 		win.OnHide(func() {
 			fmt.Fprintln(os.Stdout, "hidden")
-			if native != nil {
-				native.savePrivacyTexts(true)
-				native.stopSession()
-			}
+			native.savePrivacyTexts(true)
+			native.stopSession()
 			preview.clear()
 			visibilityChanged.Emit(win, false)
 			fmt.Fprintln(os.Stdout, "recording-cancel")
@@ -419,22 +369,14 @@ func run() error {
 			if fileDragPending.Load() {
 				return
 			}
-			if native != nil {
-				if native.showEmoji && !native.showSettings {
-					native.importEmojiPaths(e.Paths)
-				} else {
-					native.dropFiles(e.Paths)
-				}
-				return
+			if native.showEmoji && !native.showSettings {
+				native.importEmojiPaths(e.Paths)
+			} else {
+				native.dropFiles(e.Paths)
 			}
-			fmt.Fprintf(os.Stderr, "Native file drop: %d files\n", len(e.Paths))
-			filesDropped.Emit(win, e.Paths)
 		})
-		if native == nil {
-			installNativeFileDrop(win)
-		}
 		win.OnClose(func(event *mygo.CloseEvent) {
-			if native != nil && (native.winV.changing || native.updater.startingInstall) {
+			if native.winV.changing || native.updater.startingInstall {
 				event.PreventDefault()
 				shell.hideMain(win)
 				return
@@ -443,32 +385,16 @@ func run() error {
 			fmt.Fprintln(os.Stdout, "closing")
 		})
 		win.OnClosed(func() {
-			if native != nil {
-				native.savePrivacyTexts(true)
-				native.waitForPrivacyTexts()
-				native.stopSession()
-				native.stopUpdater()
-			}
+			native.savePrivacyTexts(true)
+			native.waitForPrivacyTexts()
+			native.stopSession()
+			native.stopUpdater()
 			shell.idle.cancel()
 			dock.hidden = false
 			dock.configure(false)
 			preview.clear()
 			mygo.App.Quit()
 		})
-		if native == nil {
-			win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
-			win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
-			win.Page().OnDidFinishLoad(func() { diagnostics.record("page-loaded", 0, nil) })
-			win.Page().OnRenderProcessGone(func(reason string) {
-				switch reason {
-				case "browser-exited", "crashed", "unresponsive", "exceeded memory limit", "terminated by API":
-					diagnostics.record("renderer-"+reason, 0, nil)
-				default:
-					diagnostics.record("renderer-gone", 0, nil)
-				}
-			})
-			win.Page().LoadURL("mygo://localhost/")
-		}
 		if follow {
 			placeWindowAtCursor(win)
 		}
@@ -483,16 +409,9 @@ func run() error {
 				}
 			}
 		}
-		// Creating a cold WebView can outlast the Host's idle session timeout.
-		// Sample the external foreground after initialization, immediately before we take focus.
 		history.rememberTarget(ctx)
-		if native == nil {
-			desktopTiming("child WebView creation", windowStarted)
-			desktopTiming("child ready for React", bootStarted)
-		} else {
-			diagnostics.record("native-content-ready", 0, nil)
-			desktopTiming("child native window creation", windowStarted)
-		}
+		diagnostics.record("native-content-ready", 0, nil)
+		desktopTiming("child native window creation", windowStarted)
 		shell.requestShow(win)
 		physicalSize := func() mygo.Size {
 			width, height := win.ContentSize()
@@ -527,7 +446,7 @@ func run() error {
 						continue
 					}
 					reply := shell.resident.accept(command)
-					if native != nil && (reply.UpdateStatus != nil || reply.UpdateChannel != "") {
+					if reply.UpdateStatus != nil || reply.UpdateChannel != "" {
 						win.Update(func() {
 							if reply.UpdateStatus != nil {
 								native.updater.applyInstallStatus(*reply.UpdateStatus)
@@ -599,29 +518,16 @@ func run() error {
 							if position {
 								placeWindowAtCursor(win)
 							}
-							if native != nil {
-								switch command {
-								case "settings":
-									native.openSettings()
-								case "search":
-									native.showSettings, native.showEmoji, native.focusSearch = false, false, true
-									if native.tagLibrary != nil {
-										native.closeTagLibrary()
-									}
+							switch command {
+							case "settings":
+								native.openSettings()
+							case "search":
+								native.showSettings, native.showEmoji, native.focusSearch = false, false, true
+								if native.tagLibrary != nil {
+									native.closeTagLibrary()
 								}
 							}
 							shell.requestShow(win)
-							if native != nil {
-								return
-							}
-							if command == "settings" {
-								shell.settingsPending.Store(true)
-								settingsRequested.Emit(win, true)
-							}
-							if command == "search" {
-								shell.searchPending.Store(true)
-								searchRequested.Emit(win, true)
-							}
 						}
 					})
 				}

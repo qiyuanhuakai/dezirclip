@@ -133,6 +133,8 @@ fn park_selector_window(app: &AppHandle) -> Result<(), String> {
 fn shrink_parked_selector(window: &tauri::WebviewWindow) -> Result<(), String> {
     *LAST_OVERLAY_RECT.lock().map_err(|_| "RegionCaptureUnavailable")? = None;
     OVERLAY_SIZE_UNCONFIRMED.store(false, Ordering::SeqCst);
+    #[cfg(target_os = "linux")]
+    window.set_fullscreen(false).map_err(|error| error.to_string())?;
     window.set_size(tauri::PhysicalSize::new(1_u32, 1_u32)).map_err(|error| error.to_string())
 }
 
@@ -203,7 +205,14 @@ pub async fn present_region_capture(app: AppHandle, window: tauri::WebviewWindow
             let _ = shrink_parked_selector(&window);
             if check_region_generation(generation).is_ok() { clear_region_capture(); }
         };
-        let result = window.show().and_then(|_| window.set_focus())
+        let show = || {
+            // On X11 an always-on-top window can still sit under a dock. The
+            // fullscreen state puts the frozen frame above the taskbar.
+            #[cfg(target_os = "linux")]
+            window.set_fullscreen(true)?;
+            window.show().and_then(|_| window.set_focus())
+        };
+        let result = show()
             .map_err(|error| format!("Failed to show region selector: {error}"))
             .and_then(|_| window.is_visible().map_err(|error| error.to_string()))
             .and_then(|visible| if visible { Ok(()) } else { Err("RegionCaptureNotVisible".into()) });

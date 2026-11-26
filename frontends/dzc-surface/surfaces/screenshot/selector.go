@@ -20,6 +20,7 @@ type Selector struct {
 	record        func(string) bool
 	window        *mygo.Window
 	stopping      bool
+	supported     bool
 	owner         *client.Client
 	session       *selection
 	pendingRegion bool
@@ -53,7 +54,7 @@ func New(owner *client.Client) *Selector {
 		!slices.Contains(caps.Methods, "desktop.screen.finish") {
 		return s
 	}
-	s.prepareWindow()
+	s.supported = true
 	s.Refresh()
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 		s.stopping = true
@@ -99,7 +100,7 @@ func screenPreferences(ctx context.Context, host *client.Client) (protocol.Scree
 }
 
 func (s *Selector) Refresh() error {
-	if s.window == nil || s.stopping {
+	if !s.supported || s.stopping {
 		return errors.New("ScreenshotUnavailable")
 	}
 	pref, err := s.preferences()
@@ -108,9 +109,6 @@ func (s *Selector) Refresh() error {
 	}
 	if !pref.Enabled {
 		s.clear()
-		s.window.Destroy()
-	} else if s.window.IsDestroyed() {
-		s.prepareWindow()
 	}
 	var registrationErrors error
 	for full, key := range map[bool]string{false: pref.Region, true: pref.Full} {
@@ -155,7 +153,7 @@ func (s *Selector) begin(full bool) {
 
 // Capture acknowledges a settings action when its selector is visible or its full frame has been copied.
 func (s *Selector) Capture(full bool, epoch uint64, ready func(error)) {
-	if s.window == nil || s.stopping || s.session != nil {
+	if !s.supported || s.stopping || s.session != nil {
 		ready(errors.New("ScreenshotUnavailable"))
 		return
 	}
@@ -256,6 +254,7 @@ func (s *Selector) start(full bool, epoch *uint64, ready func(error)) {
 				return
 			}
 			shot.host, shot.state, shot.frame, shot.bitmap = host, state, frame, bitmap
+			s.prepareWindow()
 			if !target.place(s.window, frame) {
 				s.clear()
 				return
@@ -429,11 +428,11 @@ func (s *Selector) clear() {
 		shot.host.Close()
 	}
 	shot.bitmap = nil
-	if !s.stopping && shot.host != nil {
-		// Destroy the renderer that saw the frozen frame. A hidden renderer
-		// may retain its last scene and its full-size GPU or software surface.
-		s.window.Destroy()
-		s.prepareWindow()
-		go debug.FreeOSMemory()
+	if window := s.window; window != nil {
+		s.window = nil
+		if !s.stopping {
+			window.Destroy()
+			go debug.FreeOSMemory()
+		}
 	}
 }

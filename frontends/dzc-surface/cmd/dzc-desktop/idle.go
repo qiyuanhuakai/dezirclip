@@ -62,6 +62,7 @@ func (s *DesktopShell) hideMain(w *mygo.Window) {
 	go func() {
 		settings := (&Library{s.dock.history.actions}).windowPreferences(context.Background())
 		if settings.IdleDestroy != "true" {
+			s.scheduleRetainedMainTrim(w, generation, started)
 			return
 		}
 		seconds, err := strconv.Atoi(settings.IdleSeconds)
@@ -75,6 +76,28 @@ func (s *DesktopShell) hideMain(w *mygo.Window) {
 			s.scheduleIdleClose(w, generation, time.Until(started.Add(time.Duration(seconds)*time.Second)))
 		})
 	}()
+}
+
+func (s *DesktopShell) scheduleRetainedMainTrim(w *mygo.Window, generation uint64, hiddenAt time.Time) {
+	if retainedMainTrimDelay == 0 {
+		return
+	}
+	mygo.RunOnMain(func() {
+		if generation != s.idle.generation || w.IsDestroyed() || w.IsVisible() {
+			return
+		}
+		s.idle.timer = time.AfterFunc(time.Until(hiddenAt.Add(retainedMainTrimDelay)), func() {
+			mygo.RunOnMain(func() {
+				if generation != s.idle.generation || w.IsDestroyed() || w.IsVisible() {
+					return
+				}
+				s.idle.timer = nil
+				if s.keepMainAlive == nil || !s.keepMainAlive() {
+					trimRetainedMainWorkingSet()
+				}
+			})
+		})
+	})
 }
 
 func (s *DesktopShell) scheduleIdleClose(w *mygo.Window, generation uint64, delay time.Duration) {

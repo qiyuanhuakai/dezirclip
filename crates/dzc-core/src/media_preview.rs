@@ -16,6 +16,26 @@ fn video(name: &str) -> bool {
     std::path::Path::new(name).extension().and_then(|v| v.to_str())
         .is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "mp4" | "m4v" | "mov" | "avi" | "mkv" | "webm" | "wmv"))
 }
+
+/// Resolve a single ordinary video attachment without inspecting arbitrary
+/// clipboard text or extracting a protected archive to disk.
+pub fn local_video_path(entry: &crate::api::ClipboardEntry) -> Option<std::path::PathBuf> {
+    if !matches!(entry.content_type.as_str(), "file" | "files" | "video")
+        || entry.content.starts_with(resources::FILES_PREFIX)
+    {
+        return None;
+    }
+    let content = entry.content.trim();
+    let paths: Vec<String> = if content.starts_with('[') {
+        serde_json::from_str(content).ok()?
+    } else {
+        content.lines().map(str::to_owned).collect()
+    };
+    let [value] = paths.as_slice() else { return None; };
+    let path = path_from_uri(value).ok()?;
+    let path = std::path::PathBuf::from(path);
+    (path.is_absolute() && video(path.to_str()?)).then_some(path)
+}
 fn thumbnail(name: &str, bytes: &[u8], maximum: u32) -> Option<String> {
     if video(name) {
         let png = VIDEO_FRAME.get()?(bytes, maximum)?;

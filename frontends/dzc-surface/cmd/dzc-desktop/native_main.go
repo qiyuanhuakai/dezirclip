@@ -435,10 +435,19 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 		}
 	}
 	if next.HistoryRevision > current.HistoryRevision {
-		n.resetPreviewSelection()
 		affected, canReflow := historyRefreshEntries(current, events)
+		deletionOnly := canReflow && deletionOnlyReflow(current.HistoryRevision, events.Events)
+		if deletionOnly {
+			n.resetPreviewInteraction()
+		} else {
+			n.resetPreviewSelection()
+		}
 		if canReflow {
+			generation := n.history.generation
 			n.history.reflow(next, affected)
+			if deletionOnly {
+				n.retainTagViewAfterDeletion(generation, affected)
+			}
 		} else {
 			n.history.reset(next, n.history.filter)
 			if n.historyScroll.Y <= 0 {

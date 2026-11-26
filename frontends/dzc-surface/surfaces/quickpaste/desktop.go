@@ -72,7 +72,6 @@ type desktopPresenter struct {
 // this native window and the connection that identifies its process to Rust.
 func NewDesktopPanel(owner *client.Client, placeAtCursor func(*mygo.Window)) *Panel {
 	p := &Panel{local: &desktopPresenter{owner: owner, placeAtCursor: placeAtCursor}, mode: "light", locale: "zh-CN", opacity: 1}
-	p.prepareDesktopWindow()
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 		p.stopping = true
 		if p.local.shortcut != "" {
@@ -87,6 +86,7 @@ func NewDesktopPanel(owner *client.Client, placeAtCursor func(*mygo.Window)) *Pa
 func (p *Panel) prepareDesktopWindow() {
 	p.window = mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip 快速粘贴", Width: 560, Height: 440,
 		Hidden: true, Panel: true, Frameless: true, Transparent: true, DisableResize: true, Content: ui.View(p.view)})
+	window := p.window
 	p.window.OnClose(func(e *mygo.CloseEvent) {
 		if !p.stopping {
 			e.PreventDefault()
@@ -94,9 +94,12 @@ func (p *Panel) prepareDesktopWindow() {
 		}
 	})
 	p.window.OnBlur(func() {
+		if p.window != window {
+			return
+		}
 		const settle = 150 * time.Millisecond
 		if delay := settle - time.Since(p.local.shown); delay > 0 {
-			request, window := p.local.request, p.window
+			request := p.local.request
 			time.AfterFunc(delay, func() {
 				mygo.RunOnMain(func() {
 					if !p.stopping && request == p.local.request && window == p.window && !window.IsFocused() {
@@ -134,7 +137,7 @@ func (p *Panel) SetAppearance(appearance theme.Appearance, kit uikit.Kit) {
 		return
 	}
 	p.applyAppearance(appearance, kit)
-	if !p.window.IsDestroyed() {
+	if p.window != nil && !p.window.IsDestroyed() {
 		p.window.Update(func() {})
 	}
 }
@@ -165,9 +168,6 @@ func (p *Panel) RefreshShortcut() error {
 			p.dismiss("cancel")
 		}
 		p.releaseDesktopDisplay()
-		p.window.Destroy()
-	} else if p.window.IsDestroyed() {
-		p.prepareDesktopWindow()
 	}
 	if hotkey == p.local.shortcut {
 		return nil
@@ -237,7 +237,7 @@ func (p *Panel) openDesktop(request uint64, shortcut string) {
 			return
 		}
 		p.local.opening = false
-		if p.window.IsDestroyed() {
+		if p.window == nil || p.window.IsDestroyed() {
 			p.prepareDesktopWindow()
 		}
 		p.local.unavailable = err != nil
@@ -284,13 +284,14 @@ func (p *Panel) beginDesktopDisplay() (*client.Client, protocol.QuickTicket, err
 }
 
 func (p *Panel) watchDesktopDisplay(host *client.Client, ticket protocol.QuickTicket) {
+	window := p.window
 	p.query(0)
 	displayCtx, stop := context.WithCancel(context.Background())
 	p.displayCancel = stop
 	go func() {
 		events, err := host.DesktopConnection(displayCtx)
 		if err != nil {
-			p.window.Update(func() {
+			window.Update(func() {
 				if p.model.Display == ticket.Token {
 					p.releaseDesktopDisplay()
 				}
@@ -298,12 +299,13 @@ func (p *Panel) watchDesktopDisplay(host *client.Client, ticket protocol.QuickTi
 			return
 		}
 		defer events.Close()
-		p.watchDisplay(displayCtx, events, ticket.State, ticket.Token)
+		p.watchDisplay(displayCtx, events, ticket.State, ticket.Token, window)
 	}()
 }
 
 func (p *Panel) finishDesktopDisplay(id int64, restore bool) {
 	host, ticket, state := p.local.connection, p.local.ticket, p.model.State
+	window := p.window
 	// Keep the panel foreground until Rust validates and restores the originally
 	// captured target. A blur during delivery must not issue a second action.
 	go func() {
@@ -318,7 +320,7 @@ func (p *Panel) finishDesktopDisplay(id int64, restore bool) {
 		if err != nil {
 			log.Printf("Quick paste action failed: %v", err)
 		}
-		p.window.Update(func() {
+		window.Update(func() {
 			if p.model.Display != ticket.Token {
 				return
 			}
@@ -333,7 +335,12 @@ func (p *Panel) releaseDesktopDisplay() {
 	p.local.connection = nil
 	p.local.ticket = protocol.QuickTicket{}
 	p.local.unavailable = false
+	window := p.window
+	p.window = nil
 	p.hideLocal()
+	if window != nil {
+		window.Destroy()
+	}
 	if connection != nil {
 		connection.Close()
 	}

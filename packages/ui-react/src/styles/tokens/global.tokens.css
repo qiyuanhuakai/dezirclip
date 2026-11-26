@@ -161,6 +161,12 @@
   --utility-segment-active-text: #ffffff;
   --utility-toast-border: var(--border-dark);
   --compact-popover-bg: var(--bg-element);
+  --floating-panel-top: var(--surface-shell-rgb);
+  --floating-panel-bottom: var(--floating-panel-top);
+  --floating-panel-bottom-opacity: 1;
+  --floating-panel-radius: 12px;
+  --floating-panel-edge: var(--dc-border-strong);
+  --floating-panel-frame: inset 0 0 0 1px var(--floating-panel-edge);
   --compact-popover-border: var(--border-dark);
   --compact-popover-color: var(--text-primary);
   --compact-popover-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
@@ -204,4 +210,68 @@
   --chip-active-border: var(--accent-color);
   --chip-hover-bg: var(--bg-element);
   --chip-hover-border: var(--border-dark);
+}
+
+:root.theme-mica {
+  --floating-panel-top: 242 245 251;
+  --floating-panel-bottom: 224 231 242;
+  --floating-panel-radius: 8px;
+  --floating-panel-edge: #a0aac080;
+}
+
+:root.theme-mica.dark-mode {
+  --floating-panel-top: 45 52 66;
+  --floating-panel-bottom: 31 36 48;
+  --floating-panel-edge: #7380998c;
+}
+
+:root.theme-acrylic {
+  --floating-panel-top: 252 252 254;
+  --floating-panel-bottom: 234 234 243;
+  --floating-panel-bottom-opacity: .86;
+  --floating-panel-radius: 12px;
+  --floating-panel-edge: #b9b8cca6;
+}
+
+:root.theme-acrylic.dark-mode {
+  --floating-panel-top: 55 55 66;
+  --floating-panel-bottom: 39 39 50;
+  --floating-panel-edge: #a7a6bd6b;
+}
+
+:root.theme-macos {
+  --floating-panel-top: 250 250 250;
+  --floating-panel-radius: 13px;
+  --floating-panel-edge: #d4d4d7b8;
+}
+
+:root.theme-macos.dark-mode {
+  --floating-panel-top: 38 38 40;
+  --floating-panel-edge: #555558c7;
+}
+
+:root.theme-liquid-glass {
+  --floating-panel-top: 255 251 253;
+  --floating-panel-bottom: 237 247 255;
+  --floating-panel-bottom-opacity: .75;
+  --floating-panel-radius: 18px;
+  --floating-panel-edge: #ffffffd9;
+}
+
+:root.theme-liquid-glass.dark-mode {
+  --floating-panel-top: 58 66 84;
+  --floating-panel-bottom: 25 31 45;
+  --floating-panel-edge: #b6c9ed8c;
+}
+
+:root.theme-retro {
+  --floating-panel-top: 238 236 228;
+  --floating-panel-radius: 0px;
+  --floating-panel-edge: #393733;
+  --floating-panel-frame: inset 0 0 0 2px var(--floating-panel-edge), inset -4px -4px 0 var(--floating-panel-edge);
+}
+
+:root.theme-retro.dark-mode {
+  --floating-panel-top: 37 37 36;
+  --floating-panel-edge: #92918b;
 }

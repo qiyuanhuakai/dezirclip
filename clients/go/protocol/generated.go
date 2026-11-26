@@ -138,6 +138,11 @@ type SourceAppIcon struct {
     Src *string `json:"src"`
 }
 
+type LocalVideoSource struct {
+    Path string `json:"path"`
+    State RuntimeState `json:"state"`
+}
+
 type ExternalOpenParams struct {
     ServiceInstanceId string `json:"service_instance_id"`
     ExpectedEpoch uint64 `json:"expected_epoch"`
@@ -432,6 +437,7 @@ const (
     MethodDesktopTagsPage Method = "desktop.tags.page"
     MethodDesktopHistoryGet Method = "desktop.history.get"
     MethodDesktopHistorySourceIcon Method = "desktop.history.source_icon"
+    MethodDesktopHistoryLocalVideo Method = "desktop.history.local_video"
     MethodDesktopSnapshotRead Method = "desktop.snapshot.read"
     MethodDesktopCaptureBegin Method = "desktop.capture.begin"
     MethodDesktopCaptureWrite Method = "desktop.capture.write"

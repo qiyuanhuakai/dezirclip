@@ -28,6 +28,7 @@ export function useTagLibrary() {
     const [metadataError, setMetadataError] = useState(false);
     const [revision, setRevision] = useState(0);
     const [metadataRevision, setMetadataRevision] = useState(0);
+    const [deletions, setDeletions] = useState<ReadonlySet<number>>(() => new Set());
     const mounted = useRef(false);
     const selected = useRef<string | null>(null);
     const selectionEpoch = useRef(0);
@@ -53,6 +54,7 @@ export function useTagLibrary() {
         generation.current += 1;
         reconciling.current = false;
         removedRows.current.clear();
+        setDeletions(new Set());
         publishPage(EMPTY_PAGE);
         setError(false);
         setLoadingMore(false);
@@ -101,6 +103,7 @@ export function useTagLibrary() {
         const alreadyRemoved = [...ids].filter(id => removedRows.current.has(id)).length;
         const total = Math.max(0, current.total - removed);
         for (const id of ids) if (known.has(id)) removedRows.current.add(id);
+        if (removed) setDeletions(new Set(removedRows.current));
         publishPage({ ...current, items, total, has_more: current.has_more && total > items.length,
             next_offset: current.next_offset === null ? null : Math.max(0, current.next_offset - removed) });
         setLoading(false);
@@ -246,7 +249,7 @@ export function useTagLibrary() {
 
     return {
         tags, colors, selectedTag, selectTag, query, setQuery, setIsComposing, sortBy, setSortBy, contentRevision: revision,
-        items: page.items, total: page.total, hasMore: page.has_more,
+        items: page.items, total: page.total, hasMore: page.has_more, deletions,
         loading, loadingMore, metadataLoading, metadataError, error, loadMore, refresh, refreshMetadata, removeItems,
     };
 }

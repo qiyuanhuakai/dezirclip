@@ -190,6 +190,13 @@ pub struct SourceAppIcon {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct LocalVideoSource {
+    pub path: String,
+    pub state: RuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExternalOpenParams {
     pub service_instance_id: String,
     pub expected_epoch: u64,
@@ -599,6 +606,8 @@ pub enum Method {
     DesktopHistoryGet,
     #[serde(rename = "desktop.history.source_icon")]
     DesktopHistorySourceIcon,
+    #[serde(rename = "desktop.history.local_video")]
+    DesktopHistoryLocalVideo,
     #[serde(rename = "desktop.snapshot.read")]
     DesktopSnapshotRead,
     #[serde(rename = "desktop.capture.begin")]

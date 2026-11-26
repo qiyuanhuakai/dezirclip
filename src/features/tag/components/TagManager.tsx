@@ -12,7 +12,7 @@ import { useTagLibrary } from '../hooks/useTagLibrary';
 import { TagConfirmation, TagDialog } from "@deziro/ui-react/components/TagDialog";
 import { TagHistoryRow } from './TagHistoryRow';
 import { useSettingsLayout } from '../../settings/hooks/useSettingsLayout';
-import { emptyTagSelection, MAX_TAG_BATCH_IDS, selectAllTagEntries, tagEntrySelected, tagSelectionCount, toggleTagEntry, type TagBatchSelection } from '../utils/tagBatchSelection';
+import { emptyTagSelection, MAX_TAG_BATCH_IDS, pruneTagSelection, selectAllTagEntries, tagEntrySelected, tagSelectionCount, toggleTagEntry, type TagBatchSelection } from '../utils/tagBatchSelection';
 import { matchesTagName } from '../../../shared/lib/tagQuery';
 import { hideCompactPreviewGlobal } from '../../clipboard/components/ClipboardItem';
 import { clearRichTextSnapshots } from '../../../shared/lib/richTextSnapshot';
@@ -62,9 +62,12 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const [bulkRevealExcluded, setBulkRevealExcluded] = useState(() => new Set<number>());
     const revealAll = privacy.phase === 'ready' && revealedScope === revealScope;
     const selectionContext = JSON.stringify([selectedTag, library.query]);
-    const selectionScope = JSON.stringify([selectedTag, library.query, library.contentRevision, library.total]);
+    const selectionScope = JSON.stringify([selectionContext, library.sortBy, library.contentRevision, privacy.generation]);
+    const confirmationScope = JSON.stringify([selectionScope, library.total]);
     const [entrySelection, setEntrySelection] = useState(() => ({ context: selectionContext, scope: selectionScope, selection: emptyTagSelection() as TagBatchSelection }));
-    const selection = entrySelection.scope === selectionScope ? entrySelection.selection : emptyTagSelection();
+    const selection = entrySelection.scope === selectionScope
+        ? pruneTagSelection(entrySelection.selection, library.deletions)
+        : emptyTagSelection();
     const selectedCount = tagSelectionCount(selection, library.total);
     const allSelected = selection.mode === 'all' && selection.excludedIds.length === 0;
     const [batchFeedback, setBatchFeedback] = useState<{ message: string; error: boolean } | null>(null);
@@ -127,8 +130,10 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
             setBatchFeedback({ message: t('tag_selection_changed'), error: false });
         }
         setEntrySelection({ context: selectionContext, scope: selectionScope, selection: emptyTagSelection() });
-        setDialog(current => current?.kind === 'deleteSelection' && current.scope !== selectionScope && !busy ? null : current);
     }, [selectionScope]);
+    useEffect(() => {
+        setDialog(current => current?.kind === 'deleteSelection' && current.scope !== confirmationScope && !busy ? null : current);
+    }, [confirmationScope, busy]);
     useEffect(() => {
         if (!actionError) return;
         const timer = setTimeout(() => setActionError(false), 4000);
@@ -224,7 +229,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const saveDialog = async () => {
         if (!dialog || busy) return;
         const current = dialog;
-        if (current.kind === 'deleteSelection' && current.scope !== selectionScope) {
+        if (current.kind === 'deleteSelection' && current.scope !== confirmationScope) {
             setDialog(null); clearSelection();
             setBatchFeedback({ message: t('tag_selection_changed'), error: false });
             return;
@@ -310,7 +315,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') { event.preventDefault(); selectAll(); return; }
             if (event.key === 'Escape') { event.preventDefault(); toggleManagement(); manageButton.current?.focus(); return; }
             if (event.key === 'Delete' && selectedTag && selectedCount > 0 && !busy) {
-                event.preventDefault(); openDialog({ kind: 'deleteSelection', tag: selectedTag, selection, count: selectedCount, scope: selectionScope }); return;
+                event.preventDefault(); openDialog({ kind: 'deleteSelection', tag: selectedTag, selection, count: selectedCount, scope: confirmationScope }); return;
             }
         }
         if (target.closest('input, textarea, [role="menu"]')) return;
@@ -464,7 +469,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                 selectDisabled={busy || library.loading || library.error || library.total === 0}
                 deleteDisabled={busy || selectedCount === 0 || !selectedTag}
                 onSelect={selectAll}
-                onDelete={() => { if (selectedTag) openDialog({ kind: 'deleteSelection', tag: selectedTag, selection, count: selectedCount, scope: selectionScope }); }} />}
+                onDelete={() => { if (selectedTag) openDialog({ kind: 'deleteSelection', tag: selectedTag, selection, count: selectedCount, scope: confirmationScope }); }} />}
             <div className="history-list-container tag-manager-results" aria-busy={library.loading}>
                 {library.loading || (library.metadataLoading && library.tags.length === 0) ? <div className="tag-manager-empty" role="status"><LoaderCircle className="tag-manager-spinner" size={22} /></div>
                     : library.items.length ? <div className="virtual-list-wrapper"><Virtuoso ref={list} key={`${selectedTag}:${library.query}:${library.sortBy}`} data={library.items}

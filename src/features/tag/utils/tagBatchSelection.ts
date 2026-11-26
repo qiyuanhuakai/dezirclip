@@ -39,3 +39,9 @@ export function toggleTagEntry(selection: TagBatchSelection, id: number): TagBat
 export function tagSelectionCount(selection: TagBatchSelection, total: number): number {
     return selection.mode === 'selected' ? selection.ids.length : Math.max(0, total - selection.excludedIds.length);
 }
+
+export function pruneTagSelection(selection: TagBatchSelection, deleted: ReadonlySet<number>): TagBatchSelection {
+    return selection.mode === 'selected'
+        ? { mode: 'selected', ids: selection.ids.filter(id => !deleted.has(id)) }
+        : { ...selection, excludedIds: selection.excludedIds.filter(id => !deleted.has(id)) };
+}

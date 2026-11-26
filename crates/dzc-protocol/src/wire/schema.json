@@ -546,6 +546,24 @@
       ],
       "additionalProperties": false
     },
+    "LocalVideoSource": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        }
+      },
+      "required": [
+        "path",
+        "state"
+      ],
+      "additionalProperties": false
+    },
     "ExternalOpenParams": {
       "type": "object",
       "properties": {
@@ -1735,6 +1753,7 @@
         "desktop.tags.page",
         "desktop.history.get",
         "desktop.history.source_icon",
+        "desktop.history.local_video",
         "desktop.snapshot.read",
         "desktop.capture.begin",
         "desktop.capture.write",
@@ -2522,7 +2541,8 @@
               "method": {
                 "enum": [
                   "desktop.history.get",
-                  "desktop.history.source_icon"
+                  "desktop.history.source_icon",
+                  "desktop.history.local_video"
                 ]
               }
             },

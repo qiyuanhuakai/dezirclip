@@ -7,16 +7,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export function rpmBundleConfig(version) {
-  const number = "(0|[1-9][0-9]*)";
-  const match = new RegExp(`^${number}\\.${number}\\.${number}(?:-(alpha|beta|rc)\\.${number})?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$`).exec(version);
+  const number = "(?:0|[1-9][0-9]*)";
+  const match = new RegExp(`^(${number}\\.${number}\\.${number})(?:-((?:alpha|beta|rc)\\.${number}|rc${number}))?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$`).exec(version);
   if (!match || match[0] !== version) throw new Error(`Unsupported RPM release version: ${version}`);
   // Tauri 2.12.3 forwards its SemVer unchanged to RPM, which rejects '-'.
   // Only this bundle process uses a base version and a pre-stable release.
   return {
-    version: `${match[1]}.${match[2]}.${match[3]}`,
+    version: match[1],
     bundle: {
       createUpdaterArtifacts: false,
-      linux: { rpm: { release: match[4] ? `0.${match[4]}.${match[5]}` : "1" } },
+      linux: { rpm: { release: match[2] ? `0.${match[2]}` : "1" } },
     },
   };
 }

@@ -15,5 +15,7 @@ func cursorTarget() (captureTarget, bool) {
 
 func (t captureTarget) place(window *mygo.Window, _ protocol.ScreenImage) bool {
 	window.SetBounds(t.bounds)
+	// A focused fullscreen window is stacked above the X11 dock.
+	window.SetFullScreen(true)
 	return true
 }

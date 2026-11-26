@@ -140,6 +140,23 @@ func historyRefreshEntries(current protocol.RuntimeState, result protocol.Events
 	return affected, true
 }
 
+// The caller has already checked that the event stream covers the revision.
+func deletionOnlyReflow(previous uint64, events []protocol.Event) bool {
+	deleted := false
+	for _, event := range events {
+		if event.State.HistoryRevision <= previous {
+			continue
+		}
+		switch event.Event {
+		case protocol.EventKindEntryDeleted:
+			deleted = true
+		case protocol.EventKindEntryAdded, protocol.EventKindEntryUpdated:
+			return false
+		}
+	}
+	return deleted
+}
+
 func (h *nativeHistory) reflow(state protocol.RuntimeState, affected map[int64]struct{}) {
 	selected := h.selectedID()
 	h.refreshLimit = max(pageSize, h.refreshLimit, len(h.rows))

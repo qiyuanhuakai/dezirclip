@@ -47,8 +47,9 @@ validation; model tests are not compositor or IME evidence.
 Build with the repository's `pnpm run surface:build` entry. It supplies the
 version, source, state, build ID and Rust target triple through `-ldflags`.
 The builder verifies the original module and patches an isolated copy.
-It removes MyGo's automatic updater-cleanup call and sets fixed software-rendering options through
-the WebView2 API when the main window starts with GPU rendering disabled. It also includes the native transparent-window composition fix from [MyGo PR #660](https://github.com/egoist/mygo/pull/660). Clicks on controls in a non-activating Windows flyout preserve keyboard focus in the main window. On X11, software-rendered frames are flushed before GTK presents them.
+The MyGo desktop build uses native Go views and excludes the React WebView bundle.
+The toolkit patch manifest records the startup-cleanup safeguard, focus
+handling for non-activating Windows flyouts, and Cairo frame flushing on X11.
 A temporary modfile selects the verified copy. The helper
 requires the manifest's patch ID at runtime and reports it as `toolkit_patch_id`.
 `--build-info` prints this Go helper's own identity and fixed MyGo identity;

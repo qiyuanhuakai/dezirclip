@@ -2,7 +2,7 @@ import { PreviewText } from "@deziro/ui-react/components/PreviewText";
 import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
 import { attachmentTiles } from "../../../shared/lib/attachmentPreview";
 import { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
-import { emitTo } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
     AppWindow,
@@ -27,6 +27,7 @@ import { usePreviewPreferences } from "../../../shared/hooks/usePreviewPreferenc
 import { savePreviewPreference } from "../../../shared/lib/previewPreferenceClient";
 import { PreviewToolbar, PreviewResizeHandles, type PreviewZoom } from "./PreviewToolbar";
 import { PreviewImage } from "./PreviewImage";
+import { PinnedVideoPreview } from "./PinnedVideoPreview";
 import { translations } from "../../../locales";
 
 type PreviewPayload = PreviewRequest & {
@@ -170,6 +171,27 @@ const CompactPreviewWindow = () => {
         const files = attachmentTiles(payload.htmlContent, payload.preview || payload.content);
         return files.length === 1 ? files[0].src : null;
     }, [payload]);
+    const playable = useMemo(() => {
+        if (!pinned || !payload || payload.protectedContent || payload.allowSensitive
+            || !["file", "files", "video"].includes(payload.contentType)) return false;
+        const files = attachmentTiles(payload.htmlContent, payload.preview || payload.content);
+        return files.length === 1 && /\.(mp4|m4v|mov|webm|mkv|avi|wmv)$/i.test(files[0].name);
+    }, [payload, pinned]);
+    useEffect(() => {
+        if (!pinned) return;
+        const invalidate = (id: number) => {
+            if (lastRequest.current?.id !== id) return;
+            payloadSequence.current += 1;
+            setPreviewRequest(null);
+            setPayload(null);
+            setConcealed(true);
+        };
+        const subscriptions = [
+            listen<number>("clipboard-removed", event => invalidate(event.payload)),
+            listen<{ id: number }>("clipboard-captured", event => invalidate(event.payload.id)),
+        ];
+        return () => subscriptions.forEach(subscription => { void subscription.then(stop => stop(), () => undefined); });
+    }, [pinned]);
     const richPreviewData = useMemo(() => getRichPreviewData(payload), [payload?.contentType, payload?.htmlContent]);
     const richImageFallbackSrc = richPreviewData.imageSrc;
     const effectiveRichImageFallbackSrc = richImageFallbackFailed ? null : richImageFallbackSrc;
@@ -282,6 +304,10 @@ const CompactPreviewWindow = () => {
             void emitTo("main", "compact-preview-layout", { requestId: payload.requestId, width, height }).catch(() => undefined);
         };
         requestResizeRef.current = updateSize;
+        const measureOnMedia = () => updateSize();
+        const root = containerRef.current;
+        root?.addEventListener("load", measureOnMedia, true);
+        root?.addEventListener("error", measureOnMedia, true);
         updateSize();
         const observer = new ResizeObserver(updateSize);
         if (containerRef.current) observer.observe(containerRef.current);
@@ -290,6 +316,8 @@ const CompactPreviewWindow = () => {
         return () => {
             disposed = true;
             requestResizeRef.current = null;
+            root?.removeEventListener("load", measureOnMedia, true);
+            root?.removeEventListener("error", measureOnMedia, true);
             observer.disconnect();
         };
     }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, pinned, presented, singleMediaSource]);
@@ -331,6 +359,13 @@ const CompactPreviewWindow = () => {
 
     const content = useMemo(() => {
         if (!payload) return null;
+        if (playable) {
+            const poster = singleMediaSource ?? undefined;
+            return <PinnedVideoPreview key={`${payload.requestId}:${payload.privacyEpoch}`} request={payload} poster={poster}>
+                <AttachmentPreview fileLabel={translations[payload.language ?? "zh"].type_file}
+                    expanded html={presented ? payload.htmlContent : undefined} names={payload.preview || payload.content} video />
+            </PinnedVideoPreview>;
+        }
         if (singleMediaSource) {
             const bounds = previewBoundsRef.current;
             return <PreviewImage src={singleMediaSource} zoom={pinned ? zoom : "fit"} onZoomChange={setZoom}
@@ -423,7 +458,7 @@ const CompactPreviewWindow = () => {
             );
         }
         return <PreviewText text={payload.content || payload.preview || ""} />;
-    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, richPreviewData.cleanHtml, richPresentation, pinned, zoom, presented, singleMediaSource]);
+    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, richPreviewData.cleanHtml, richPresentation, pinned, playable, zoom, presented, singleMediaSource]);
 
     const request = payload ?? lastRequest.current;
     const language = request?.language ?? "zh";
@@ -449,7 +484,7 @@ const CompactPreviewWindow = () => {
                 ref={containerRef}
                 className={`compact-popover-portal compact-preview-window ${payload?.theme || ""} ${singleMediaSource ? "compact-preview-image" : ""} ${singleMediaSource || payload?.contentType === "video" || (!!effectiveRichImageFallbackSrc && !richPresentation.html) ? "compact-preview-media" : ""} ${payload?.colorMode === "dark" ? "dark-mode" : ""}`}
             >
-                <PreviewToolbar pinned={pinned} pinPending={pinPending} opacity={opacity} image={pinned && !!singleMediaSource}
+                <PreviewToolbar pinned={pinned} pinPending={pinPending} opacity={opacity} image={pinned && !!singleMediaSource && !playable}
                     zoom={zoom} fitZoom={fitZoom} language={language} onOpacityChange={saveOpacity} onZoomChange={setZoom}
                     onClose={close} onPin={() => {
                         if (!payload || pinPending) return;
@@ -478,7 +513,7 @@ const CompactPreviewWindow = () => {
                     </div>
                 </div>}
                 <div ref={dividerRef} className="popover-divider" />
-                <div ref={contentRef} className={`popover-content${pinned && presented && singleMediaSource ? " pinned-image-content" : ""}`} data-privacy-protected={payload?.protectedContent ? "true" : undefined}
+                <div ref={contentRef} className={`popover-content${pinned && presented && (singleMediaSource || playable) ? " pinned-image-content" : ""}`} data-privacy-protected={payload?.protectedContent ? "true" : undefined}
                     onDragStart={event => { if (payload?.protectedContent) event.preventDefault(); }}>
                     {payload ? content : <div className="preview-concealed"><p>{text.privacy_sensitive_hidden}</p>
                         <button type="button" className="btn-secondary" onClick={restore} disabled={privacyState.phase !== "ready"}>{text.privacy_retry}</button></div>}

@@ -3,7 +3,7 @@ module github.com/qiyuanhuakai/dezirclip/packages/ui-native
 go 1.27.3
 
 require (
-	github.com/egoist/mygo v0.6.4
+	github.com/egoist/mygo v0.10.0
 	github.com/go-text/typesetting v0.3.5
 	golang.org/x/net v0.59.0
 	golang.org/x/text v0.43.0

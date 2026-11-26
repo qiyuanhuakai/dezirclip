@@ -17,6 +17,7 @@ type Kit struct {
 	interfaceFont  string
 	monospaceFont  string
 	hotkeyPlatform string
+	floatingTheme  string
 }
 
 // NewKit sets a palette and a catalog of widget styles supplied by the caller.
@@ -24,6 +25,12 @@ type Kit struct {
 // The palette and catalog should remain immutable while the Kit is in use.
 func NewKit(mode string, tokens theme.Tokens, widgets map[string]theme.WidgetStyle) Kit {
 	return Kit{Mode: mode, tokens: &tokens, widgets: widgets}
+}
+
+// WithFloatingTheme sets the built-in material used by independent overlays.
+func (k Kit) WithFloatingTheme(name string) Kit {
+	k.floatingTheme = name
+	return k
 }
 
 // WithInterfaceFont overrides the UI font without changing the catalog or its monospace styles.

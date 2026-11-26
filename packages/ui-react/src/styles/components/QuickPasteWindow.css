@@ -45,20 +45,15 @@ html body.quick-paste #root:has(.quick-paste-window)::before {
   box-sizing: border-box;
 }
 
-.theme-retro .quick-paste-window {
-  --quick-paste-panel-radius: 8px;
-}
-
 .theme-scifi .quick-paste-window {
   --quick-paste-panel-radius: 14px;
 }
 
-.theme-liquid-glass .quick-paste-window {
-  --quick-paste-panel-radius: 16px;
-}
-
-:is(.theme-mica, .theme-acrylic, .theme-liquid-glass):not(.theme-custom) .quick-paste-window {
-  background: rgb(var(--surface-shell-rgb) / var(--quick-paste-opacity));
+:is(.theme-mica, .theme-acrylic, .theme-macos, .theme-liquid-glass, .theme-retro) .quick-paste-window {
+  --quick-paste-panel-radius: var(--floating-panel-radius);
+  background: linear-gradient(180deg, rgb(var(--floating-panel-top) / var(--quick-paste-opacity)),
+      rgb(var(--floating-panel-bottom) / calc(var(--quick-paste-opacity) * var(--floating-panel-bottom-opacity))));
+  box-shadow: var(--floating-panel-frame);
 }
 
 .theme-custom .quick-paste-window {
@@ -132,6 +127,10 @@ html body.quick-paste #root:has(.quick-paste-window)::before {
 .quick-paste-window__item:hover,
 .quick-paste-window__item--active {
   background: var(--dc-accent-soft);
+}
+
+:is(.theme-mica, .theme-acrylic) .quick-paste-window__item--active {
+  box-shadow: inset 3px 0 var(--dc-accent);
 }
 
 .quick-paste-window__item-preview {

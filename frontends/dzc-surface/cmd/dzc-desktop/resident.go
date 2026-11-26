@@ -62,7 +62,7 @@ func refreshMainShortcuts(owner *client.Client, registered map[string]bool, togg
 
 // Parent and child use inherited pipes for window lifecycle, and authenticate
 // separately to Rust.
-func runResident(owner *client.Client, minimized bool, activation string, useNativeMain bool, updateWindowPipe *os.File) error {
+func runResident(owner *client.Client, minimized bool, activation string, updateWindowPipe *os.File) error {
 	diagnostics := newDesktopDiagnostics(owner, "resident")
 	diagnostics.record("start", 0, nil)
 	defer diagnostics.record("run-returned", 0, nil)
@@ -125,7 +125,6 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 		recorder := &shortcutRecording{post: mygo.RunOnMain}
 		panel.SetShortcutRecorder(recorder.offer)
 		selector.SetShortcutRecorder(recorder.offer)
-		gpuDisabled := false
 		stopping := false
 		closing := false
 		migrating := false
@@ -235,7 +234,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 		}
 		configureAutomaticUpdate := func(settings map[string]string) {
 			channel := ""
-			if useNativeMain && settings["app.update_auto_check"] == "true" {
+			if settings["app.update_auto_check"] == "true" {
 				channel = nativeUpdateChannel(buildinfo.Version, settings["app.update_channel"])
 			}
 			if channel == automaticChannel {
@@ -349,14 +348,6 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 				return
 			}
 			child := exec.Command(executable, "--main-window", owner.Hello().State.ServiceInstanceId)
-			if !useNativeMain {
-				if saved := (&Library{owner}).windowPreferences(context.Background()).GpuDisabled; saved != "" {
-					gpuDisabled = saved == "true"
-				}
-				if gpuDisabled {
-					configureSoftwareWebview(child)
-				}
-			}
 			child.Stderr = os.Stderr
 			input, err := child.StdinPipe()
 			if err != nil {
@@ -425,7 +416,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 										reply(fmt.Errorf("update_invalid_endpoint"))
 										break
 									}
-									if request.UpdateNow && (!useNativeMain || !checkingUpdates[channel] && !checkUpdate(channel, false)) {
+									if request.UpdateNow && (!checkingUpdates[channel] && !checkUpdate(channel, false)) {
 										reply(errors.New("update_busy"))
 										break
 									}
@@ -437,7 +428,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 										UpdateCheck: check, UpdateChecking: checkingUpdates[channel], UpdateStatus: updateStatus}
 									_ = json.NewEncoder(input).Encode(response)
 								case "install-update":
-									if !useNativeMain || pasteBusy || closing || relaunch || updateInProgress() {
+									if pasteBusy || closing || relaunch || updateInProgress() {
 										reply(errors.New("update_busy"))
 										break
 									}
@@ -690,20 +681,6 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 									}
 									cancel()
 									reply(err)
-								case "webview-gpu":
-									ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-									err := (&Library{owner}).SetSetting(ctx, "app.disable_webview_gpu", strconv.FormatBool(request.Disabled), request.Epoch)
-									cancel()
-									if err != nil || request.Disabled == gpuDisabled {
-										reply(err)
-										return
-									}
-									gpuDisabled = request.Disabled
-									closing, reopen = true, "settings"
-									reply(nil)
-									if _, err := io.WriteString(input, "rebuild\n"); err != nil {
-										log.Printf("Closing WebView for GPU change: %v", err)
-									}
 								case "tray":
 									wasVisible := tray != nil
 									if err := setTrayVisible(request.Visible); err != nil {
@@ -837,7 +814,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 						return
 					}
 					if changed {
-						log.Print("Desktop Host changed; replacing native and WebView sessions")
+						log.Print("Desktop Host changed; replacing native sessions")
 						relaunchCommand = recoveredActivation(activationCommand)
 						relaunch = true
 						mygo.App.Quit()
@@ -871,7 +848,7 @@ func runResident(owner *client.Client, minimized bool, activation string, useNat
 		}
 		startupSettings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
 		updateLanguage = mainLanguage(startupSettings["app.language"])
-		refreshAppearance := bindResidentAppearance(activationContext, owner, panel, startupSettings, useNativeMain, configureAutomaticUpdate)
+		refreshAppearance := bindResidentAppearance(activationContext, owner, panel, startupSettings, true, configureAutomaticUpdate)
 		refreshSearch(startupSettings)
 		refreshPaste(startupSettings)
 		setTrayVisible = func(visible bool) error {

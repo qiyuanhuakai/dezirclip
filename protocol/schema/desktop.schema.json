@@ -42,6 +42,15 @@
       "properties": { "src": { "type": ["string", "null"], "maxLength": 349600 } },
       "required": ["src"], "additionalProperties": false
     },
+    "LocalVideoSource": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 32768 },
+        "state": { "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/RuntimeState" }
+      },
+      "required": ["path", "state"],
+      "additionalProperties": false
+    },
     "ExternalOpenParams": {
       "type": "object", "properties": {
         "service_instance_id": { "type": "string", "minLength": 1, "maxLength": 64 },

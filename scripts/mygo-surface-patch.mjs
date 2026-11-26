@@ -30,53 +30,23 @@ function treeFiles(directory, prefix = '') {
   });
 }
 
-function windowsPatches(source) {
-  const entry = 'internal/windows/webview2.go';
-  const options = 'internal/windows/webview2_options.go';
-  const start = source(entry, 'f53a2724f24fa48c7bca7c6a0e5f102ef307e592e26a559d67431edbdf8e2919')
-    .replace('var options uintptr\n\tif language != "" {\n\t\toptions = newEnvOptions(language)',
-      `arguments := ""
-	if len(os.Args) == 4 && os.Args[1] == "--main-window" && os.Args[3] == "--software-webview" {
-		arguments = "--disable-gpu --disable-gpu-compositing --disable-software-rasterizer --disable-features=VizDisplayCompositor"
-	}
-	var options uintptr
-	if language != "" || arguments != "" {
-		options = newEnvOptions(language, arguments)`);
-  const getters = source(options, '2c536f8b6ce683e80350091a5fd1568c92aab9e74279e1df45197b40e6927e8b')
-    .replace('language []uint16 //', 'arguments []uint16\n\tlanguage []uint16 //')
-    .replace('func newEnvOptions(language string)', 'func newEnvOptions(language, arguments string)')
-    .replace('str(func(*envOptions) []uint16 { return nil }), // get_AdditionalBrowserArguments',
-      'str(func(o *envOptions) []uint16 { return o.arguments }), // get_AdditionalBrowserArguments')
-    .replace('if language != "" {', 'if arguments != "" {\n\t\to.arguments = utf16z(arguments)\n\t}\n\tif language != "" {');
-  // Backport egoist/mygo#660 for transparent native windows as well as flyouts.
-  const windowFile = 'internal/windows/window.go';
-  const upstream = source(windowFile, '446aa0b7e52a40557f7f6e5f0899cc1c2f4dbe84f354dab911ab642c39d328d1');
-  const marker = 'if o.Flyout != nil {\n\t\t// What the content leaves transparent shows what is behind.';
-  if (upstream.split(marker).length !== 2) throw new Error('Expected the reviewed MyGo native composition condition');
-  const window = upstream.replace(marker, marker.replace('o.Flyout != nil', 'o.Flyout != nil || o.Transparent && o.Surface'))
-    .replace('func (w *window) Show() {', 'func (w *window) Show() {\n\tw.memoryTarget(0)')
-    .replace('func (w *window) ShowInactive() {', 'func (w *window) ShowInactive() {\n\tw.memoryTarget(0)')
-    .replace('func (w *window) Hide() { procShowWindow.Call(w.hwnd, swHide) }', `func (w *window) Hide() { procShowWindow.Call(w.hwnd, swHide); w.memoryTarget(1) }
+function replacePatch(source, before, after) {
+  if (source.split(before).length !== 2) throw new Error('Expected one reviewed MyGo patch site');
+  return source.replace(before, after);
+}
 
-// ICoreWebView2_19 extends _18 with get/put MemoryUsageTargetLevel at slots 119/120.
-// The controller owns its process group; unrelated WebViews are never enumerated.
-func (w *window) memoryTarget(level uintptr) {
-    if w.webview == 0 { return }
-    iid := guid("6921f954-79b0-437f-a997-c85811897c68")
-    core := queryInterface(w.webview, &iid)
-    if core != 0 { comCall(core, 120, level); release(core) }
-}`);
-  // A non-activating flyout must receive pointer events without blurring its parent WebView.
-  const surfaceFile = 'internal/windows/surface.go';
-  const surface = source(surfaceFile, '41dd1c1eacd1a8f6c812725ec2d4eb96f3bf6634dcc2b743a1459c38b1e55c2f')
-    .replace('\t\tprocSetFocus.Call(hwnd)\n\t\tif s.buttons == 0 {',
-      '\t\tif f := s.w.opts.Flyout; f == nil || f.Focusable {\n\t\t\tprocSetFocus.Call(hwnd)\n\t\t}\n\t\tif s.buttons == 0 {');
-  return [[entry, Buffer.from(start)], [options, Buffer.from(getters)], [windowFile, Buffer.from(window)], [surfaceFile, Buffer.from(surface)]];
+function windowsPatches(source) {
+  // Clicks on a non-activating native flyout leave focus with its owner.
+  const file = 'internal/windows/surface.go';
+  const surface = replacePatch(source(file, '6b9cdb85684b730a94081b632ad82d0affab38310aa2da91e2ca0d9b3d14cf95'),
+    '\t\tprocSetFocus.Call(hwnd)\n\t\tif s.buttons == 0 {',
+    '\t\tif f := s.w.opts.Flyout; f == nil || f.Focusable {\n\t\t\tprocSetFocus.Call(hwnd)\n\t\t}\n\t\tif s.buttons == 0 {');
+  return [[file, Buffer.from(surface)]];
 }
 
 function linuxPatches(source) {
   const surfaceFile = 'internal/linux/surface.go';
-  const surface = source(surfaceFile, '9bcaf2a2c49cd61b0b0da873cbc841428bad4102f98423395d8ac0d072095911')
+  const surface = source(surfaceFile, 'c237ca2fa47ae19e19d77b69ad8f5ccdbfa2d3202b9f94e7cef874cc3c244481')
     .replace('cairoPaint                  func(cr ptr)', `cairoPaint                  func(cr ptr)
 	cairoGetGroupTarget        func(cr ptr) ptr
 	cairoSurfaceGetType        func(s ptr) int32
@@ -95,21 +65,6 @@ function linuxPatches(source) {
 	}
 	cairoSurfaceDestroy(img)`);
   return [[surfaceFile, Buffer.from(surface)]];
-}
-
-function localDragPatch(source) {
-  const file = 'ui/input.go';
-  let input = source(file, 'e8cec7096e780d83b34abdddc2ba9e70e0af7ec34f28150b4bfe882bcd36c1aa');
-  const replace = (before, after) => {
-    if (input.split(before).length !== 2) throw new Error('Expected one MyGo local drag input branch');
-    input = input.replace(before, after);
-  };
-  // A virtual list can discard the pressed widget while retaining the local drag.
-  replace('\t\trt.dragMove(x, y)\n\t}\n\tmoved :=',
-    '\t\trt.dragMove(x, y)\n\t} else if d := rt.drag; d != nil && !d.native && !d.canceled {\n\t\td.over = rt.valueTarget(x, y, d.value)\n\t\trt.requestFrame()\n\t}\n\tmoved :=');
-  replace('\tif s := rt.pressed; s != nil && button == rt.pressButton && rt.dragEnd() {\n\t\t// A drag ended, dropping its value: no click.\n\t\trt.pressed = nil\n\t\ts.pressed = false',
-    '\tif button == rt.pressButton && rt.dragEnd() {\n\t\t// A drag ended, dropping its value: no click.\n\t\tif s := rt.pressed; s != nil {\n\t\t\ts.pressed = false\n\t\t}\n\t\trt.pressed = nil');
-  return [file, Buffer.from(input)];
 }
 
 export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
@@ -135,8 +90,7 @@ export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
     if (sha256(bytes) !== digest) throw new Error(`Unreviewed MyGo source: ${path}`);
     return bytes.toString('utf8');
   }
-  const changes = new Map([['app.go', patchedApp], ...windowsPatches(verifiedSource), ...linuxPatches(verifiedSource),
-    localDragPatch(verifiedSource)]);
+  const changes = new Map([['app.go', patchedApp], ...windowsPatches(verifiedSource), ...linuxPatches(verifiedSource)]);
   if (JSON.stringify([...changes.keys()]) !== JSON.stringify(MYGO_TOOLKIT.changed_files)) {
     throw new Error('MyGo patch file list differs from the reviewed toolkit manifest');
   }

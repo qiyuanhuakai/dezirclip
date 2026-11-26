@@ -392,10 +392,10 @@ func (p *Panel) connectDisplay(ctx context.Context, show protocol.SurfaceShow, b
 	case <-ctx.Done():
 		return
 	}
-	p.watchDisplay(ctx, host, state, show.DisplayRequestId)
+	p.watchDisplay(ctx, host, state, show.DisplayRequestId, p.window)
 }
 
-func (p *Panel) watchDisplay(ctx context.Context, host *client.Client, state protocol.RuntimeState, display string) {
+func (p *Panel) watchDisplay(ctx context.Context, host *client.Client, state protocol.RuntimeState, display string, window *mygo.Window) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -410,7 +410,7 @@ func (p *Panel) watchDisplay(ctx context.Context, host *client.Client, state pro
 				return
 			}
 			if err != nil {
-				p.window.Update(func() {
+				window.Update(func() {
 					if p.model.Display == display {
 						p.fail(p.nextID(), "host_unavailable")
 					}
@@ -420,7 +420,7 @@ func (p *Panel) watchDisplay(ctx context.Context, host *client.Client, state pro
 			previous := state
 			nextState := events.State
 			state = nextState
-			p.window.Update(func() {
+			window.Update(func() {
 				if ctx.Err() != nil || p.model.Display != display {
 					return
 				}
@@ -465,6 +465,7 @@ func (p *Panel) query(offset uint32) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	p.queryCancel = cancel
+	window := p.window
 	var connect func(context.Context) (*client.Client, error)
 	if p.local != nil {
 		connect = p.local.owner.DesktopConnection
@@ -493,7 +494,7 @@ func (p *Panel) query(offset uint32) {
 			}
 		}
 		cancelled := ctx.Err() == context.Canceled
-		p.window.Update(func() {
+		window.Update(func() {
 			if !p.model.Current(ticket) || cancelled {
 				return
 			}
@@ -537,8 +538,9 @@ func (p *Panel) scheduleQuery() {
 	}
 	p.revokeView()
 	ticket := p.model.Begin(0)
+	window := p.window
 	p.debounce = time.AfterFunc(remaining, func() {
-		p.window.Update(func() {
+		window.Update(func() {
 			if p.model.Current(ticket) && !p.model.Composing {
 				p.query(0)
 			}

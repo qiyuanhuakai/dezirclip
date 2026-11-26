@@ -546,7 +546,7 @@ impl Host {
                 let hotkey = self.hotkey.lock().map_err(unavailable)?.as_mut().ok_or(WireErrorCode::Unavailable)?.set(&request.hotkey)?;
                 result("PrivacyHotkey", PrivacyHotkey { hotkey })
             }
-            Method::DesktopHistoryPage | Method::DesktopHistoryGet | Method::DesktopHistorySourceIcon | Method::DesktopSnapshotRead => self.desktop(session, request.method, request.params),
+            Method::DesktopHistoryPage | Method::DesktopHistoryGet | Method::DesktopHistorySourceIcon | Method::DesktopHistoryLocalVideo | Method::DesktopSnapshotRead => self.desktop(session, request.method, request.params),
             Method::DesktopAppearanceBackground => {
                 let request: BackgroundParams = params(request.params)?;
                 self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;

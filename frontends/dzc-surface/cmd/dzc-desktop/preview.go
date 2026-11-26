@@ -171,7 +171,7 @@ func (a previewAppearance) panel(c *ui.Context) ui.Element {
 	theme.Inverse.A, theme.InverseText.A = 255, 255
 	theme.Background = background.Alpha(0)
 	c.SetTheme(theme)
-	return ui.Column(c).Fill().Background(background).Radius(max(12, theme.Radius)).Border(1, theme.Border.Alpha(.6)).Padding(10).Gap(6)
+	return a.kit().FloatingPanel(c, background, 10, 6)
 }
 
 func (a previewAppearance) kit() uikit.Kit {

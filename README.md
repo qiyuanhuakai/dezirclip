@@ -2,9 +2,9 @@
 
 Windows 和 Linux X11 上的本地剪贴板工作台：保存、搜索、恢复剪贴板历史，也能通过 `dzc` 把同一份数据接入终端、启动器和 Agent。
 
-本项目派生自 [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard)，保留本地桌面能力，移除 macOS 与云同步等网络功能，并加入 Linux X11 支持、自定义 CSS 主题和 WebView 内存管理。当前迭代重点是内容保真、捕获可靠性和 CLI 生态。
+本项目派生自 [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard)。剪贴板监听、历史存储和隐私授权由本地 Rust 服务负责。Tauri 使用系统 WebView，MyGo Native 使用 Go 绘制桌面界面。两个桌面版本与 `dzc` 可在同一用户环境下访问同一份历史。
 
-桌面发行同时提供 Tauri 和 MyGo Native。Windows x64 / ARM64 提供 NSIS 安装包，Linux x64 / ARM64 提供 AppImage、deb 和 rpm。MyGo 下载文件名含 `MyGo`。应用内更新保持当前桌面版本和安装方式。旧 Flatpak 可在对应历史版本中下载。
+桌面发行同时提供 Tauri 和 MyGo Native。Windows x64 / ARM64 提供 NSIS 安装包，Linux x64 / ARM64 提供 AppImage、deb 和 rpm。MyGo 下载文件名含 `MyGo`。Stable 和 Preview 通道均按当前桌面版本、架构和安装格式获取更新。
 
 [下载发布版本](https://github.com/qiyuanhuakai/dezirclip/releases) · [CLI 文档](./docs/cli.md) · [终端与 MCP 集成](./integrations/README.md) · [Linux 安装指南](./docs/LINUX_INSTALL.md) · [English](#english)
 
@@ -48,8 +48,8 @@ dzc --version
 ## 桌面端能做什么
 
 - 本地 SQLite 历史，支持文本、富文本、图片、文件、代码、URL、标签和置顶。
-- 快速粘贴浮层、多组快捷键、区域截图、OCR 图片搜索、文本转换和备份导入导出。
-- 六套内置主题，可导入导出完整 CSS 主题包；隐藏窗口时降低 WebView 内存占用，可配置空闲销毁与 GPU 行为。
+- 快速粘贴浮层、多组快捷键、区域截图、OCR 图片搜索、文本转换和备份导入导出。固定视频预览后可在小窗播放本地视频文件，支持的编码取决于系统解码器。
+- 六套内置主题为云母、亚克力、平白（FlatWhite）、液态玻璃、科幻和复古。支持导入导出 CSS 主题包。Tauri 提供 WebView 的闲置回收与 GPU 设置，MyGo Native 可按应用设置回收闲置主窗口。
 - 新捕获的文本保留首尾空白和原始换行，预览与搜索单独规范化；X11 优先使用 XFixes，必要时回退到包含图片的轮询。
 - “设置 → 剪贴板设置 → 不记录这些应用”可排除后续来源应用捕获，每行一个完整应用名、可执行文件名或路径，忽略大小写，可省略 `.exe`，离开输入框后生效。已有历史不受影响，无法识别的来源不能可靠排除。
 
@@ -59,7 +59,7 @@ dzc --version
 
 ## 标签与自定义主题
 
-标签管理器使用主页行卡片，支持复杂/简洁模式、悬浮操作和右键菜单；宽窗口显示设置页式侧栏，低于设置页相同的 560px 切换点时，从当前标签名展开带搜索和创建入口的下拉栏，复用各主题的原生菜单样式。标签与内容均虚拟化，滚动自动翻页。标签页始终显示内容，包括敏感条目，不提供隐藏开关。点击“管理”清单图标可多选、跨页全选当前搜索结果并确认批量删除内容，标签本身保留。移除普通标签保留记录，编辑时读取完整正文。隐私保护关闭时可确认删除「密码」「sensitive」标签及其全部内容；重新开启时恢复系统标签，已删内容不会恢复。
+进入标签页时自动选中第一个标签。宽窗口使用侧栏，窄窗口使用带搜索和创建入口的下拉栏。标签与内容滚动时自动加载。“全部可见”在当前标签中按隐私授权显示受保护内容，也可与管理模式同时使用。管理模式支持跨页全选当前搜索结果和确认批量删除。移除普通标签会保留所属记录。
 
 设置的「外观」只提供内置主题选择和文件导入。导入包包含完整 CSS，可定义材质、形状、布局、阴影与控件状态，禁止外部资源。详见[主题指南](./docs/THEMES.md)，Agent 可使用 [dezirclip-theme Skill](./skills/dezirclip-theme/SKILL.md) 编写主题；也可从[森林示例](./skills/dezirclip-theme/assets/forest.theme.json)开始。安装包附带该 Skill，在「设置 → 工具 → Agent Skill → 主题构建」打开目录后，将整个目录复制到 Agent 的 skills 目录，即可用 `$dezirclip-theme` 请求生成完整主题包。
 
@@ -194,13 +194,13 @@ DezirClip 使用 GPL-3.0，源自同样使用 GPL-3.0 的 [jimuzhe/tiez-clipboar
 
 ## English
 
-The tag manager shares the main history rows, with detailed/compact modes, hover actions, context menus and automatic paged scrolling. Below the settings page's shared 560px breakpoint, the wide sidebar becomes a dropdown under the current tag name, with search and tag creation using each theme's native menu style. Tag management always displays sensitive content and has no visibility toggle. The Manage checklist icon enables selection, selecting all matching entries across unloaded pages, and confirmed batch deletion while keeping the tag. Removing ordinary tags keeps their items. With privacy protection off, confirmed deletion can clear system sensitive tags and their contents; enabling protection recreates the tags. Appearance offers built-in themes and imported full CSS packages with external resources blocked. See the [theme guide](./docs/THEMES.md) and [theme authoring Skill](./skills/dezirclip-theme/SKILL.md).
+The tag manager selects the first tag when opened, switches between a sidebar and a searchable dropdown, and loads more results as you scroll. Show All permits revealing protected content within the current tag under the active privacy policy. It can be used alongside batch selection. Appearance includes six built-in themes and supports imported CSS theme packages. See the [theme guide](./docs/THEMES.md) and [theme authoring Skill](./skills/dezirclip-theme/SKILL.md).
 
 Desktop and standalone packages include `skills/dzc-cli/` and `skills/dezirclip-theme/`. Open the theme Skill from Settings → Tools → Agent Skill → Theme authoring, copy that whole folder into your Agent's skills directory, then use `$dezirclip-theme` to request a full theme package. Import the generated file from Settings → Appearance → Import theme.
 
-DezirClip is a local clipboard workspace for Windows and Linux X11, forked from [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard). This fork removes macOS and cloud/network features, adds X11 support, custom CSS themes and WebView memory controls, and provides a shared Rust storage core for the GUI and `dzc` CLI. Full Wayland desktop support remains deferred.
+DezirClip is a local clipboard workspace for Windows and Linux X11, forked from [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard). Tauri runs in the system WebView. MyGo Native renders its desktop UI in Go. Both editions and the `dzc` CLI share the local Rust history service and storage. A pinned preview can play a local video using the system's available codecs. Full Wayland desktop support remains deferred.
 
-Download Tauri or MyGo Native for Windows x64 / ARM64 (NSIS) and Linux x64 / ARM64 (AppImage, deb or rpm) from [Releases](https://github.com/qiyuanhuakai/dezirclip/releases). MyGo packages have `MyGo` in their filenames. Each desktop updates within its own package type. Flatpak downloads are available on historical release pages.
+Download Tauri or MyGo Native for Windows x64 / ARM64 (NSIS) and Linux x64 / ARM64 (AppImage, deb or rpm) from [Releases](https://github.com/qiyuanhuakai/dezirclip/releases). MyGo packages have `MyGo` in their filenames. The Stable and Preview update channels preserve the installed desktop edition, architecture and package format.
 
 Standalone archives are named `dzc-VERSION-{windows,linux}-{x86_64,aarch64}` with `.zip` on Windows or `.tar.gz` on Linux. Each includes the CLI, license, matching `integrations/`, and Agent Skill. Check the accompanying `.sha256` and binary-bound `COMPATIBILITY.json`. Since `v0.1.21-beta.1`, x86_64 and aarch64 Linux standalone builds compile and link natively in AlmaLinux 8 for glibc 2.28+, with actual archives verified in AlmaLinux 8, Ubuntu 22.04 and Debian 12. System D-Bus/GCC runtime libraries are still required. Published `v0.1.20` / `v0.1.20-alpha.3` Linux CLI assets retain their glibc 2.35+ requirement. Alpha.1/alpha.2 retain glibc 2.39+. Keep CLI and adapters on matching versions.
 

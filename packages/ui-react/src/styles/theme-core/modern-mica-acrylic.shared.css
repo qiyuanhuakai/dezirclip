@@ -300,8 +300,8 @@
 }
 
 :is(.theme-mica, .theme-acrylic) .segment-btn.active {
-  background: var(--control-segment-active-bg) !important;
-  color: var(--control-segment-active-text) !important;
+  background: var(--dc-accent-soft) !important;
+  color: var(--dc-text-primary) !important;
   box-shadow: var(--surface-segment-active-shadow) !important;
 }
 
@@ -312,7 +312,8 @@
 }
 
 :is(.theme-mica, .theme-acrylic) .history-item.selected {
-  background: var(--surface-history-selected-bg) !important;
+  background: var(--dc-accent-soft) !important;
+  border-color: color-mix(in srgb, var(--dc-accent) 42%, transparent) !important;
 }
 
 /* Search readability belongs to the shared shell, independently of tag UI. */

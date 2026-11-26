@@ -156,10 +156,11 @@ impl Host {
         if request.service_instance_id != self.snapshot()?.service_instance_id { return Err(WireErrorCode::PrivacyBlocked); }
         let permit = self.history.privacy().authorize_read(api::PrivacyAccessIntent::InteractiveRead,
             if request.reveal { api::SensitiveAccess::ExplicitUserAction } else { api::SensitiveAccess::Denied }, Some(request.expected_epoch), now).map_err(blocked)?;
-        if method == Method::DesktopHistorySourceIcon {
+        if matches!(method, Method::DesktopHistorySourceIcon | Method::DesktopHistoryLocalVideo) {
             if request.reveal || request.thumbnail_dimension.is_some() {
                 return Err(WireErrorCode::InvalidRequest);
             }
+            let before = self.snapshot()?;
             let row = if request.id < 0 {
                 let entries = self.session.lock().map_err(|_| WireErrorCode::Unavailable)?;
                 let entry = entries.iter().find(|entry| entry.id == request.id).ok_or(WireErrorCode::NotFound)?;
@@ -167,6 +168,19 @@ impl Host {
             } else {
                 self.history.get_entry_authorized(request.id, &permit, now).map_err(blocked)?.ok_or(WireErrorCode::NotFound)?
             };
+            if method == Method::DesktopHistoryLocalVideo {
+                let path = dzc_core::media_preview::local_video_path(&row).ok_or(WireErrorCode::NotFound)?;
+                dzc_platform::local_file::open_preview_file(&path).ok_or(WireErrorCode::NotFound)?;
+                self.history.privacy().check_read(&permit, crate::router::now_ms()?).map_err(blocked)?;
+                let state = self.snapshot()?;
+                if state.history_revision != before.history_revision || state.privacy_epoch != before.privacy_epoch {
+                    return Err(WireErrorCode::PrivacyBlocked);
+                }
+                return value("LocalVideoSource", LocalVideoSource {
+                    path: path.into_os_string().into_string().map_err(|_| WireErrorCode::NotFound)?,
+                    state,
+                });
+            }
             let src = match row.source_app_path {
                 Some(path) => dzc_platform::apps::get_source_app_icon(path).map_err(|_| WireErrorCode::Unavailable)?,
                 None => dzc_platform::apps::builtin_source_icon(&row.source_app),

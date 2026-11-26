@@ -73,6 +73,34 @@ func (n *nativeMain) selectInitialTag() bool {
 	return true
 }
 
+// Reflow retires reads even when deletion only shrinks the current tag query.
+func (n *nativeMain) retainTagViewAfterDeletion(previous uint64, removed map[int64]struct{}) {
+	tags := n.tagLibrary
+	if tags == nil {
+		return
+	}
+	for key := range n.protectedRows {
+		if _, deleted := removed[key.id]; deleted {
+			n.forgetProtectedRow(key)
+		}
+	}
+	if tags.reveal != nil && tags.revealGeneration == previous {
+		for key := range tags.reveal {
+			if _, deleted := removed[key.id]; deleted {
+				delete(tags.reveal, key)
+			}
+		}
+		tags.revealGeneration = n.history.generation
+	}
+	batch := &tags.batch
+	if batch.enabled && batch.generation == previous && batch.pending == nil {
+		for id := range removed {
+			delete(batch.selection.ids, id)
+		}
+		batch.generation = n.history.generation
+	}
+}
+
 func (n *nativeMain) closeTagLibrary() {
 	n.tagLibrary = nil
 	n.editQuery(false)

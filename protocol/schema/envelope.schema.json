@@ -65,6 +65,7 @@
         "desktop.tags.page",
         "desktop.history.get",
         "desktop.history.source_icon",
+        "desktop.history.local_video",
         "desktop.snapshot.read",
         "desktop.capture.begin",
         "desktop.capture.write",
@@ -850,7 +851,7 @@
           "if": {
             "properties": {
               "method": {
-                "enum": ["desktop.history.get", "desktop.history.source_icon"]
+                "enum": ["desktop.history.get", "desktop.history.source_icon", "desktop.history.local_video"]
               }
             },
             "required": [

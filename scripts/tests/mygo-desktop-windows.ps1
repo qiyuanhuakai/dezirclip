@@ -1305,9 +1305,11 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         return
     }
     if ($RichPaste) {
-        Click-Control $main (Get-ControlPoint $root 'Search clipboard...' ([Windows.Automation.ControlType]::ComboBox))
-        $search = $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
-            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Search clipboard...'))
+        $searchName = [Windows.Automation.OrCondition]::new(
+            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Search clipboard...'),
+            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, [regex]::Unescape('Search clipboard\u2026')))
+        $search = Wait-Until { $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $searchName) } 'Search input missing'
+        Click-Control $main (Get-ControlPoint $root $search.Current.Name)
         $value = $search.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern)
         $before = $value.Current.Value
         $richRow = @'
@@ -1512,7 +1514,9 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
                 $null = Wait-Until {
                     $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
                         [Windows.Automation.AndCondition]::new(
-                            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Search clipboard...'),
+                            [Windows.Automation.OrCondition]::new(
+                                [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Search clipboard...'),
+                                [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, [regex]::Unescape('Search clipboard\u2026'))),
                             [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::HasKeyboardFocusProperty, $true)))
                 } 'Service recovery did not focus the requested search input'
             }

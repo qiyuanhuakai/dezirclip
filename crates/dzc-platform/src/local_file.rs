@@ -1,8 +1,8 @@
 pub use dzc_core::filesystem::*;
 
 /// Automatic previews must not open remote shares or redirected paths.
-pub(crate) fn read_preview_file(path: &std::path::Path, maximum: usize) -> Option<Vec<u8>> {
-    use std::{path::Component, io::Read};
+pub fn open_preview_file(path: &std::path::Path) -> Option<std::fs::File> {
+    use std::path::Component;
     if !path.is_absolute() || path.components().any(|part| matches!(part, Component::ParentDir)) { return None; }
     #[cfg(target_os = "windows")]
     {
@@ -20,11 +20,16 @@ pub(crate) fn read_preview_file(path: &std::path::Path, maximum: usize) -> Optio
     for ancestor in path.ancestors() {
         if std::fs::symlink_metadata(ancestor).ok()?.file_type().is_symlink() { return None; }
     }
-    let file = crate::local_file::open_regular_nofollow(path).ok()?;
+    crate::local_file::open_regular_nofollow(path).ok()
+}
+
+pub(crate) fn read_preview_file(path: &std::path::Path, maximum: usize) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let file = open_preview_file(path)?;
     let before = file.metadata().ok()?;
-    if before.len() > maximum.min((16 * 1024 * 1024)) as u64 { return None; }
+    if before.len() > maximum.min(16 * 1024 * 1024) as u64 { return None; }
     let mut bytes = Vec::new();
-    (&file).take(maximum.min((16 * 1024 * 1024)) as u64 + 1).read_to_end(&mut bytes).ok()?;
+    (&file).take(maximum.min(16 * 1024 * 1024) as u64 + 1).read_to_end(&mut bytes).ok()?;
     let after = file.metadata().ok()?;
     (bytes.len() as u64 == before.len() && before.len() == after.len() && before.modified().ok()? == after.modified().ok()?).then_some(bytes)
 }

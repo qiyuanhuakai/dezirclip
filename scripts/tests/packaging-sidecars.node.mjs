@@ -279,6 +279,7 @@ test("RPM metadata derives supported preview and stable versions without build m
   for (const [app, version, release] of [
     ["0.2.0-alpha.0", "0.2.0", "0.alpha.0"], ["0.2.0-alpha.10+ci.22", "0.2.0", "0.alpha.10"],
     ["0.2.0-beta.2", "0.2.0", "0.beta.2"], ["0.2.0-rc.1", "0.2.0", "0.rc.1"],
+    ["0.2.0-rc1", "0.2.0", "0.rc1"],
     ["0.2.0", "0.2.0", "1"], ["1.12.300+linux-x64.001", "1.12.300", "1"],
   ]) {
     const override = rpmBundleConfig(app);

@@ -3,7 +3,7 @@ module github.com/qiyuanhuakai/dezirclip/packages/ui-presets
 go 1.27.3
 
 require (
-	github.com/egoist/mygo v0.6.4
+	github.com/egoist/mygo v0.10.0
 	github.com/qiyuanhuakai/dezirclip/packages/ui-native v0.0.0
 	github.com/tdewolff/parse/v2 v2.25.0
 )

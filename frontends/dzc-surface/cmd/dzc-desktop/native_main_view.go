@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -28,13 +29,19 @@ func (n *nativeMain) view(c *ui.Context) {
 	preset := n.preset()
 	kit := n.mainKit()
 	kit.Apply(c)
+	background := c.Theme().Background
 	var surfaceOpacity *int
-	tint := preset.SurfaceTint()
-	if tint != "" {
+	if preset.SurfaceTint() != "" {
 		opacity := n.currentSurfaceOpacity()
 		surfaceOpacity = &opacity
+	}
+	var cornerRadius float32
+	if runtime.GOOS == "linux" && n.themeBase() != "retro" {
+		cornerRadius = float32(preset.Tokens().Radius)
+	}
+	if surfaceOpacity != nil || cornerRadius > 0 {
+		// The renderer clears to this color before painting the clipped shell.
 		palette := *c.Theme()
-		// Paint the shell only once, below the controls.
 		palette.Background = ui.Color{}
 		c.SetTheme(&palette)
 	}
@@ -52,10 +59,12 @@ func (n *nativeMain) view(c *ui.Context) {
 		return ""
 	}
 	shell := ui.Box(c).Fill().Clip()
+	if cornerRadius > 0 {
+		shell.ClipInset(0, 0, 0, 0, cornerRadius)
+	}
 	queryFocused := false
 	shell.Children(func() {
 		hasBackground := n.drawBackground(c, preset.Tokens().Radius)
-		background := c.Theme().Background
 		if surfaceOpacity != nil {
 			if n.windows11 && !hasBackground {
 				background = preset.SystemBackdropBackground(*surfaceOpacity)
@@ -64,7 +73,7 @@ func (n *nativeMain) view(c *ui.Context) {
 			}
 		}
 		main := ui.Column(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).
-			Gap(6).Background(background)
+			Gap(6).Background(background).Radius(cornerRadius)
 		if n.preferences["app.show_app_border"] != "false" {
 			main.Border(1, c.Theme().Border)
 		}

@@ -8,7 +8,7 @@ import (
 // QuickPastePanel keeps the theme's tint legible across the window opacity range.
 func (k Kit) QuickPastePanel(c *ui.Context, background ui.Color) ui.Element {
 	background.A = uint8(0.82*255 + 0.18*float32(background.A) + 0.5)
-	return ui.Column(c).Fill().Padding(12).Gap(8).Radius(k.style("tag").Radius).Background(background)
+	return k.FloatingPanel(c, background, 12, 8)
 }
 
 // QuickPasteSearch draws the panel's query field while leaving text events to the caller.

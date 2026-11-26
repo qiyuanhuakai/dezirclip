@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 
 from release_identities import inspect_machine
+from release_version import rpm_parts
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {
@@ -89,9 +90,11 @@ def linux_bundle(work, stage_dir, out, version, pnpm):
             'resources': {str(path): path.relative_to(stage_dir).as_posix()
                           for path in stage_dir.rglob('*') if path.is_file()},
             'linux': {
-                'deb': {'depends': ['libgtk-3-0t64 | libgtk-3-0', 'libwebkit2gtk-4.1-0',
+                'deb': {'depends': ['libgtk-3-0t64 | libgtk-3-0', 'libgstreamer1.0-0', 'gstreamer1.0-plugins-base',
+                                    'gstreamer1.0-plugins-good',
                                     'libx11-6', 'libxi6', 'libxrandr2', 'libxtst6', 'libdbus-1-3', 'xdg-utils']},
-                'rpm': {'depends': ['gtk3', 'webkit2gtk4.1', 'libX11', 'libXi', 'libXrandr',
+                'rpm': {'depends': ['gtk3', 'gstreamer1', 'gstreamer1-plugins-base', 'gstreamer1-plugins-good',
+                                    'libX11', 'libXi', 'libXrandr',
                                     'libXtst', 'dbus-libs', 'xdg-utils']},
             },
         },
@@ -101,8 +104,8 @@ def linux_bundle(work, stage_dir, out, version, pnpm):
            'CARGO_TARGET_DIR': str(cargo_target), 'APPIMAGE_EXTRACT_AND_RUN': '1'}
     command = [pnpm, 'exec', 'tauri', 'bundle', '--ci', '--no-binary-patching', '--bundles']
     run([*command, 'deb,appimage'], cwd=ROOT, env=env)
-    base, _, prerelease = version.split('+', 1)[0].partition('-')
-    override = {'version': base, 'bundle': {'linux': {'rpm': {'release': '0.' + prerelease if prerelease else '1'}}}}
+    base, rpm_release = rpm_parts(version)
+    override = {'version': base, 'bundle': {'linux': {'rpm': {'release': rpm_release}}}}
     run([*command, 'rpm', '--config', json.dumps(override)], cwd=ROOT, env=env)
     for directory, suffix in (('deb', '.deb'), ('appimage', '.AppImage'), ('rpm', '.rpm')):
         files = list((binary_dir / 'bundle' / directory).glob('*' + suffix))

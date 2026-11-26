@@ -37,6 +37,7 @@ func decode[T any](data []byte) map[string]map[string]T {
 }
 
 type Preset struct {
+	name    string
 	mode    string
 	colors  palette
 	widgets map[string]theme.WidgetStyle
@@ -50,12 +51,12 @@ func Select(name, mode string) Preset {
 	if palettes[name] == nil {
 		name = "mica"
 	}
-	return Preset{mode: mode, colors: palettes[name][mode], widgets: widgets[name][mode]}
+	return Preset{name: name, mode: mode, colors: palettes[name][mode], widgets: widgets[name][mode]}
 }
 
 // Kit applies this catalog to the independent native components.
 func (p Preset) Kit() uikit.Kit {
-	return uikit.NewKit(p.mode, p.colors.Tokens, p.widgets)
+	return uikit.NewKit(p.mode, p.colors.Tokens, p.widgets).WithFloatingTheme(p.name)
 }
 
 // Tokens returns the semantic palette for associated native windows.

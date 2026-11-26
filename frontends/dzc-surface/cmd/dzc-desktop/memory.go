@@ -2,8 +2,8 @@ package main
 
 import "github.com/egoist/mygo"
 
-// Visibility includes pinned previews and native panels. A resident with an
-// active child WebView must not enter its background policy prematurely.
+// Visibility includes pinned previews, native panels and the main window in
+// the separate desktop process.
 func installMemoryPolicy(extraVisible func() bool) func() {
 	background := false
 	refresh := func() {

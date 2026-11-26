@@ -31,6 +31,7 @@ type pinnedPreview struct {
 	sized     bool
 	imageView uikit.PreviewImage
 	opacity   previewOpacityControl
+	video     pinnedVideo
 }
 
 // Accessed only on the native event thread.
@@ -83,6 +84,7 @@ func openPinnedPreview(owner *client.Client, ticket *pinPreviewRequest, closed f
 }
 
 func (p *pinnedPreview) conceal() {
+	p.video.close()
 	if p.cancel != nil {
 		p.cancel()
 		p.cancel = nil
@@ -102,13 +104,16 @@ func (p *pinnedPreview) view(c *ui.Context) {
 		var bitmap *ui.Bitmap
 		if p.body != nil {
 			bitmap = p.body.mediaBitmap()
-			if bitmap != nil {
+			if bitmap != nil && p.video.player == nil {
 				options.Image = &p.imageView
 			}
 		}
 		p.opacity.drawToolbar(c, a, options)
 		if p.body != nil {
 			p.body.metadata(c, a.Language)
+			if p.drawVideo(c, a, kit) {
+				return
+			}
 			if bitmap != nil {
 				ui.Box(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
 					p.imageView.Draw(c, bitmap, a.ImageZoom)

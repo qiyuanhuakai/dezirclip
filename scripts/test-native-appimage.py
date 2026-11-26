@@ -428,7 +428,7 @@ def outside():
 
 if INSIDE:
     require(len(sys.argv) == 3 and sys.argv[1] in {'old', 'new', 'new-read-only'}, 'Unknown inside scenario.')
-    require(re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:alpha|beta|rc)\.(?:0|[1-9][0-9]*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?', sys.argv[2]),
+    require(re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:(?:alpha|beta|rc)\.|rc)(?:0|[1-9][0-9]*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?', sys.argv[2]),
             'Inside candidate version must match the explicit release version contract.')
     inside(sys.argv[1], sys.argv[2])
 else:

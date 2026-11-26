@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/MoeForge/moego v0.1.0-alpha.4
 	github.com/ebitengine/purego v0.11.1
-	github.com/egoist/mygo v0.6.4
+	github.com/egoist/mygo v0.10.0
 	github.com/qiyuanhuakai/dezirclip/clients/go v0.0.0
 	github.com/qiyuanhuakai/dezirclip/packages/ui-native v0.0.0
 	github.com/qiyuanhuakai/dezirclip/packages/ui-presets v0.0.0

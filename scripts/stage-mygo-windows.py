@@ -63,13 +63,6 @@ def stage(root, output, revision, version):
                     "source_revision":revision, "source_state":"verified_checkout", "build_id":f"{version}@{revision}"}
         if any(info.get(key) != value for key, value in expected.items()):
             raise RuntimeError(f"Unexpected {role} build identity")
-    web_root = root / "dist/mygo-web"
-    expected_assets = {
-        path.relative_to(web_root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in web_root.rglob("*") if path.is_file()
-    }
-    if "index.html" not in expected_assets or report([desktop, "--web-asset-hashes"]) != expected_assets:
-        raise RuntimeError("Packaged MyGo WebView assets differ from the shared React production build")
     with tempfile.TemporaryDirectory(prefix="dzc-mygo-package-") as temp:
         env = {**os.environ, "DEZIRCLIP_DB_PATH":str(Path(temp) / "clipboard.db")}
         started = report([cli, "service", "start", "--no-capture", "--json"], env)
@@ -101,4 +94,4 @@ if __name__ == "__main__":
     stage(root, args.output.resolve(), args.revision, version)
     subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-STA", "-File",
                     str(root / "scripts/tests/mygo-desktop-windows.ps1"),
-                    "-Desktop", str(args.output.resolve() / "dzc-desktop.exe")], check=True, timeout=240)
+                    "-Desktop", str(args.output.resolve() / "dzc-desktop.exe"), "-NativeMain"], check=True, timeout=240)

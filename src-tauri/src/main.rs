@@ -170,7 +170,7 @@ fn main() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}));
     }
 
-    let app = builder
+    let app = app::preview_video::register(builder)
         .setup(|app| {
             setup::init(app)?;
             Ok(())
@@ -201,6 +201,8 @@ fn main() {
             app::commands::toggle_privacy_session,
             app::commands::set_privacy_session_hotkey,
             app::commands::get_privacy_entry,
+            app::preview_video::open_pinned_video,
+            app::preview_video::close_pinned_video,
             app::commands::get_history_resource_preview,
             app::commands::get_clipboard_history,
             app::commands::get_captured_entry_summary,
@@ -349,6 +351,10 @@ fn main() {
             infrastructure::linux_api::apps::get_associated_apps
         ])
         .on_window_event(|window, event| {
+            use tauri::Manager;
+            if matches!(event, tauri::WindowEvent::Destroyed) && window.label().starts_with("pinned-preview-") {
+                app::preview_video::close_window(window.app_handle(), window.label());
+            }
             setup::handle_window_event(window, event);
         })
         .build(tauri::generate_context!());

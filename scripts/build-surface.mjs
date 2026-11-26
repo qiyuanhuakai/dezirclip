@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MYGO_PATCH_ID, MYGO_TOOLKIT, prepareMyGoPatch } from './mygo-surface-patch.mjs';
 
@@ -14,11 +14,6 @@ const targets = {
   'aarch64-unknown-linux-gnu': { GOOS: 'linux', GOARCH: 'arm64' },
 };
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-
-function webFiles(directory) {
-  return readdirSync(directory, { recursive: true, withFileTypes: true })
-    .filter(entry => entry.isFile()).map(entry => join(entry.parentPath, entry.name)).sort();
-}
 
 export function verifySurfaceIdentity(info, expected, component = 'surface') {
   for (const field of ['component_version', 'source_revision', 'source_state', 'build_id', 'target', 'toolkit_patch_id']) {
@@ -80,8 +75,7 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
   const fingerprint = () => {
     const paths = run('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--',
       'frontends/dzc-surface', 'clients/go', 'packages/ui-native', 'packages/ui-presets', 'design', 'package.json', 'Cargo.toml', 'Cargo.lock', 'src-tauri/tauri.conf.json',
-      ...(component === 'mygo-desktop' ? ['src', 'public', 'packages/ui-react', 'index.html', 'vite.config.ts', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.json',
-        'src-tauri/icons/icon.ico', 'scripts/build-windows-icon.py', 'scripts/generate-mygo-main-messages.mjs'] : []),
+      ...(component === 'mygo-desktop' ? ['src/locales',        'src-tauri/icons/icon.ico', 'scripts/build-windows-icon.py', 'scripts/generate-mygo-main-messages.mjs'] : []),
       'scripts/set-release-version.mjs', 'scripts/updater-release.mjs', 'scripts/build-surface.mjs', 'scripts/mygo-surface-patch.mjs', 'scripts/generate-surface-tokens.mjs'])
       .split('\0').filter(Boolean).sort();
     return paths.map(path => ({ path, sha256: sha256(readFileSync(join(root, path))) }));
@@ -109,31 +103,7 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
     try { return run(go, goArgs, { cwd: moduleRoot, env: goEnv, stdio: 'inherit' }); }
     finally { rmSync(resource); }
   };
-  let webAssets;
-  if (component === 'mygo-desktop') {
-    const staging = mkdtempSync(join(outDir, 'react-build-'));
-    try {
-      const output = join(staging, 'web');
-      run(process.execPath, [join(root, 'node_modules/vite/bin/vite.js'), 'build', '--mode', 'mygo', '--outDir', output], { stdio: 'inherit' });
-      const embedRoot = join(moduleRoot, 'cmd/dzc-desktop/web');
-      const replacements = Object.fromEntries(webFiles(embedRoot).map(file => [file, '']));
-      webAssets = {};
-      for (const file of webFiles(output)) {
-        const path = relative(output, file);
-        replacements[join(embedRoot, path)] = file;
-        webAssets[path.replaceAll('\\', '/')] = sha256(readFileSync(file));
-      }
-      if (!webAssets['index.html']) throw new Error('Missing React entry page');
-      const overlay = join(staging, 'overlay.json');
-      writeFileSync(overlay, JSON.stringify({ Replace: replacements }));
-      goArgs.splice(1, 0, `-overlay=${overlay}`);
-      compile();
-    } finally {
-      if (dirname(resolve(staging)) === resolve(outDir)) rmSync(staging, { recursive: true, force: true });
-    }
-  } else {
-    compile();
-  }
+  compile();
   patch.verifyUnchanged();
   if (JSON.stringify(fingerprint()) !== JSON.stringify(inputs) || sourceStatus() !== initialStatus
     || run('git', ['rev-parse', 'HEAD']).trim() !== revision) throw new Error('Surface inputs changed while building; unpublished output retained for diagnosis');
@@ -141,17 +111,13 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
   if (target === host) {
     buildInfo = JSON.parse(run(temporary, ['--build-info'], { timeout: 5000 }));
     verifySurfaceIdentity(buildInfo, expected, component);
-    if (webAssets) {
-      const embedded = JSON.parse(run(temporary, ['--web-asset-hashes'], { timeout: 5000 }));
-      if (Object.keys(embedded).length !== Object.keys(webAssets).length ||
-        Object.entries(webAssets).some(([path, hash]) => embedded[path] !== hash)) throw new Error('Embedded React resources differ');
-    }
+
   }
   publishBinary(temporary, executable);
   const proof = { schema_version: 1, kind: component + '-build', created_at: new Date().toISOString(),
     executable, sha256: sha256(readFileSync(executable)), expected, build_info: buildInfo,
     identity_verification: buildInfo ? 'executed_native_build_info' : 'cross_target_not_executed',
-    toolchain: goVersion, command: [go, ...goArgs], inputs, toolkit_patch: patch.proof, web_assets: webAssets };
+    toolchain: goVersion, command: [go, ...goArgs], inputs, toolkit_patch: patch.proof };
   writeFileSync(executable + '.proof.json', JSON.stringify(proof, null, 2) + '\n');
   console.log(`Built ${binaryName}: ${executable}`);
   return proof;

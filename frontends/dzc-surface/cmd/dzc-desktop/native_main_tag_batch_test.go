@@ -9,6 +9,33 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
 
+func TestNativeTagDeletionKeepsBulkRevealAndSelection(t *testing.T) {
+	removed, retained := nativeCardKey{id: 7}, nativeCardKey{id: 9}
+	state := protocol.RuntimeState{ServiceInstanceId: "host-a", PrivacyEpoch: 4, HistoryRevision: 6}
+	tags := &nativeTagLibrary{selected: "Work", sort: "time"}
+	n := nativeMain{tagLibrary: tags}
+	n.history.reset(state, n.historyFilter())
+	tags.revealGeneration = n.history.generation
+	tags.reveal = map[nativeCardKey]bool{removed: true, retained: true}
+	tags.batch = nativeTagBatch{enabled: true, generation: n.history.generation,
+		selection: nativeTagSelection{ids: map[int64]struct{}{7: {}, 9: {}}}}
+	n.history.rows = []protocol.DesktopEntry{{Id: 7}, {Id: 9}}
+	next := state
+	next.HistoryRevision++
+	next.EventSequence++
+	id := int64(7)
+	n.applyEvents(protocol.EventsResult{State: next, Events: []protocol.Event{{
+		Event: protocol.EventKindEntryDeleted,
+		State: next,
+		Data:  protocol.EventData{EntryId: &id},
+	}}})
+	if len(n.history.rows) != 1 || n.history.rows[0].Id != 9 ||
+		tags.revealGeneration != n.history.generation || !tags.reveal[retained] || tags.reveal[removed] ||
+		tags.batch.generation != n.history.generation || !tags.batch.selection.includes(9) || tags.batch.selection.includes(7) {
+		t.Fatalf("deletion reset live tag state: rows=%v, reveal=%v, batch=%+v", n.history.rows, tags.reveal, tags.batch)
+	}
+}
+
 func TestNativeTagBatchIncludesUnloadedMatchesAndPreservesExclusions(t *testing.T) {
 	tags := &nativeTagLibrary{selected: "Work", query: "needle", sort: "time"}
 	n := nativeMain{

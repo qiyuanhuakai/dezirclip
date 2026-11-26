@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, mkdtempSync, rmSync, lstatSync, realpathSy
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { rpmBundleConfig } from './bundle-rpm.mjs';
 
 export const repository = 'qiyuanhuakai/dezirclip';
 export const channelTag = 'updater-channels';
@@ -358,10 +359,8 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
 
 function verifiedReleaseAssets(release, version, cutoff, dual = false) {
   const parsed = parseVersion(version), value = parsed.value;
-  if (parsed.pre.length && !/^(alpha|beta|rc)\.(0|[1-9]\d*)$/.test(parsed.pre.join('.'))) {
-    throw new Error('Unsupported RPM release version');
-  }
-  const rpmVersion = parsed.numbers.join('.'), rpmRelease = parsed.pre.length ? `0.${parsed.pre.join('.')}` : '1';
+  const rpm = rpmBundleConfig(value);
+  const rpmVersion = rpm.version, rpmRelease = rpm.bundle.linux.rpm.release;
   const updater = Object.values(expectedPlatforms).map(suffix => `DezirClip_${value}_${suffix}`);
   const cli = Object.keys(expectedPlatforms).map(platform => `dzc-${value}-${platform}.${platform.startsWith('windows-') ? 'zip' : 'tar.gz'}`);
   const deb = ['amd64', 'arm64'].map(arch => `DezirClip_${value}_${arch}.deb`);
