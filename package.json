@@ -29,7 +29,7 @@
     "build:portable": "tauri build --no-bundle --features portable && pnpm run tauri:prepare-sidecars --portable --release --phase portable && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable.ps1"
   },
   "dependencies": {
-    "@deziro/ui-react": "https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.3.1/deziro-ui-react-0.3.1.tgz",
+    "@deziro/ui-react": "https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.3.2/deziro-ui-react-0.3.2.tgz",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
