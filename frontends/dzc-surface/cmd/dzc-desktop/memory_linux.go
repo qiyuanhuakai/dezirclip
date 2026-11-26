@@ -1,7 +1,7 @@
 package main
 
-const retainedMainTrimDelay = 0
+const hiddenWorkingSetTrimDelay = 0
 
-func trimRetainedMainWorkingSet() {}
+func trimHiddenWorkingSet() {}
 
 func setProcessMemoryBackground(bool) {}

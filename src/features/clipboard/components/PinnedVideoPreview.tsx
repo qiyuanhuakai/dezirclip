@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { VideoPlayer } from "@deziro/ui-react/components/VideoPlayer";
 import { beginPrivacyAccess } from "../../../shared/lib/privacySession";
 import type { PreviewRequest } from "./compactPreviewProtocol";
 
@@ -10,7 +11,6 @@ export function PinnedVideoPreview({ request, poster, children }: {
     poster?: string;
     children: ReactNode;
 }) {
-    const video = useRef<HTMLVideoElement>(null);
     const opened = useRef<{ token?: string } | null>(null);
     const [token, setToken] = useState<string>();
     const [loading, setLoading] = useState(false);
@@ -21,16 +21,6 @@ export function PinnedVideoPreview({ request, poster, children }: {
         opened.current = null;
         if (current?.token) release(current.token);
     }, []);
-    useEffect(() => {
-        const element = video.current;
-        return () => {
-            element?.pause();
-            if (element) {
-                element.removeAttribute("src");
-                element.load();
-            }
-        };
-    }, [token]);
     const play = () => {
         const access = beginPrivacyAccess("list");
         if (!access || access.epoch !== request.privacyEpoch) {
@@ -63,24 +53,20 @@ export function PinnedVideoPreview({ request, poster, children }: {
             }
         });
     };
-    const playLabel = english ? "Play video" : "播放视频";
-    return <div className="pinned-video-preview">
-        {token ? <video ref={video} src={convertFileSrc(token, "dzcvideo")} poster={poster}
-            controls controlsList="nodownload noremoteplayback" disablePictureInPicture
-            autoPlay playsInline preload="metadata" aria-label={playLabel}
-            onError={() => {
-                release(token);
-                opened.current = null;
-                setToken(undefined);
-                setLoading(false);
-                setFailure(true);
-            }} /> : <>
-            <button type="button" className="btn-secondary" onClick={play} disabled={loading}>{playLabel}</button>
-            {failure && <div role="status" className="preview-action-status">
-                {english ? "Unable to play this video. Check that the file still exists and the system supports its format."
-                    : "无法播放此视频。请检查文件是否仍在原路径，以及系统是否支持该格式。"}
-            </div>}
-            {children}
-        </>}
-    </div>;
+    return <VideoPlayer key={token ?? "cover"} source={token && convertFileSrc(token, "dzcvideo")}
+        poster={poster} loading={loading} onOpen={play}
+        labels={english
+            ? { play: "Play video", pause: "Pause", progress: "Playback position", mute: "Mute", unmute: "Unmute", volume: "Volume", loop: "Loop" }
+            : { play: "播放视频", pause: "暂停", progress: "播放进度", mute: "静音", unmute: "取消静音", volume: "音量", loop: "循环" }}
+        status={failure ? (english
+            ? "Unable to play this video. Check that the file still exists and the system supports its format."
+            : "无法播放此视频。请检查文件是否仍在原路径，以及系统是否支持该格式。") : undefined}
+        onError={() => {
+            if (!token || opened.current?.token !== token) return;
+            release(token);
+            opened.current = null;
+            setToken(undefined);
+            setLoading(false);
+            setFailure(true);
+        }}>{children}</VideoPlayer>;
 }

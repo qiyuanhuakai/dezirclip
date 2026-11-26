@@ -125,12 +125,18 @@ func TestNativeTagEntryDeleteRequiresConfirmation(t *testing.T) {
 	n.history.rows = []protocol.DesktopEntry{{Id: 9, ContentType: "text", Preview: "Tagged fixture", Tags: []string{"Work"}}}
 	n.history.total = 1
 	n.cardTagColors = map[string]string{}
+	revealed := nativeCardKey{id: 9}
+	tags.revealGeneration = n.history.generation
+	tags.reveal = map[nativeCardKey]bool{revealed: true}
 
 	view := ui.NewTester(n.view, 740, 400)
 	view.Key(0, ui.KeyDown)
 	view.Key(0, ui.KeyDelete)
 	if tags.entryDelete == nil || tags.entryDelete.row.Id != 9 || n.mutating {
 		t.Fatal("Delete did not request confirmation for the selected row")
+	}
+	if !tags.reveal[revealed] {
+		t.Fatal("Opening the confirmation turned off Reveal All")
 	}
 	view.Frame()
 	if !view.HasText("Are you sure you want to delete this item?") ||
@@ -139,6 +145,9 @@ func TestNativeTagEntryDeleteRequiresConfirmation(t *testing.T) {
 	}
 	if err := view.Click(n.text("common_cancel")); err != nil || tags.entryDelete != nil || n.mutating {
 		t.Fatalf("Cancel did not dismiss the delete request without mutating history: %v", err)
+	}
+	if !tags.reveal[revealed] {
+		t.Fatal("Cancelling the confirmation turned off Reveal All")
 	}
 
 	row := n.history.rows[0]

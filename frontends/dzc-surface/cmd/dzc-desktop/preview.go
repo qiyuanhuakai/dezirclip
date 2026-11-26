@@ -15,9 +15,9 @@ import (
 	"github.com/egoist/mygo/ui/richtext"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
-	surfaceTheme "github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
+	surfaceTheme "github.com/qiyuanhuakai/deziro-ui/packages/ui-native/theme"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/uikit"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-presets"
 )
 
 // The WebView supplies only a row ID. The preview reads its own privacy-bound

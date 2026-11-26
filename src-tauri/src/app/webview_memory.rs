@@ -83,9 +83,12 @@ fn apply_memory_target(
     target: WebviewMemoryTarget,
     reason: &'static str,
 ) {
-    use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW,
-        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+    use webview2_com::{
+        Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2_19, ICoreWebView2_3, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW,
+            COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+        },
+        TrySuspendCompletedHandler,
     };
     use windows::core::Interface;
 
@@ -93,6 +96,41 @@ fn apply_memory_target(
     let label_for_err = label.clone();
     if let Err(err) = window.with_webview(move |webview| {
         let controller = webview.controller();
+        // The main window explicitly resumes before its first-paint handshake.
+        // Parked auxiliary windows can receive preparation events while hidden.
+        if label == "main" {
+            let result = unsafe {
+                controller.CoreWebView2()
+                    .and_then(|core| core.cast::<ICoreWebView2_3>())
+                    .and_then(|core| match target {
+                        WebviewMemoryTarget::Low => {
+                            controller.SetIsVisible(false)?;
+                            let completed = TrySuspendCompletedHandler::create(Box::new(
+                                move |result, suspended| {
+                                    if let Err(err) = result {
+                                        crate::warn!("[webview-memory] Failed to suspend main ({reason}): {err:?}");
+                                    } else {
+                                        crate::info!("[webview-memory] Main suspension requested ({reason}), accepted={suspended}");
+                                    }
+                                    Ok(())
+                                },
+                            ));
+                            core.TrySuspend(&completed)
+                        }
+                        WebviewMemoryTarget::Normal => {
+                            core.Resume()?;
+                            controller.SetIsVisible(true)
+                        }
+                    })
+            };
+            if let Err(err) = result {
+                crate::warn!("[webview-memory] Failed to change main suspension state ({reason}): {err:?}");
+                if target == WebviewMemoryTarget::Normal {
+                    let _ = unsafe { controller.SetIsVisible(true) };
+                }
+            }
+            return;
+        }
         if let Err(err) = unsafe { controller.SetIsVisible(target == WebviewMemoryTarget::Normal) } {
             crate::warn!("[webview-memory] Failed to update {label} controller visibility ({reason}): {err:?}");
         }

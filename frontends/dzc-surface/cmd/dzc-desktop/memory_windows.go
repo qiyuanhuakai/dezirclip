@@ -8,9 +8,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Let Windows age idle pages during visibility changes. The hidden main
-// window can trim once the UI and its history session have wound down.
-const retainedMainTrimDelay = 10 * time.Second
+// Coalesce quick hide/show transitions and let the hidden UI wind down.
+const hiddenWorkingSetTrimDelay = 2 * time.Second
 
 func setProcessMemoryBackground(background bool) {
 	process := windows.CurrentProcess()
@@ -27,7 +26,7 @@ func setProcessMemoryBackground(background bool) {
 	}
 }
 
-func trimRetainedMainWorkingSet() {
+func trimHiddenWorkingSet() {
 	trim := windows.NewLazySystemDLL("psapi.dll").NewProc("EmptyWorkingSet")
 	if trim.Find() == nil {
 		trim.Call(uintptr(windows.CurrentProcess()))

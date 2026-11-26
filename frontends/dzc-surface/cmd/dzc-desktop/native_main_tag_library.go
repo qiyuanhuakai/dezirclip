@@ -9,7 +9,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/uikit"
 )
 
 type nativeTagLibrary struct {
@@ -321,7 +321,7 @@ func (n *nativeMain) requestRowDeletion(row protocol.DesktopEntry, generation ui
 	if row.Id == 0 || !n.canOpenHistoryDialog() || n.history.generation != generation || tags.batch.enabled {
 		return
 	}
-	n.resetPreviewSelection()
+	n.resetPreviewInteraction()
 	tags.entryDelete = &nativeTagEntryDeletion{row: row, generation: generation, open: true}
 }
 

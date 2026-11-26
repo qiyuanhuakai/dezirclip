@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-presets"
 )
 
 func TestNativePopupAppearanceUsesSelectedThemeAndSeparateOpacity(t *testing.T) {

@@ -14,8 +14,8 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/quickpaste"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/theme"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-presets"
 )
 
 type appearanceCache struct {

@@ -9,7 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/video"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/uikit"
 )
 
 type pinnedVideo struct {
@@ -94,8 +94,12 @@ func (p *pinnedPreview) drawVideo(c *ui.Context, a previewAppearance, kit uikit.
 	if p.video.failed {
 		ui.Text(c, failure).Wrap().TextColor(c.Theme().TextMuted)
 	}
-	if kit.Button(c, uikit.ButtonOptions{Label: labels.Play, Disabled: p.video.request != nil}).Clicked() {
+	var poster func(*ui.Context)
+	if bitmap := p.body.mediaBitmap(); bitmap != nil {
+		poster = func(c *ui.Context) { p.imageView.Draw(c, bitmap, a.ImageZoom) }
+	}
+	if kit.VideoCover(c, labels.Play, p.video.request != nil, poster) {
 		p.playVideo()
 	}
-	return false
+	return true
 }

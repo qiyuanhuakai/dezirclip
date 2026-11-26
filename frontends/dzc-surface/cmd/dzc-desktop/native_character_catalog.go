@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/searchtext"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/searchtext"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/uikit"
 	"golang.org/x/text/unicode/norm"
 )
 

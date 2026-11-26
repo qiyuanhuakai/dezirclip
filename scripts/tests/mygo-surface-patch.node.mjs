@@ -5,7 +5,7 @@ import { MYGO_TOOLKIT, patchVerifiedMyGoApp, removeStartupCleanupCall } from '..
 
 test('Go module locks match the reviewed MyGo toolkit manifest', () => {
   const { version, module, module_sum: moduleSum, module_go_mod_sum: goModSum } = MYGO_TOOLKIT;
-  for (const directory of ['frontends/dzc-surface', 'packages/ui-native', 'packages/ui-presets']) {
+  for (const directory of ['frontends/dzc-surface']) {
     const read = file => readFileSync(new URL(`../../${directory}/${file}`, import.meta.url), 'utf8');
     const requirements = read('go.mod').split(/\r?\n/).map(line => line.trim().replace(/^require\s+/, ''));
     assert(requirements.includes(`${module} ${version}`), `${directory}/go.mod needs ${module} ${version}`);

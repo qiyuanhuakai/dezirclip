@@ -8,7 +8,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/uikit"
 )
 
 // All control state belongs to the UI thread. While one write is pending,

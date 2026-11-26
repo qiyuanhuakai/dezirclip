@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/theme"
 )
 
 // A reply with release notes may be larger than the default scanner buffer.

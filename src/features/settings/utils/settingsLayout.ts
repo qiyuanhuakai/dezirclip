@@ -17,7 +17,7 @@
  * These breakpoints are the only place the numbers live. The shape is decided in
  * JS rather than by a CSS media query because it decides *what mounts*: the rail
  * mounts six headers, the pane mounts one body, and CSS cannot unmount anything.
- * Appearance stays in `packages/ui-react/src/styles/` -- layout here, paint there.
+ * Appearance stays in the published Deziro UI styles -- layout here, paint there.
  */
 
 import { settingsPaneColumns } from "@deziro/ui-react/components/SettingsSectionCard";

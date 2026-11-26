@@ -8,8 +8,8 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/theme"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/theme"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/uikit"
 )
 
 func (n *nativeMain) selectedEntry() (protocol.DesktopEntry, bool) {

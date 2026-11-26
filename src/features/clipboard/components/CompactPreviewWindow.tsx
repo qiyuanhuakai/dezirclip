@@ -15,7 +15,6 @@ import { isRamImageSource, isSensitiveEntry } from "../../../shared/lib/privacyR
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
 import { getRichPreviewData } from "../../../shared/lib/richPreviewState";
 import { richPreviewPresentation } from "../../../shared/lib/richPreviewPresentation";
-import { applyModeClass, applyThemeClass } from "../../../shared/lib/themeRuntime";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 import { usePrivacySession } from "../../../shared/hooks/usePrivacySession";
@@ -43,33 +42,6 @@ type PreviewPayload = PreviewRequest & {
 import { compactPreviewLog, richPreviewFailureLog } from "../../../shared/lib/compactPreviewLog";
 
 const getIcon = (type: string) => getContentTypeIcon(type);
-
-const applyTheme = (payload: PreviewPayload) => {
-    const theme = payload.theme || "mica";
-    const colorMode = payload.colorMode || "light";
-
-    const root = document.documentElement;
-    const body = document.body;
-
-    applyThemeClass(root, body, theme);
-    applyModeClass(root, body, colorMode === "dark" ? "dark" : "light");
-
-    body.classList.add("compact-preview");
-
-    if (payload.clipboardItemFontSize) {
-        root.style.setProperty("--clipboard-item-font-size", `${payload.clipboardItemFontSize}px`);
-    }
-    if (payload.clipboardTagFontSize) {
-        root.style.setProperty("--clipboard-tag-font-size", `${payload.clipboardTagFontSize}px`);
-    }
-
-    compactPreviewLog("theme applied", {
-        theme,
-        colorMode,
-        itemFontSize: payload.clipboardItemFontSize,
-        tagFontSize: payload.clipboardTagFontSize
-    });
-};
 
 const CompactPreviewWindow = () => {
     const pinned = isPinnedPreviewLabel(getCurrentWindow().label);
@@ -134,7 +106,6 @@ const CompactPreviewWindow = () => {
             const next: PreviewPayload = { ...request, contentType: entry.content_type, content: entry.content,
                 protectedContent: isSensitiveEntry(entry), preview: entry.preview, htmlContent: entry.html_content,
                 sourceApp: entry.source_app, timestamp: entry.timestamp };
-            applyTheme(next);
             setConcealed(false);
             setZoom("fit");
             setActionFailed(false);
@@ -482,7 +453,7 @@ const CompactPreviewWindow = () => {
         <div className={`compact-preview-root${pinned && !presented ? " preview-measuring" : ""}`} onMouseEnter={() => pointer(true)} onMouseLeave={() => pointer(false)}>
             <div
                 ref={containerRef}
-                className={`compact-popover-portal compact-preview-window ${payload?.theme || ""} ${singleMediaSource ? "compact-preview-image" : ""} ${singleMediaSource || payload?.contentType === "video" || (!!effectiveRichImageFallbackSrc && !richPresentation.html) ? "compact-preview-media" : ""} ${payload?.colorMode === "dark" ? "dark-mode" : ""}`}
+                className={`compact-popover-portal compact-preview-window ${singleMediaSource ? "compact-preview-image" : ""} ${singleMediaSource || playable || payload?.contentType === "video" || (!!effectiveRichImageFallbackSrc && !richPresentation.html) ? "compact-preview-media" : ""}`}
             >
                 <PreviewToolbar pinned={pinned} pinPending={pinPending} opacity={opacity} image={pinned && !!singleMediaSource && !playable}
                     zoom={zoom} fitZoom={fitZoom} language={language} onOpacityChange={saveOpacity} onZoomChange={setZoom}
@@ -513,7 +484,7 @@ const CompactPreviewWindow = () => {
                     </div>
                 </div>}
                 <div ref={dividerRef} className="popover-divider" />
-                <div ref={contentRef} className={`popover-content${pinned && presented && (singleMediaSource || playable) ? " pinned-image-content" : ""}`} data-privacy-protected={payload?.protectedContent ? "true" : undefined}
+                <div ref={contentRef} className={`popover-content${playable ? " pinned-video-content" : pinned && presented && singleMediaSource ? " pinned-image-content" : ""}`} data-privacy-protected={payload?.protectedContent ? "true" : undefined}
                     onDragStart={event => { if (payload?.protectedContent) event.preventDefault(); }}>
                     {payload ? content : <div className="preview-concealed"><p>{text.privacy_sensitive_hidden}</p>
                         <button type="button" className="btn-secondary" onClick={restore} disabled={privacyState.phase !== "ready"}>{text.privacy_retry}</button></div>}

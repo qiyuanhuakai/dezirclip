@@ -74,7 +74,7 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
     || /replace\s+(?:\([^)]*)?github\.com\/egoist\/mygo/m.test(module)) throw new Error('Surface dependency pin differs');
   const fingerprint = () => {
     const paths = run('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--',
-      'frontends/dzc-surface', 'clients/go', 'packages/ui-native', 'packages/ui-presets', 'design', 'package.json', 'Cargo.toml', 'Cargo.lock', 'src-tauri/tauri.conf.json',
+      'frontends/dzc-surface', 'clients/go', 'design', 'package.json', 'Cargo.toml', 'Cargo.lock', 'src-tauri/tauri.conf.json',
       ...(component === 'mygo-desktop' ? ['src/locales',        'src-tauri/icons/icon.ico', 'scripts/build-windows-icon.py', 'scripts/generate-mygo-main-messages.mjs'] : []),
       'scripts/set-release-version.mjs', 'scripts/updater-release.mjs', 'scripts/build-surface.mjs', 'scripts/mygo-surface-patch.mjs', 'scripts/generate-surface-tokens.mjs'])
       .split('\0').filter(Boolean).sort();

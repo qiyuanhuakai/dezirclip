@@ -17,7 +17,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/richtext"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-native/uikit"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/uikit"
 )
 
 func TestMediaPreviewFollowsPortraitLandscapeAndSmallImages(t *testing.T) {
@@ -200,7 +200,7 @@ func TestPinnedVideoFirstFrameUsesFullPortraitViewport(t *testing.T) {
 		ticket: pinPreviewRequest{Appearance: previewAppearance{Title: "Content preview", Language: "en", Opacity: 85, FitLabel: "Fit"}}}
 	frame := ui.NewTester(p.view, width, height).Image()
 	_, viewportHeight := p.imageView.ViewportSize()
-	if viewportHeight < 300 || p.imageView.FitZoom() <= 0 || frame.RGBAAt(width/2, height/2).B < 100 {
+	if viewportHeight < 300 || p.imageView.FitZoom() <= 0 || frame.RGBAAt(width/2, height/3).B < 100 {
 		t.Fatalf("video frame did not fill portrait viewport: %+v", p.imageView)
 	}
 	if directory := os.Getenv("DZC_VISUAL_DIR"); directory != "" {

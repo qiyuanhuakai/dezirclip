@@ -58,8 +58,7 @@ it does not claim to link Rust Core. Normal UI execution requires
 matching parent/Host build. An ordinary unpatched `go build` cannot start UI.
 
 When upgrading the toolkit, update the manifest and refresh the MyGo
-requirements and checksums in this module, `packages/ui-native`, and
-`packages/ui-presets`. Run `node --test scripts/tests/mygo-surface-patch.node.mjs`
+requirements and checksums in this module and the pinned [Deziro UI modules](https://github.com/qiyuanhuakai/deziro-ui). Run `node --test scripts/tests/mygo-surface-patch.node.mjs`
 from the repository root to check the locks before pushing.
 
 Pure model and build identity checks:

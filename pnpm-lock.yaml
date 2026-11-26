@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@deziro/ui-react':
-        specifier: workspace:*
-        version: link:packages/ui-react
+        specifier: https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.3.1/deziro-ui-react-0.3.1.tgz
+        version: https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.3.1/deziro-ui-react-0.3.1.tgz(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@tauri-apps/api':
         specifier: ^2.12.4
         version: 2.12.4
@@ -87,30 +87,6 @@ importers:
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(jsdom@29.1.1)(vite@7.3.3)
-
-  packages/ui-react:
-    dependencies:
-      framer-motion:
-        specifier: ^12.25.0
-        version: 12.39.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      fuse.js:
-        specifier: ^7.4.2
-        version: 7.4.2
-      lucide-react:
-        specifier: ^0.562.0
-        version: 0.562.0(react@19.2.6)
-      react:
-        specifier: ^19.0.0
-        version: 19.2.6
-      react-dom:
-        specifier: ^19.0.0
-        version: 19.2.6(react@19.2.6)
-      react-select:
-        specifier: ^5.10.2
-        version: 5.10.2(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      react-virtuoso:
-        specifier: ^4.18.1
-        version: 4.18.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
 
 packages:
 
@@ -258,6 +234,13 @@ packages:
   '@csstools/css-tokenizer@4.0.0':
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
+
+  '@deziro/ui-react@https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.3.1/deziro-ui-react-0.3.1.tgz':
+    resolution: {integrity: sha512-4BNdfMZqCCQleltGkKUkN2Rm4XySER4TOICsgwlAACp84X/oOtjc4HBFbnozolKRa84OVxckBj8Y9aHvqmygwQ==, tarball: https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.3.1/deziro-ui-react-0.3.1.tgz}
+    version: 0.3.1
+    peerDependencies:
+      react: ^19.0.0
+      react-dom: ^19.0.0
 
   '@emotion/babel-plugin@11.13.5':
     resolution: {integrity: sha512-pxHCpT2ex+0q+HH91/zsdHkw/lXd468DIN2zvfvLtPKLLMo6gQj7oLObq8PhkrxOZb/gGCq03S3Z7PDhS8pduQ==}
@@ -1620,6 +1603,20 @@ snapshots:
       css-tree: 3.2.1
 
   '@csstools/css-tokenizer@4.0.0': {}
+
+  '@deziro/ui-react@https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.3.1/deziro-ui-react-0.3.1.tgz(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      framer-motion: 12.39.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      fuse.js: 7.4.2
+      lucide-react: 0.562.0(react@19.2.6)
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+      react-select: 5.10.2(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      react-virtuoso: 4.18.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+    transitivePeerDependencies:
+      - '@emotion/is-prop-valid'
+      - '@types/react'
+      - supports-color
 
   '@emotion/babel-plugin@11.13.5':
     dependencies:

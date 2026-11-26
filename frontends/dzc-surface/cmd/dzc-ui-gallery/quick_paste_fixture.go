@@ -4,7 +4,7 @@ import (
 	"strconv"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/qiyuanhuakai/dezirclip/packages/ui-presets"
+	"github.com/qiyuanhuakai/deziro-ui/packages/ui-presets"
 )
 
 func (g *gallery) quickPasteFixture(c *ui.Context, preset presets.Preset) {

@@ -7,8 +7,8 @@ require (
 	github.com/ebitengine/purego v0.11.1
 	github.com/egoist/mygo v0.10.0
 	github.com/qiyuanhuakai/dezirclip/clients/go v0.0.0
-	github.com/qiyuanhuakai/dezirclip/packages/ui-native v0.0.0
-	github.com/qiyuanhuakai/dezirclip/packages/ui-presets v0.0.0
+	github.com/qiyuanhuakai/deziro-ui/packages/ui-native v0.3.1
+	github.com/qiyuanhuakai/deziro-ui/packages/ui-presets v0.3.1
 	golang.org/x/crypto v0.57.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/text v0.43.0
@@ -24,7 +24,3 @@ require (
 )
 
 replace github.com/qiyuanhuakai/dezirclip/clients/go => ../../clients/go
-
-replace github.com/qiyuanhuakai/dezirclip/packages/ui-native => ../../packages/ui-native
-
-replace github.com/qiyuanhuakai/dezirclip/packages/ui-presets => ../../packages/ui-presets

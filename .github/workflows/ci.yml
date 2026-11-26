@@ -1374,8 +1374,6 @@ jobs:
           cache-dependency-path: |
             clients/go/go.sum
             frontends/dzc-surface/go.sum
-            packages/ui-native/go.sum
-            packages/ui-presets/go.sum
       - name: Resolve Ubuntu's CJK font package
         if: runner.os == 'Linux'
         id: cjk-fonts
@@ -1419,12 +1417,6 @@ jobs:
           fc-match 'sans-serif:lang=zh-cn'
       - name: Test local protocol client
         working-directory: clients/go
-        run: go test ./...
-      - name: Test reusable MyGo Native components
-        working-directory: packages/ui-native
-        run: go test ./...
-      - name: Test Web-derived native theme presets
-        working-directory: packages/ui-presets
         run: go test ./...
       - name: Test MyGo desktop and native surfaces
         working-directory: frontends/dzc-surface
