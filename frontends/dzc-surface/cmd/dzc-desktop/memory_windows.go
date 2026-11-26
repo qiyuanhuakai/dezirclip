@@ -13,6 +13,12 @@ import (
 // MyGo releases its surface caches after two seconds without frames.
 const hiddenWorkingSetTrimDelay = 3 * time.Second
 
+const (
+	processMemoryPriority = 0 // PROCESS_INFORMATION_CLASS.ProcessMemoryPriority
+	memoryPriorityLow     = uint32(2)
+	memoryPriorityNormal  = uint32(5)
+)
+
 // Retain the foreground tuning so each visible window uses the normal GC policy.
 var backgroundGC struct {
 	active  bool
@@ -27,15 +33,15 @@ func setProcessMemoryBackground(background bool) {
 		backgroundGC.active = false
 	}
 	process := windows.CurrentProcess()
-	priority := uint32(5)
+	priority := memoryPriorityNormal
 	if background {
-		priority = 1
+		priority = memoryPriorityLow
 	}
 	set := windows.NewLazySystemDLL("kernel32.dll").NewProc("SetProcessInformation")
 	if err := set.Find(); err != nil {
 		return
 	}
-	if ok, _, err := set.Call(uintptr(process), 0, uintptr(unsafe.Pointer(&priority)), unsafe.Sizeof(priority)); ok == 0 {
+	if ok, _, err := set.Call(uintptr(process), processMemoryPriority, uintptr(unsafe.Pointer(&priority)), unsafe.Sizeof(priority)); ok == 0 {
 		log.Printf("Process memory priority unavailable: %v", err)
 	}
 }

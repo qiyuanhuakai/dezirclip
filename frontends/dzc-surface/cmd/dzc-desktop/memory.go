@@ -9,6 +9,8 @@ import (
 // Visibility includes pinned previews, native panels and the main window in
 // the separate desktop process.
 func installMemoryPolicy(extraVisible func() bool) func() {
+	// A renderer launched by an idle resident can inherit its low priority.
+	setProcessMemoryBackground(false)
 	background := false
 	var pendingTrim *time.Timer
 	var generation uint64
