@@ -19,7 +19,8 @@ import { PrivacyStatusBanner } from "../../../shared/components/PrivacyStatusBan
 import { privacyStatusZh } from "../../../locales/zh";
 import { QuickPastePanel, QuickPasteSearch, QuickPasteRow, QuickPasteRings, type QuickPasteDock } from "@deziro/ui-react";
 
-const MAX_ENTRIES = 10;
+const LIST_HISTORY_LIMIT = 10;
+const RING_HISTORY_LIMIT = 50;
 const RING_TYPES = [
   ["text", "文本"], ["image", "图片"], ["file", "文件"],
   ["url", "链接"], ["code", "代码"], ["video", "视频"], ["rich_text", "富文本"],
@@ -48,6 +49,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   const [entrySlots, setEntrySlots] = useState(8);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const historyLimit = useRef(LIST_HISTORY_LIMIT);
   // A mirror of `entries` for the event listeners to read.
   //
   // The listeners are registered once and depend only on the stable
@@ -92,7 +94,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   const listGeneration = privacyListGeneration();
   const refreshReader = useMemo(() => createSnapshotRefresh(
     () => invokePrivacyBound<ClipboardEntry[]>("get_clipboard_history", {
-      limit: MAX_ENTRIES,
+      limit: historyLimit.current,
       offset: 0,
       contentType: null,
     }),
@@ -114,7 +116,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
         entriesRef.current,
         incoming
       );
-      replaceEntries(merged.slice(0, MAX_ENTRIES));
+      replaceEntries(merged.slice(0, historyLimit.current));
       setActiveId((current) => selectionAfterUpdate(current, wasPresent, incoming));
     };
     const captured = createCapturedEntryReader(
@@ -152,7 +154,16 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     });
     const unlistenPlacement = listen<{ layout: string; dock: string | null; entry_slots: number | null }>("quick-paste-placement", ({ payload }) => {
       if (disposed) return;
-      setRing(payload.layout === "ring");
+      const nextRing = payload.layout === "ring";
+      const limit = nextRing ? RING_HISTORY_LIMIT : LIST_HISTORY_LIMIT;
+      if (historyLimit.current !== limit) {
+        refreshReader.invalidate();
+        captured.invalidate();
+        historyLimit.current = limit;
+        if (!nextRing) replaceEntries(entriesRef.current.slice(0, limit));
+        fetchRecent();
+      }
+      setRing(nextRing);
       const side = payload.dock === "left" || payload.dock === "right" || payload.dock === "top" ? payload.dock : "";
       setDock(side);
       const slots = payload.entry_slots;
