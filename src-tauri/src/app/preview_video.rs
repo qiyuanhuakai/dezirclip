@@ -15,12 +15,26 @@ use tauri::{
 
 use super::ipc_host::DesktopHost;
 
+#[cfg(target_os = "linux")]
+mod loopback;
+
 const SCHEME: &str = "dzcvideo";
 const RANGE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_UNRANGED_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Default)]
-pub struct Videos(Mutex<HashMap<String, Arc<Video>>>);
+pub struct Videos {
+    active: Mutex<HashMap<String, Arc<Video>>>,
+    #[cfg(target_os = "linux")]
+    port: tokio::sync::OnceCell<u16>,
+}
+
+#[derive(serde::Serialize)]
+pub struct PlaybackSource {
+    token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+}
 
 struct Video {
     token: String,
@@ -49,7 +63,7 @@ pub async fn open_pinned_video(
     id: i64,
     expected_epoch: u64,
     expected_host_instance_id: Option<String>,
-) -> Result<String, String> {
+) -> Result<PlaybackSource, String> {
     if !window
         .label()
         .strip_prefix("pinned-preview-")
@@ -80,8 +94,12 @@ pub async fn open_pinned_video(
         return Err("VideoPreviewUnavailable".into());
     }
     let token = uuid::Uuid::new_v4().simple().to_string();
+    #[cfg(target_os = "linux")]
+    let url = Some(loopback::url(window.app_handle(), &token).await?);
+    #[cfg(not(target_os = "linux"))]
+    let url = None;
     let videos = window.state::<Videos>();
-    let mut active = videos.0.lock().map_err(|_| "VideoPreviewUnavailable")?;
+    let mut active = videos.active.lock().map_err(|_| "VideoPreviewUnavailable")?;
     bridge.check_queue_state(&instance, expected_epoch)?;
     if window.get_webview_window(window.label()).is_none() {
         return Err("VideoPreviewUnavailable".into());
@@ -89,13 +107,13 @@ pub async fn open_pinned_video(
     active.insert(window.label().to_owned(), Arc::new(Video {
         token: token.clone(), file: Mutex::new(file), length, mime, instance, epoch: expected_epoch,
     }));
-    Ok(token)
+    Ok(PlaybackSource { token, url })
 }
 
 #[tauri::command]
 pub fn close_pinned_video(window: WebviewWindow, token: String) {
     let videos = window.state::<Videos>();
-    if let Ok(mut active) = videos.0.lock() {
+    if let Ok(mut active) = videos.active.lock() {
         if active.get(window.label()).is_some_and(|video| video.token == token) {
             active.remove(window.label());
         }
@@ -104,15 +122,19 @@ pub fn close_pinned_video(window: WebviewWindow, token: String) {
 
 pub fn close_window(app: &AppHandle, label: &str) {
     let videos = app.state::<Videos>();
-    if let Ok(mut active) = videos.0.lock() {
+    if let Ok(mut active) = videos.active.lock() {
         active.remove(label);
     };
 }
 
 fn bounds(value: &str, length: u64) -> Option<(u64, u64)> {
+    range_bounds(value, length, RANGE_BYTES)
+}
+
+fn range_bounds(value: &str, length: u64, limit: u64) -> Option<(u64, u64)> {
     let (start, end) = value.strip_prefix("bytes=")?.split_once('-')?;
     let (start, end) = if start.is_empty() {
-        let count = end.parse::<u64>().ok()?.min(length).min(RANGE_BYTES);
+        let count = end.parse::<u64>().ok()?.min(length).min(limit);
         if count == 0 {
             return None;
         }
@@ -120,7 +142,7 @@ fn bounds(value: &str, length: u64) -> Option<(u64, u64)> {
     } else {
         let start = start.parse::<u64>().ok()?;
         let end = if end.is_empty() { length - 1 } else { end.parse().ok()? };
-        (start, end.min(length - 1).min(start.saturating_add(RANGE_BYTES - 1)))
+        (start, end.min(length - 1).min(start.saturating_add(limit - 1)))
     };
     (start <= end).then_some((start, end))
 }
@@ -130,7 +152,7 @@ fn response(app: &AppHandle, label: &str, request: Request<Vec<u8>>) -> Response
         .body(Vec::new()).expect("static response headers");
     let video = {
         let videos = app.state::<Videos>();
-        let Ok(active) = videos.0.lock() else { return empty(StatusCode::NOT_FOUND); };
+        let Ok(active) = videos.active.lock() else { return empty(StatusCode::NOT_FOUND); };
         let Some(video) = active.get(label) else { return empty(StatusCode::NOT_FOUND); };
         if request.uri().path().strip_prefix('/') != Some(video.token.as_str()) {
             return empty(StatusCode::NOT_FOUND);
@@ -174,7 +196,7 @@ fn response(app: &AppHandle, label: &str, request: Request<Vec<u8>>) -> Response
             return empty(StatusCode::GONE);
         }
         let videos = app.state::<Videos>();
-        if !videos.0.lock().is_ok_and(|active| active.get(label).is_some_and(|current| Arc::ptr_eq(current, &video))) {
+        if !videos.active.lock().is_ok_and(|active| active.get(label).is_some_and(|current| Arc::ptr_eq(current, &video))) {
             return empty(StatusCode::GONE);
         }
     }
@@ -202,5 +224,7 @@ mod tests {
         assert_eq!(bounds("bytes=20-10", 100), None);
         assert_eq!(bounds("bytes=1-2,3-4", 100), None);
         assert_eq!(bounds("bytes=12-", RANGE_BYTES * 4), Some((12, RANGE_BYTES + 11)));
+        assert_eq!(range_bounds("bytes=12-", RANGE_BYTES * 4, u64::MAX),
+            Some((12, RANGE_BYTES * 4 - 1)));
     }
 }

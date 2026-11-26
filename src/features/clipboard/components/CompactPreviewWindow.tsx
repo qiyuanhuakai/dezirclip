@@ -255,9 +255,10 @@ const CompactPreviewWindow = () => {
             if (container.querySelector('.preview-image-viewport[data-ready="false"]')) return;
             if (Array.from(container.querySelectorAll("video")).some(video => video.readyState < 1 && !video.error)) return;
             const bounds = previewBoundsRef.current;
+            const minimumWidth = Math.min(playable ? 420 : 320, bounds.width);
             const viewport = container.querySelector<HTMLElement>(".preview-image-viewport");
             const gallery = container.querySelector<HTMLElement>(".attachment-gallery");
-            if (viewport || gallery) {
+            if (viewport || gallery || playable) {
                 const style = getComputedStyle(container);
                 const bodyStyle = contentRef.current && getComputedStyle(contentRef.current);
                 const horizontal = [style.paddingLeft, style.paddingRight, style.borderLeftWidth, style.borderRightWidth,
@@ -265,10 +266,10 @@ const CompactPreviewWindow = () => {
                 const contentWidth = viewport?.offsetWidth ?? (gallery?.querySelector("img") ? bounds.mediaWidth :
                     Math.max(0, ...Array.from(gallery?.querySelectorAll<HTMLElement>("figcaption > span, .attachment-name > span") ?? [])
                         .map(name => name.scrollWidth + 24)));
-                container.style.width = `${Math.min(bounds.width, Math.max(Math.min(320, bounds.width), contentWidth + horizontal))}px`;
+                container.style.width = `${Math.min(bounds.width, Math.max(minimumWidth, contentWidth + horizontal))}px`;
             } else container.style.width = "";
-            const width = Math.min(Math.max(Math.ceil(container.getBoundingClientRect().width), Math.min(320, bounds.width)), bounds.width);
-            const height = Math.min(Math.max(Math.ceil(container.offsetHeight), 80), bounds.height);
+            const width = Math.min(Math.max(Math.ceil(container.getBoundingClientRect().width), minimumWidth), bounds.width);
+            const height = Math.min(Math.max(Math.ceil(container.offsetHeight), playable ? 310 : 80), bounds.height);
             const last = lastSentSizeRef.current;
             if (last?.requestId === payload.requestId && last.width === width && last.height === height) return;
             lastSentSizeRef.current = { requestId: payload.requestId, width, height };
@@ -291,7 +292,7 @@ const CompactPreviewWindow = () => {
             root?.removeEventListener("error", measureOnMedia, true);
             observer.disconnect();
         };
-    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, pinned, presented, singleMediaSource]);
+    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, pinned, playable, presented, singleMediaSource]);
 
     useEffect(() => {
         setSnapshotFailed(false);
@@ -334,7 +335,8 @@ const CompactPreviewWindow = () => {
             const poster = singleMediaSource ?? undefined;
             return <PinnedVideoPreview key={`${payload.requestId}:${payload.privacyEpoch}`} request={payload} poster={poster}>
                 <AttachmentPreview fileLabel={translations[payload.language ?? "zh"].type_file}
-                    expanded html={presented ? payload.htmlContent : undefined} names={payload.preview || payload.content} video />
+                    expanded={presented && !poster} html={presented && !poster ? payload.htmlContent : undefined}
+                    names={payload.preview || payload.content} video />
             </PinnedVideoPreview>;
         }
         if (singleMediaSource) {

@@ -5,6 +5,7 @@ import { beginPrivacyAccess } from "../../../shared/lib/privacySession";
 import type { PreviewRequest } from "./compactPreviewProtocol";
 
 const release = (token: string) => { void invoke("close_pinned_video", { token }).catch(() => undefined); };
+type PlaybackSource = { token: string; url?: string };
 
 export function PinnedVideoPreview({ request, poster, children }: {
     request: PreviewRequest;
@@ -12,7 +13,7 @@ export function PinnedVideoPreview({ request, poster, children }: {
     children: ReactNode;
 }) {
     const opened = useRef<{ token?: string } | null>(null);
-    const [token, setToken] = useState<string>();
+    const [source, setSource] = useState<PlaybackSource>();
     const [loading, setLoading] = useState(false);
     const [failure, setFailure] = useState(false);
     const english = request.language === "en";
@@ -31,20 +32,20 @@ export function PinnedVideoPreview({ request, poster, children }: {
         opened.current = attempt;
         setFailure(false);
         setLoading(true);
-        void invoke<string>("open_pinned_video", {
+        void invoke<PlaybackSource>("open_pinned_video", {
             id: request.id,
             expectedEpoch: request.privacyEpoch,
             expectedHostInstanceId: request.expectedHostInstanceId,
         }).then(source => {
-            if (opened.current !== attempt) { release(source); return; }
+            if (opened.current !== attempt) { release(source.token); return; }
             if (!access.isCurrent()) {
-                release(source);
+                release(source.token);
                 opened.current = null;
                 setLoading(false);
                 return;
             }
-            attempt.token = source;
-            setToken(source);
+            attempt.token = source.token;
+            setSource(source);
         }, () => {
             if (opened.current === attempt) {
                 opened.current = null;
@@ -53,7 +54,7 @@ export function PinnedVideoPreview({ request, poster, children }: {
             }
         });
     };
-    return <VideoPlayer key={token ?? "cover"} source={token && convertFileSrc(token, "dzcvideo")}
+    return <VideoPlayer key={source?.token ?? "cover"} source={source && (source.url ?? convertFileSrc(source.token, "dzcvideo"))}
         poster={poster} loading={loading} onOpen={play}
         labels={english
             ? { play: "Play video", pause: "Pause", progress: "Playback position", mute: "Mute", unmute: "Unmute", volume: "Volume", loop: "Loop" }
@@ -62,10 +63,10 @@ export function PinnedVideoPreview({ request, poster, children }: {
             ? "Unable to play this video. Check that the file still exists and the system supports its format."
             : "无法播放此视频。请检查文件是否仍在原路径，以及系统是否支持该格式。") : undefined}
         onError={() => {
-            if (!token || opened.current?.token !== token) return;
-            release(token);
+            if (!source || opened.current?.token !== source.token) return;
+            release(source.token);
             opened.current = null;
-            setToken(undefined);
+            setSource(undefined);
             setLoading(false);
             setFailure(true);
         }}>{children}</VideoPlayer>;
