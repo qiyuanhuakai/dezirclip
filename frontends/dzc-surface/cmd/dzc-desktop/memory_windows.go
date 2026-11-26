@@ -2,8 +2,8 @@ package main
 
 import (
 	"log"
-	"runtime"
 	"runtime/debug"
+	"runtime/metrics"
 	"time"
 	"unsafe"
 
@@ -49,12 +49,15 @@ func setProcessMemoryBackground(background bool) {
 func trimHiddenWorkingSet() {
 	debug.FreeOSMemory()
 	if !backgroundGC.active {
-		var memory runtime.MemStats
-		runtime.ReadMemStats(&memory)
+		memory := [2]metrics.Sample{
+			{Name: "/memory/classes/total:bytes"},
+			{Name: "/memory/classes/heap/released:bytes"},
+		}
+		metrics.Read(memory[:])
 		// With no visible UI, collection can wait for memory pressure. Leave
 		// room for clipboard and shortcut work while the windows are hidden.
 		const hiddenHeapHeadroom = 32 << 20
-		limit := int64(memory.Sys-memory.HeapReleased) + hiddenHeapHeadroom
+		limit := int64(memory[0].Value.Uint64()-memory[1].Value.Uint64()) + hiddenHeapHeadroom
 		backgroundGC.limit = debug.SetMemoryLimit(-1)
 		debug.SetMemoryLimit(min(backgroundGC.limit, limit))
 		backgroundGC.percent = debug.SetGCPercent(-1)

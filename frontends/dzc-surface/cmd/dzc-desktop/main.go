@@ -302,6 +302,12 @@ func run() error {
 		native.window = win
 		shell.nativePrepare = native.prepare
 		shell.keepMainAlive = func() bool { return native.updater.keepWindow() || native.winV.changing || native.restartingAdmin }
+		shell.idleCloseDelay = func() (time.Duration, bool) {
+			if native.mutating || native.readingViewSettings || native.history.state.ServiceInstanceId == "" {
+				return 0, false
+			}
+			return idleDestroyDelay(native.preferences["app.idle_destroy_enabled"], native.preferences["app.idle_destroy_seconds"]), true
+		}
 		win.OnClosed(mygo.Theme.OnUpdated(native.systemAppearanceChanged))
 		if err := win.SetIcon(trayIcon); err != nil {
 			fmt.Fprintf(os.Stderr, "Window icon unavailable: %v\n", err)
