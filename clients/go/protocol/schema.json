@@ -4505,8 +4505,11 @@
         "wait_ms": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 1000,
+          "maximum": 60000,
           "x-rust-type": "u16"
+        },
+        "settings_only": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -5784,6 +5787,25 @@
         "hotkey": {
           "type": "string",
           "maxLength": 256
+        },
+        "layout": {
+          "type": "string",
+          "enum": [
+            "list",
+            "ring"
+          ]
+        },
+        "full_sectors": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 12,
+          "x-rust-type": "u8"
+        },
+        "half_sectors": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 8,
+          "x-rust-type": "u8"
         }
       },
       "required": [
@@ -6736,6 +6758,27 @@
           "enum": [
             "paste_unavailable"
           ]
+        },
+        "layout": {
+          "type": "string",
+          "enum": [
+            "list",
+            "ring"
+          ]
+        },
+        "dock": {
+          "type": "string",
+          "enum": [
+            "left",
+            "right",
+            "top"
+          ]
+        },
+        "entry_slots": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 12,
+          "x-rust-type": "u8"
         }
       },
       "required": [

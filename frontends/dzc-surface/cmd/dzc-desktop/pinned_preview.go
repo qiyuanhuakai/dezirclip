@@ -40,10 +40,15 @@ var pinnedWindows = make(map[*pinnedPreview]struct{})
 func refreshPinnedAppearance(owner *client.Client, appearance theme.Appearance, base string) {
 	for preview := range pinnedWindows {
 		if preview.owner == owner && !preview.window.IsDestroyed() {
+			materialChanged := preview.ticket.Appearance.BaseTheme != base ||
+				preview.ticket.Appearance.Dark != (appearance.Mode == "dark")
 			preview.ticket.Appearance.Palette = &appearance
 			preview.ticket.Appearance.BaseTheme = base
 			preview.ticket.Appearance.Background = nil
 			preview.ticket.Appearance.Dark = appearance.Mode == "dark"
+			if materialChanged {
+				preview.ticket.Appearance.applyMaterial(preview.window)
+			}
 			preview.opacity.applyPreference(int(appearance.Opacity*100 + .5))
 			preview.window.Update(func() {})
 		}
@@ -74,6 +79,7 @@ func openPinnedPreview(owner *client.Client, ticket *pinPreviewRequest, closed f
 			p.window.Update(func() {})
 		}
 	})
+	ticket.Appearance.applyMaterial(p.window)
 	p.window.SetAlwaysOnTop(true)
 	p.window.SetPosition(max(area.X, min(frame.X, area.X+area.Width-width)), max(area.Y, min(frame.Y, area.Y+area.Height-height)))
 	p.window.ShowInactive()

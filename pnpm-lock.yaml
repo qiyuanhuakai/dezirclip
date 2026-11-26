@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@deziro/ui-react':
-        specifier: https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.3.2/deziro-ui-react-0.3.2.tgz
-        version: https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.3.2/deziro-ui-react-0.3.2.tgz(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.4.1/deziro-ui-react-0.4.1.tgz
+        version: https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.4.1/deziro-ui-react-0.4.1.tgz(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@tauri-apps/api':
         specifier: ^2.12.4
         version: 2.12.4
@@ -235,9 +235,9 @@ packages:
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
 
-  '@deziro/ui-react@https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.3.2/deziro-ui-react-0.3.2.tgz':
-    resolution: {integrity: sha512-G7Kil+e2HJc4k741yUq7M7qtC0XP74uhDrDtVUwWMrzDgoXz/7GyTfV5Gsrpdtn+PZbBKftMGEbEojej7Qs6Pw==, tarball: https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.3.2/deziro-ui-react-0.3.2.tgz}
-    version: 0.3.2
+  '@deziro/ui-react@https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.4.1/deziro-ui-react-0.4.1.tgz':
+    resolution: {integrity: sha512-xG+DS26vO+/R5UpHCakNGbAdrPiccRfZiz29bhP1jUe7600QQxbdMQnpj34EogQkJ4H6G/Kt9otvtnG6j3mjsw==, tarball: https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.4.1/deziro-ui-react-0.4.1.tgz}
+    version: 0.4.1
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0
@@ -1604,7 +1604,7 @@ snapshots:
 
   '@csstools/css-tokenizer@4.0.0': {}
 
-  '@deziro/ui-react@https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.3.2/deziro-ui-react-0.3.2.tgz(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@deziro/ui-react@https://github.com/qiyuanhuakai/deziro-ui/releases/download/v0.4.1/deziro-ui-react-0.4.1.tgz(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       framer-motion: 12.39.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       fuse.js: 7.4.2

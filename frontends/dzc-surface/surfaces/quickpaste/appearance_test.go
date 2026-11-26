@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/theme"
 	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/uikit"
+	presets "github.com/qiyuanhuakai/deziro-ui/packages/ui-presets"
 )
 
 func TestPanelVisualFixture(t *testing.T) {
@@ -50,7 +52,6 @@ func TestPanelUsesCurrentPresetAndPreservesReadableOpacity(t *testing.T) {
 	panel := &Panel{}
 	panel.model.Visible = true
 	tester := ui.NewTester(panel.view, 560, 440)
-	signatures := make(map[[4]uint8]string)
 	for _, name := range []string{"retro", "mica", "acrylic", "macos", "liquid-glass", "scifi"} {
 		for _, mode := range []string{"light", "dark"} {
 			for _, opacity := range []float64{0, .65, 1} {
@@ -63,11 +64,15 @@ func TestPanelUsesCurrentPresetAndPreservesReadableOpacity(t *testing.T) {
 					t.Fatalf("%s %s opacity %.2f painted alpha %d", name, mode, opacity, got.A)
 				}
 				if opacity == 1 {
-					signature := [4]uint8{got.R, got.G, got.B, got.A}
-					if previous, exists := signatures[signature]; exists {
-						t.Fatalf("%s %s uses the same panel tint as %s", name, mode, previous)
+					preset := presets.Select(name, mode)
+					tint := preset.SurfaceTint()
+					if tint == "" {
+						tint = preset.Tokens().Background
 					}
-					signatures[signature] = name + " " + mode
+					want := ui.Hex(tint)
+					if got.R != want.R || got.G != want.G || got.B != want.B {
+						t.Fatalf("%s %s painted %v, expected the shell tint %v", name, mode, got, want)
+					}
 				}
 				if corner := frame.RGBAAt(0, 0).A; (corner == 0) == (name == "retro") {
 					t.Fatalf("%s %s unexpected corner alpha: %d", name, mode, corner)
@@ -177,5 +182,85 @@ func TestKeyboardScrollDoesNotSelectUnderStationaryPointer(t *testing.T) {
 	frame.Frame()
 	if p.model.Selected != 21 {
 		t.Fatalf("scrolling rows under pointer stole keyboard selection: %d", p.model.Selected)
+	}
+}
+
+func TestDoubleRingSelectsOnlyEntriesInTheChosenCategory(t *testing.T) {
+	for _, dock := range []string{"", "left", "right", "top"} {
+		t.Run("dock="+dock, func(t *testing.T) {
+			p := &Panel{mode: "light", locale: "en", opacity: 1, ringLayout: true, ringDock: dock, ringKind: "text", ringSlots: 5, out: make(chan outgoing, 1)}
+			p.model.Visible, p.model.Display, p.model.Session = true, "ring", "ring"
+			text, link := "Text clip", "Example URL"
+			p.model.Entries = []protocol.EntrySummary{
+				{Id: 1, Kind: "text", Preview: &text, PrivacyVisibility: "ordinary"},
+				{Id: 2, Kind: "link", Preview: &link, PrivacyVisibility: "ordinary"},
+				{Id: 3, Kind: "link", Preview: &link, PrivacyVisibility: "protected"},
+			}
+			t.Cleanup(func() {
+				if p.actionDeadline != nil {
+					p.actionDeadline.Stop()
+				}
+				for len(p.out) > 0 {
+					(<-p.out).done <- nil
+				}
+			})
+			width, height := 440, 440
+			if dock == "top" {
+				height = 224
+			} else if dock != "" {
+				width = 224
+			}
+			frame := ui.NewTester(p.view, width, height)
+			if alpha := frame.Image().RGBAAt(0, 0).A; alpha != 0 {
+				t.Fatalf("the ring paints an opaque window corner: %d", alpha)
+			}
+			if _, found := frame.Find(p.word("search")); found {
+				t.Fatal("the ring contains a search field")
+			}
+			if _, found := frame.Find("All"); found {
+				t.Fatal("the ring contains an All category")
+			}
+			if err := frame.Click("Link"); err != nil {
+				t.Fatal(err)
+			}
+			frame.Frame()
+			rows := p.ringRows(p.viewRows)
+			if len(rows) != 1 || rows[0] != 1 || len(p.out) != 0 {
+				t.Fatalf("wrong filtered entries or category activated paste: %v", rows)
+			}
+			if err := frame.Click("Example URL"); err != nil {
+				t.Fatal(err)
+			}
+			if len(p.out) != 1 {
+				t.Fatal("clicking the outer ring must submit one action")
+			}
+			action := <-p.out
+			action.done <- nil
+			var result protocol.SurfacePaste
+			if err := json.Unmarshal(action.message.Payload, &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.EntryId != 2 {
+				t.Fatalf("wrong clip %d", result.EntryId)
+			}
+		})
+	}
+}
+
+func TestDoubleRingDocksToTheActiveDisplay(t *testing.T) {
+	area := mygo.Rectangle{X: -1200, Y: 40, Width: 1200, Height: 760}
+	for _, input := range []struct {
+		x, y, wantX, wantY, wantWidth, wantHeight int
+		dock                                      string
+	}{
+		{-1190, 390, -1200, 170, 224, 440, "left"},
+		{-600, 390, -820, 170, 440, 440, ""},
+		{-12, 390, -224, 170, 224, 440, "right"},
+		{-600, 48, -820, 40, 440, 224, "top"},
+	} {
+		bounds, dock := ringBounds(mygo.Point{X: input.x, Y: input.y}, area)
+		if bounds.X != input.wantX || bounds.Width != input.wantWidth || bounds.Y != input.wantY || bounds.Height != input.wantHeight || dock != input.dock {
+			t.Fatalf("cursor %d: wrong bounds %v and dock %q", input.x, bounds, dock)
+		}
 	}
 }

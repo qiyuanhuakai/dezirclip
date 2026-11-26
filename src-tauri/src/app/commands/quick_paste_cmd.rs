@@ -337,14 +337,28 @@ async fn wait_for_native_presentation<F: std::future::Future<Output = Result<boo
 fn show_quick_paste_window_on_ui(app: &AppHandle, window: &tauri::WebviewWindow,ticket:&crate::app::surface_supervisor::SurfaceFallback) -> Result<(), String> {
     if !ticket.current(app) {return Err("QuickPasteRequestCancelled".into());}
     crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
-    if let Ok(cursor) = window.cursor_position() {
+    let ring = crate::app::surface_supervisor::quick_paste_ring_enabled(app);
+    let mut dock = None;
+    let layout = if ring { "ring" } else { "list" };
+    if ring {
+        #[cfg(target_os = "windows")]
+        super::ui_cmd::clear_windows_backdrop(window);
+        if let Ok((rect, _, side)) = crate::app::surface_supervisor::geometry(app, true) {
+            let _ = window.set_size(tauri::PhysicalSize::new(rect.width, rect.height));
+            let _ = window.set_position(tauri::PhysicalPosition::new(rect.x as i32, rect.y as i32));
+            dock = side;
+        } else {
+            let _ = window.set_size(tauri::LogicalSize::new(440., 440.));
+        }
+    } else if let Ok(cursor) = window.cursor_position() {
+        let _ = window.set_size(tauri::LogicalSize::new(f64::from(DEFAULT_WIDTH), f64::from(DEFAULT_HEIGHT)));
         let cursor_x = cursor.x.round() as i32;
         let cursor_y = cursor.y.round() as i32;
         let (win_w, win_h) = window
             .outer_size()
             .map(|s| (s.width as i32, s.height as i32))
             .unwrap_or((DEFAULT_WIDTH, DEFAULT_HEIGHT));
-        let monitor = window.current_monitor().ok().flatten().map(|m| {
+        let monitor = app.monitor_from_point(cursor.x, cursor.y).ok().flatten().map(|m| {
             let p = m.position();
             let s = m.size();
             MonitorBounds {
@@ -357,6 +371,8 @@ fn show_quick_paste_window_on_ui(app: &AppHandle, window: &tauri::WebviewWindow,
         let (x, y) = compute_quick_paste_position(cursor_x, cursor_y, win_w, win_h, monitor);
         let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
     }
+    let entry_slots = ring.then(|| crate::app::surface_supervisor::quick_paste_entry_slots(app, dock.is_some()));
+    let _ = app.emit_to(QUICK_PASTE_LABEL, "quick-paste-placement", serde_json::json!({ "layout": layout, "dock": dock, "entry_slots": entry_slots }));
 
     let _ = window.set_ignore_cursor_events(false);
     let _ = window.set_always_on_top(true);

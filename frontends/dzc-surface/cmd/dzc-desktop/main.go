@@ -353,10 +353,12 @@ func run() error {
 			shell.idle.cancel()
 			dock.hidden = false
 			dock.shown = time.Now()
+			dock.syncPolling()
 			native.animateBackground()
 			visibilityChanged.Emit(win, true)
 		})
 		win.OnHide(func() {
+			dock.syncPolling()
 			fmt.Fprintln(os.Stdout, "hidden")
 			native.savePrivacyTexts(true)
 			native.stopSession()

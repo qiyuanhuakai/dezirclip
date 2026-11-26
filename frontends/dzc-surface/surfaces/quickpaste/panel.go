@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/model"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/windowappearance"
 	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/theme"
 	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/uikit"
 	"github.com/qiyuanhuakai/deziro-ui/packages/ui-presets"
@@ -40,8 +42,13 @@ type Panel struct {
 	mode           string
 	opacity        float64
 	appearance     *theme.Appearance
+	baseTheme      string
 	kit            uikit.Kit
 	search         string
+	ringLayout     bool
+	ringDock       string
+	ringKind       string
+	ringSlots      int
 	list           *ui.ListState
 	prefetch       pagePrefetch
 	viewRows       *model.View
@@ -288,10 +295,21 @@ func (p *Panel) receive(message protocol.SurfaceControlMessage) {
 		}
 		p.displays[show.DisplayRequestId] = true
 		p.resetList()
+		ring := show.Layout != nil && *show.Layout == "ring"
+		ringChanged := ring != p.ringLayout
+		p.ringLayout = ring
+		p.ringKind, p.ringDock = "", ""
+		if show.Dock != nil {
+			p.ringDock = *show.Dock
+		}
+		p.ringSlots = ringSlots(show.EntrySlots, p.ringDock)
 		p.model.Show(show.SurfaceSessionId, show.DisplayRequestId, show.State)
 		p.model.ShowNotice = show.Notice != nil && *show.Notice == "paste_unavailable"
 		p.search = ""
 		p.applyDisplayTheme(show.Locale, show.Theme)
+		if ringChanged {
+			p.applyMaterial()
+		}
 		mygo.App.SetLocale(model.NativeLocale(show.Locale))
 		ctx, cancel := context.WithCancel(context.Background())
 		p.displayCancel = cancel
@@ -646,13 +664,21 @@ func (p *Panel) word(key string) string {
 		"rich_text": {"[Rich Text]", "[富文本]", "[富文字]"},
 		"link":      {"[Link]", "[链接]", "[連結]"},
 		"loading":   {"Loading…", "正在加载…", "正在載入…"}, "hidden": {"Protected record", "受保护记录", "受保護記錄"},
-		"read_failed":  {"Could not read history. Retry.", "读取失败，请重试。", "讀取失敗，請重試。"},
-		"paste_failed": {"Paste failed. Select again to retry.", "粘贴失败，请重新选择。", "貼上失敗，請重新選擇。"},
-		"paste_notice": {"Previous paste could not be confirmed. Check the target content before selecting again.", "上次粘贴无法确认，请先检查目标内容后重新选择。", "上次貼上無法確認，請先檢查目標內容後重新選擇。"},
-		"retry":        {"Retry", "重试", "重試"},
-		"unavailable":  {"Quick Paste could not open. Focus the target app and try again.", "暂时无法打开快速粘贴。请先切换到要输入的应用，再试一次。", "暫時無法開啟快速貼上。請先切換到要輸入的應用程式，再試一次。"},
-		"close":        {"Close", "关闭", "關閉"},
-		"hint":         {"↑ ↓ Select   Enter Paste   Esc Close", "↑ ↓ 选择   Enter 粘贴   Esc 关闭", "↑ ↓ 選擇   Enter 貼上   Esc 關閉"},
+		"read_failed":    {"Could not read history. Retry.", "读取失败，请重试。", "讀取失敗，請重試。"},
+		"paste_failed":   {"Paste failed. Select again to retry.", "粘贴失败，请重新选择。", "貼上失敗，請重新選擇。"},
+		"paste_notice":   {"Previous paste could not be confirmed. Check the target content before selecting again.", "上次粘贴无法确认，请先检查目标内容后重新选择。", "上次貼上無法確認，請先檢查目標內容後重新選擇。"},
+		"retry":          {"Retry", "重试", "重試"},
+		"unavailable":    {"Quick Paste could not open. Focus the target app and try again.", "暂时无法打开快速粘贴。请先切换到要输入的应用，再试一次。", "暫時無法開啟快速貼上。請先切換到要輸入的應用程式，再試一次。"},
+		"close":          {"Close", "关闭", "關閉"},
+		"hint":           {"↑ ↓ Select   Enter Paste   Esc Close", "↑ ↓ 选择   Enter 粘贴   Esc 关闭", "↑ ↓ 選擇   Enter 貼上   Esc 關閉"},
+		"kind_all":       {"All", "全部", "全部"},
+		"kind_text":      {"Text", "文本", "文字"},
+		"kind_image":     {"Image", "图片", "圖片"},
+		"kind_file":      {"File", "文件", "檔案"},
+		"kind_url":       {"Link", "链接", "連結"},
+		"kind_code":      {"Code", "代码", "程式碼"},
+		"kind_video":     {"Video", "视频", "影片"},
+		"kind_rich_text": {"Rich text", "富文本", "富文字"},
 	}
 	index := 0
 	if zh || p.locale == "tw" {
@@ -674,7 +700,17 @@ func (p *Panel) applyDisplayTheme(locale string, display protocol.SurfaceTheme) 
 	if tint := preset.SurfaceTint(); tint != "" {
 		tokens.Background = tint
 	}
-	p.applyAppearance(theme.Appearance{Mode: display.Mode, Locale: locale, Opacity: display.Opacity, Tokens: tokens}, preset.Kit())
+	p.SetAppearance(theme.Appearance{Mode: display.Mode, Locale: locale, Opacity: display.Opacity, Tokens: tokens}, preset.Kit(), base)
+}
+
+func (p *Panel) applyMaterial() {
+	base := p.baseTheme
+	if p.ringLayout {
+		base = ""
+	}
+	if err := windowappearance.Apply(p.window, base, p.mode, false); err != nil {
+		log.Printf("quick paste material: %v", err)
+	}
 }
 
 func (p *Panel) view(c *ui.Context) {
@@ -708,6 +744,19 @@ func (p *Panel) view(c *ui.Context) {
 		return
 	}
 	display := p.model.Display
+	if p.ringLayout {
+		p.revokeView()
+		rows := p.model.CaptureView(p.word("hidden"))
+		p.viewRows = rows
+		layer := ui.Box(c.Key("rings-" + display)).Fill()
+		x, y, over := layer.PointerPosition()
+		moved := over && (!p.pointerKnown || p.pointerX != x || p.pointerY != y)
+		p.pointerKnown, p.pointerX, p.pointerY = over, x, y
+		background.A = uint8(0.82*255 + 0.18*float64(background.A) + .5)
+		layer.Children(func() { p.drawRings(c, kit, background, rows, moved) })
+		p.bindRingKeys(c, display, rows)
+		return
+	}
 	var rows *model.View
 	panel := kit.QuickPastePanel(c.Key("display-"+display), background)
 	x, y, over := panel.PointerPosition()

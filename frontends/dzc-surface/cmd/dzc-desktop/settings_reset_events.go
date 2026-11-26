@@ -40,10 +40,10 @@ type settingsEventSource interface {
 
 func followSettingsReset(ctx context.Context, host settingsEventSource, state *protocol.RuntimeState, reset, refresh, appearanceChanged func()) error {
 	for ctx.Err() == nil {
-		poll, cancel := context.WithTimeout(ctx, 3*time.Second)
-		wait := uint16(1000)
+		poll, cancel := context.WithTimeout(ctx, 65*time.Second)
+		wait, settingsOnly := uint16(60000), true
 		var result protocol.EventsResult
-		err := host.Call(poll, protocol.MethodEventsSubscribe, protocol.SubscribeParams{AfterSequence: state.EventSequence, WaitMs: &wait}, "EventsResult", &result)
+		err := host.Call(poll, protocol.MethodEventsSubscribe, protocol.SubscribeParams{AfterSequence: state.EventSequence, WaitMs: &wait, SettingsOnly: &settingsOnly}, "EventsResult", &result)
 		cancel()
 		if err != nil {
 			return err

@@ -952,6 +952,8 @@ pub struct SubscribeParams {
     pub after_sequence: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wait_ms: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1333,6 +1335,12 @@ pub struct QuickPasteParams {
 pub struct QuickPreferences {
     pub enabled: bool,
     pub hotkey: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub full_sectors: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub half_sectors: Option<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1586,6 +1594,12 @@ pub struct SurfaceShow {
     pub theme: SurfaceTheme,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notice: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dock: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_slots: Option<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

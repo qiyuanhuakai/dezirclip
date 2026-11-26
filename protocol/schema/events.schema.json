@@ -100,8 +100,11 @@
         "wait_ms": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 1000,
+          "maximum": 60000,
           "x-rust-type": "u16"
+        },
+        "settings_only": {
+          "type": "boolean"
         }
       },
       "required": [

@@ -86,6 +86,7 @@ func NewDesktopPanel(owner *client.Client, placeAtCursor func(*mygo.Window)) *Pa
 func (p *Panel) prepareDesktopWindow() {
 	p.window = mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip 快速粘贴", Width: 560, Height: 440,
 		Hidden: true, Panel: true, Frameless: true, Transparent: true, DisableResize: true, Content: ui.View(p.view)})
+	p.applyMaterial()
 	window := p.window
 	p.window.OnClose(func(e *mygo.CloseEvent) {
 		if !p.stopping {
@@ -132,12 +133,17 @@ func (p *Panel) SetShortcutRecorder(record func(string) bool) { p.local.record =
 
 func (p *Panel) SetAppearanceRefresher(refresh func()) { p.local.refreshAppearance = refresh }
 
-func (p *Panel) SetAppearance(appearance theme.Appearance, kit uikit.Kit) {
+func (p *Panel) SetAppearance(appearance theme.Appearance, kit uikit.Kit, base string) {
 	if !appearance.Valid() {
 		return
 	}
+	materialChanged := p.baseTheme != base || p.mode != appearance.Mode
+	p.baseTheme = base
 	p.applyAppearance(appearance, kit)
 	if p.window != nil && !p.window.IsDestroyed() {
+		if materialChanged {
+			p.applyMaterial()
+		}
 		p.window.Update(func() {})
 	}
 }
@@ -237,8 +243,13 @@ func (p *Panel) openDesktop(request uint64, shortcut string) {
 			return
 		}
 		p.local.opening = false
+		ring := err == nil && pref.Layout != nil && *pref.Layout == "ring"
+		ringChanged := ring != p.ringLayout
+		p.ringLayout, p.ringKind, p.ringDock = ring, "", ""
 		if p.window == nil || p.window.IsDestroyed() {
 			p.prepareDesktopWindow()
+		} else if ringChanged {
+			p.applyMaterial()
 		}
 		p.local.unavailable = err != nil
 		if err != nil {
@@ -248,7 +259,17 @@ func (p *Panel) openDesktop(request uint64, shortcut string) {
 			p.model.Show(host.Hello().SessionId, ticket.Token, ticket.State)
 			p.model.ShowNotice, p.local.notice = p.local.notice, false
 		}
-		p.local.placeAtCursor(p.window)
+		if p.ringLayout {
+			p.placeDesktopRing()
+			sectors := pref.FullSectors
+			if p.ringDock != "" {
+				sectors = pref.HalfSectors
+			}
+			p.ringSlots = ringSlots(sectors, p.ringDock)
+		} else {
+			p.window.SetContentSize(560, 440)
+			p.local.placeAtCursor(p.window)
+		}
 		p.local.shown = time.Now()
 		p.window.Invalidate()
 		p.window.Show()

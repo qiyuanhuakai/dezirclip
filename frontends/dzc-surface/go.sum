@@ -12,10 +12,10 @@ github.com/go-text/typesetting v0.3.5 h1:XZPUooClHY0Vf/rFyUyuPRNEkawARaFzLMQcXLS
 github.com/go-text/typesetting v0.3.5/go.mod h1:XZO1hD+nQVyvVa5IicQk7FsCa4PFQaJ2soWAP1f//68=
 github.com/go-text/typesetting-utils v0.0.0-20260419141703-4ffe8874dabc h1:8FGo2It5K75XkavhTiCKExUfVaVDS1feBnLCru5qeoY=
 github.com/go-text/typesetting-utils v0.0.0-20260419141703-4ffe8874dabc/go.mod h1:3/62I4La/HBRX9TcTpBj4eipLiwzf+vhI+7whTc9V7o=
-github.com/qiyuanhuakai/deziro-ui/packages/ui-native v0.3.2 h1:RvqaNn2apARRYxDAsPzKKCiWwiAELiei4jdUIjmXe2Q=
-github.com/qiyuanhuakai/deziro-ui/packages/ui-native v0.3.2/go.mod h1:9yM4CXithpI1Tn49+fDdf8vJwtH/+mlWuYZpkinTz08=
-github.com/qiyuanhuakai/deziro-ui/packages/ui-presets v0.3.2 h1:erDeMUmC94txN+TPSMTDikNmOssUPvOaFX+GdcokdYk=
-github.com/qiyuanhuakai/deziro-ui/packages/ui-presets v0.3.2/go.mod h1:rPPvvwwJGgh8ubgGJ1op8fSCBqoKpoR8hpi6nvasBS4=
+github.com/qiyuanhuakai/deziro-ui/packages/ui-native v0.4.1 h1:cD4tn2b+JCjze0yXuncnfYWKaSmtW2t5osInDRtXw+Y=
+github.com/qiyuanhuakai/deziro-ui/packages/ui-native v0.4.1/go.mod h1:9yM4CXithpI1Tn49+fDdf8vJwtH/+mlWuYZpkinTz08=
+github.com/qiyuanhuakai/deziro-ui/packages/ui-presets v0.4.1 h1:lRmoaXm1q+FFiFnjwWTb9n/RCzwTvyihAFjDUfeFcEY=
+github.com/qiyuanhuakai/deziro-ui/packages/ui-presets v0.4.1/go.mod h1:58nhgleE0GUgrx5DMDqQkjaBr4ckIXK+N3n/FFlJqaE=
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 h1:1EYB5IzjZawrrnELUi78f9fPu57HuXjmddZPjrls/28=
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.3/go.mod h1:JXeL+ps8p7/KNMjDQk3TCwPpBy0wYklyWTfbkIzdIFU=
 github.com/tdewolff/parse/v2 v2.25.0 h1:a5gjBNi5lNyrtUxM3Npxqm/BsFCtJ7LwPQJkmLUDFeE=

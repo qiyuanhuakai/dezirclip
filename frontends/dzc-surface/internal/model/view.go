@@ -6,6 +6,7 @@ type ViewRow struct {
 	ID        int64
 	Text      string
 	SourceApp string
+	Kind      string
 }
 
 // View keeps one frame's immutable row values until the frame is revoked. A
@@ -26,7 +27,11 @@ func (m *Model) CaptureView(hidden string) *View {
 		rows:  make([]ViewRow, len(m.Entries)),
 	}
 	for i, entry := range m.Entries {
-		v.rows[i] = ViewRow{ID: entry.Id, Text: DisplayText(entry, hidden), SourceApp: entry.SourceApp}
+		row := ViewRow{ID: entry.Id, Text: DisplayText(entry, hidden), SourceApp: entry.SourceApp}
+		if entry.PrivacyVisibility == "ordinary" {
+			row.Kind = entry.Kind
+		}
+		v.rows[i] = row
 	}
 	return v
 }

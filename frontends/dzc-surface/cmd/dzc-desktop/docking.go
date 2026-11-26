@@ -49,6 +49,7 @@ type edgeDock struct {
 	window         *mygo.Window
 	preview        *Preview
 	history        *History
+	enabled        bool
 	stop           chan struct{}
 	hidden         bool
 	autoPinned     bool
@@ -58,17 +59,24 @@ type edgeDock struct {
 }
 
 func (d *edgeDock) configure(enabled bool) {
+	d.enabled = enabled && dockingAvailable()
 	if !enabled {
+		if d.hidden && !d.window.IsDestroyed() {
+			d.reveal()
+		}
+	}
+	d.syncPolling()
+}
+
+func (d *edgeDock) syncPolling() {
+	if !d.enabled || d.window.IsDestroyed() || (!d.hidden && !d.window.IsVisible()) {
 		if d.stop != nil {
 			close(d.stop)
 			d.stop = nil
 		}
-		if d.hidden && !d.window.IsDestroyed() {
-			d.reveal()
-		}
 		return
 	}
-	if d.stop != nil || !dockingAvailable() {
+	if d.stop != nil {
 		return
 	}
 	d.shown = time.Now()

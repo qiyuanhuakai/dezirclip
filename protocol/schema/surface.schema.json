@@ -40,7 +40,14 @@
       "properties": {
         "name": {
           "type": "string",
-          "enum": ["retro", "mica", "acrylic", "liquid-glass", "macos", "scifi"]
+          "enum": [
+            "retro",
+            "mica",
+            "acrylic",
+            "liquid-glass",
+            "macos",
+            "scifi"
+          ]
         },
         "mode": {
           "type": "string",
@@ -322,6 +329,27 @@
           "enum": [
             "paste_unavailable"
           ]
+        },
+        "layout": {
+          "type": "string",
+          "enum": [
+            "list",
+            "ring"
+          ]
+        },
+        "dock": {
+          "type": "string",
+          "enum": [
+            "left",
+            "right",
+            "top"
+          ]
+        },
+        "entry_slots": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 12,
+          "x-rust-type": "u8"
         }
       },
       "required": [

@@ -398,6 +398,19 @@ func (n *nativeMain) toolsSettings(c *ui.Context, kit uikit.Kit) {
 	n.panelCheckbox(c.Key("quick-paste-enabled"), kit, "quick-paste", n.text("quick_paste_enabled"), n.text("quick_paste_enabled_hint"), quick)
 	if quick {
 		n.shortcutSetting(c, "app.quick_paste_hotkey", n.text("quick_paste_hotkey_label"), "Ctrl+Shift+V")
+		n.settingChoices(c, kit, "app.quick_paste_layout", n.text("quick_paste_layout"), "list", []uikit.SelectOption{
+			{Value: "list", Label: n.text("quick_paste_layout_list")},
+			{Value: "ring", Label: n.text("quick_paste_layout_ring")},
+		})
+		if n.preferences["app.quick_paste_layout"] == "ring" {
+			options := make([]uikit.SelectOption, 0, 10)
+			for count := 3; count <= 12; count++ {
+				value := strconv.Itoa(count)
+				options = append(options, uikit.SelectOption{Value: value, Label: value})
+			}
+			n.settingChoices(c, kit, "app.quick_paste_full_sectors", n.text("quick_paste_full_sectors"), "8", options)
+			n.settingChoices(c, kit, "app.quick_paste_half_sectors", n.text("quick_paste_half_sectors"), "5", options[:6])
+		}
 		kit.FixedCaptureRenderer(c, n.text("quick_paste_renderer"), "MyGo Native")
 	}
 	n.booleanSettingWithHelp(c, "app.ocr_enabled", n.text("ocr_enabled"), n.text("ocr_enabled_hint"), true)

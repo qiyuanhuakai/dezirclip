@@ -37,19 +37,30 @@ func (c *Client) ObserveDesktopServiceExit(ctx context.Context, report func(uint
 	if err != nil {
 		return err
 	}
+	stop, err := windows.CreateEvent(nil, 1, 0, nil)
+	if err != nil {
+		windows.CloseHandle(process)
+		return err
+	}
+	cancelFinished := make(chan struct{})
+	cancelWait := context.AfterFunc(ctx, func() {
+		_ = windows.SetEvent(stop)
+		close(cancelFinished)
+	})
 	go func() {
 		defer windows.CloseHandle(process)
-		for ctx.Err() == nil {
-			status, err := windows.WaitForSingleObject(process, 250)
-			if err != nil {
-				return
+		defer func() {
+			if !cancelWait() {
+				<-cancelFinished
 			}
-			if status == windows.WAIT_OBJECT_0 {
-				var code uint32
-				if windows.GetExitCodeProcess(process, &code) == nil && ctx.Err() == nil {
-					report(pid, code)
-				}
-				return
+			windows.CloseHandle(stop)
+		}()
+		// Cancellation takes precedence when both handles are signaled.
+		status, err := windows.WaitForMultipleObjects([]windows.Handle{stop, process}, false, windows.INFINITE)
+		if err == nil && status == windows.WAIT_OBJECT_0+1 && ctx.Err() == nil {
+			var code uint32
+			if windows.GetExitCodeProcess(process, &code) == nil && ctx.Err() == nil {
+				report(pid, code)
 			}
 		}
 	}()

@@ -127,7 +127,7 @@ func bindResidentAppearance(ctx context.Context, owner *client.Client, panel *qu
 		}
 		applied, previousKey = true, key
 		resolved := resolveNativeSurfaceAppearance(settings, systemDark)
-		panel.SetAppearance(resolved.quickPaste, resolved.preset.Kit().WithInterfaceFont(nativeInterfaceFont(settings)))
+		panel.SetAppearance(resolved.quickPaste, resolved.preset.Kit().WithInterfaceFont(nativeInterfaceFont(settings)), resolved.base)
 		refreshPinnedAppearance(owner, resolved.preview, resolved.base)
 	}
 	apply(startup)
@@ -198,7 +198,7 @@ func restoreWebViewAppearance(owner *client.Client, panel *quickpaste.Panel, set
 		}
 	}
 	a.Tokens.Background = resolved.quickPaste.Tokens.Background
-	panel.SetAppearance(a, resolved.preset.Kit().WithInterfaceFont(nativeInterfaceFont(settings)))
+	panel.SetAppearance(a, resolved.preset.Kit().WithInterfaceFont(nativeInterfaceFont(settings)), resolved.base)
 	refreshPinnedAppearance(owner, resolved.preview, resolved.base)
 }
 
@@ -216,7 +216,7 @@ func saveNativeAppearance(owner *client.Client, panel *quickpaste.Panel, appeara
 	}
 	appearance.Locale = settings["app.language"]
 	appearance.Tokens.Background = resolved.quickPaste.Tokens.Background
-	panel.SetAppearance(appearance, resolved.preset.Kit().WithInterfaceFont(nativeInterfaceFont(settings)))
+	panel.SetAppearance(appearance, resolved.preset.Kit().WithInterfaceFont(nativeInterfaceFont(settings)), resolved.base)
 	refreshPinnedAppearance(owner, resolved.preview, resolved.base)
 	path := nativeAppearancePath(owner)
 	if path == "" {

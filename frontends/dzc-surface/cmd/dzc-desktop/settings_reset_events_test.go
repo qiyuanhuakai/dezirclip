@@ -23,7 +23,8 @@ func TestSettingsResetWatchRetainsCursorAfterBusyAndRebuildsOnCompletion(t *test
 	state := protocol.RuntimeState{ServiceInstanceId: "original", EventSequence: 12}
 	busy := errors.New("Busy")
 	failure := resetEventFixture(func(params protocol.SubscribeParams, _ *protocol.EventsResult) error {
-		if params.AfterSequence != 12 || *params.WaitMs > 1000 {
+		if params.AfterSequence != 12 || params.WaitMs == nil || *params.WaitMs != 60000 ||
+			params.SettingsOnly == nil || !*params.SettingsOnly {
 			t.Fatal(params)
 		}
 		return busy

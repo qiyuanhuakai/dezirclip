@@ -59,6 +59,7 @@ func (s *DesktopShell) hideMain(w *mygo.Window) {
 	generation := s.idle.generation
 	started := time.Now()
 	w.Hide()
+	s.dock.syncPolling()
 	go func() {
 		settings := (&Library{s.dock.history.actions}).windowPreferences(context.Background())
 		if settings.IdleDestroy != "true" {

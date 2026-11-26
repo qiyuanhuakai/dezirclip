@@ -642,6 +642,7 @@ type Event struct {
 type SubscribeParams struct {
     AfterSequence uint64 `json:"after_sequence"`
     WaitMs *uint16 `json:"wait_ms,omitempty"`
+    SettingsOnly *bool `json:"settings_only,omitempty"`
 }
 
 type EventsResult struct {
@@ -925,6 +926,9 @@ type QuickPasteParams struct {
 type QuickPreferences struct {
     Enabled bool `json:"enabled"`
     Hotkey string `json:"hotkey"`
+    Layout *string `json:"layout,omitempty"`
+    FullSectors *int64 `json:"full_sectors,omitempty"`
+    HalfSectors *int64 `json:"half_sectors,omitempty"`
 }
 
 type ScreenPoint struct {
@@ -1115,6 +1119,9 @@ type SurfaceShow struct {
     Locale string `json:"locale"`
     Theme SurfaceTheme `json:"theme"`
     Notice *string `json:"notice,omitempty"`
+    Layout *string `json:"layout,omitempty"`
+    Dock *string `json:"dock,omitempty"`
+    EntrySlots *int64 `json:"entry_slots,omitempty"`
 }
 
 type SurfaceShown struct {

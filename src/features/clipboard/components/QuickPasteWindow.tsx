@@ -17,9 +17,14 @@ import { entryInstanceArgs } from "../../../shared/lib/historyIdentity";
 import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { PrivacyStatusBanner } from "../../../shared/components/PrivacyStatusBanner";
 import { privacyStatusZh } from "../../../locales/zh";
-import { QuickPastePanel, QuickPasteSearch, QuickPasteRow } from "@deziro/ui-react";
+import { QuickPastePanel, QuickPasteSearch, QuickPasteRow, QuickPasteRings, type QuickPasteDock } from "@deziro/ui-react";
 
 const MAX_ENTRIES = 10;
+const RING_TYPES = [
+  ["text", "文本"], ["image", "图片"], ["file", "文件"],
+  ["url", "链接"], ["code", "代码"], ["video", "视频"], ["rich_text", "富文本"],
+] as const;
+const ringType = (type: string) => type === "files" ? "file" : type === "link" ? "url" : type;
 
 const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   _props,
@@ -37,6 +42,10 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   // stale index pastes the wrong thing. An id survives the reorder.
   const [activeId, setActiveId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [ring, setRing] = useState(false);
+  const [dock, setDock] = useState<QuickPasteDock>("");
+  const [category, setCategory] = useState<string | null>(null);
+  const [entrySlots, setEntrySlots] = useState(8);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   // A mirror of `entries` for the event listeners to read.
@@ -51,17 +60,20 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   // and keeps `setActiveId` out of another setter's updater, where React is free
   // to call it more than once.
   const entriesRef = useRef<ClipboardEntry[]>([]);
-  useBackendAppearance();
+  useBackendAppearance(ring);
+  const defaultCategory = entries.map(entry => ringType(entry.content_type))
+    .find(kind => RING_TYPES.some(([type]) => type === kind)) ?? RING_TYPES[0][0];
+  const activeCategory = category ?? defaultCategory;
 
   const filtered = useMemo(() => {
-    if (!searchQuery.trim()) return entries;
-    const q = searchQuery.toLowerCase();
-    return entries.filter(
+    if (ring) return entries.filter(entry => ringType(entry.content_type) === activeCategory).slice(0, entrySlots);
+    const q = searchQuery.trim().toLowerCase();
+    return !q ? entries : entries.filter(
       (e) =>
         e.preview.toLowerCase().includes(q) ||
         e.content.toLowerCase().includes(q)
     );
-  }, [entries, searchQuery]);
+  }, [entries, searchQuery, ring, activeCategory, entrySlots]);
 
   // Derived, so there is no stored index that can disagree with the list. -1 only
   // when there is nothing to select; anything that drops the selected entry --
@@ -138,6 +150,17 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       captured.invalidate();
       fetchRecent();
     });
+    const unlistenPlacement = listen<{ layout: string; dock: string | null; entry_slots: number | null }>("quick-paste-placement", ({ payload }) => {
+      if (disposed) return;
+      setRing(payload.layout === "ring");
+      const side = payload.dock === "left" || payload.dock === "right" || payload.dock === "top" ? payload.dock : "";
+      setDock(side);
+      const slots = payload.entry_slots;
+      setEntrySlots(slots && Number.isInteger(slots) && slots >= 3 && slots <= (side ? 8 : 12) ? slots : side ? 5 : 8);
+      setCategory(null);
+      setSearchQuery("");
+      setActiveId(null);
+    });
     const stopPrivacy = subscribePrivacyInvalidation(scope => {
       if (scope === "reveal") return;
       captured.invalidate();
@@ -146,7 +169,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       setActiveId(null);
       setSearchQuery("");
     });
-    void Promise.all([unlistenCaptured, unlistenUpdated, unlistenRemoved, unlistenChanged, unlistenShown])
+    void Promise.all([unlistenCaptured, unlistenUpdated, unlistenRemoved, unlistenChanged, unlistenShown, unlistenPlacement])
       .then(() => {
         if (!disposed) setListenersReady(true);
       })
@@ -156,7 +179,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       stopPrivacy();
       captured.dispose();
       refreshReader.cancel();
-      for (const unlisten of [unlistenCaptured, unlistenUpdated, unlistenRemoved, unlistenChanged, unlistenShown]) {
+      for (const unlisten of [unlistenCaptured, unlistenUpdated, unlistenRemoved, unlistenChanged, unlistenShown, unlistenPlacement]) {
         void unlisten.then((f) => f(), () => undefined);
       }
     };
@@ -168,8 +191,8 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
 
   useEffect(() => {
     document.body.classList.add("quick-paste");
-    inputRef.current?.focus();
-  }, []);
+    if (!ring) inputRef.current?.focus();
+  }, [ring]);
 
   const handlePaste = useCallback(async (entryId: number) => {
     try {
@@ -197,7 +220,14 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   // Global keyboard handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "ArrowDown") {
+      if (e.isComposing) return;
+      if (ring && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        e.preventDefault();
+        const index = RING_TYPES.findIndex(([kind]) => kind === activeCategory);
+        const next = (index + (e.key === "ArrowLeft" ? -1 : 1) + RING_TYPES.length) % RING_TYPES.length;
+        setCategory(RING_TYPES[next][0]);
+        setActiveId(null);
+      } else if (e.key === "ArrowDown") {
         e.preventDefault();
         const next = Math.min(activeIndex + 1, filtered.length - 1);
         if (filtered[next]) setActiveId(filtered[next].id);
@@ -206,6 +236,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
         const next = Math.max(activeIndex - 1, 0);
         if (filtered[next]) setActiveId(filtered[next].id);
       } else if (e.key === "Enter") {
+        if (ring && e.target instanceof HTMLButtonElement) return;
         e.preventDefault();
         const target = filtered[activeIndex];
         if (target) {
@@ -218,7 +249,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeIndex, filtered, handlePaste]);
+  }, [activeIndex, activeCategory, filtered, handlePaste, ring]);
 
   // Scroll active item into view
   useEffect(() => {
@@ -233,7 +264,8 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   useAuxiliaryWindowReady(initialFetchSettled && listenersReady);
 
   return (
-    <QuickPastePanel>
+    <QuickPastePanel className={ring ? "quick-paste-window--rings" : undefined}>
+      {!ring && <>
       <PrivacyStatusBanner t={t} />
       <QuickPasteSearch
         ref={inputRef}
@@ -243,7 +275,14 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
         placeholder="搜索..."
         data-testid="quick-paste-search"
       />
-      <div
+      </>}
+      {ring ? <QuickPasteRings dock={dock} entrySlots={entrySlots} categoryLabel="剪贴板类型" entryLabel="剪贴板条目"
+        categories={RING_TYPES.map(([id, label]) => ({ id, label, compactLabel: id === "rich_text" ? "富文" : label, active: activeCategory === id,
+          onSelect: () => { setCategory(id); setActiveId(null); } }))}
+        entries={filtered.map((entry, i) => ({ id: entry.id, label: entry.preview?.trim() || RING_TYPES.find(([kind]) => kind === activeCategory)?.[1] || "—",
+          detail: entry.source_app, active: i === activeIndex,
+          onHighlight: () => setActiveId(entry.id), onSelect: () => void handlePaste(entry.id) }))} />
+      : <div
         ref={setListRef}
         className="quick-paste-window__list"
         data-testid="quick-paste-list"
@@ -260,7 +299,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
             <QuickPasteRow
               key={entry.id}
               active={i === activeIndex}
-              preview={entry.preview || entry.content || "—"}
+              preview={entry.preview?.trim() || RING_TYPES.find(([kind]) => kind === activeCategory)?.[1] || "—"}
               source={entry.source_app}
               onMouseEnter={() => setActiveId(entry.id)}
               onClick={() => handlePaste(entry.id)}
@@ -268,7 +307,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
             />
           ))
         )}
-      </div>
+      </div>}
     </QuickPastePanel>
   );
 });

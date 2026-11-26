@@ -82,7 +82,7 @@ const applyTokens = (settings: Record<string, string>): { theme: string; colorMo
   };
 };
 
-export const useBackendAppearance = (): void => {
+export const useBackendAppearance = (quickPasteRing = false): void => {
   useEffect(() => {
     let disposed = false;
     let currentColorMode: ThemeColorMode = "system";
@@ -90,19 +90,32 @@ export const useBackendAppearance = (): void => {
     let modeVersion = 0;
     const cleanups: Array<() => void> = [];
 
-    const applyPlatformClasses = async () => {
+    const platformReady = (async (): Promise<boolean> => {
       try {
         const info = await invoke<PlatformInfo>("get_platform_info");
-        if (disposed) return;
+        if (disposed) return false;
         const classes = platformClasses(info);
         for (const el of [document.documentElement, document.body]) {
           for (const [name, on] of Object.entries(classes)) {
             el.classList.toggle(name, on);
           }
         }
+        return info.is_windows_10 || info.is_windows_11;
       } catch (err) {
         console.warn("[appearance] Failed to read platform info:", err);
+        return false;
       }
+    })();
+
+    let appliedMaterial: string | undefined;
+    const applyFloatingMaterial = async (theme: string, version: number) => {
+      if (!(await platformReady) || disposed || version !== appearanceVersion) return;
+      const label = getCurrentWindow().label;
+      if (label !== "quick-paste" && label !== "compact-preview" && !label.startsWith("pinned-preview-")) return;
+      const material = JSON.stringify([theme, currentColorMode]);
+      if (appliedMaterial === material) return;
+      await invoke("set_theme", { theme, color_mode: currentColorMode, show_app_border: false });
+      if (version === appearanceVersion) appliedMaterial = material;
     };
 
     const applyMode = async () => {
@@ -127,12 +140,12 @@ export const useBackendAppearance = (): void => {
         await ensureThemeCssLoaded(theme);
         if (disposed || version !== appearanceVersion) return;
         applyThemeClass(document.documentElement, document.body, theme);
+        await applyFloatingMaterial(theme, version);
       } catch (err) {
         console.warn("[appearance] Failed to load appearance from backend:", err);
       }
     };
 
-    void applyPlatformClasses();
     void load();
 
     // Theme switches arrive with a payload, so they need no database round-trip.
@@ -147,6 +160,8 @@ export const useBackendAppearance = (): void => {
           await ensureThemeCssLoaded(theme);
           if (disposed || version !== appearanceVersion) return;
           applyThemeClass(document.documentElement, document.body, theme);
+          await applyFloatingMaterial(theme, version).catch(err =>
+            console.warn("[appearance] Failed to update floating material:", err));
         });
         if (disposed) {
           off();
@@ -224,5 +239,5 @@ export const useBackendAppearance = (): void => {
         }
       }
     };
-  }, []);
+  }, [quickPasteRing]);
 };

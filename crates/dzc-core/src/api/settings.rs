@@ -39,7 +39,7 @@ impl HistoryService {
     pub fn screen_preferences(&self) -> CoreResult<(bool, String, String)> {
         self.repository.screen_preferences()
     }
-    pub fn quick_preferences(&self) -> CoreResult<(bool, String)> {
+    pub fn quick_preferences(&self) -> CoreResult<(bool, String, String, u8, u8)> {
         self.repository.quick_preferences()
     }
     pub fn queue_preferences(&self) -> CoreResult<(bool, bool, String)> { self.repository.queue_preferences() }
@@ -67,11 +67,21 @@ impl HistoryService {
         self.repository.set_setting_at_epoch("app.window_pinned", if pinned { "true" } else { "false" }, epoch)
     }
 
+    pub fn quick_paste_sector_limit(half: bool) -> u8 {
+        if half { 8 } else { 12 }
+    }
+
+    pub fn quick_paste_sectors(value: Option<&str>, half: bool) -> u8 {
+        value.and_then(|value| value.parse::<u8>().ok())
+            .filter(|count| (3..=Self::quick_paste_sector_limit(half)).contains(count))
+            .unwrap_or(if half { 5 } else { 8 })
+    }
+
     pub fn is_view_setting(key: &str) -> bool {
         matches!(key, "app.use_win_v_shortcut" | "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
             | "app.show_scroll_top_button" | "app.show_search_box" | "app.tag_manager_enabled" | "app.rich_text_snapshot_preview" | "app.rich_text_snapshot_cache_limit" | "app.arrow_key_selection" | "app.preview_keyboard_enabled" | "app.update_auto_check" | "app.update_channel" | "app.silent_start" | "app.hide_tray_icon" | "app.edge_docking" | "app.follow_mouse" | "app.disable_webview_gpu"
             | "app.idle_destroy_enabled" | "app.idle_destroy_seconds"
-            | "app.quick_paste_enabled" | "app.screenshot_enabled"
+            | "app.quick_paste_enabled" | "app.quick_paste_layout" | "app.quick_paste_full_sectors" | "app.quick_paste_half_sectors" | "app.screenshot_enabled"
             | "app.sound_enabled" | "app.sound_paste_enabled" | "app.sound_volume"
             | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.preview_opacity" | "app.font_main" | "app.font_mono"
             | "app.custom_background" | "app.custom_background_opacity" | "app.emoji_panel_enabled" | "app.emoji_panel_tab" | "app.emoji_favorites")
@@ -83,6 +93,11 @@ impl HistoryService {
             "app.theme" => BUILTIN_THEMES.contains(&value) || value.strip_prefix("custom:").is_some_and(valid_theme_id),
             "app.font_main" | "app.font_mono" => value.chars().count() <= 256 && !value.chars().any(char::is_control),
             "app.color_mode" => matches!(value, "light" | "dark" | "system"),
+            "app.quick_paste_layout" => matches!(value, "list" | "ring"),
+            "app.quick_paste_full_sectors" | "app.quick_paste_half_sectors" => {
+                let half = key == "app.quick_paste_half_sectors";
+                value.parse::<u8>().is_ok_and(|count| (3..=Self::quick_paste_sector_limit(half)).contains(&count))
+            }
             "app.emoji_favorites" => value.len() <= 128 * 1024 && serde_json::from_str::<Vec<String>>(value)
                 .is_ok_and(|paths| paths.len() <= 4096 && paths.iter().all(|path| !path.is_empty() && !path.contains('\0'))),
             "app.idle_destroy_seconds" => value.bytes().all(|b| b.is_ascii_digit())

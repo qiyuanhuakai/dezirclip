@@ -50,7 +50,7 @@ impl SqliteClipboardRepository {
             'app.ocr_enabled','app.paste_method','app.persistent','app.persistent_limit','app.persistent_limit_enabled',
             'app.preview_keyboard_enabled','app.preview_opacity','app.privacy_protection',
             'app.privacy_protection_custom_rules','app.privacy_protection_kinds','app.privacy_session_hotkey',
-            'app.quick_paste_enabled','app.quick_paste_hotkey','app.quick_paste_renderer','app.rich_paste_hotkey',
+            'app.quick_paste_enabled','app.quick_paste_hotkey','app.quick_paste_renderer','app.quick_paste_layout','app.quick_paste_full_sectors','app.quick_paste_half_sectors','app.rich_paste_hotkey',
             'app.rich_text_snapshot_cache_limit','app.rich_text_snapshot_preview','app.screenshot_enabled',
             'app.screenshot_full_hotkey','app.screenshot_hotkey','app.search_fuzzy_enabled','app.search_hotkey',
             'app.search_regex_enabled','app.sequential_hotkey','app.sequential_mode','app.show_app_border',
@@ -90,11 +90,21 @@ impl SqliteClipboardRepository {
             |row| Ok((row.get::<_, String>(0)? == "true", row.get(1)?, row.get(2)?)))
             .map_err(|error| CoreError::from(error.to_string()))
     }
-    pub(crate) fn quick_preferences(&self) -> CoreResult<(bool, String)> {
+    pub(crate) fn quick_preferences(&self) -> CoreResult<(bool, String, String, u8, u8)> {
         let conn = self.conn.lock().map_err(|_| CoreError::from("SettingsUnavailable".to_owned()))?;
         conn.query_row("SELECT COALESCE((SELECT value FROM settings WHERE key='app.quick_paste_enabled'),'true'),
-            COALESCE((SELECT value FROM settings WHERE key='app.quick_paste_hotkey'),'Ctrl+Shift+V')", [],
-            |row| Ok((row.get::<_, String>(0)? == "true", row.get(1)?)))
+            COALESCE((SELECT value FROM settings WHERE key='app.quick_paste_hotkey'),'Ctrl+Shift+V'),
+            COALESCE((SELECT value FROM settings WHERE key='app.quick_paste_layout'),'list'),
+            (SELECT value FROM settings WHERE key='app.quick_paste_full_sectors'),
+            (SELECT value FROM settings WHERE key='app.quick_paste_half_sectors')", [],
+            |row| {
+                let full: Option<String> = row.get(3)?;
+                let half: Option<String> = row.get(4)?;
+                use crate::api::HistoryService;
+                Ok((row.get::<_, String>(0)? == "true", row.get(1)?, row.get(2)?,
+                    HistoryService::quick_paste_sectors(full.as_deref(), false),
+                    HistoryService::quick_paste_sectors(half.as_deref(), true)))
+            })
             .map_err(|error| CoreError::from(error.to_string()))
     }
     pub(crate) fn set_setting_at_epoch(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {

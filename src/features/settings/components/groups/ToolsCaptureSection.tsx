@@ -1,4 +1,5 @@
 import { SettingsToggle } from "@deziro/ui-react/components/SettingsToggle";
+import { SettingsChoices } from "@deziro/ui-react/components/SettingsChoices";
 import { CaptureEngineStatus, CaptureSettingsActions, CaptureSettingsHeading } from "@deziro/ui-react/components/SettingsCapture";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
@@ -23,6 +24,8 @@ interface ToolsCaptureSectionProps {
     readonly setQuickPasteEnabled: (val: boolean) => void;
     readonly quickPasteHotkey: string;
     readonly quickPasteRenderer: string;
+    readonly quickPasteLayout: string;
+    readonly appSettings: Record<string, string>;
     readonly ocrEnabled: boolean;
     readonly setOcrEnabled: (val: boolean) => void;
     readonly saveAppSetting: (key: string, val: string) => void | Promise<boolean | void>;
@@ -69,6 +72,8 @@ const ToolsCaptureSection = ({
     setQuickPasteEnabled,
     quickPasteHotkey: initialQuickPasteHotkey,
     quickPasteRenderer,
+    quickPasteLayout,
+    appSettings,
     ocrEnabled,
     setOcrEnabled,
     saveAppSetting,
@@ -156,6 +161,26 @@ const ToolsCaptureSection = ({
             {quickPasteEnabled && <HotkeyRecorder t={t} labelKey="quick_paste_hotkey_label" hotkey={quickPasteHotkey} recording={isRecordingQuickPaste} setRecording={setIsRecordingQuickPaste} disabled={panelSaving} onHotkeyChange={value => { void savePanelHotkey("quick_paste_hotkey", value, setQuickPasteHotkey); }} />}
             {hotkeyError && <p role="alert" className="hotkey-recording-error">{hotkeyError}</p>}
             {quickPasteEnabled && <QuickPasteRendererSetting t={t} renderer={quickPasteRenderer} />}
+            {quickPasteEnabled && <div className="setting-item">
+                <span className="item-label">{t("quick_paste_layout")}</span>
+                <SettingsChoices label={t("quick_paste_layout")} value={quickPasteLayout}
+                    options={[{ value: "list", label: t("quick_paste_layout_list") }, { value: "ring", label: t("quick_paste_layout_ring") }]}
+                    onChange={value => { void saveAppSetting("quick_paste_layout", value); }} />
+            </div>}
+            {quickPasteEnabled && quickPasteLayout === "ring" &&
+                [{ key: "quick_paste_full_sectors", max: 12, fallback: 8 },
+                 { key: "quick_paste_half_sectors", max: 8, fallback: 5 }].map(({ key, max, fallback }) => {
+                    const options = Array.from({ length: max - 2 }, (_, index) => {
+                        const value = String(index + 3);
+                        return { value, label: value };
+                    });
+                    const value = appSettings[`app.${key}`];
+                    return <div className="setting-item" key={key}>
+                        <span className="item-label">{t(key)}</span>
+                        <SettingsChoices label={t(key)} value={options.some(item => item.value === value) ? value : String(fallback)}
+                            options={options} onChange={next => { void saveAppSetting(key, next); }} />
+                    </div>;
+                 })}
             </NativeFeatureBoundary>
             <div className="setting-item">
                 <LabelWithHint label={t("ocr_enabled")} hintKey="ocr_enabled" />

@@ -280,6 +280,13 @@ pub async fn save_setting(
     key: String,
     value: String,
 ) -> AppResult<()> {
+    if key=="app.quick_paste_layout" && !matches!(value.as_str(),"list"|"ring") {return Err(AppError::Validation("InvalidQuickPasteLayout".into()));}
+    if matches!(key.as_str(), "app.quick_paste_full_sectors" | "app.quick_paste_half_sectors") {
+        let limit = dzc_core::api::HistoryService::quick_paste_sector_limit(key == "app.quick_paste_half_sectors");
+        if !value.parse::<u8>().is_ok_and(|count| (3..=limit).contains(&count)) {
+            return Err(AppError::Validation("InvalidQuickPasteSectorCount".into()));
+        }
+    }
     if key=="app.quick_paste_renderer" && !matches!(value.as_str(),"tauri"|"mygo") {return Err(AppError::Validation("InvalidQuickPasteRenderer".into()));}
     if key=="app.quick_paste_renderer" || key=="app.quick_paste_enabled" && value=="false" {
         crate::app::surface_supervisor::stop_blocking(&app_handle,"disabled",true).map_err(AppError::Validation)?;

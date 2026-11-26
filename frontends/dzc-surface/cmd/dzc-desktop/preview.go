@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"image"
+	"log"
 	"math"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/egoist/mygo/ui/richtext"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/windowappearance"
 	surfaceTheme "github.com/qiyuanhuakai/deziro-ui/packages/ui-native/theme"
 	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/uikit"
 	"github.com/qiyuanhuakai/deziro-ui/packages/ui-presets"
@@ -161,6 +163,16 @@ func (a previewAppearance) theme() *ui.Theme {
 
 func (p *Preview) Select(ctx context.Context, sequence uint64, id int64, state protocol.RuntimeState) {
 	p.selectEntry(ctx, sequence, id, state, false, nil, previewAppearance{Opacity: 65})
+}
+
+func (a previewAppearance) applyMaterial(window *mygo.Window) {
+	mode := "light"
+	if a.Dark {
+		mode = "dark"
+	}
+	if err := windowappearance.Apply(window, a.BaseTheme, mode, false); err != nil {
+		log.Printf("preview material: %v", err)
+	}
 }
 
 func (a previewAppearance) panel(c *ui.Context) ui.Element {
@@ -493,6 +505,7 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 		opacity.window = p.window
 		p.opacity = opacity
 		opacity.reload()
+		appearance.applyMaterial(p.window)
 		p.window.SetTitle("DezirClip 悬浮预览")
 		p.window.ShowInactive()
 	})

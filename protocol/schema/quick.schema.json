@@ -104,6 +104,25 @@
         "hotkey": {
           "type": "string",
           "maxLength": 256
+        },
+        "layout": {
+          "type": "string",
+          "enum": [
+            "list",
+            "ring"
+          ]
+        },
+        "full_sectors": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 12,
+          "x-rust-type": "u8"
+        },
+        "half_sectors": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 8,
+          "x-rust-type": "u8"
         }
       },
       "required": [

@@ -122,7 +122,7 @@ fn windows_theme_plan(theme: &str, build: u32, show_border: bool) -> WindowsThem
 }
 
 #[cfg(target_os = "windows")]
-fn clear_windows_backdrop(window: &WebviewWindow) {
+pub(super) fn clear_windows_backdrop(window: &WebviewWindow) {
     let _ = window_vibrancy::clear_mica(window);
     let _ = window_vibrancy::clear_acrylic(window);
 }
@@ -161,8 +161,11 @@ pub fn set_theme(
     #[cfg(not(target_os = "windows"))]
     let _ = show_border;
 
-    if let Ok(mut guard) = state.theme.lock() {
-        *guard = theme.clone();
+    let main = window.label() == "main";
+    if main {
+        if let Ok(mut guard) = state.theme.lock() {
+            *guard = theme.clone();
+        }
     }
 
     let resolved_color_mode = match effective_color_mode.as_deref() {
@@ -229,7 +232,9 @@ pub fn set_theme(
         }
 
         let build = windows_version::OsVersion::current().build;
-        let plan = windows_theme_plan(&effective_base_theme, build, show_border);
+        let transparent_ring = window.label() == "quick-paste" && crate::app::surface_supervisor::quick_paste_ring_enabled(&app);
+        let theme = if transparent_ring { "" } else { &effective_base_theme };
+        let plan = windows_theme_plan(theme, build, show_border);
 
         if plan.clear_native_backdrop {
             clear_windows_backdrop(&window);
@@ -274,18 +279,20 @@ pub fn set_theme(
         }
     }
 
-    let _ = app.emit(
-        "theme-changed",
-        ThemeChangedPayload {
-            theme,
-            color_mode: match effective_color_mode.as_deref() {
-                Some("light") => "light",
-                Some("dark") => "dark",
-                _ => "system",
-            }
-            .to_string(),
-        },
-    );
+    if main {
+        let _ = app.emit(
+            "theme-changed",
+            ThemeChangedPayload {
+                theme,
+                color_mode: match effective_color_mode.as_deref() {
+                    Some("light") => "light",
+                    Some("dark") => "dark",
+                    _ => "system",
+                }
+                .to_string(),
+            },
+        );
+    }
 
     #[cfg(not(target_os = "windows"))]
     webview_memory::force_transparent_background(&window);

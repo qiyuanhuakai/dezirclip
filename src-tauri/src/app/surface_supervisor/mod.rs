@@ -304,7 +304,18 @@ fn appearance(app: &AppHandle) -> (String, SurfaceTheme) {
         },
     )
 }
-fn geometry(app: &AppHandle) -> Result<(SurfacePhysicalRect, f64), String> {
+pub(crate) fn quick_paste_ring_enabled(app: &AppHandle) -> bool {
+    app.state::<crate::database::DbState>().settings_repo.get("app.quick_paste_layout")
+        .ok().flatten().as_deref() == Some("ring")
+}
+
+pub(crate) fn quick_paste_entry_slots(app: &AppHandle, docked: bool) -> u8 {
+    let key = if docked { "app.quick_paste_half_sectors" } else { "app.quick_paste_full_sectors" };
+    let value = app.state::<crate::database::DbState>().settings_repo.get(key).ok().flatten();
+    dzc_core::api::HistoryService::quick_paste_sectors(value.as_deref(), docked)
+}
+
+pub(crate) fn geometry(app: &AppHandle, ring: bool) -> Result<(SurfacePhysicalRect, f64, Option<String>), String> {
     let cursor = app.cursor_position().map_err(error)?;
     let monitor = app
         .monitor_from_point(cursor.x, cursor.y)
@@ -316,22 +327,42 @@ fn geometry(app: &AppHandle) -> Result<(SurfacePhysicalRect, f64), String> {
     }
     let size = monitor.size();
     let origin = monitor.position();
-    let width = (480.0 * scale)
+    let dock = ring.then(|| {
+        let top = cursor.y - f64::from(origin.y);
+        let left = cursor.x - f64::from(origin.x);
+        let right = f64::from(origin.x) + f64::from(size.width) - cursor.x;
+        [(top, "top"), (left, "left"), (right, "right")].into_iter()
+            .filter(|(distance, _)| *distance <= 48.0 * scale)
+            .min_by(|(a, _), (b, _)| a.total_cmp(b))
+            .map(|(_, side)| side)
+    }).flatten();
+    let (logical_width, logical_height) = match (ring, dock) {
+        (false, _) => (480.0, 360.0),
+        (_, Some("top")) => (440.0, 224.0),
+        (_, Some("left" | "right")) => (224.0, 440.0),
+        _ => (440.0, 440.0),
+    };
+    let width = (logical_width * scale)
         .round()
         .min(f64::from(size.width))
         .clamp(1.0, 32768.0) as u32;
-    let height = (360.0 * scale)
+    let height = (logical_height * scale)
         .round()
         .min(f64::from(size.height))
         .clamp(1.0, 32768.0) as u32;
-    let x = (cursor.x - f64::from(width) / 2.0).round().clamp(
-        f64::from(origin.x),
-        f64::from(origin.x) + f64::from(size.width - width),
-    );
-    let y = (cursor.y + 12.0).round().clamp(
-        f64::from(origin.y),
-        f64::from(origin.y) + f64::from(size.height - height),
-    );
+    let left = f64::from(origin.x);
+    let right = left + f64::from(size.width - width);
+    let x = match dock {
+        Some("left") => left,
+        Some("right") => right,
+        _ => (cursor.x - f64::from(width) / 2.0).round().clamp(left, right),
+    };
+    let y = match (ring, dock) {
+        (_, Some("top")) => f64::from(origin.y),
+        (true, _) => cursor.y - f64::from(height) / 2.0,
+        _ => cursor.y + 12.0,
+    };
+    let y = y.round().clamp(f64::from(origin.y), f64::from(origin.y) + f64::from(size.height - height));
     if x < f64::from(i32::MIN)
         || x > f64::from(i32::MAX)
         || y < f64::from(i32::MIN)
@@ -347,6 +378,7 @@ fn geometry(app: &AppHandle) -> Result<(SurfacePhysicalRect, f64), String> {
             height,
         },
         scale,
+        dock.map(str::to_owned),
     ))
 }
 impl Managed {
@@ -694,7 +726,8 @@ impl SurfaceSupervisor {
         target.prepare_request_time(move || {
             revision != u64::MAX && capture_generation.load(Ordering::Acquire) == revision
         }).await?;
-        let (rect, scale) = geometry(app)?;
+        let ring = quick_paste_ring_enabled(app);
+        let (rect, scale, dock) = geometry(app, ring)?;
         let _serial = self.serial.lock().await;
         if !self.request_current(revision) { return Err("SurfaceDisplayCancelled".into()); }
         request.bind(self.current()?)?;
@@ -769,6 +802,9 @@ impl SurfaceSupervisor {
                         locale,
                         theme,
                         notice: notice.clone(),
+                        layout: Some(if ring { "ring" } else { "list" }.into()),
+                        entry_slots: ring.then(|| quick_paste_entry_slots(app, dock.is_some())),
+                        dock,
                     },
                 )?,
                 SurfaceControlType::Shown,

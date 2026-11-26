@@ -462,7 +462,13 @@ impl Host {
         if self.is_stopping() { return Err(WireErrorCode::Busy); }
         self.synchronize_privacy()?;
         let request: SubscribeParams = params(parameters)?;
-        let mut events = self.events.after(request.after_sequence, Duration::from_millis(u64::from(request.wait_ms.unwrap_or(0))), self.snapshot()?).map_err(unavailable)?;
+        let snapshot = self.snapshot()?;
+        let wait = Duration::from_millis(u64::from(request.wait_ms.unwrap_or(0)));
+        let mut events = if request.settings_only == Some(true) {
+            self.events.settings_after(request.after_sequence, wait, snapshot)
+        } else {
+            self.events.after(request.after_sequence, wait, snapshot)
+        }.map_err(unavailable)?;
         if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
         if self.is_stopping() { return Err(WireErrorCode::Busy); }
         self.synchronize_privacy()?;
@@ -754,8 +760,8 @@ impl Host {
             }
             Method::DesktopQuickPreferences => {
                 self.desktop_permission(session, self.instance_id())?;
-                let (enabled, hotkey) = self.history.quick_preferences().map_err(unavailable)?;
-                result("QuickPreferences", QuickPreferences { enabled, hotkey })
+                let (enabled, hotkey, layout, full, half) = self.history.quick_preferences().map_err(unavailable)?;
+                result("QuickPreferences", QuickPreferences { enabled, hotkey, layout: Some(if layout == "ring" { layout } else { "list".into() }), full_sectors: Some(full), half_sectors: Some(half) })
             }
             Method::DesktopQuickBegin | Method::DesktopQuickDismiss | Method::DesktopQuickPaste => self.quick_request(session, request.method, request.params),
             Method::DesktopPasteTarget | Method::DesktopQueueGet | Method::DesktopQueueStatus | Method::DesktopQueueSet |

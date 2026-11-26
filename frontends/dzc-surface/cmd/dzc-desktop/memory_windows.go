@@ -2,14 +2,15 @@ package main
 
 import (
 	"log"
+	"runtime/debug"
 	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
-// Coalesce quick hide/show transitions and let the hidden UI wind down.
-const hiddenWorkingSetTrimDelay = 2 * time.Second
+// MyGo releases its surface caches after two seconds without frames.
+const hiddenWorkingSetTrimDelay = 3 * time.Second
 
 func setProcessMemoryBackground(background bool) {
 	process := windows.CurrentProcess()
@@ -27,6 +28,7 @@ func setProcessMemoryBackground(background bool) {
 }
 
 func trimHiddenWorkingSet() {
+	debug.FreeOSMemory()
 	trim := windows.NewLazySystemDLL("psapi.dll").NewProc("EmptyWorkingSet")
 	if trim.Find() == nil {
 		trim.Call(uintptr(windows.CurrentProcess()))
