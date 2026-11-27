@@ -194,13 +194,23 @@ func TestBundledUpdateChannels(t *testing.T) {
 	}
 	version := "999.0.0-alpha.9"
 	cpu := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
-	suffix := map[string]string{"windows-x86_64": "x64-setup.exe", "windows-aarch64": "arm64-setup.exe",
-		"linux-x86_64": "amd64.AppImage", "linux-aarch64": "aarch64.AppImage"}[runtime.GOOS+"-"+cpu]
-	file := "DezirClip_" + version + "_" + suffix
+	platform := runtime.GOOS + "-" + cpu
+	tauriSuffix := map[string]string{"windows-x86_64": "x64-setup.exe", "windows-aarch64": "arm64-setup.exe",
+		"linux-x86_64": "amd64.AppImage", "linux-aarch64": "aarch64.AppImage"}[platform]
+	mygoFile := mygoUpdateName(version)
 	release := "https://github.com/qiyuanhuakai/dezirclip/releases"
-	signature := base64.StdEncoding.EncodeToString([]byte("trusted comment: file:" + file + "\tversion:" + version))
-	manifest, err := json.Marshal(map[string]any{"version": version, "platforms": map[string]any{
-		runtime.GOOS + "-" + cpu: map[string]string{"url": release + "/download/v" + version + "/" + file, "signature": signature}}})
+	asset := func(file string) map[string]string {
+		return map[string]string{
+			"url":       release + "/download/v" + version + "/" + file,
+			"signature": base64.StdEncoding.EncodeToString([]byte("trusted comment: file:" + file + "\tversion:" + version)),
+		}
+	}
+	mygo := asset(mygoFile)
+	manifest, err := json.Marshal(map[string]any{
+		"version":        version,
+		"platforms":      map[string]any{platform: asset("DezirClip_" + version + "_" + tauriSuffix)},
+		"mygo_platforms": map[string]any{platform: mygo},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,6 +230,9 @@ func TestBundledUpdateChannels(t *testing.T) {
 	nativeResult, err := parseNativeUpdate(raw, "preview")
 	if err != nil || nativeResult.Status != "available" || nativeResult.Available == nil || nativeResult.Available.Version != version {
 		t.Fatalf("native update result: %+v, %v", nativeResult, err)
+	}
+	if artifact := nativeResult.Available.Artifact; artifact == nil || artifact.URL != mygo["url"] || artifact.Signature != mygo["signature"] {
+		t.Fatalf("native updater selected the wrong desktop artifact: %+v", artifact)
 	}
 	var result struct {
 		Status, CurrentVersion, ChannelVersion string
