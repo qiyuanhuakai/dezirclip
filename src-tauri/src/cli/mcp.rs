@@ -381,7 +381,8 @@ mod tests {
     use std::cell::Cell;
     use std::io::Cursor;
     use std::rc::Rc;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
+    use crate::cli::history_fixture::LegacyHistory;
 
     fn initialize() -> Value {
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
@@ -415,9 +416,7 @@ mod tests {
         serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
     }
 
-    fn database() -> Arc<Mutex<rusqlite::Connection>> {
-        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
-        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
+    fn seed_history(connection: &rusqlite::Connection) {
         for (id, content, preview, tags, html) in [
             (1, "needle old", "safe preview", "[]", None),
             (
@@ -465,7 +464,6 @@ mod tests {
         connection.execute("UPDATE clipboard_history SET content=?1 WHERE id=3", [&cipher]).unwrap();
         connection.execute("UPDATE clipboard_history SET html_content=?1 WHERE id=5", [&cipher]).unwrap();
         connection.execute("UPDATE clipboard_history SET preview=?1 WHERE id=6", [&cipher]).unwrap();
-        Arc::new(Mutex::new(connection))
     }
 
     #[test]
@@ -526,20 +524,19 @@ mod tests {
 
     #[test]
     fn sensitive_and_encrypted_rows_are_excluded_before_pagination_and_get() {
-        let connection = database();
-        let before: i64 = connection
-            .lock()
-            .unwrap()
+        let fixture = LegacyHistory::new(seed_history);
+        let before: i64 = fixture
+            .read_only()
             .query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| {
                 row.get(0)
             })
             .unwrap();
         let opened = Rc::new(Cell::new(0));
         let count = opened.clone();
-        let cloned = connection.clone();
+        let history = Arc::new(fixture.open());
         let mut server = Server::new(move || {
             count.set(count.get() + 1);
-            Ok(Arc::new(HistoryService::from_legacy_connection(cloned.clone())))
+            Ok(history.clone())
         });
         ready(&mut server);
         let page = data(&call(
@@ -567,17 +564,15 @@ mod tests {
             assert!(!response.to_string().contains("private-"));
         }
         assert_eq!(opened.get(), 1);
-        let after: i64 = connection
-            .lock()
-            .unwrap()
+        let after: i64 = fixture
+            .read_only()
             .query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| {
                 row.get(0)
             })
             .unwrap();
         assert_eq!(before, after);
-        let sensitive: String = connection
-            .lock()
-            .unwrap()
+        let sensitive: String = fixture
+            .read_only()
             .query_row(
                 "SELECT content FROM clipboard_history WHERE id=2",
                 [],
@@ -589,12 +584,14 @@ mod tests {
 
     #[test]
     fn searches_matching_only_excluded_payloads_return_empty_pages() {
-        let connection = database();
-        for (id, tags) in [(7, "[\"Sensitive\"]"), (8, "[\"密码\"]")] {
-            connection.lock().unwrap().execute("INSERT INTO clipboard_history(id,content_type,content,source_app,timestamp,preview,tags) VALUES(?1,'text','private-tagged-payload','source',?1,'private-tagged-preview',?2)",rusqlite::params![id,tags]).unwrap();
-        }
-        let mut server =
-            Server::new(move || Ok(Arc::new(HistoryService::from_legacy_connection(connection.clone()))));
+        let fixture = LegacyHistory::new(|connection| {
+            seed_history(connection);
+            for (id, tags) in [(7, "[\"Sensitive\"]"), (8, "[\"密码\"]")] {
+                connection.execute("INSERT INTO clipboard_history(id,content_type,content,source_app,timestamp,preview,tags) VALUES(?1,'text','private-tagged-payload','source',?1,'private-tagged-preview',?2)",rusqlite::params![id,tags]).unwrap();
+            }
+        });
+        let history = Arc::new(fixture.open());
+        let mut server = Server::new(move || Ok(history.clone()));
         ready(&mut server);
         for query in [
             "private",
@@ -621,10 +618,12 @@ mod tests {
 
     #[test]
     fn untagged_plaintext_is_visible_without_automatic_private_content_detection() {
-        let connection = database();
-        connection.lock().unwrap().execute("UPDATE clipboard_history SET content='personal-untagged-note',preview='personal note' WHERE id=1",[]).unwrap();
-        let mut server =
-            Server::new(move || Ok(Arc::new(HistoryService::from_legacy_connection(connection.clone()))));
+        let fixture = LegacyHistory::new(|connection| {
+            seed_history(connection);
+            connection.execute("UPDATE clipboard_history SET content='personal-untagged-note',preview='personal note' WHERE id=1",[]).unwrap();
+        });
+        let history = Arc::new(fixture.open());
+        let mut server = Server::new(move || Ok(history.clone()));
         ready(&mut server);
         let result = data(&call(&mut server, "clipboard_get", json!({"id":1})));
         assert_eq!(result["content"], "personal-untagged-note");
@@ -632,9 +631,12 @@ mod tests {
 
     #[test]
     fn literal_prefix_body_preview_and_ocr_remain_available_before_pagination() {
-        let connection = database();
-        connection.lock().unwrap().execute("UPDATE clipboard_history SET content='linux: ordinary body',preview='dpapi: ordinary preview',ocr_text='linux: kernel notes' WHERE id=1", []).unwrap();
-        let mut server = Server::new(move || Ok(Arc::new(HistoryService::from_legacy_connection(connection.clone()))));
+        let fixture = LegacyHistory::new(|connection| {
+            seed_history(connection);
+            connection.execute("UPDATE clipboard_history SET content='linux: ordinary body',preview='dpapi: ordinary preview',ocr_text='linux: kernel notes' WHERE id=1", []).unwrap();
+        });
+        let history = Arc::new(fixture.open());
+        let mut server = Server::new(move || Ok(history.clone()));
         ready(&mut server);
         let item = data(&call(&mut server, "clipboard_get", json!({"id":1})));
         assert_eq!(item["content"], "linux: ordinary body");
@@ -645,20 +647,24 @@ mod tests {
 
     #[test]
     fn content_and_metadata_limits_count_unicode_characters() {
-        let connection = database();
-        let content = format!("  你好\r\n{}", "尾".repeat(20_000));
         let preview = "界".repeat(700);
-        let tags = vec!["标".repeat(120); 30];
-        connection
-            .lock()
-            .unwrap()
-            .execute(
-                "UPDATE clipboard_history SET content=?1,preview=?2,tags=?3 WHERE id=4",
-                rusqlite::params![content, preview, serde_json::to_string(&tags).unwrap()],
-            )
-            .unwrap();
-        let mut server =
-            Server::new(move || Ok(Arc::new(HistoryService::from_legacy_connection(connection.clone()))));
+        let fixture = LegacyHistory::new(|connection| {
+            seed_history(connection);
+            let content = format!("  你好\r\n{}", "尾".repeat(20_000));
+            let tags = vec!["标".repeat(120); 30];
+            connection
+                .execute(
+                    "UPDATE clipboard_history SET content=?1,preview=?2,tags=?3 WHERE id=4",
+                    rusqlite::params![content, preview, serde_json::to_string(&tags).unwrap()],
+                )
+                .unwrap();
+        });
+        let history = Arc::new(fixture.open());
+        let mut record = history.get_entry_by_id(4).unwrap().unwrap();
+        record.preview = preview;
+        let projected = metadata(&record).unwrap();
+        assert_eq!(projected["preview"].as_str().unwrap().chars().count(), 500);
+        let mut server = Server::new(move || Ok(history.clone()));
         ready(&mut server);
         let result = data(&call(
             &mut server,

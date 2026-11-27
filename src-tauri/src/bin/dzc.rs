@@ -640,7 +640,7 @@ fn run_capabilities(json: bool) -> Result<(), String> {
 
 fn main() {
     dzc_platform::dispatch_export_guardian();
-    dzc_platform::set_diagnostic_sink(dezirclip::logger::log_diagnostic);
+    dzc_platform::set_diagnostic_sink(|message| eprintln!("{message}"));
     dzc_platform::install_default_key_provider();
     use std::io::IsTerminal;
     let color = std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty())

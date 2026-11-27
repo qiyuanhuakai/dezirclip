@@ -13,6 +13,8 @@
 pub mod add;
 mod access;
 mod host_access;
+#[cfg(test)]
+mod history_fixture;
 pub mod clear;
 pub mod count;
 pub mod delete;

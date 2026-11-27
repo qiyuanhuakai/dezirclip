@@ -43,8 +43,6 @@ use dzc_core::api::ClipboardEntry;
 use crate::api::{BackupService, HistoryService};
 #[cfg(test)]
 use crate::api::HistoryQuery;
-#[cfg(test)]
-use crate::services::backup::{export_to_json, ExportEntry};
 
 /// Minimum acceptable passphrase length. Matches the
 /// `BackupDialog` validation in the frontend and the G32 hard
@@ -130,16 +128,26 @@ fn resolve_format(path: &str, encrypted: bool) -> Result<ExportFormat, String> {
     Ok(ExportFormat::Json)
 }
 
-/// Image records carry their original encoded bytes across machines; file
-/// lists and resources linked from HTML remain references to their sources.
-#[cfg(test)]
-fn to_export_entry(entry: &ClipboardEntry) -> Result<ExportEntry, String> {
-    crate::services::backup::prepare_export_entry(entry)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::history_fixture::LegacyHistory;
+    use serde_json::Value;
+
+    fn exported_entry(entry: ClipboardEntry) -> Value {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("backup.json");
+        let history = HistoryService::open(Path::new(":memory:")).unwrap();
+        history.restore(&[entry], crate::api::ImportMode::Replace).unwrap();
+        run(&ExportArgs {
+            path: path.to_string_lossy().into_owned(),
+            encrypted: false,
+            passphrase: None,
+            quiet: true,
+        }, &history).unwrap();
+        let backup: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        backup["entries"][0].clone()
+    }
 
     #[test]
     fn resolve_format_defaults_to_json() {
@@ -200,15 +208,15 @@ mod tests {
             ocr_text: None,
             ocr_status: None,
         };
-        let exp = to_export_entry(&e).unwrap();
-        assert_eq!(exp.id, 42);
-        assert_eq!(exp.content_type, "text");
-        assert_eq!(exp.content, "hello");
-        assert_eq!(exp.preview.as_deref(), Some("hello"));
-        assert_eq!(exp.source_app.as_deref(), Some("test-app"));
-        assert!(exp.is_pinned);
-        assert_eq!(exp.use_count, 7);
-        assert_eq!(exp.tags, vec!["work".to_string()]);
+        let exp = exported_entry(e);
+        assert_eq!(exp["id"], 42);
+        assert_eq!(exp["content_type"], "text");
+        assert_eq!(exp["content"], "hello");
+        assert_eq!(exp["preview"], "hello");
+        assert_eq!(exp["source_app"], "test-app");
+        assert_eq!(exp["is_pinned"], true);
+        assert_eq!(exp["use_count"], 7);
+        assert_eq!(exp["tags"], serde_json::json!(["work"]));
     }
 
     fn image_entry(content: String) -> ClipboardEntry {
@@ -251,35 +259,29 @@ mod tests {
         let path = temporary_path("image%original.png");
         std::fs::write(&path, &bytes).unwrap();
         let entry = image_entry(path.to_string_lossy().into_owned());
-        let exported = to_export_entry(&entry);
+        let id = entry.id;
+        let exported = exported_entry(entry);
         std::fs::remove_file(path).unwrap();
 
-        let json = export_to_json(vec![exported.unwrap()]).unwrap();
-        let imported = crate::services::backup::entries_from_json(&json).unwrap();
-        let (header, payload) = imported[0].content.split_once(',').unwrap();
+        let (header, payload) = exported["content"].as_str().unwrap().split_once(',').unwrap();
         assert_eq!(header, "data:image/png;base64");
         assert_eq!(STANDARD.decode(payload).unwrap(), bytes);
-        assert_eq!(imported[0].id, entry.id);
+        assert_eq!(exported["id"], id);
     }
 
     #[test]
     fn image_data_urls_are_exported_unchanged() {
         let content =
             "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-        let exported = to_export_entry(&image_entry(content.to_string())).unwrap();
-        assert_eq!(exported.content, content);
+        let exported = exported_entry(image_entry(content.to_string()));
+        assert_eq!(exported["content"], content);
     }
 
     #[test]
     fn missing_image_attachment_does_not_overwrite_existing_backup() {
-        use crate::api::HistoryService;
-        use std::sync::{Arc, Mutex};
-
         let path = temporary_path("missing.png");
         let output = temporary_path("backup.json");
-        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
-        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
-        let repo = HistoryService::from_legacy_connection(Arc::new(Mutex::new(connection)));
+        let repo = HistoryService::open(Path::new(":memory:")).unwrap();
         let mut entry = image_entry(path.to_string_lossy().into_owned());
         entry.id = 0;
         let id = repo.save(&entry, None).unwrap();
@@ -300,19 +302,6 @@ mod tests {
         assert!(error.contains(&format!("image attachment id={id}")));
         assert_eq!(existing, b"existing backup");
     }
-    fn backup_repository() -> (
-        HistoryService,
-        std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>,
-    ) {
-        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
-        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
-        let connection = std::sync::Arc::new(std::sync::Mutex::new(connection));
-        (
-            HistoryService::from_legacy_connection(connection.clone()),
-            connection,
-        )
-    }
-
     fn backup_entry(id: i64, kind: &str, content: String) -> ClipboardEntry {
         serde_json::from_value(serde_json::json!({"id":id,"content_type":kind,"content":content,"source_app":"fixture","timestamp":1700000000123i64,"preview":"ordinary preview","is_pinned":false,"tags":["work"]})).unwrap()
     }
@@ -322,7 +311,7 @@ mod tests {
         let directory =
             std::env::temp_dir().join(format!("dezirclip-marker-export-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
-        let (repo, _) = backup_repository();
+        let repo = HistoryService::open(Path::new(":memory:")).unwrap();
         for prefix in ["linux:", "dpapi:"] {
             let mut source = backup_entry(7, "rich_text", format!("{prefix} kernel notes\r\n"));
             source.preview = format!("{prefix} ordinary preview");
@@ -339,15 +328,11 @@ mod tests {
                 &repo,
             )
             .unwrap();
-            let exported =
-                crate::services::backup::entries_from_json(&std::fs::read_to_string(path).unwrap())
-                    .unwrap();
-            assert_eq!(exported[0].content, source.content);
-            assert_eq!(
-                exported[0].preview.as_deref(),
-                Some(source.preview.as_str())
-            );
-            assert_eq!(exported[0].html_content, source.html_content);
+            let backup: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+            let entry = &backup["entries"][0];
+            assert_eq!(entry["content"], source.content);
+            assert_eq!(entry["preview"].as_str(), Some(source.preview.as_str()));
+            assert_eq!(entry["html_content"].as_str(), source.html_content.as_deref());
         }
         std::fs::remove_dir_all(directory).unwrap();
     }
@@ -373,7 +358,7 @@ mod tests {
             dzc_platform::install_default_key_provider();
             let mut values = values;
             let native =
-                crate::infrastructure::encryption::encrypt_value("native private payload").unwrap();
+                dzc_core::crypto::encrypt_value("native private payload").unwrap();
             let mut bytes = STANDARD
                 .decode(native.strip_prefix("dpapi:").unwrap())
                 .unwrap();
@@ -391,19 +376,18 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir(&directory).unwrap();
-        let (repo, connection) = backup_repository();
         for cipher in unavailable_ciphertexts() {
-            assert!(crate::infrastructure::encryption::decrypt_value(&cipher).is_none());
+            assert!(dzc_core::crypto::decode_for_mutation(&cipher).is_err());
             for field in ["content", "preview", "html_content"] {
-                repo.restore(
-                    &[
-                        backup_entry(7, "rich_text", "safe text".to_string()),
-                        backup_entry(8, "text", "visible entry".to_string()),
-                    ],
-                    crate::api::ImportMode::Replace,
-                )
-                .unwrap();
-                connection.lock().unwrap().execute(&format!("UPDATE clipboard_history SET {field}=?1,tags='[\"sensitive\"]' WHERE id=7"),[&cipher]).unwrap();
+                let fixture = LegacyHistory::new(|connection| {
+                    connection.execute_batch(r#"
+                        INSERT INTO clipboard_history(id,content_type,content,source_app,timestamp,preview,tags)
+                        VALUES (7,'rich_text','safe text','fixture',1700000000123,'ordinary preview','["sensitive"]'),
+                               (8,'text','visible entry','fixture',1700000000123,'ordinary preview','["work"]');
+                    "#).unwrap();
+                    connection.execute(&format!("UPDATE clipboard_history SET {field}=?1 WHERE id=7"), [&cipher]).unwrap();
+                });
+                let repo = fixture.open();
                 for encrypted in [false, true] {
                     let path = directory.join("previous.json");
                     std::fs::write(&path, b"previous usable backup").unwrap();

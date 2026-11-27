@@ -11,8 +11,8 @@ pub fn mime_for(entry: &ClipboardEntry) -> &'static str {
     }
 }
 
-pub use crate::infrastructure::attachments::image_bytes;
-use crate::infrastructure::attachments::path_from_uri;
+pub use dzc_core::filesystem::image_bytes;
+use dzc_core::filesystem::path_from_uri;
 
 pub fn files(content: &str) -> Result<Vec<String>, String> {
     let values = if content.trim_start().starts_with('[') {

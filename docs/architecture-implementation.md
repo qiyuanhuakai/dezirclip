@@ -128,5 +128,6 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **C2 桌面专项矩阵**。按请求选择完整矩阵、Linux x64、Windows x64 或两者的并集。仅请求 Windows 性能比较时会选择其 Windows x64 前置验收。独立诊断入口沿用既有规则，完整的场景计划与结果汇总仍待接入。
 - **R3 更新策略归属**。Host 的离线模块为 Tauri 更新和 MyGo 通过 CLI 的索引检查提供同一份版本、平台、文件名和签名元数据规则。网络、安装和退出协调仍由对应桌面入口处理。
 - **R3 CLI 依赖**。启动项、CLI PATH、技能和目录定位实现归入已有 Platform crate，CLI 和 Tauri 直接使用。CLI 的主题、历史 DTO、受保护标签、密文格式识别和有界读取直接走 Core 的窄入口。仍有备份/附件、测试数据库、日志入口和 CLI 专属 terminal/OSC52 模块需迁移。Windows 与 Linux PATH 测试分别通过 6 和 7 项，Windows 登录项测试和桌面类型检查通过。
+- **R3 CLI 旧数据库接口**。附件读取走 Core，原生诊断直接写标准错误。MCP 与备份测试创建隔离的旧版 SQLite 文件，再由和实际 CLI 相同的公开 API 打开。保留密文排除、分页、预览边界、图片原始字节和备份失败时旧文件保护的覆盖。Windows 和 Linux 分别通过 90 项 CLI 测试。CLI 的 terminal/OSC52 源文件会随 R4 一起移动。
 - **R2b 字符目录**。React 直接读取 `assets/catalogs/emoji.json`，Go 独立构建时内嵌自己目录中的生成副本。CI、MyGo 打包逐字节计算 SHA-256，现有内容及顺序保持。Tauri 和 MyGo Web 前端生产构建、Tauri 打包目录搜索、31 项字符单元测试和 Linux Go 桌面包测试已通过。主题目录仍待迁移。
 - **C0 版本与性能 fixture**。版本脚本在独立 fixture 中只需要版本解析与需要更新的文件，测试从 Cargo 清单获取完整工作区成员。Windows 性能 fixture 校准了受审查的输入清单哈希。Linux 本地包装测试运行 427 项，16 项在本地环境按既有条件跳过。

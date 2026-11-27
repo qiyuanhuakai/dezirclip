@@ -18,8 +18,9 @@ pub mod crypto {
         ENCRYPT_PREFIX, LINUX_ENCRYPT_PREFIX,
     };
 }
-/// Bounded local file operations shared by platform adapters.
+/// Local file and attachment operations shared by adapters.
 pub mod filesystem {
+    pub use crate::infrastructure::attachments::{image_bytes, path_from_uri};
     pub use crate::infrastructure::local_file::*;
 }
 #[cfg(feature = "legacy-bridge")]
