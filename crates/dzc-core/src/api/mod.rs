@@ -34,7 +34,7 @@ pub use crate::capture::{CaptureEngine, CaptureStore, EventSink};
 
 mod capture_store;
 mod settings;
-pub use settings::{AutomaticUpdatePreference, QuickPastePresentation, UpdateAttemptChannel};
+pub use settings::{AutomaticUpdatePreference, QuickPastePresentation, SurfaceAppearancePreferences, UpdateAttemptChannel};
 #[cfg(feature = "legacy-bridge")]
 mod desktop_startup;
 #[cfg(feature = "legacy-bridge")]

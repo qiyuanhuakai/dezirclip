@@ -3,7 +3,6 @@ use crate::app_state::{SessionHistory, SettingsState};
 use crate::database::DbState;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
-use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use crate::infrastructure::surface_focus::Target;
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
@@ -931,12 +930,8 @@ async fn wait_for_focus_settle() {
 }
 
 fn resolve_paste_method(state: &State<'_, DbState>) -> String {
-    state
-        .settings_repo
-        .get("app.paste_method")
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "shift_insert".to_string())
+    state.history_service().queue_preferences()
+        .map(|(_, _, method)| method).unwrap_or_else(|_| "shift_insert".into())
 }
 
 async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {

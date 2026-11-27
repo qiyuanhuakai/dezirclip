@@ -31,6 +31,25 @@ impl Default for QuickPastePresentation {
     fn default() -> Self { Self::from_settings(None, None, None) }
 }
 
+pub struct SurfaceAppearancePreferences {
+    pub locale: String,
+    /// None follows the system color mode.
+    pub dark_mode: Option<bool>,
+    pub opacity: f64,
+    pub base_theme: String,
+}
+
+impl Default for SurfaceAppearancePreferences {
+    fn default() -> Self {
+        Self {
+            locale: "zh".into(),
+            dark_mode: None,
+            opacity: 0.65,
+            base_theme: crate::domain::theme::DEFAULT_BUILTIN_THEME.into(),
+        }
+    }
+}
+
 pub struct AutomaticUpdatePreference {
     pub saved_channel: Option<String>,
 }
@@ -96,6 +115,9 @@ impl HistoryService {
     }
     pub fn quick_preferences(&self) -> CoreResult<(bool, String, String, u8, u8)> {
         self.repository.quick_preferences()
+    }
+    pub fn surface_appearance_preferences(&self) -> CoreResult<SurfaceAppearancePreferences> {
+        self.repository.surface_appearance_preferences()
     }
     pub fn quick_paste_presentation(&self) -> CoreResult<QuickPastePresentation> {
         self.repository.quick_paste_presentation()

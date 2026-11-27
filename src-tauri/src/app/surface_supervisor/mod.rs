@@ -3,7 +3,6 @@ mod identity;
 mod state;
 mod diagnostics;
 use super::ipc_host::{DesktopHost, SurfaceAccess};
-use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use crate::infrastructure::surface_focus::{ManagedChild, RestoreForeground, Target};
 #[cfg(target_os = "linux")]
 use dzc_core::ports::PasteController;
@@ -258,49 +257,15 @@ fn environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
     .collect()
 }
 fn appearance(app: &AppHandle) -> (String, SurfaceTheme) {
-    let settings = app.state::<crate::database::DbState>();
-    let read = |key: &str| settings.settings_repo.get(key).ok().flatten();
-    let locale = read("app.language")
-        .filter(|value| value.len() <= 32)
-        .unwrap_or_else(|| "zh".into());
-    let mode = match read("app.color_mode").as_deref() {
-        Some("dark") => "dark",
-        Some("light") => "light",
-        _ => {
-            if super::commands::ui_cmd::get_system_theme_mode() == "dark" {
-                "dark"
-            } else {
-                "light"
-            }
-        }
-    };
-    let opacity = read("app.surface_opacity")
-        .and_then(|value| value.parse::<f64>().ok())
-        .filter(|value| value.is_finite())
-        .map(|value| value.clamp(0.0, 100.0) / 100.0)
-        .unwrap_or(0.65);
-    let selected = read("app.theme").unwrap_or_default();
-    let base = if let Some(id) = selected.strip_prefix("custom:") {
-        let catalog = read("app.custom_themes");
-        dzc_core::domain::theme::parse_theme_library(catalog.as_deref())
-            .unwrap_or_default()
-            .into_iter()
-            .find(|theme| theme.id == id)
-            .map(|theme| theme.base)
-            .unwrap_or_default()
-    } else {
-        selected
-    };
-    let name = match base.as_str() {
-        "retro" | "mica" | "acrylic" | "liquid-glass" | "macos" | "scifi" => base,
-        _ => "mica".into(),
-    };
+    let saved = app.state::<crate::database::DbState>().history_service()
+        .surface_appearance_preferences().unwrap_or_default();
+    let dark = saved.dark_mode.unwrap_or_else(|| super::commands::ui_cmd::get_system_theme_mode() == "dark");
     (
-        locale,
+        saved.locale,
         SurfaceTheme {
-            name: Some(name),
-            mode: mode.into(),
-            opacity,
+            name: Some(saved.base_theme),
+            mode: if dark { "dark" } else { "light" }.into(),
+            opacity: saved.opacity,
         },
     )
 }

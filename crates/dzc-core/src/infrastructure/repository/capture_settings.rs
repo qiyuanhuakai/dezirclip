@@ -1,5 +1,5 @@
 use super::clipboard_repo::SqliteClipboardRepository;
-use crate::{api::{AutomaticUpdatePreference, CoreError, CoreResult, QuickPastePresentation, UpdateAttemptChannel}, capture::CaptureSettings};
+use crate::{api::{AutomaticUpdatePreference, CoreError, CoreResult, QuickPastePresentation, SurfaceAppearancePreferences, UpdateAttemptChannel}, capture::CaptureSettings};
 use super::settings_repo::SqliteSettingsRepository;
 use dzc_protocol::settings::{QUICK_PASTE_LAYOUT, UPDATE_AUTO_CHECK, UPDATE_CHANNEL};
 use std::collections::HashMap;
@@ -109,6 +109,35 @@ impl SqliteClipboardRepository {
             })
             .map_err(|error| CoreError::from(error.to_string()))
     }
+    pub(crate) fn surface_appearance_preferences(&self) -> CoreResult<SurfaceAppearancePreferences> {
+        use crate::domain::theme::{parse_theme_library, BUILTIN_THEMES};
+        let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
+        let (locale, color, opacity, selected, custom): (Option<String>, Option<String>, Option<String>, String, Option<String>) =
+            conn.query_row("WITH theme AS (SELECT COALESCE((SELECT value FROM settings WHERE key='app.theme'), '') AS selected)
+                SELECT (SELECT value FROM settings WHERE key='app.language'),
+                       (SELECT value FROM settings WHERE key='app.color_mode'),
+                       (SELECT value FROM settings WHERE key='app.surface_opacity'),
+                       theme.selected,
+                       CASE WHEN substr(theme.selected, 1, 7) = 'custom:' THEN (SELECT value FROM settings WHERE key='app.custom_themes') END
+                FROM theme", [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)))
+                .map_err(|error| CoreError::from(error.to_string()))?;
+        drop(conn);
+        let defaults = SurfaceAppearancePreferences::default();
+        let base = if let Some(id) = selected.strip_prefix("custom:") {
+            parse_theme_library(custom.as_deref()).unwrap_or_default()
+                .into_iter().find(|theme| theme.id == id).map(|theme| theme.base).unwrap_or_default()
+        } else {
+            selected
+        };
+        Ok(SurfaceAppearancePreferences {
+            locale: locale.filter(|value| value.len() <= 32).unwrap_or(defaults.locale),
+            dark_mode: match color.as_deref() { Some("dark") => Some(true), Some("light") => Some(false), _ => None },
+            opacity: opacity.and_then(|value| value.parse::<f64>().ok()).filter(|value| value.is_finite())
+                .map(|value| value.clamp(0.0, 100.0) / 100.0).unwrap_or(defaults.opacity),
+            base_theme: if BUILTIN_THEMES.contains(&base.as_str()) { base } else { defaults.base_theme },
+        })
+    }
+
     pub(crate) fn quick_paste_presentation(&self) -> CoreResult<QuickPastePresentation> {
         let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
         conn.query_row("SELECT (SELECT value FROM settings WHERE key=?1),
@@ -352,6 +381,30 @@ mod tests {
         assert_eq!(saved.entry_slots(false), Some(12));
         assert_eq!(saved.entry_slots(true), Some(5));
         assert!(repository.uses_external_quick_paste().unwrap());
+    }
+
+    #[test]
+    fn surface_appearance_reads_a_selected_custom_theme_and_recovers_invalid_legacy_values() {
+        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
+        let custom = serde_json::json!([{
+            "format": "dezirclip-theme", "version": 1, "id": "fixture", "name": "Fixture",
+            "base": "retro", "css": ".theme-custom { --dc-text-primary: #202020; }"
+        }]).to_string();
+        connection.execute("INSERT OR REPLACE INTO settings VALUES
+            ('app.theme','custom:fixture'), ('app.custom_themes',?1), ('app.language','tw'),
+            ('app.color_mode','dark'), ('app.surface_opacity','75')", [custom]).unwrap();
+        let shared = Arc::new(Mutex::new(connection));
+        let repository = SqliteClipboardRepository::new(shared.clone());
+        let saved = repository.surface_appearance_preferences().unwrap();
+        assert_eq!((saved.locale.as_str(), saved.dark_mode, saved.opacity, saved.base_theme.as_str()),
+            ("tw", Some(true), 0.75, "retro"));
+        shared.lock().unwrap().execute("INSERT OR REPLACE INTO settings VALUES
+            ('app.custom_themes','invalid'), ('app.color_mode','old-mode'), ('app.surface_opacity','NaN')", []).unwrap();
+        let fallback = repository.surface_appearance_preferences().unwrap();
+        assert_eq!(fallback.base_theme, crate::domain::theme::DEFAULT_BUILTIN_THEME);
+        assert_eq!(fallback.dark_mode, None);
+        assert_eq!(fallback.opacity, 0.65);
     }
 
     #[test]
