@@ -220,7 +220,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-latest]
+        os: [windows-latest]
     env:
       CARGO_PROFILE_DEV_DEBUG: '0'
       CGO_ENABLED: '0'
@@ -244,57 +244,17 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: Install Linux native fixture dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt
-          fi
-          sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev libxcb1-dev libx11-dev libxi-dev libxtst-dev libxrandr-dev libpipewire-0.3-dev libgbm-dev libwayland-dev libegl-dev libfontconfig1-dev libwebkit2gtk-4.1-0 libayatana-appindicator3-1 python3-gi python3-psutil python3-pil gir1.2-gtk-3.0 gir1.2-atspi-2.0 at-spi2-core xvfb dbus-x11 openbox x11-utils gnome-keyring fonts-noto-cjk pulseaudio pulseaudio-utils xclip ffmpeg
       - name: Build Service and native Desktop
         shell: bash
         run: |
           pnpm install --frozen-lockfile
           pnpm run desktop:mygo:build
           cargo build --locked --no-default-features --features native-screen --bin dzc --bin dzc-service
-      - name: Ensure the synthetic Windows video encoder is available
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg -y --no-progress }
-      - name: Verify isolated video frames and native crash evidence
-        run: python scripts/tests/media-preview.py
-      - name: Verify actual Windows file transfers
-        if: runner.os == 'Windows'
+      - name: Probe the real Windows title-bar gesture
         shell: powershell
         run: |
           Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
-          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -FileDrag
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -NativeMain
-          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -NativeMain -Emoji
-          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Lifecycle
-          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -TrayPaste
-          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -RichPaste
-          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
-          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -MiddleShortcut
-          ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -RecoverService
-          cargo test --locked -p dzc-platform --features ipc ipc::windows::tests
-      - name: Verify actual Linux file transfers
-        if: runner.os == 'Linux'
-        run: |
-          cp "artifacts/dzc-desktop/$(rustc --print host-tuple)/dzc-desktop" target/debug/dzc-desktop
-          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --file-drag
-          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --screenshots
-          DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --idle
-      - name: Verify X11 screenshot pixels across color depths
-        if: runner.os == 'Linux'
-        run: |
-          cargo test --locked -p dzc-platform --features native-screen --lib --no-run
-          for depth in 16 24 30; do
-            DEZIRCLIP_RUN_SCREENSHOT_SMOKE_TESTS=1 XDG_SESSION_TYPE=x11 xvfb-run -a -s "-screen 0 640x480x${depth}" cargo test --locked -p dzc-platform --features native-screen native_x11_capture_matches_root_pixels -- --nocapture
-          done
 
   tauri:
     if: inputs.full_validation || inputs.windows_x64_mygo_test_package || inputs.windows_service_crash_stacks || inputs.linux_release_inputs

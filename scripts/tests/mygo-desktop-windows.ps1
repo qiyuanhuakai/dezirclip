@@ -84,8 +84,25 @@ public static class MyGoInput {
     public struct Rect { public int left, top, right, bottom; }
     [StructLayout(LayoutKind.Sequential)]
     struct CursorInfo { public uint size, flags; public IntPtr handle; public Point position; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct GuiThreadInfo { public uint size, flags; public IntPtr active, focus, capture, menuOwner, moveSize, caret; public Rect caretRect; }
     [DllImport("user32.dll", SetLastError=true)] static extern bool GetCursorInfo(ref CursorInfo cursor);
+    [DllImport("user32.dll", SetLastError=true)] static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo state);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr LoadCursor(IntPtr instance, IntPtr name);
+    public static string DragState(IntPtr window) {
+        var cursor = new CursorInfo(); cursor.size = (uint)Marshal.SizeOf(cursor);
+        var gui = new GuiThreadInfo(); gui.size = (uint)Marshal.SizeOf(gui);
+        uint pid;
+        var thread = GetWindowThreadProcessId(window, out pid);
+        var guiOk = GetGUIThreadInfo(thread, ref gui);
+        var cursorOk = GetCursorInfo(ref cursor);
+        Rect bounds;
+        GetWindowRect(window, out bounds);
+        return String.Format("title={0} xy={1},{2} rect={3},{4},{5},{6} active={7} capture={8} move={9} gui={10}/0x{11:x} cursor={12}/{13}/0x{14:x} hand={15} arrow={16} moveCursor={17}",
+             window,cursor.position.x,cursor.position.y,bounds.left,bounds.top,bounds.right,bounds.bottom,
+             GetForegroundWindow(),gui.capture,gui.moveSize,guiOk,gui.flags,cursorOk,cursor.handle,cursor.flags,
+             LoadCursor(IntPtr.Zero,new IntPtr(32649)),LoadCursor(IntPtr.Zero,new IntPtr(32512)),LoadCursor(IntPtr.Zero,new IntPtr(32646)));
+    }
     public static bool HasMoveCursor() {
         var cursor = new CursorInfo();
         cursor.size = (uint)Marshal.SizeOf(cursor);
@@ -1160,10 +1177,17 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             throw 'The native title is obscured at the drag start point'
         }
         if (![MyGoInput]::SetCursorPos($dragX, $dragY)) { throw 'Cannot reach native title bar' }
+        Start-Sleep -Milliseconds 120
+        Write-Host "Before press: $([MyGoInput]::DragState($main.MainWindowHandle))"
         [MyGoInput]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
         try {
             Start-Sleep -Milliseconds 100
-            $null = [MyGoInput]::SetCursorPos(($dragX - 50), ($dragY + 42))
+            Write-Host "After press: $([MyGoInput]::DragState($main.MainWindowHandle))"
+            foreach ($step in 1..4) {
+                $null = [MyGoInput]::SetCursorPos(($dragX - $step * 12), ($dragY + $step * 11))
+                Start-Sleep -Milliseconds 90
+                Write-Host "Motion ${step}: $([MyGoInput]::DragState($main.MainWindowHandle))"
+            }
             if (!$LegacyCloseAfterPaste) {
                 $null = Wait-Until { [MyGoInput]::HasMoveCursor() } 'Dragging the native title bar did not show the move cursor' 2
             }
