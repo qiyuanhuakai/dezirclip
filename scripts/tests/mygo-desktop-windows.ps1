@@ -1367,7 +1367,9 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
                 $null = Wait-Until {
                     if ($resident.HasExited) { throw 'Native panel preference exited the resident' }
                     $box = Get-SettingsCheckbox $root $panel[0]
-                    if ($box) {
+                    if ($box -and $box.Current.IsEnabled) {
+                        # The native switch displays the pending value before the
+                        # resident acknowledges shortcut registration.
                         $current = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
                         $current.Current.ToggleState -eq $expected
                     }
