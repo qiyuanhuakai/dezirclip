@@ -304,15 +304,8 @@ fn appearance(app: &AppHandle) -> (String, SurfaceTheme) {
         },
     )
 }
-pub(crate) fn quick_paste_ring_enabled(app: &AppHandle) -> bool {
-    app.state::<crate::database::DbState>().settings_repo.get("app.quick_paste_layout")
-        .ok().flatten().as_deref() == Some("ring")
-}
-
-pub(crate) fn quick_paste_entry_slots(app: &AppHandle, docked: bool) -> u8 {
-    let key = if docked { "app.quick_paste_half_sectors" } else { "app.quick_paste_full_sectors" };
-    let value = app.state::<crate::database::DbState>().settings_repo.get(key).ok().flatten();
-    dzc_core::api::HistoryService::quick_paste_sectors(value.as_deref(), docked)
+pub(crate) fn quick_paste_presentation(app: &AppHandle) -> dzc_core::api::QuickPastePresentation {
+    app.state::<crate::database::DbState>().history_service().quick_paste_presentation().unwrap_or_default()
 }
 
 pub(crate) fn geometry(app: &AppHandle, ring: bool) -> Result<(SurfacePhysicalRect, f64, Option<String>), String> {
@@ -726,8 +719,8 @@ impl SurfaceSupervisor {
         target.prepare_request_time(move || {
             revision != u64::MAX && capture_generation.load(Ordering::Acquire) == revision
         }).await?;
-        let ring = quick_paste_ring_enabled(app);
-        let (rect, scale, dock) = geometry(app, ring)?;
+        let presentation = quick_paste_presentation(app);
+        let (rect, scale, dock) = geometry(app, presentation.ring)?;
         let _serial = self.serial.lock().await;
         if !self.request_current(revision) { return Err("SurfaceDisplayCancelled".into()); }
         request.bind(self.current()?)?;
@@ -802,8 +795,8 @@ impl SurfaceSupervisor {
                         locale,
                         theme,
                         notice: notice.clone(),
-                        layout: Some(if ring { "ring" } else { "list" }.into()),
-                        entry_slots: ring.then(|| quick_paste_entry_slots(app, dock.is_some())),
+                        layout: Some(presentation.layout().into()),
+                        entry_slots: presentation.entry_slots(dock.is_some()),
                         dock,
                     },
                 )?,
@@ -1381,12 +1374,9 @@ fn schedule_stop(app: &AppHandle, process: &Arc<Managed>, reason: &'static str) 
 }
 pub fn enabled(app: &AppHandle) -> bool {
     app.state::<crate::database::DbState>()
-        .settings_repo
-        .get("app.quick_paste_renderer")
-        .ok()
-        .flatten()
-        .as_deref()
-        == Some("mygo")
+        .history_service()
+        .uses_external_quick_paste()
+        .unwrap_or(false)
 }
 pub fn route_ticket(app: &AppHandle) -> u64 {
     app.try_state::<SurfaceSupervisor>()

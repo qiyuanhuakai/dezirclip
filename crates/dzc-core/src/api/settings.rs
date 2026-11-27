@@ -2,6 +2,54 @@ use super::{CoreResult, HistoryService};
 use crate::capture::CaptureSettings;
 use dzc_protocol::settings::{UPDATE_AUTO_CHECK, UPDATE_CHANNEL};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuickPastePresentation {
+    pub ring: bool,
+    full_sectors: u8,
+    half_sectors: u8,
+}
+
+impl QuickPastePresentation {
+    pub(crate) fn from_settings(layout: Option<&str>, full: Option<&str>, half: Option<&str>) -> Self {
+        Self {
+            ring: layout == Some("ring"),
+            full_sectors: HistoryService::quick_paste_sectors(full, false),
+            half_sectors: HistoryService::quick_paste_sectors(half, true),
+        }
+    }
+
+    pub fn layout(self) -> &'static str {
+        if self.ring { "ring" } else { "list" }
+    }
+
+    pub fn entry_slots(self, docked: bool) -> Option<u8> {
+        self.ring.then_some(if docked { self.half_sectors } else { self.full_sectors })
+    }
+}
+
+impl Default for QuickPastePresentation {
+    fn default() -> Self { Self::from_settings(None, None, None) }
+}
+
+pub struct AutomaticUpdatePreference {
+    pub saved_channel: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+pub enum UpdateAttemptChannel {
+    Stable,
+    Preview,
+}
+
+impl UpdateAttemptChannel {
+    pub(crate) fn storage_key(self) -> &'static str {
+        match self {
+            Self::Stable => "update.last_attempt.stable",
+            Self::Preview => "update.last_attempt.preview",
+        }
+    }
+}
+
 impl HistoryService {
     pub fn reset_application_preferences(&self, epoch: u64) -> CoreResult<()> {
         self.repository.reset_application_preferences(epoch)
@@ -42,6 +90,21 @@ impl HistoryService {
     }
     pub fn quick_preferences(&self) -> CoreResult<(bool, String, String, u8, u8)> {
         self.repository.quick_preferences()
+    }
+    pub fn quick_paste_presentation(&self) -> CoreResult<QuickPastePresentation> {
+        self.repository.quick_paste_presentation()
+    }
+    pub fn uses_external_quick_paste(&self) -> CoreResult<bool> {
+        self.repository.uses_external_quick_paste()
+    }
+    pub fn automatic_update_preference(&self) -> CoreResult<Option<AutomaticUpdatePreference>> {
+        self.repository.automatic_update_preference()
+    }
+    pub fn last_update_attempt(&self, channel: UpdateAttemptChannel) -> CoreResult<Option<String>> {
+        self.repository.last_update_attempt(channel)
+    }
+    pub fn record_update_attempt(&self, channel: UpdateAttemptChannel, when_ms: i64) -> CoreResult<()> {
+        self.repository.record_update_attempt(channel, when_ms)
     }
     pub fn queue_preferences(&self) -> CoreResult<(bool, bool, String)> { self.repository.queue_preferences() }
 
@@ -189,6 +252,22 @@ mod tests {
                 Some(valid)
             );
         }
+    }
+
+    #[test]
+    fn automatic_update_preferences_and_receipts_preserve_missing_and_separate_channels() {
+        use super::{UpdateAttemptChannel, UPDATE_AUTO_CHECK, UPDATE_CHANNEL};
+        let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
+        let epoch = history.runtime_snapshot(0).unwrap().privacy_epoch;
+        assert!(history.automatic_update_preference().unwrap().is_none());
+        history.update_view_setting(UPDATE_AUTO_CHECK.key, "true", epoch).unwrap();
+        assert!(history.automatic_update_preference().unwrap().unwrap().saved_channel.is_none());
+        history.update_view_setting(UPDATE_CHANNEL.key, "preview", epoch).unwrap();
+        assert_eq!(history.automatic_update_preference().unwrap().unwrap().saved_channel.as_deref(), Some("preview"));
+        history.record_update_attempt(UpdateAttemptChannel::Stable, 134).unwrap();
+        assert_eq!(history.last_update_attempt(UpdateAttemptChannel::Stable).unwrap().as_deref(), Some("134"));
+        assert!(history.last_update_attempt(UpdateAttemptChannel::Preview).unwrap().is_none());
+        assert!(!history.desktop_preferences().unwrap().contains_key(UpdateAttemptChannel::Stable.storage_key()));
     }
 
     #[test]

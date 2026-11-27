@@ -34,6 +34,7 @@ pub use crate::capture::{CaptureEngine, CaptureStore, EventSink};
 
 mod capture_store;
 mod settings;
+pub use settings::{AutomaticUpdatePreference, QuickPastePresentation, UpdateAttemptChannel};
 mod startup;
 pub use startup::probe_startup_disable_webview_gpu;
 mod themes;

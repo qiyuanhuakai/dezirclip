@@ -337,10 +337,9 @@ async fn wait_for_native_presentation<F: std::future::Future<Output = Result<boo
 fn show_quick_paste_window_on_ui(app: &AppHandle, window: &tauri::WebviewWindow,ticket:&crate::app::surface_supervisor::SurfaceFallback) -> Result<(), String> {
     if !ticket.current(app) {return Err("QuickPasteRequestCancelled".into());}
     crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
-    let ring = crate::app::surface_supervisor::quick_paste_ring_enabled(app);
+    let presentation = crate::app::surface_supervisor::quick_paste_presentation(app);
     let mut dock = None;
-    let layout = if ring { "ring" } else { "list" };
-    if ring {
+    if presentation.ring {
         #[cfg(target_os = "windows")]
         super::ui_cmd::clear_windows_backdrop(window);
         if let Ok((rect, _, side)) = crate::app::surface_supervisor::geometry(app, true) {
@@ -371,8 +370,10 @@ fn show_quick_paste_window_on_ui(app: &AppHandle, window: &tauri::WebviewWindow,
         let (x, y) = compute_quick_paste_position(cursor_x, cursor_y, win_w, win_h, monitor);
         let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
     }
-    let entry_slots = ring.then(|| crate::app::surface_supervisor::quick_paste_entry_slots(app, dock.is_some()));
-    let _ = app.emit_to(QUICK_PASTE_LABEL, "quick-paste-placement", serde_json::json!({ "layout": layout, "dock": dock, "entry_slots": entry_slots }));
+    let entry_slots = presentation.entry_slots(dock.is_some());
+    let _ = app.emit_to(QUICK_PASTE_LABEL, "quick-paste-placement", serde_json::json!({
+        "layout": presentation.layout(), "dock": dock, "entry_slots": entry_slots,
+    }));
 
     let _ = window.set_ignore_cursor_events(false);
     let _ = window.set_always_on_top(true);

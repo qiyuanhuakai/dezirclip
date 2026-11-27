@@ -236,7 +236,7 @@ pub fn set_theme(
         }
 
         let build = windows_version::OsVersion::current().build;
-        let transparent_ring = window.label() == "quick-paste" && crate::app::surface_supervisor::quick_paste_ring_enabled(&app);
+        let transparent_ring = window.label() == "quick-paste" && crate::app::surface_supervisor::quick_paste_presentation(&app).ring;
         let theme = if transparent_ring { "" } else { &effective_base_theme };
         let plan = windows_theme_plan(theme, build, show_border);
 

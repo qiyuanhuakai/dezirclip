@@ -1,5 +1,6 @@
 use super::clipboard_repo::SqliteClipboardRepository;
-use crate::{api::{CoreError, CoreResult}, capture::CaptureSettings};
+use crate::{api::{AutomaticUpdatePreference, CoreError, CoreResult, QuickPastePresentation, UpdateAttemptChannel}, capture::CaptureSettings};
+use super::settings_repo::SqliteSettingsRepository;
 use dzc_protocol::settings::{UPDATE_AUTO_CHECK, UPDATE_CHANNEL};
 use std::collections::HashMap;
 
@@ -107,6 +108,39 @@ impl SqliteClipboardRepository {
                     HistoryService::quick_paste_sectors(half.as_deref(), true)))
             })
             .map_err(|error| CoreError::from(error.to_string()))
+    }
+    pub(crate) fn quick_paste_presentation(&self) -> CoreResult<QuickPastePresentation> {
+        let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
+        conn.query_row("SELECT (SELECT value FROM settings WHERE key='app.quick_paste_layout'),
+            (SELECT value FROM settings WHERE key='app.quick_paste_full_sectors'),
+            (SELECT value FROM settings WHERE key='app.quick_paste_half_sectors')", [], |row| {
+            let value = |column| row.get::<_, Option<String>>(column).ok().flatten();
+            Ok(QuickPastePresentation::from_settings(value(0).as_deref(), value(1).as_deref(), value(2).as_deref()))
+        }).map_err(|error| CoreError::from(error.to_string()))
+    }
+    pub(crate) fn uses_external_quick_paste(&self) -> CoreResult<bool> {
+        let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
+        conn.query_row("SELECT EXISTS(SELECT 1 FROM settings WHERE key='app.quick_paste_renderer' AND value='mygo')",
+            [], |row| row.get(0)).map_err(|error| CoreError::from(error.to_string()))
+    }
+    pub(crate) fn automatic_update_preference(&self) -> CoreResult<Option<AutomaticUpdatePreference>> {
+        let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
+        let enabled = SqliteSettingsRepository::get_raw(&conn, UPDATE_AUTO_CHECK.key)
+            .map_err(|error| CoreError::from(error.to_string()))?;
+        Ok((enabled.as_deref() == Some("true")).then(|| AutomaticUpdatePreference {
+            saved_channel: SqliteSettingsRepository::get_raw(&conn, UPDATE_CHANNEL.key).ok().flatten(),
+        }))
+    }
+    pub(crate) fn last_update_attempt(&self, channel: UpdateAttemptChannel) -> CoreResult<Option<String>> {
+        let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
+        SqliteSettingsRepository::get_raw(&conn, channel.storage_key()).map_err(|error| CoreError::from(error.to_string()))
+    }
+    pub(crate) fn record_update_attempt(&self, channel: UpdateAttemptChannel, when_ms: i64) -> CoreResult<()> {
+        let database = |error: rusqlite::Error| CoreError::from(error.to_string());
+        let mut conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
+        let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(database)?;
+        SqliteSettingsRepository::write_value(&transaction, channel.storage_key(), &when_ms.to_string()).map_err(database)?;
+        transaction.commit().map_err(database)
     }
     pub(crate) fn set_setting_at_epoch(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
         self.set_settings_at_epoch(&[(key, value)], epoch)
@@ -262,6 +296,28 @@ mod tests {
         assert!(!values.contains_key("app.unregistered"));
         assert!(!values.contains_key("internal.host"));
     }
+    #[test]
+    fn quick_paste_presentation_reads_layout_and_slots_from_the_same_profile() {
+        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
+        let shared = Arc::new(Mutex::new(connection));
+        let repository = SqliteClipboardRepository::new(shared.clone());
+        let default = repository.quick_paste_presentation().unwrap();
+        assert_eq!(default.layout(), "list");
+        assert_eq!(default.entry_slots(false), None);
+        assert!(!repository.uses_external_quick_paste().unwrap());
+        shared.lock().unwrap().execute_batch("INSERT OR REPLACE INTO settings VALUES
+            ('app.quick_paste_layout', 'ring'),
+            ('app.quick_paste_full_sectors', '12'),
+            ('app.quick_paste_half_sectors', 'invalid old value'),
+            ('app.quick_paste_renderer', 'mygo');").unwrap();
+        let saved = repository.quick_paste_presentation().unwrap();
+        assert_eq!(saved.layout(), "ring");
+        assert_eq!(saved.entry_slots(false), Some(12));
+        assert_eq!(saved.entry_slots(true), Some(5));
+        assert!(repository.uses_external_quick_paste().unwrap());
+    }
+
     #[test]
     fn capture_policy_is_whitelisted_and_malformed_security_booleans_fail_closed() {
         let mut connection = rusqlite::Connection::open_in_memory().unwrap();
