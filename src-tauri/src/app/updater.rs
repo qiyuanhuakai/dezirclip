@@ -1,15 +1,21 @@
 use crate::domain::update::{expected_asset_name, summarize_channel_versions, validate_signature_metadata, AvailableUpdate, UpdateChannel, UpdateCheck, UpdateSupport, RELEASES_URL};
 use crate::infrastructure::update_support::installation_support;
+use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use semver::Version;
 use serde::Serialize;
 use std::time::Duration;
-use tauri::{ipc::Channel, AppHandle, State};
+use tauri::{ipc::Channel, AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use crate::domain::update_host::{UpdateHost, NoAuxiliaryClients, install_after_host_ready};
 
-pub struct UpdaterState(Mutex<Option<PendingUpdate>>, Arc<dyn UpdateHost>);
+pub struct UpdaterState {
+    pending: Mutex<Option<PendingUpdate>>,
+    host: Arc<dyn UpdateHost>,
+    last_check: std::sync::Mutex<Option<CompletedCheck>>,
+    preferences_changed: tokio::sync::Notify,
+}
 
 impl Default for UpdaterState {
     fn default() -> Self { Self::with_host(Arc::new(NoAuxiliaryClients)) }
@@ -17,12 +23,58 @@ impl Default for UpdaterState {
 
 impl UpdaterState {
     /// Future Host adapters supply normal-exit coordination for owned clients.
-    pub fn with_host(host: Arc<dyn UpdateHost>) -> Self { Self(Mutex::new(None), host) }
+    pub fn with_host(host: Arc<dyn UpdateHost>) -> Self {
+        Self { pending: Mutex::new(None), host, last_check: Default::default(), preferences_changed: Default::default() }
+    }
+
+    pub fn preferences_changed(&self) {
+        self.preferences_changed.notify_one();
+    }
 }
 
 struct PendingUpdate {
     id: String,
     update: Update,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CompletedCheck {
+    channel: UpdateChannel,
+    checked_at: i64,
+    result: Result<UpdateCheck, String>,
+}
+
+const AUTOMATIC_CHECK_DELAY: Duration = Duration::from_secs(15);
+const AUTOMATIC_POLL_INTERVAL: Duration = Duration::from_secs(60 * 60);
+
+pub fn start_automatic_checks(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<UpdaterState>();
+        let mut delay = AUTOMATIC_CHECK_DELAY;
+        loop {
+            tokio::select! {
+                _ = state.preferences_changed.notified() => { delay = AUTOMATIC_CHECK_DELAY; continue; }
+                _ = tokio::time::sleep(delay) => {}
+            }
+            delay = AUTOMATIC_POLL_INTERVAL;
+            let database = app.state::<crate::database::DbState>();
+            let settings = &database.settings_repo;
+            if settings.get("app.update_auto_check").ok().flatten().as_deref() != Some("true") {
+                continue;
+            }
+            let saved = settings.get("app.update_channel").ok().flatten();
+            let channel = UpdateChannel::from_preference(saved.as_deref(), &app.package_info().version);
+            if let Ok(Some(check)) = run_check(&app, &state, channel, true).await {
+                let _ = app.emit_to("main", "update-check-completed", check);
+            }
+        }
+    });
+}
+
+#[tauri::command]
+pub(crate) fn get_completed_update_check(state: State<'_, UpdaterState>, channel: UpdateChannel) -> Option<CompletedCheck> {
+    state.last_check.lock().ok()?.as_ref().filter(|check| check.channel == channel).cloned()
 }
 
 #[derive(Clone, Serialize)]
@@ -44,8 +96,40 @@ pub async fn check_for_update(
     state: State<'_, UpdaterState>,
     channel: UpdateChannel,
 ) -> Result<UpdateCheck, String> {
-    let mut pending = state.0.try_lock().map_err(|_| "update_busy")?;
+    run_check(&app, &state, channel, false).await?
+        .ok_or("update_check_required")?.result
+}
+
+async fn run_check(app: &AppHandle, state: &UpdaterState, channel: UpdateChannel, automatic: bool)
+    -> Result<Option<CompletedCheck>, String>
+{
+    let mut pending = state.pending.try_lock().map_err(|_| "update_busy")?;
+    let database = app.state::<crate::database::DbState>();
+    let settings = &database.settings_repo;
+    let key = match channel {
+        UpdateChannel::Stable => "update.last_attempt.stable",
+        UpdateChannel::Preview => "update.last_attempt.preview",
+    };
+    let now = chrono::Utc::now().timestamp_millis();
+    if automatic {
+        let previous = settings.get(key).map_err(|_| "update_attempt_storage_failed")?;
+        if !crate::domain::update::automatic_check_due(previous.as_deref(), now) {
+            return Ok(None);
+        }
+    }
+    let recorded = settings.set(key, &now.to_string());
     *pending = None;
+    let result = if automatic && recorded.is_err() {
+        Err("update_attempt_storage_failed".into())
+    } else {
+        fetch_update(app, channel, &mut pending).await
+    };
+    let check = CompletedCheck { channel, checked_at: chrono::Utc::now().timestamp_millis(), result };
+    *state.last_check.lock().map_err(|_| "update_unavailable")? = Some(check.clone());
+    Ok(Some(check))
+}
+
+async fn fetch_update(app: &AppHandle, channel: UpdateChannel, pending: &mut Option<PendingUpdate>) -> Result<UpdateCheck, String> {
     let configured_key = app.config().plugins.0.get("updater")
         .and_then(|config| config.get("pubkey"))
         .and_then(|value| value.as_str()).unwrap_or_default();
@@ -168,7 +252,7 @@ pub async fn install_update(
     update_id: String,
     on_progress: Channel<UpdateProgress>,
 ) -> Result<(), String> {
-    let mut pending = state.0.try_lock().map_err(|_| "update_busy")?;
+    let mut pending = state.pending.try_lock().map_err(|_| "update_busy")?;
     if !installation_support().can_install {
         return Err("update_installation_unsupported".into());
     }
@@ -185,7 +269,7 @@ pub async fn install_update(
         return Err("update_installation_unsupported".into());
     }
     let update = selected.update.clone();
-    let host = state.1.clone();
+    let host = state.host.clone();
     tauri::async_runtime::spawn_blocking(move || install_after_host_ready(host.as_ref(), || {
         let _ = on_progress.send(UpdateProgress::Installing);
         update.install(bytes).map_err(|_| "update_install_failed".to_string())

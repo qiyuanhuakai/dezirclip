@@ -115,6 +115,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     // 7. Background Services & Monitors
     start_services(app, &settings, app_handle.clone());
+    crate::app::updater::start_automatic_checks(app_handle.clone());
 
     // 8. Tray Setup
     setup_tray(app, settings.hide_tray_icon);

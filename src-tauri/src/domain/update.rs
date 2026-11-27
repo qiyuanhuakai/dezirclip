@@ -33,6 +33,15 @@ pub enum UpdateChannel {
 }
 
 impl UpdateChannel {
+    pub fn from_preference(saved: Option<&str>, current: &Version) -> Self {
+        match saved {
+            Some("preview") => Self::Preview,
+            Some("stable") => Self::Stable,
+            _ if !current.pre.is_empty() => Self::Preview,
+            _ => Self::Stable,
+        }
+    }
+
     pub fn endpoint(self) -> &'static str {
         match self {
             Self::Stable => "https://github.com/qiyuanhuakai/dezirclip/releases/download/updater-channels/stable.json",
@@ -44,6 +53,13 @@ impl UpdateChannel {
         candidate.cmp_precedence(current).is_gt()
             && (self == Self::Preview || candidate.pre.is_empty())
     }
+}
+
+pub fn automatic_check_due(previous: Option<&str>, now: i64) -> bool {
+    const INTERVAL_MS: i64 = 24 * 60 * 60 * 1_000;
+    previous.is_none_or(|value| {
+        value.parse::<i64>().is_ok_and(|previous| previous >= 0 && now.saturating_sub(previous) >= INTERVAL_MS)
+    })
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -112,7 +128,7 @@ pub struct AvailableUpdate {
     pub artifact: Option<ManualAsset>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateCheck {
     pub current_version: String,
@@ -206,6 +222,23 @@ pub fn check_manual_indexes(input: ManualIndexes, current: &Version, os: &str, a
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn automatic_update_preferences_and_attempt_interval_match_desktop_policy() {
+        let stable = Version::parse("0.2.0").unwrap();
+        let preview = Version::parse("0.2.0-rc5").unwrap();
+        assert_eq!(UpdateChannel::from_preference(None, &stable), UpdateChannel::Stable);
+        assert_eq!(UpdateChannel::from_preference(None, &preview), UpdateChannel::Preview);
+        assert_eq!(UpdateChannel::from_preference(Some("stable"), &preview), UpdateChannel::Stable);
+        let previous = 1_800_000_000_000i64;
+        let day = 24 * 60 * 60 * 1_000;
+        let stored = previous.to_string();
+        assert!(automatic_check_due(None, previous));
+        assert!(!automatic_check_due(Some(&stored), previous + day - 1));
+        assert!(automatic_check_due(Some(&stored), previous + day));
+        assert!(!automatic_check_due(Some(&stored), previous - 1));
+        assert!(!automatic_check_due(Some("corrupt"), previous));
+    }
 
     #[test]
     fn manual_zip_checks_both_channels_and_preserves_signed_asset_identity() {

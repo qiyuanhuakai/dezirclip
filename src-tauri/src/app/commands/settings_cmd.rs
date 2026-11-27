@@ -300,6 +300,9 @@ pub async fn save_setting(
         persist_setting_with_legacy(&db_state, &key, &value)?;
     }
     apply_setting_state_update(&app_handle, &settings_state, &key, &value);
+    if matches!(key.as_str(), "app.update_auto_check" | "app.update_channel") {
+        app_handle.state::<crate::app::updater::UpdaterState>().preferences_changed();
+    }
     if key == "app.quick_paste_renderer" && value == "mygo" {
         crate::app::auxiliary_windows::release_unused_quick_paste(app_handle.clone());
     }

@@ -1,8 +1,9 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "../../../shared/lib/desktopInvoke";
 import { Channel } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { AUTO_UPDATE_DELAY_MS, automaticCheckDue, readUpdatePreferences, updateAttemptKey, updateErrorKey } from "./updatePolicy";
+import { readUpdatePreferences, updateErrorKey } from "./updatePolicy";
 import type { UpdateChannel } from "./updatePolicy";
 
 interface UpdateSupport {
@@ -23,6 +24,12 @@ interface UpdateCheck {
     support: UpdateSupport;
     available: AvailableUpdate | null;
     unpublishedChannels: UpdateChannel[];
+}
+
+interface CompletedCheck {
+    channel: UpdateChannel;
+    checkedAt: number;
+    result: { Ok: UpdateCheck } | { Err: string };
 }
 
 type UpdateProgress =
@@ -53,7 +60,7 @@ let snapshot: UpdaterSnapshot = { ready: false, currentVersion: "", channelVersi
     unpublishedChannels: [], downloaded: 0, total: null, verified: false, checkedAt: null, errorKey: null };
 const subscribers = new Set<() => void>();
 let initialized = false;
-let automaticTimer: ReturnType<typeof setTimeout> | undefined;
+let latestCompletion = 0;
 let checking = false;
 let installing = false;
 
@@ -67,24 +74,25 @@ export const subscribeUpdater = (subscriber: () => void) => {
     return () => { subscribers.delete(subscriber); };
 };
 
-const recordAttempt = (channel: UpdateChannel) => {
-    try { localStorage.setItem(updateAttemptKey(channel), String(Date.now())); return true; }
-    catch { return false; }
+const applyCheck = (result: UpdateCheck, checkedAt: number) => {
+    updateSnapshot({ currentVersion: result.currentVersion, support: result.support,
+        channelVersion: result.channelVersion, available: result.available,
+        unpublishedChannels: result.unpublishedChannels, phase: result.status, checkedAt,
+        errorKey: null });
 };
 
-const scheduleAutomaticCheck = () => {
-    clearTimeout(automaticTimer);
-    if (!snapshot.autoCheck || !snapshot.ready || checking || installing) return;
-    try {
-        if (!automaticCheckDue(localStorage.getItem(updateAttemptKey(snapshot.channel)), Date.now())) return;
-    } catch {
-        updateSnapshot({ errorKey: "updater_error_storage" });
-        return;
-    }
-    const channel = snapshot.channel;
-    automaticTimer = setTimeout(() => {
-        if (snapshot.autoCheck && snapshot.channel === channel) void checkForUpdate(true);
-    }, AUTO_UPDATE_DELAY_MS);
+const acceptCompletedCheck = (completed: CompletedCheck) => {
+    if (!snapshot.ready || checking || installing || completed.channel !== snapshot.channel
+        || completed.checkedAt <= latestCompletion) return;
+    latestCompletion = completed.checkedAt;
+    if ("Ok" in completed.result) applyCheck(completed.result.Ok, completed.checkedAt);
+    else updateSnapshot({ phase: "error", available: null, channelVersion: null,
+        unpublishedChannels: [], errorKey: updateErrorKey(completed.result.Err) });
+};
+
+const restoreCompletedCheck = async () => {
+    const completed = await invoke<CompletedCheck | null>("get_completed_update_check", { channel: snapshot.channel });
+    if (completed) acceptCompletedCheck(completed);
 };
 
 export const initializeUpdates = async (settings: Record<string, string>) => {
@@ -99,7 +107,8 @@ export const initializeUpdates = async (settings: Record<string, string>) => {
         support: support.status === "fulfilled" ? support.value : null,
         errorKey: version.status === "rejected" || support.status === "rejected" ? "updater_error_unavailable" : null,
     });
-    scheduleAutomaticCheck();
+    await listen<CompletedCheck>("update-check-completed", event => acceptCompletedCheck(event.payload)).catch(() => {});
+    await restoreCompletedCheck().catch(() => {});
 };
 
 export const saveUpdatePreference = async (key: "autoCheck" | "channel", value: boolean | UpdateChannel) => {
@@ -109,29 +118,24 @@ export const saveUpdatePreference = async (key: "autoCheck" | "channel", value: 
         await invoke("save_setting", { key: key === "autoCheck" ? "app.update_auto_check" : "app.update_channel", value: String(value) });
         if (key === "autoCheck" && typeof value === "boolean") updateSnapshot({ autoCheck: value });
         if (key === "channel" && (value === "stable" || value === "preview")) {
+            latestCompletion = 0;
             updateSnapshot({ channel: value, phase: "idle", channelVersion: null, available: null, unpublishedChannels: [], checkedAt: null });
+            void restoreCompletedCheck().catch(() => {});
         }
     } catch { updateSnapshot({ errorKey: "updater_error_settings" }); }
-    finally { updateSnapshot({ saving: false }); scheduleAutomaticCheck(); }
+    finally { updateSnapshot({ saving: false }); }
 };
 
-export const checkForUpdate = async (automatic = false) => {
+export const checkForUpdate = async () => {
     if (!snapshot.ready || checking || installing || snapshot.saving) return;
     const channel = snapshot.channel;
-    // Persist before invoking Rust so a recreated WebView cannot start another automatic request.
-    if (!recordAttempt(channel) && automatic) {
-        updateSnapshot({ errorKey: "updater_error_storage" });
-        return;
-    }
-    clearTimeout(automaticTimer);
     checking = true;
     updateSnapshot({ phase: "checking", errorKey: null, channelVersion: null, available: null,
         unpublishedChannels: [], downloaded: 0, total: null, verified: false });
     try {
         const result = await invoke<UpdateCheck>("check_for_update", { channel });
-        updateSnapshot({ currentVersion: result.currentVersion, support: result.support,
-            channelVersion: result.channelVersion, available: result.available, unpublishedChannels: result.unpublishedChannels,
-            phase: result.status, checkedAt: Date.now() });
+        latestCompletion = Date.now();
+        applyCheck(result, latestCompletion);
     } catch (error: unknown) { updateSnapshot({ phase: "error", errorKey: updateErrorKey(error) }); }
     finally { checking = false; }
 };
@@ -140,7 +144,6 @@ export const installAvailableUpdate = async (updateId: string) => {
     const available = snapshot.available;
     if (!available || updateId !== available.id || !snapshot.support?.canInstall || checking || installing) return;
     installing = true;
-    clearTimeout(automaticTimer);
     updateSnapshot({ phase: "downloading", downloaded: 0, total: null, verified: false, errorKey: null });
     let lastProgress = 0;
     const progress = new Channel<UpdateProgress>();

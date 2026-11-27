@@ -316,6 +316,7 @@ fn main() {
             app::commands::get_search_history,
             app::commands::get_cli_info,
             app::updater::get_update_support,
+            app::updater::get_completed_update_check,
             app::build_info::get_build_info,
             app::commands::capability_cmd::get_platform_capabilities,
             app::updater::check_for_update,
