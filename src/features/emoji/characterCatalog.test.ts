@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { searchCharacters } from "./characterCatalog";
+import catalogData from "../../../frontends/dzc-surface/cmd/dzc-desktop/emoji-data.json";
+import { createCharacterSearch } from "./characterCatalog";
+
+const searchCharacters = createCharacterSearch(catalogData);
 
 describe("searchCharacters", () => {
   it.each([

@@ -25,7 +25,6 @@ qrcode2.workspace = true
 regex.workspace = true
 uuid.workspace = true
 urlencoding.workspace = true
-dirs.workspace = true
 argon2.workspace = true
 aes-gcm.workspace = true
 rand.workspace = true

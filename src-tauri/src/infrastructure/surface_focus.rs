@@ -85,6 +85,7 @@ impl RestoreForeground {
         match self { Self::None => "none", Self::Owned => "owned", Self::Target => "target", Self::External => "external" }
     }
 }
+#[cfg(any(target_os = "windows", test))]
 fn restore_until(
     deadline: Instant,
     current: impl Fn() -> bool,
@@ -198,6 +199,7 @@ pub fn configure_spawn(command: &mut std::process::Command) {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Debug)]
 struct RequestClock { timestamp: u32, elapsed: Duration }
 pub struct ManagedActivation {
@@ -210,7 +212,9 @@ pub struct Target {
     #[cfg(target_os = "windows")]
     root_window: usize,
     process: Process,
+    #[cfg(target_os = "windows")]
     thread: u32,
+    #[cfg(target_os = "linux")]
     request_clock: std::sync::OnceLock<RequestClock>,
 }
 /// Presentation-only context: it cannot be passed to the paste/restore APIs.
@@ -476,7 +480,6 @@ mod native {
             root_window: unsafe { GetAncestor(hwnd(window), GA_ROOT).0 as usize },
             process,
             thread,
-            request_clock: std::sync::OnceLock::new(),
         };
         if !valid(&target) { return Err("SurfaceTargetUnavailable".into()); }
         Ok(target)
@@ -566,7 +569,6 @@ mod native {
         Ok(Target {
             window,
             process: identity(window)?,
-            thread: 0,
             request_clock: std::sync::OnceLock::new(),
         })
     }
@@ -581,14 +583,14 @@ mod native {
         // Only an owned-origin handoff may also return to the already recorded
         // external target. Never learn a new external window while waiting.
         let previous_external = if ours(process.pid) {
-            identity(remembered).ok().map(|process| Target { window: remembered, process, thread: 0,
+            identity(remembered).ok().map(|process| Target { window: remembered, process,
                 request_clock: std::sync::OnceLock::new() })
         } else { None };
         if tracker::surface_active_window().ok() != Some(window)
             || presentation_identity(window).ok() != Some(process) {
             return Err("SurfaceFocusChanged".into());
         }
-        Ok(PresentationTarget { origin: Some(Target { window, process, thread: 0,
+        Ok(PresentationTarget { origin: Some(Target { window, process,
             request_clock: std::sync::OnceLock::new() }), previous_external })
     }
     pub(super) fn presentation_context_current(context: &PresentationTarget) -> bool {
@@ -881,7 +883,9 @@ mod tests {
     #[test]
     fn a_cancelled_or_expired_focus_wait_never_queries_native_state() {
         let target = Target { window: 1, #[cfg(target_os = "windows")] root_window: 1,
-            process: Process { pid: 2, started: 3 }, thread: 4, request_clock: std::sync::OnceLock::new() };
+            process: Process { pid: 2, started: 3 },
+            #[cfg(target_os = "windows")] thread: 4,
+            #[cfg(target_os = "linux")] request_clock: std::sync::OnceLock::new() };
         assert_eq!(target.wait_managed_focus(10, Instant::now() + Duration::from_secs(5), || false).unwrap_err(), "SurfaceDisplayCancelled");
         assert_eq!(target.wait_managed_focus(10, Instant::now(), || true).unwrap_err(), "SurfaceFocusUnavailable");
     }
@@ -889,7 +893,7 @@ mod tests {
     #[test]
     fn exported_paste_identity_is_the_captured_tuple_without_native_recapture() {
         let target = Target { window: 17, root_window: 13, process: Process { pid: 29, started: 133700000000000001 },
-            thread: 31, request_clock: std::sync::OnceLock::new() };
+            thread: 31 };
         let descriptor = target.windows_paste_target().unwrap();
         assert_eq!(descriptor.hwnd, "17");
         assert_eq!(descriptor.root_hwnd, "13");

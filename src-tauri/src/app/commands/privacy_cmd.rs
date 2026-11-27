@@ -1,7 +1,6 @@
 //! Trusted desktop requests use the same persistent state and opaque permissions as the Host.
 use crate::app_state::SessionHistory;
 use crate::database::DbState;
-use crate::domain::models::ClipboardEntry;
 use dzc_core::api::{PrivacyAccessIntent, RuntimeSnapshot, SensitiveAccess};
 use crate::app::ipc_host::{DesktopHost,HostedEntry};
 use dzc_host::wire::{Method,PrivacyState,PrivacySetParams,PrivacyHotkey};

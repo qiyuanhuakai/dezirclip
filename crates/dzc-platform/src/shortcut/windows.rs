@@ -24,7 +24,7 @@ pub(super) fn run(
         let thread = GetCurrentThreadId();
         let mut message = MSG::default();
         // Materialize the thread queue before publishing a cancellation target.
-        PeekMessageW(&mut message, None, 0, 0, PM_NOREMOVE);
+        let _ = PeekMessageW(&mut message, None, 0, 0, PM_NOREMOVE);
         control.install(Box::new(move || {
             PostThreadMessageW(thread, STOP, WPARAM(0), LPARAM(0)).map_err(|_| failed())
         }))?;

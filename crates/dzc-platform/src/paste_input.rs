@@ -125,10 +125,12 @@ pub fn send_paste(driver: &mut impl InputDriver, method: &str, content: Option<&
     if result.is_err() { attempt.release_owned_keys(); }
     result
 }
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn release_window_keys(driver: &mut impl InputDriver) -> Result<(), PasteError> {
     let mut attempt = Attempt { driver, pressed: Vec::new(), initially_held: Vec::new() };
     attempt.send(&[LEFT_WIN, RIGHT_WIN].map(|key| Input::new(key, Encoding::Virtual, true)))
 }
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn restore_borrowed_ime<C: Copy + Eq>(original: C,
     mut same_window: impl FnMut() -> bool, borrow_current: impl FnOnce() -> Option<C>,
     restore_mode: impl FnOnce(C), mut release: impl FnMut(C)) {

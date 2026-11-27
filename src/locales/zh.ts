@@ -327,6 +327,7 @@ export const zh = {
         emoji_symbols_tab: "符号",
         emoji_search: "按名称或含义搜索",
         emoji_search_empty: "未找到匹配字符",
+        emoji_catalog_load_failed: "无法加载字符表，请重新打开面板。",
         emoji_group_expressions: "表情与情绪",
         emoji_group_people: "人物与身体",
         emoji_group_animals: "动物与自然",

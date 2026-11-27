@@ -383,14 +383,14 @@ pub(crate) fn geometry(app: &AppHandle, ring: bool) -> Result<(SurfacePhysicalRe
 }
 impl Managed {
     fn trace_restore(&self, foreground: RestoreForeground) {
-        if self.diagnostic_lines.fetch_update(Ordering::Relaxed, Ordering::Relaxed,
+        if self.diagnostic_lines.try_update(Ordering::Relaxed, Ordering::Relaxed,
             |count| (count < 256).then_some(count + 1)).is_ok() {
             eprintln!("[surface] stage=restore_foreground pid={} elapsed_ms={} foreground={}", self.pid,
                 self.created.elapsed().as_millis(), foreground.label());
         }
     }
     fn trace(&self, stage: &'static str, outcome: Option<&str>) {
-        if self.diagnostic_lines.fetch_update(Ordering::Relaxed, Ordering::Relaxed,
+        if self.diagnostic_lines.try_update(Ordering::Relaxed, Ordering::Relaxed,
             |count| (count < 256).then_some(count + 1)).is_ok() {
             eprintln!("[surface] stage={} pid={} elapsed_ms={} code={}", stage, self.pid,
                 self.created.elapsed().as_millis(), outcome.map(diagnostic_code).unwrap_or("ok"));
@@ -562,7 +562,7 @@ impl SurfaceSupervisor {
     fn invalidate(&self) -> u64 {
         let _commit = self.route_commit.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         self.revision
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |value| {
                 value.checked_add(1)
             })
             .map(|previous| previous + 1)

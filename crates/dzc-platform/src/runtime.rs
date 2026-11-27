@@ -466,7 +466,7 @@ mod tests {
         use dzc_core::api::{HistoryQuery, HistoryService};
         use dzc_core::capture::*;
         use std::collections::VecDeque;
-        use std::sync::{Arc, Mutex};
+        use std::sync::Arc;
         let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
         assert!(
             runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file()
@@ -1115,6 +1115,7 @@ mod tests {
         assert_eq!(NativeClipboard.read_representation("text/plain").unwrap(), b"independent native replacement");
     }
 
+    #[cfg(target_os = "linux")]
     fn wait_for_private_uri_closed(path: &str) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
         while std::fs::read(path).is_ok() && std::time::Instant::now() < deadline {

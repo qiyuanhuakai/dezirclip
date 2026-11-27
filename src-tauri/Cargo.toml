@@ -11,7 +11,7 @@ default-run = "dezirclip"
 [features]
 default = ["desktop"]
 desktop = [
-    "dep:tauri", "dep:tauri-build", "dep:tauri-plugin-opener",
+    "dep:tauri", "dep:tauri-build", "dep:serde_json", "dep:tauri-plugin-opener",
     "dep:tauri-plugin-dialog", "dep:tauri-plugin-global-shortcut",
     "dep:tauri-plugin-single-instance", "dep:tauri-plugin-window-state",
     "dep:window-vibrancy", "dep:machine-uid",
@@ -27,7 +27,7 @@ portable = ["dzc-core/portable", "dzc-platform/portable"]
 [build-dependencies]
 tauri-winres = "0.3.6"
 tauri-build = { workspace = true, optional = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, optional = true }
 
 [dependencies]
 dzc-core = { workspace = true, features = ["legacy-bridge"] }
@@ -67,7 +67,6 @@ uuid = { workspace = true }
 urlencoding = { workspace = true }
 machine-uid = { workspace = true, optional = true }
 sha2 = { workspace = true }
-hex = { workspace = true }
 dotenvy = { workspace = true, optional = true }
 
 dirs = { workspace = true }

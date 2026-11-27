@@ -42,7 +42,7 @@ pub async fn inspect_backup_file(host: State<'_, DesktopHost>, path: String, exp
 mod tests {
     use super::*;
     use crate::services::backup::{
-        entries_from_json, export_to_json, import_from_encrypted, BackupError, ExportEntry, ImportMode, ImportSummary,
+        entries_from_json, export_to_json, import_from_encrypted, BackupError, ExportEntry, ImportSummary,
     };
 
     fn make_entry(id: i64) -> ExportEntry {

@@ -7,7 +7,7 @@ import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 import { EmojiAddTile, EmojiFavoritesPanel, EmojiFavoriteTile } from "@deziro/ui-react/components/EmojiFavoriteTiles";
 import { schedulePreview } from "../../../shared/lib/previewQueue";
-import { characterPageSize, searchCharacters } from "../characterCatalog";
+import { characterPageSize, loadCharacterSearch } from "../characterCatalog";
 import { emojiPreview, hasSymbolPreview, symbolPreview } from "../characterPreview";
 
 interface EmojiPanelProps {
@@ -157,13 +157,25 @@ const dedupeFavoritePaths = (paths: string[]) =>
 const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveSetting }: EmojiPanelProps) => {
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(characterPageSize);
+  const [searchCharacters, setSearchCharacters] = useState<Awaited<ReturnType<typeof loadCharacterSearch>> | false | null>(null);
+  const wantsCatalog = activeTab !== "favorites";
+  useEffect(() => {
+    if (!wantsCatalog) return;
+    let cancelled = false;
+    loadCharacterSearch().then(search => {
+      if (!cancelled) setSearchCharacters(() => search);
+    }).catch(() => {
+      if (!cancelled) setSearchCharacters(false);
+    });
+    return () => { cancelled = true; };
+  }, [wantsCatalog]);
   const loadMore = useCallback(() => setLimit(amount => amount + characterPageSize), []);
   const matches = useMemo(() => {
-    if (activeTab === "favorites") return [];
+    if (activeTab === "favorites" || !searchCharacters) return [];
     const groups = searchCharacters(activeTab, query);
     if (activeTab !== "symbols" || query.trim()) return groups;
     return groups.map(group => ({ ...group, entries: group.entries.filter(entry => hasSymbolPreview(entry.value)) }));
-  }, [activeTab, query]);
+  }, [activeTab, query, searchCharacters]);
   const count = matches.reduce((total, group) => total + group.entries.length, 0);
   let remaining = limit;
   const visibleGroups = matches.flatMap(group => {
@@ -497,7 +509,9 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
       {activeTab !== "favorites" && <>
         <CharacterSearch value={query} label={t("emoji_search")}
           onChange={value => { setQuery(value); setLimit(characterPageSize); }} />
-        <EmojiGrid groups={visibleGroups} empty={t("emoji_search_empty")} key={`${activeTab}:${query}`}
+        <EmojiGrid groups={visibleGroups}
+          empty={searchCharacters === null ? t("common_loading") : searchCharacters ? t("emoji_search_empty") : t("emoji_catalog_load_failed")}
+          key={`${activeTab}:${query}`}
           onSelect={value => handleSend(value, "text")}
           getPreview={activeTab === "symbols" ? symbolPreview : emojiPreview}
           onLoadMore={count > limit ? loadMore : undefined} />

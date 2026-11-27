@@ -1,4 +1,4 @@
-import catalogData from "../../../frontends/dzc-surface/cmd/dzc-desktop/emoji-data.json";
+import catalogUrl from "../../../frontends/dzc-surface/cmd/dzc-desktop/emoji-data.json?url";
 
 interface Character {
   value: string;
@@ -30,7 +30,7 @@ function nameText(text: string) {
 }
 
 const chineseName = /^\p{Script=Han}{3,}$/u;
-const catalog: Record<"emoji" | "symbols", CharacterGroup[]> = catalogData;
+type CharacterCatalog = Record<"emoji" | "symbols", CharacterGroup[]>;
 
 function indexEntry(entry: Character): SearchEntry {
   const glyph = normalize(entry.value);
@@ -41,11 +41,6 @@ function indexEntry(entry: Character): SearchEntry {
   return { glyph, names, aliases, text: [glyph, ...words, ...codepoints].join(" "),
     englishWords: words.join(" ").match(/[a-z]+/g) ?? [], chineseNames: words.filter(word => chineseName.test(word)) };
 }
-
-const index = {
-  emoji: catalog.emoji.map(group => group.entries.map(indexEntry)),
-  symbols: catalog.symbols.map(group => group.entries.map(indexEntry)),
-};
 
 function oneEditApart(a: string, b: string) {
   const left = Array.from(a);
@@ -65,37 +60,60 @@ function oneEditApart(a: string, b: string) {
 
 export const characterPageSize = 160;
 
-export function searchCharacters(tab: "emoji" | "symbols", query: string) {
-  const literal = normalize(query).trim();
-  if (!literal) return catalog[tab];
-  const phrase = nameText(literal.replace(/^:([^:]+):$/, "$1")) || literal;
-  const terms = phrase.split(" ");
-  const typoTerms = new Map<string, "englishWords" | "chineseNames">();
-  for (const term of terms) {
-    if (/^[a-z]{4,}$/.test(term)) typoTerms.set(term, "englishWords");
-    else if (/^\p{Script=Han}{4,}$/u.test(term)) typoTerms.set(term, "chineseNames");
-  }
+export function createCharacterSearch(catalog: CharacterCatalog) {
+  const index = {
+    emoji: catalog.emoji.map(group => group.entries.map(indexEntry)),
+    symbols: catalog.symbols.map(group => group.entries.map(indexEntry)),
+  };
 
-  const groups = (allowTypo: boolean) => catalog[tab].flatMap((group, groupIndex) => {
-    const matches = group.entries.flatMap((entry, entryIndex) => {
-      const candidate = index[tab][groupIndex][entryIndex];
-      if (literal === candidate.glyph) return [{ entry, rank: 0 }];
-      if (candidate.aliases.includes(phrase)) return [{ entry, rank: 1 }];
-      if (candidate.names.includes(phrase)) return [{ entry, rank: 2 }];
-      if (terms.every(term => candidate.text.includes(term))) return [{ entry, rank: 3 }];
-      if (allowTypo) {
-        const missing = terms.filter(term => !candidate.text.includes(term));
-        const vocabulary = typoTerms.get(missing[0]);
-        if (missing.length === 1 && vocabulary && candidate[vocabulary].some(word => oneEditApart(missing[0], word))) {
-          return [{ entry, rank: 4 }];
+  return function searchCharacters(tab: "emoji" | "symbols", query: string) {
+    const literal = normalize(query).trim();
+    if (!literal) return catalog[tab];
+    const phrase = nameText(literal.replace(/^:([^:]+):$/, "$1")) || literal;
+    const terms = phrase.split(" ");
+    const typoTerms = new Map<string, "englishWords" | "chineseNames">();
+    for (const term of terms) {
+      if (/^[a-z]{4,}$/.test(term)) typoTerms.set(term, "englishWords");
+      else if (/^\p{Script=Han}{4,}$/u.test(term)) typoTerms.set(term, "chineseNames");
+    }
+
+    const groups = (allowTypo: boolean) => catalog[tab].flatMap((group, groupIndex) => {
+      const matches = group.entries.flatMap((entry, entryIndex) => {
+        const candidate = index[tab][groupIndex][entryIndex];
+        if (literal === candidate.glyph) return [{ entry, rank: 0 }];
+        if (candidate.aliases.includes(phrase)) return [{ entry, rank: 1 }];
+        if (candidate.names.includes(phrase)) return [{ entry, rank: 2 }];
+        if (terms.every(term => candidate.text.includes(term))) return [{ entry, rank: 3 }];
+        if (allowTypo) {
+          const missing = terms.filter(term => !candidate.text.includes(term));
+          const vocabulary = typoTerms.get(missing[0]);
+          if (missing.length === 1 && vocabulary && candidate[vocabulary].some(word => oneEditApart(missing[0], word))) {
+            return [{ entry, rank: 4 }];
+          }
         }
-      }
-      return [];
-    }).sort((a, b) => a.rank - b.rank);
-    return matches.length ? [{ id: group.id, rank: matches[0].rank, entries: matches.map(match => match.entry) }] : [];
-  });
+        return [];
+      }).sort((a, b) => a.rank - b.rank);
+      return matches.length ? [{ id: group.id, rank: matches[0].rank, entries: matches.map(match => match.entry) }] : [];
+    });
 
-  const direct = groups(false);
-  return (direct.length || !typoTerms.size ? direct : groups(true))
-    .sort((a, b) => a.rank - b.rank).map(({ id, entries }) => ({ id, entries }));
+    const direct = groups(false);
+    return (direct.length || !typoTerms.size ? direct : groups(true))
+      .sort((a, b) => a.rank - b.rank).map(({ id, entries }) => ({ id, entries }));
+  };
+}
+
+let pendingSearch: Promise<ReturnType<typeof createCharacterSearch>> | undefined;
+
+export function loadCharacterSearch() {
+  pendingSearch ??= fetch(catalogUrl)
+    .then(async response => {
+      if (!response.ok) throw new Error("Character catalog unavailable");
+      const catalog: CharacterCatalog = await response.json();
+      return createCharacterSearch(catalog);
+    })
+    .catch(error => {
+      pendingSearch = undefined;
+      throw error;
+    });
+  return pendingSearch;
 }

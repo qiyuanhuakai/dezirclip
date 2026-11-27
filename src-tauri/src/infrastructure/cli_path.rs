@@ -124,6 +124,7 @@ pub fn path_contains_entry(path_value: &str, entry: &Path) -> bool {
     std::env::split_paths(path_value).any(|candidate| normalize_path(&candidate) == target)
 }
 
+#[cfg(any(target_os = "windows", test))]
 pub fn append_path_entry(path_value: &str, entry: &Path) -> Result<String, String> {
     if path_contains_entry(path_value, entry) {
         return Ok(path_value.to_string());

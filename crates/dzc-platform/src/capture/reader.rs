@@ -666,7 +666,7 @@ mod tests {
             api::{HistoryQuery, HistoryService},
             capture::*,
         };
-        use std::{collections::VecDeque, sync::Mutex};
+        use std::collections::VecDeque;
         let directory = std::env::temp_dir().join(format!(
             "dezirclip-native-file-recapture-{}",
             uuid::Uuid::new_v4()

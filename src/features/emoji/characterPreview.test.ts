@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { searchCharacters } from "./characterCatalog";
+import catalogData from "../../../frontends/dzc-surface/cmd/dzc-desktop/emoji-data.json";
+import { createCharacterSearch } from "./characterCatalog";
 import { emojiPreview, hasSymbolPreview, symbolPreview } from "./characterPreview";
+
+const searchCharacters = createCharacterSearch(catalogData);
 
 describe("character previews", () => {
   it("has offline artwork for every flag in the catalog", () => {

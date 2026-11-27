@@ -40,7 +40,10 @@ export function prepareSidecars({ args = process.argv.slice(2), env = process.en
   const targetDirectory = resolve(repoRoot, metadata.target_directory);
   // An explicit target avoids CARGO_BUILD_TARGET/config changing the source
   // namespace. Hook environment does not distinguish an explicit host target.
-  const cargoArgs = ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", "dzc", "--locked", "--no-default-features", "--target", targetTriple];
+  // Both desktop helpers can share the same non-WebView dependency graph.
+  // The separately distributed CLI keeps its own minimal build.
+  const cargoArgs = ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", "dzc", "--bin", "dzc-service",
+    "--locked", "--no-default-features", "--target", targetTriple, "--features", "native-screen"];
   if (options.profile === "release") cargoArgs.push("--release");
   if (options.portable) cargoArgs.push("--features", "portable");
   run("cargo", cargoArgs, { cwd: repoRoot, stdio: "inherit" });
@@ -94,12 +97,8 @@ export function prepareSidecars({ args = process.argv.slice(2), env = process.en
     declaredBuildSet: { version, sourceRevision: declaredRevision, buildId: declaredRevision ? `${version}@${declaredRevision}` : null },
     helperSha256: digest(script), cargoLockSha256: digest(join(repoRoot, "Cargo.lock")),
   };
-  // A service is a normal Cargo binary, not externalBin. Rebuild it without
-  // desktop features too, then synchronize exactly the paths enumerated by
-  // the bundler, including its default-host namespace.
-  const serviceArgs = cargoArgs.map((value) => value === "dzc" ? "dzc-service" : value);
-  serviceArgs.push("--features", "native-screen");
-  run("cargo", serviceArgs, { cwd: repoRoot, stdio: "inherit" });
+  // Synchronize the service paths enumerated by the bundler, including its
+  // default-host namespace.
   const serviceSource = join(targetDirectory, targetTriple, options.profile, `dzc-service${extension}`);
   const serviceSha256 = digest(serviceSource);
   let serviceInfo = null;
@@ -123,7 +122,7 @@ export function prepareSidecars({ args = process.argv.slice(2), env = process.en
     item.sha256 = digest(item.path);
     if (item.sha256 !== serviceSha256) throw new Error("Service input differs from standalone service build");
   }
-  proof.serviceHelper = { source: serviceSource, sha256: serviceSha256, binaryPaths: servicePaths, command: ["cargo", ...serviceArgs], buildInfo: serviceInfo,
+  proof.serviceHelper = { source: serviceSource, sha256: serviceSha256, binaryPaths: servicePaths, command: proof.command, buildInfo: serviceInfo,
     buildInfoVerification: serviceInfo ? "executed_native_service" : "cross_target_not_executed" };
   writeFileSync(staged + ".proof.json", JSON.stringify(proof, null, 2) + "\n");
   console.log(`Verified standalone sidecar inputs (${options.phase}, ${options.profile}, ${targetTriple}): ${sha256}`);

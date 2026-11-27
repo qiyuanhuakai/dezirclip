@@ -98,13 +98,13 @@ function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = 
     if (command === "git") return "a".repeat(40);
     assert.equal(command, "cargo");
     if (args[0] === "metadata") return JSON.stringify({ target_directory: targetDirectory });
-    assert(["dzc", "dzc-service"].includes(args[4]));
-    assert.deepEqual(args, ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", args[4], "--locked", "--no-default-features", "--target", target,
-      ...(profile === "release" ? ["--release"] : []), ...(portable ? ["--features", "portable"] : []),
-      ...(args[4] === "dzc-service" ? ["--features", "native-screen"] : [])]);
+    assert.deepEqual(args, ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", "dzc", "--bin", "dzc-service",
+      "--locked", "--no-default-features", "--target", target, "--features", "native-screen",
+      ...(profile === "release" ? ["--release"] : []), ...(portable ? ["--features", "portable"] : [])]);
     if (!omitOutput) {
       mkdirSync(dirname(source), { recursive: true });
-      writeFileSync(args[4] === "dzc" ? source : serviceSource, args[4] === "dzc" ? payload : Buffer.from("service:"+payload.toString()));
+      writeFileSync(source, payload);
+      writeFileSync(serviceSource, Buffer.from("service:"+payload.toString()));
     }
   };
   return { directory, targetDirectory, source, serviceSource, hostDefault, cache, payload, calls, run, host, target };
@@ -130,7 +130,8 @@ for (const parameters of [
     const staged = proof.binaryPaths.find((item) => item.role === "external-bin").path;
     assert.deepEqual(JSON.parse(readFileSync(staged + ".proof.json", "utf8")), proof);
     assert.equal(proof.cargoLockSha256, hash(readFileSync(join(f.directory, "Cargo.lock"))));
-    assert.equal(f.calls.length, 6, "each standalone helper has its own native build identity query");
+    assert.equal(f.calls.length, 5, "the helpers share one build and retain distinct identity checks");
+    assert.deepEqual(proof.command, proof.serviceHelper.command);
     assert.equal(proof.buildInfoVerification, "executed_native_cli");
     assert.equal(proof.buildInfo.component, "cli");
     assert.equal(proof.serviceHelper.buildInfo.component, "service");

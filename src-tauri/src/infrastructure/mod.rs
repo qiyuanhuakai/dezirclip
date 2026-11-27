@@ -1,5 +1,6 @@
 pub mod encryption;
 pub mod data_paths;
+#[cfg(test)]
 pub mod image_preview_file;
 pub mod process_memory;
 pub mod preview_activation;

@@ -2,6 +2,7 @@ use crate::app_state::AppDataDir;
 use crate::database::DbState;
 use crate::error::{AppError, AppResult};
 use base64::Engine;
+#[cfg(target_os = "windows")]
 use image::ImageFormat;
 use serde::Serialize;
 use std::path::Path;
@@ -39,6 +40,7 @@ pub(crate) fn image_ext_from_filename(name: &str) -> Option<&'static str> {
     normalize_image_ext(ext)
 }
 
+#[cfg(target_os = "windows")]
 pub(crate) fn image_ext_from_bytes(bytes: &[u8]) -> Option<&'static str> {
     let format = image::guess_format(bytes).ok()?;
     match format {

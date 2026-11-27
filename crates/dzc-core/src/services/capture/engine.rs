@@ -493,7 +493,7 @@ fn next_session_id(timestamp: i64) -> i64 {
     static PREVIOUS: AtomicI64 = AtomicI64::new(0);
     let candidate = timestamp.saturating_abs().saturating_neg().min(-1);
     let previous = PREVIOUS
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |previous| {
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |previous| {
             Some(candidate.min(previous.saturating_sub(1)))
         })
         .expect("the session ID update always supplies a value");

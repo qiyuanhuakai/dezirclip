@@ -813,26 +813,6 @@ impl SqliteClipboardRepository {
         self.save_capture_guarded(conn, entry, data_dir, image_hash, attachments, None)
     }
 
-    pub(crate) fn save_automatic_capture_with_conn(
-        &self,
-        conn: &Connection,
-        entry: &ClipboardEntry,
-        data_dir: Option<&std::path::Path>,
-        image_hash: Option<i64>,
-        attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
-        ticket: &crate::api::CaptureTicket,
-        now_ms: i64,
-    ) -> Result<i64, String> {
-        self.save_capture_guarded(
-            conn,
-            entry,
-            data_dir,
-            image_hash,
-            attachments,
-            Some((ticket, now_ms)),
-        )
-    }
-
     pub(crate) fn save_automatic_capture_with_protection(
         &self,
         conn: &Connection,

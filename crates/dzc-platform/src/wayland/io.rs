@@ -109,6 +109,7 @@ pub(super) fn receive(
     }
 }
 
+#[cfg(test)]
 pub(super) fn send(
     fd: OwnedFd,
     bytes: &[u8],

@@ -21,6 +21,7 @@
 //! the desktop dependencies and their graphical build requirements.
 
 use std::env;
+use std::fmt::Write as _;
 use std::fs;
 use std::io::Write;
 use std::process::ExitCode;
@@ -42,10 +43,12 @@ fn looks_encrypted(data: &[u8]) -> bool {
     true
 }
 
-fn sha256_hex(b: &[u8]) -> String {
-    let mut h = Sha256::new();
-    h.update(b);
-    hex::encode(h.finalize())
+fn encode_hex(bytes: &[u8]) -> String {
+    let mut result = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut result, "{byte:02x}").expect("write hex to String");
+    }
+    result
 }
 
 fn inspect_json(json_str: &str) -> Result<(), String> {
@@ -57,7 +60,7 @@ fn inspect_json(json_str: &str) -> Result<(), String> {
             "  [{}] id={} content_sha256={}",
             i,
             e.id,
-            sha256_hex(e.content.as_bytes())
+            encode_hex(&Sha256::digest(e.content.as_bytes()))
         );
     }
     Ok(())
@@ -75,8 +78,8 @@ fn cmd_schema(data: &[u8]) -> Result<(), String> {
         let nonce = &data[..12];
         let salt = &data[12..28];
         let ct = &data[28..];
-        println!("nonce_hex: {}", hex::encode(nonce));
-        println!("salt_hex: {}", hex::encode(salt));
+        println!("nonce_hex: {}", encode_hex(nonce));
+        println!("salt_hex: {}", encode_hex(salt));
         println!("ciphertext_tag_len: {} bytes", ct.len());
     }
     Ok(())

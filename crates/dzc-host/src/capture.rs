@@ -135,7 +135,7 @@ impl CaptureManager {
             }
             host.clear_copy_echo();hooks.clear_own_copy();
             let bytes = weight(&frame);
-            if pending.fetch_update(Ordering::AcqRel, Ordering::Acquire, |previous| previous.checked_add(bytes).filter(|next| *next <= QUEUED_BYTES)).is_err() {
+            if pending.try_update(Ordering::AcqRel, Ordering::Acquire, |previous| previous.checked_add(bytes).filter(|next| *next <= QUEUED_BYTES)).is_err() {
                 diagnostic(&host, "CaptureQueueFull"); return;
             }
             let task = Task { frame, source, timestamp, _budget: Arc::new(Budget { bytes, pending: pending.clone() }) };
@@ -181,7 +181,7 @@ impl HostLifecycle for CaptureManager {
         let slot=self.running.lock().map_err(|_|WireErrorCode::Unavailable)?;
         let running=slot.as_ref().filter(|running|!running.stop.load(Ordering::Acquire)).ok_or(WireErrorCode::Busy)?;
         let bytes=weight(&frame);
-        running.pending.fetch_update(Ordering::AcqRel,Ordering::Acquire,|previous|previous.checked_add(bytes).filter(|next|*next<=QUEUED_BYTES)).map_err(|_|WireErrorCode::Busy)?;
+        running.pending.try_update(Ordering::AcqRel,Ordering::Acquire,|previous|previous.checked_add(bytes).filter(|next|*next<=QUEUED_BYTES)).map_err(|_|WireErrorCode::Busy)?;
         let budget=Arc::new(Budget{bytes,pending:running.pending.clone()});
         let work=running.work.begin(running._lease.clone(),(budget.clone(),running.retention.clone()))?;
         drop(slot);

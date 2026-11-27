@@ -854,7 +854,6 @@ fn copy_image_bytes_to_clipboard(bytes: Vec<u8>, _current_time: u64) -> AppResul
 
     #[cfg(target_os = "linux")]
     {
-        use dzc_core::ports::ClipboardWriter;
         owned_clipboard_writer()?.write_suppressing_recapture(dzc_core::ports::ClipboardPayload::Image{bytes,mime:if is_gif{"image/gif"}else{"image/png"}.into()})
             .map_err(|error|AppError::Internal(error.to_string()))?;
     }
@@ -1115,7 +1114,7 @@ mod tests {
         if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") { return; }
         use dzc_core::capture::*;
         use dzc_core::api::{HistoryQuery, HistoryService};
-        use std::{collections::VecDeque, sync::Mutex};
+        use std::collections::VecDeque;
         let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
         assert!(runtime.join("dezirclip-isolated-wayland-fixture").is_file());
         assert!(std::env::var_os("DISPLAY").is_none());

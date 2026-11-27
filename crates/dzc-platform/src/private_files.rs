@@ -29,7 +29,7 @@ impl Exports {
         }
     }
 
-    #[cfg(any(test, target_os = "linux"))]
+    #[cfg(test)]
     pub(crate) fn create(files: Vec<ClipboardFile>) -> Result<Self, String> {
         Self::create_with_access(files, false)
     }

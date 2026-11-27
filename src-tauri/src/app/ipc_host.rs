@@ -484,11 +484,6 @@ impl DesktopHost {
             }
         })
     }
-    pub(crate) fn call_embedded<T:DeserializeOwned>(&self,method:Method,params:impl Serialize)->Result<T,String> {
-        let host=self.embedded()?.ok_or_else(failed)?;
-        dispatch_embedded(&host,method,params)
-    }
-
     pub async fn page(&self,limit:i32,offset:i32,kind:Option<String>,query:Option<String>)->Result<Option<Vec<HostedEntry>>,String> {
         if self.embedded()?.is_some() {return Ok(None);}
         let mut client=self.service_client().await?;

@@ -1,8 +1,8 @@
 mod utils;
 
 pub use crate::database::DbState;
-use dzc_core::capture::{CaptureContext, CaptureEngine, CaptureEvent, CaptureFrame, CaptureOutcome, CaptureReadMetadata, CaptureSettings, CaptureSource, StoredCapture, OwnClipboardCopy};
-use std::sync::{Arc, Mutex, atomic::Ordering};
+use dzc_core::capture::{CaptureEvent, CaptureFrame, CaptureReadMetadata, CaptureSource, StoredCapture, OwnClipboardCopy};
+use std::sync::{Arc, atomic::Ordering};
 use tauri::{AppHandle, Emitter, Manager};
 #[cfg(target_os = "linux")]
 use crate::infrastructure::linux_api::window_tracker::{get_clipboard_capture_app_info as resolve_source,ActiveAppInfo};
@@ -84,11 +84,6 @@ pub async fn generated_capture_ticket(app:&AppHandle)->Result<Option<GeneratedCa
 fn generated_frame(data:ClipboardData,ticket:Option<dzc_core::api::CaptureTicket>)->Option<CaptureFrame> {
     ticket.map(|ticket|CaptureFrame{data,metadata:CaptureReadMetadata{privacy_ticket:Some(ticket),..Default::default()}})
 }
-#[cfg(test)]
-fn persistence_result(outcome:CaptureOutcome)->Result<Option<StoredCapture>,String> {
-    match outcome {CaptureOutcome::Stored(capture)=>Ok(Some(capture)),CaptureOutcome::Skipped(dzc_core::capture::CaptureSkip::PrivacyEpochChanged)=>Err("PrivacyEpochChanged".into()),
-        CaptureOutcome::Skipped(_)=>Ok(None),CaptureOutcome::Rejected(reason)=>Err(format!("{reason:?}")),CaptureOutcome::Failed(error)=>Err(error.code)}
-}
 pub async fn process_new_entry(app:&AppHandle,data:ClipboardData,source_override:Option<String>,source_snapshot:Option<ActiveAppInfo>,ticket:Option<GeneratedCaptureTicket>)->Result<bool,String> {
     process_new_entry_with_protection(app,data,source_override,source_snapshot,ticket,false).await
 }
@@ -122,8 +117,13 @@ mod tests {
         tag_repo::{SqliteTagRepository, TagRepository},
     };
     use dzc_core::privacy::{PrivacyAction, PrivacyReason};
-    use dzc_core::capture::CaptureStore;
-    use std::collections::VecDeque;
+    use dzc_core::capture::{CaptureContext, CaptureEngine, CaptureOutcome, CaptureSettings, CaptureStore};
+    use std::{collections::VecDeque, sync::Mutex};
+
+    fn persistence_result(outcome:CaptureOutcome)->Result<Option<StoredCapture>,String> {
+        match outcome {CaptureOutcome::Stored(capture)=>Ok(Some(capture)),CaptureOutcome::Skipped(dzc_core::capture::CaptureSkip::PrivacyEpochChanged)=>Err("PrivacyEpochChanged".into()),
+            CaptureOutcome::Skipped(_)=>Ok(None),CaptureOutcome::Rejected(reason)=>Err(format!("{reason:?}")),CaptureOutcome::Failed(error)=>Err(error.code)}
+    }
 
     #[test]
     fn engine_recapture_keeps_manually_protected_text_encrypted_in_the_same_row() {

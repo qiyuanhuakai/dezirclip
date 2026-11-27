@@ -8,7 +8,9 @@ use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use serde::Serialize;
 #[cfg(target_os = "linux")]
 use std::process::Command;
-use tauri::{AppHandle, Emitter, Manager, State, Theme, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
+#[cfg(target_os = "windows")]
+use tauri::Theme;
 
 #[derive(Debug, Serialize)]
 pub struct PlatformInfo {
@@ -168,6 +170,7 @@ pub fn set_theme(
         }
     }
 
+    #[cfg(target_os = "windows")]
     let resolved_color_mode = match effective_color_mode.as_deref() {
         Some("light") => "light",
         Some("dark") => "dark",
