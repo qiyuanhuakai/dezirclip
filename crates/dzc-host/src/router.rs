@@ -963,6 +963,36 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn quick_paste_layout_and_sector_counts_round_trip_through_desktop_protocol() {
+        let host = synthetic_host();
+        let grant = host.grants.issue_control(ClientRole::Desktop).unwrap();
+        let (desktop, state) = host.hello(HelloParams {
+            grant: Some(grant.token().into()), ..hello(ClientRole::Desktop)
+        }).unwrap();
+        let save = |key, value| dispatch(&host, &desktop, Method::DesktopSettingsViewSet,
+            serde_json::json!({
+                "service_instance_id": state.state.service_instance_id,
+                "expected_epoch": state.state.privacy_epoch,
+                "key": key, "value": value,
+            }));
+        let read = || dispatch(&host, &desktop, Method::DesktopQuickPreferences,
+            serde_json::json!({})).result.unwrap();
+        let layout = "app.quick_paste_layout";
+        assert_eq!(read()["layout"], "list");
+        for (key, value) in [(layout, "ring"), ("app.quick_paste_full_sectors", "12"),
+            ("app.quick_paste_half_sectors", "8")] {
+            assert_eq!(save(key, value).result.unwrap()["performed"], true);
+        }
+        assert_eq!(save("app.quick_paste_half_sectors", "9").error.unwrap().code, WireErrorCode::InvalidRequest);
+        let preferences = read();
+        assert_eq!(preferences["layout"], "ring");
+        assert_eq!(preferences["full_sectors"], 12);
+        assert_eq!(preferences["half_sectors"], 8);
+        assert_eq!(save(layout, "list").result.unwrap()["performed"], true);
+        assert_eq!(read()["layout"], "list");
+    }
+
+    #[test]
     fn desktop_source_exclusion_setting_applies_to_the_next_capture() {
         use dzc_core::capture::{
             CaptureContext, CaptureData, CaptureEngine, CaptureFailure, CaptureOutcome,
