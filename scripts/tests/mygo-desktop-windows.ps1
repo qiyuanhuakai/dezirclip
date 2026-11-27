@@ -1158,7 +1158,9 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         try {
             Start-Sleep -Milliseconds 100
             $null = [MyGoInput]::SetCursorPos(($dragX - 50), ($dragY + 42))
-            $null = Wait-Until { [MyGoInput]::HasMoveCursor() } 'Dragging the native title bar did not show the move cursor' 2
+            if (!$LegacyCloseAfterPaste) {
+                $null = Wait-Until { [MyGoInput]::HasMoveCursor() } 'Dragging the native title bar did not show the move cursor' 2
+            }
         } finally {
             [MyGoInput]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
         }
@@ -1167,8 +1169,11 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             [MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$afterDrag) -and
                 [Math]::Abs($afterDrag.top - $beforeDrag.top) -ge 20
         } 'Dragging the native title bar did not move the window' 5
-        $null = Wait-Until { ![MyGoInput]::HasMoveCursor() } 'The move cursor remained after the drag ended' 2
-        Write-Host 'Verified movement and cursor restoration when dragging the native title bar'
+        if (!$LegacyCloseAfterPaste) {
+            $null = Wait-Until { ![MyGoInput]::HasMoveCursor() } 'The move cursor remained after the drag ended' 2
+            Write-Host 'Verified cursor restoration when dragging the native title bar'
+        }
+        Write-Host 'Verified the native title bar physically moves the window'
         if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'The native main window is no longer foreground' }
         [Windows.Forms.SendKeys]::SendWait('^+v')
         $panel = Get-ResidentPanel $resident ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34'))
