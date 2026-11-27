@@ -100,8 +100,12 @@ mod tests {
 
     impl Directory {
         fn new() -> Self {
-            let path =
-                std::env::temp_dir().join(format!("dezirclip-theme-file-{}", uuid::Uuid::new_v4()));
+            // Darwin limits the full path of a Unix socket to 103 bytes.
+            #[cfg(target_os = "macos")]
+            let temp = PathBuf::from("/private/tmp");
+            #[cfg(not(target_os = "macos"))]
+            let temp = std::env::temp_dir();
+            let path = temp.join(format!("dzc-file-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir(&path).unwrap();
             Self(path)
         }

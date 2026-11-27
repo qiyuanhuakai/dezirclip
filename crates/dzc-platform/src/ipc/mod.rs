@@ -97,7 +97,11 @@ mod tests {
 
     #[test]
     fn private_native_endpoint_authenticates_and_releases_ownership() {
-        let directory = std::env::temp_dir().join(format!("dzc-ipc-{}", uuid::Uuid::new_v4()));
+        #[cfg(target_os = "macos")]
+        let temp = std::path::PathBuf::from("/private/tmp");
+        #[cfg(not(target_os = "macos"))]
+        let temp = std::env::temp_dir();
+        let directory = temp.join(format!("dzc-ipc-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         { use std::os::unix::fs::PermissionsExt; std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap(); }
