@@ -12,6 +12,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/desktop/application"
 	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/theme"
 )
 
@@ -104,17 +105,11 @@ func (*DesktopShell) Focus(ctx context.Context) error {
 func (*DesktopShell) BuildInfo() any { return buildinfo.DesktopReport() }
 
 func (l *Library) ProfileInfo(ctx context.Context) (protocol.DesktopProfileInfo, error) {
-	var result protocol.DesktopProfileInfo
-	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopProfileInfo, protocol.ToolCatalogParams{}, "DesktopProfileInfo", &result)
-	return result, err
+	return application.ProfileInfo(ctx, l.owner)
 }
 
 func (l *Library) OpenDataFolder(ctx context.Context) error {
-	profile, err := l.ProfileInfo(ctx)
-	if err != nil {
-		return err
-	}
-	return mygo.Shell.OpenPath(profile.DataDirectory)
+	return application.OpenDataFolder(ctx, l.owner, mygo.Shell.OpenPath)
 }
 
 func (*DesktopShell) FileSize(path string) (int64, error) {
