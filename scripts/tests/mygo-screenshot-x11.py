@@ -200,7 +200,7 @@ def check(desktop, helpers, *, native_main=False):
         print('Verified native appearance saves typography and independent surface and preview opacity', flush=True)
 
     def check_native_startup_settings():
-        protection = 'Protect sensitive clipboard content'
+        protection = 'Setting help: Privacy Protection'
         assert not find(protection), 'Privacy expanded on entering settings'
         click('Privacy')
         wait(lambda: find(protection), 'Privacy did not open on request')
