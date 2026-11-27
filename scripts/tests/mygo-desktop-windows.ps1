@@ -503,15 +503,19 @@ function Test-MainHotkeys($Main, $Root, $Resident, [string]$Executable, $Editor,
     $original = Get-SavedMainHotkeys
     if (![MyGoInput]::MainTestShortcutAvailable()) { throw 'Test shortcut was occupied before editing' }
     Click-Control $Main (Get-ControlPoint $Root 'Clipboard')
-    $label = if ($NativeMain) { '+ Global Hotkey' } else { 'Global Hotkey' }
-    Click-Control $Main (Get-ControlPoint $Root $label ([Windows.Automation.ControlType]::Button) -RequireEnabled)
-    $name = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $label)
+    $nameProperty = [Windows.Automation.AutomationElement]::NameProperty
+    $names = [Windows.Automation.OrCondition]::new(
+        [Windows.Automation.PropertyCondition]::new($nameProperty, '+ Global Hotkey'),
+        [Windows.Automation.PropertyCondition]::new($nameProperty, 'Global Hotkey'))
     $type = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Button)
-    $condition = [Windows.Automation.AndCondition]::new($type, $name)
+    $condition = [Windows.Automation.AndCondition]::new($type, $names)
+    $recorder = Wait-Until { $Root.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition) } 'Main shortcut recorder unavailable'
+    $label = $recorder.Current.Name
+    Click-Control $Main (Get-ControlPoint $Root $label ([Windows.Automation.ControlType]::Button) -RequireEnabled)
     $null = Wait-Until {
         $button = $Root.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
         if (!$button -or !$button.Current.HasKeyboardFocus) { return $false }
-        if ($NativeMain) { return $button.Current.HelpText -eq 'Recording...' }
+        if ($label -eq '+ Global Hotkey') { return $button.Current.HelpText -eq 'Recording...' }
         $pattern = $null
         $button.TryGetCurrentPattern([Windows.Automation.TogglePattern]::Pattern, [ref]$pattern) -and
             $pattern.Current.ToggleState -eq [Windows.Automation.ToggleState]::On

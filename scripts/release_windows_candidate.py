@@ -82,9 +82,9 @@ def read_profile(database, marker):
     with sqlite3.connect(database) as connection:
         rows = connection.execute('SELECT content,content_type FROM clipboard_history WHERE content=?', (marker,)).fetchall()
         preferences = dict(connection.execute(
-            "SELECT key,value FROM settings WHERE key IN ('app.language','app.update_channel')"))
+            "SELECT key,value FROM settings WHERE key IN ('app.language','app.update_channel','app.window_pinned')"))
     require(rows == [(marker, 'text')] and preferences == {
-        'app.language': 'en', 'app.update_channel': 'preview',
+        'app.language': 'en', 'app.update_channel': 'preview', 'app.window_pinned': 'true',
     }, 'The original clipboard entry or preferences were lost')
 
 
@@ -143,7 +143,7 @@ def verify(directory, output):
     with sqlite3.connect(database) as connection:
         connection.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', {
             'app.language': 'en', 'app.update_channel': 'preview', 'app.update_auto_check': 'false',
-            'app.silent_start': 'false', 'app.idle_destroy_enabled': 'false',
+            'app.silent_start': 'false', 'app.idle_destroy_enabled': 'false', 'app.window_pinned': 'true',
             'app.ocr_enabled': 'false', 'app.classification_enabled': 'false',
         }.items())
     read_profile(database, marker)
