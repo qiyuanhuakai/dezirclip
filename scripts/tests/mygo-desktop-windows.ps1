@@ -597,7 +597,7 @@ function Open-HoverPreview($root, $main, [string]$marker) {
     return $preview
 }
 
-function Test-PreviewPixels([IntPtr]$preview, [switch]$HalfOpacity) {
+function Test-PreviewPixels([IntPtr]$preview, [switch]$HalfOpacity, [switch]$NativeMaterial) {
     $bounds = New-Object MyGoInput+Rect
     if (![MyGoInput]::GetWindowRect($preview, [ref]$bounds)) { throw 'Cannot locate native preview' }
     $width = $bounds.right-$bounds.left
@@ -637,7 +637,7 @@ function Test-PreviewPixels([IntPtr]$preview, [switch]$HalfOpacity) {
                     $image = & $captureFrame
                     try {
                         $last.pixel = $image.GetPixel($sampleX,$sampleY).ToArgb()
-                        if ($HalfOpacity) {
+                        if ($HalfOpacity -or $NativeMaterial) {
                             if (!$white -and $last.pixel -eq $expected) { return $false }
                             if ($white) {
                                 $contrast = [Math]::Abs($image.GetPixel($sampleX,$sampleY).R - $firstPixel.R)
@@ -664,7 +664,7 @@ function Test-PreviewPixels([IntPtr]$preview, [switch]$HalfOpacity) {
 
 function Test-TransparentPreview($root, $main, [string]$marker) {
     $preview = Open-HoverPreview $root $main $marker
-    Test-PreviewPixels $preview
+    Test-PreviewPixels $preview -NativeMaterial
     $away = Get-ControlPoint $root 'Settings'
     if (![MyGoInput]::SetCursorPos($away.X,$away.Y)) { throw 'Could not leave the selected row' }
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($preview) } 'Preview remained after leaving the row'
@@ -684,7 +684,7 @@ function Test-UnfocusedPreviewAndTitleBar($root, $main, [string]$marker, $Editor
     if ([MyGoInput]::IsZoomed($main.MainWindowHandle) -or ($after.right-$after.left) -ne ($before.right-$before.left) -or ($after.bottom-$after.top) -ne ($before.bottom-$before.top)) {
         throw 'Double-clicking the title bar maximized or resized the main window'
     }
-    Click-Control $main (Get-ControlPoint $root 'Pin' ([Windows.Automation.ControlType]::Button))
+    Click-Control $main (Get-ControlPoint $root 'Keep on top' ([Windows.Automation.ControlType]::Button))
     $null = Wait-Until { ([MyGoInput]::GetWindowLongPtr($main.MainWindowHandle, -20).ToInt64() -band 8) -ne 0 } 'Main window pin did not apply'
     $point = Get-ControlPoint $root $marker
     $Form.Activate()
@@ -701,7 +701,7 @@ function Test-UnfocusedPreviewAndTitleBar($root, $main, [string]$marker, $Editor
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($preview) } 'Unfocused preview remained after leaving the row'
     $null = [MyGoInput]::SetForegroundWindow($main.MainWindowHandle)
     $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $main.MainWindowHandle } 'Main window could not regain focus'
-    Click-Control $main (Get-ControlPoint $root 'Pin' ([Windows.Automation.ControlType]::Button))
+    Click-Control $main (Get-ControlPoint $root 'Keep on top' ([Windows.Automation.ControlType]::Button))
     $null = Wait-Until { ([MyGoInput]::GetWindowLongPtr($main.MainWindowHandle, -20).ToInt64() -band 8) -eq 0 } 'Main window did not unpin'
     Write-Output 'Verified title-bar double click stays normal and unfocused hover preview preserves editor focus'
 }
@@ -951,9 +951,13 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
 import os, sqlite3
 with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
-                   [('app.compact_mode','true'), ('app.preview_opacity','0'), ('app.theme','macos')])
+                   [('app.compact_mode','true'), ('app.preview_opacity','0')])
 '@ | python -
         if ($LASTEXITCODE) { throw 'Could not seed the isolated preview preferences' }
+    }
+    if ($PinPreview) {
+        'import os, sqlite3; db=sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]); db.execute("UPDATE settings SET value=? WHERE key=?", ("macos", "app.theme")); db.commit()' | python -
+        if ($LASTEXITCODE) { throw 'Could not select FlatWhite for the pinned preview' }
     }
     if ($Capture -or $WakeBackground) {
         # Resources inside the private profile must use its managed image namespace.
@@ -1480,8 +1484,8 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     $build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuildNumber
     if ($build -ge 22621) {
         $observed = @{}
-        # Pixel comparisons use FlatWhite to observe the real backdrop without Acrylic tint.
-        $backdropType = if ($Capture -or $PinPreview) { 1 } else { 3 }
+        # The pinned preview checks clear composition. Capture retains Acrylic's system tint.
+        $backdropType = if ($PinPreview) { 1 } else { 3 }
         try {
             $null = Wait-Until {
                 $matched = $true
