@@ -597,7 +597,7 @@ function Open-HoverPreview($root, $main, [string]$marker) {
     return $preview
 }
 
-function Test-PreviewPixels([IntPtr]$preview, [switch]$HalfOpacity, [switch]$NativeMaterial) {
+function Test-PreviewPixels([IntPtr]$preview, [switch]$HalfOpacity) {
     $bounds = New-Object MyGoInput+Rect
     if (![MyGoInput]::GetWindowRect($preview, [ref]$bounds)) { throw 'Cannot locate native preview' }
     $width = $bounds.right-$bounds.left
@@ -637,7 +637,7 @@ function Test-PreviewPixels([IntPtr]$preview, [switch]$HalfOpacity, [switch]$Nat
                     $image = & $captureFrame
                     try {
                         $last.pixel = $image.GetPixel($sampleX,$sampleY).ToArgb()
-                        if ($HalfOpacity -or $NativeMaterial) {
+                        if ($HalfOpacity) {
                             if (!$white -and $last.pixel -eq $expected) { return $false }
                             if ($white) {
                                 $contrast = [Math]::Abs($image.GetPixel($sampleX,$sampleY).R - $firstPixel.R)
@@ -664,7 +664,7 @@ function Test-PreviewPixels([IntPtr]$preview, [switch]$HalfOpacity, [switch]$Nat
 
 function Test-TransparentPreview($root, $main, [string]$marker) {
     $preview = Open-HoverPreview $root $main $marker
-    Test-PreviewPixels $preview -NativeMaterial
+    Test-PreviewPixels $preview
     $away = Get-ControlPoint $root 'Settings'
     if (![MyGoInput]::SetCursorPos($away.X,$away.Y)) { throw 'Could not leave the selected row' }
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($preview) } 'Preview remained after leaving the row'
@@ -1484,7 +1484,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     $build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuildNumber
     if ($build -ge 22621) {
         $observed = @{}
-        # The pinned preview checks clear composition. Capture retains Acrylic's system tint.
+        # The preview transparency fixture uses FlatWhite. Capture retains Acrylic.
         $backdropType = if ($PinPreview) { 1 } else { 3 }
         try {
             $null = Wait-Until {
@@ -1504,6 +1504,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         }
     }
     if ($PinPreview) {
+        Test-TransparentPreview $root $main $marker
         Test-PinnedPreview $root $main $resident $marker
         return
     }
@@ -1634,7 +1635,6 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     }
     if ($Capture) {
         Assert-CustomBackgroundPresent $main
-        Test-TransparentPreview $root $main $marker
         Test-UnfocusedPreviewAndTitleBar $root $main $marker $edit $form
         Test-ExternalEdit $root $main $marker
         Test-ScreenshotShortcutPreservesMain $main $resident $cli ($marker + ' externally edited')

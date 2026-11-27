@@ -41,7 +41,7 @@ foreach ($mode in @('left-click', 'menu', 'pinned-reactivation')) {
             [MyGoInput]::GetWindowRect($handle, [ref]$after) -and ($after.left -ne $before.left -or $after.top -ne $before.top)
         } 'Physical title drag did not move the pinned window'
         if ($mode -eq 'left-click') {
-            Click-Control $main (Get-ControlPoint $root 'Pin' ([Windows.Automation.ControlType]::Button))
+            Click-Control $main (Get-ControlPoint $root 'Keep on top' ([Windows.Automation.ControlType]::Button))
             $null = Wait-Until { ([MyGoInput]::GetWindowLongPtr($handle, -20).ToInt64() -band 8) -ne 0 } 'Dragged window did not pin'
         }
     }
