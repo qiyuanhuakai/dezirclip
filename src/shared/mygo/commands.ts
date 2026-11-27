@@ -5,11 +5,13 @@ import { shellCall } from "./bridge";
 import { getCustomThemes } from "../lib/themeCatalog";
 import { resolveThemeSelection } from "../lib/themePackage";
 import { getPrivacyViewState } from "../lib/privacySession";
+import { readMyGoProfile } from "./profile";
+import type { PrivacyState, RuntimeState } from "../protocol/wire";
 import type { TagBatchSelection } from "../../features/tag/utils/tagBatchSelection";
 
 type Arguments = Record<string, unknown>;
 
-function privacySnapshot(status: { privacy: { expires_at_ms: number | null } }) {
+function privacySnapshot(status: { state: RuntimeState; privacy: PrivacyState }) {
   const stamp = readResumeAuthority(status);
   return parsePrivacySnapshot({ history_revision: stamp.revision, privacy_epoch: stamp.epoch,
     session: { active: stamp.sessionActive, expires_at_ms: status.privacy.expires_at_ms } });
@@ -251,12 +253,10 @@ export async function invokeMyGo<T>(command: string, args: Arguments = {}): Prom
     if (args.skill !== "dzc-cli" && args.skill !== "dezirclip-theme") throw new Error("Unknown bundled guide");
     return shellCall<T>("PackageTool", args.skill === "dzc-cli" ? "open-cli-guide" : "open-theme-guide");
   }
-  if (command === "get_data_path") return (await library<{data_directory: T}>("ProfileInfo")).data_directory;
-  if (command === "open_data_folder") return library<T>("OpenDataFolder");
   if (command === "get_build_info") {
     const [desktop, profile] = await Promise.all([
       shellCall<{ mygo_version: string; build_id: string; source_revision: string }>("BuildInfo"),
-      library<{ database_schema_version: number }>("ProfileInfo"),
+      readMyGoProfile(),
     ]);
     return { ...desktop, build_id: desktop.build_id === "unknown" ? null : desktop.build_id,
       source_revision: desktop.source_revision === "unknown" ? null : desktop.source_revision,

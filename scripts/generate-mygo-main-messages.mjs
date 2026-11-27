@@ -13,6 +13,11 @@ export function usedNativeMainMessageKeys() {
     const source = readFileSync(new URL(name, desktop), "utf8");
     for (const [, key] of source.matchAll(/\.text\("([a-z0-9_.]+)"/g)) keys.add(key);
   }
+  const catalog = JSON.parse(readFileSync(new URL("../protocol/settings.catalog.json", import.meta.url), "utf8"));
+  for (const setting of Object.values(catalog).flat()) {
+    keys.add(setting.labelKey);
+    for (const key of Object.values(setting.optionLabelKeys ?? {})) keys.add(key);
+  }
   return [...keys].sort();
 }
 

@@ -1,5 +1,6 @@
 import type { Event as DesktopEvent } from "@tauri-apps/api/event";
 import { observeNativeAppearance } from "./appearance";
+import type { RuntimeState, EventsResult } from "../protocol/wire";
 
 const bus = new EventTarget();
 let nextId = 0;
@@ -27,28 +28,16 @@ async function receiveSettingsRequest() {
   }
 }
 
-interface HostState {
-  service_instance_id: string;
-  privacy_epoch: number;
-  history_revision: number;
-  event_sequence: number;
-}
-interface Changes {
-  state: HostState;
-  events: { event: string; data: { entry_id?: number; status?: string }; state: HostState }[];
-  resync_required: boolean;
-}
-
 function dispatch(name: string, payload?: unknown) {
   bus.dispatchEvent(new CustomEvent(name, { detail: payload }));
 }
 
 async function watchHost() {
-  let previous: HostState | undefined;
+  let previous: RuntimeState | undefined;
   let backoff = 250;
   for (;;) {
     try {
-      const update = await window.mygo.call<Changes>("History.Changes", previous?.event_sequence ?? null);
+      const update = await window.mygo.call<EventsResult>("History.Changes", previous?.event_sequence ?? null);
       const recovered = !connected;
       connected = true;
       backoff = 250;

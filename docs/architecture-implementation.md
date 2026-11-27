@@ -134,3 +134,5 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **C0 版本与性能 fixture**。版本脚本在独立 fixture 中只需要版本解析与需要更新的文件，测试从 Cargo 清单获取完整工作区成员。Windows 性能 fixture 校准了受审查的输入清单哈希。Linux 本地包装测试运行 427 项，16 项在本地环境按既有条件跳过。
 - **R5a Profile 入口**。Go 的 profile 查询和打开数据目录使用 application 包，宿主的 Shell 调用通过函数传入。同名绑定的签名及 53 项公开方法保持。Linux Go 模块测试通过，React Library 的集成用例通过实际 Rust Service 读取 profile，并与临时数据目录核对。其余控制器和 WebView 页面验收随 R5 继续。
 - **R2a 更新偏好目录**。自动检查与更新通道的设置标识、标签和通道选项由 `protocol/settings.catalog.json` 生成至 Rust、Go、React 和 wire schema。Core 显式保留 view mutation 与隐私 epoch 检查，两项在空库均不预写，旧配置字符串读取与按已安装版本选择通道照旧。Windows/Linux Core 回归、Rust/Go wire fixture、Go 桌面测试与 React 类型和更新策略测试通过。
+- **R5b 类型化 Profile 与事件入口**。应用通过明确的 profile 能力读取并打开数据目录，两种宿主适配器保留各自原有调用。MyGo 的事件和隐私状态中使用的 wire 类型由协议生成，现有运行时权限校验保留。Tauri 和 MyGo Web 生产构建、Tauri WebView 启动冒烟、Linux Go 桌面测试及三语更新文案生成检查通过。
+- **R6 自定义背景**。Tauri 查询背景改走共享 HistoryService，保留文件读取前后两次选择检查。Windows 和 Linux 测试用公开 Core 设置 API 写入实际 PNG 路径，核对读取字节，并验证切换选择后的旧资源请求会被拒绝。

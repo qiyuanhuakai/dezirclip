@@ -343,10 +343,10 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	}
 	kit.SettingsField(c, uikit.SettingsFieldOptions{}).Children(func() {
 		kit.SettingsInlineLabel(c, channelLabel, n.settingsHelpLabel(channelLabel), channelHint)
-		values := protocol.UpdateChannelSetting().Values
-		options := make([]uikit.SelectOption, 0, len(values))
-		for _, channel := range values {
-			options = append(options, uikit.SelectOption{Value: channel, Label: n.text("updater_channel_" + channel + "_name")})
+		setting := protocol.UpdateChannelSetting()
+		options := make([]uikit.SelectOption, 0, len(setting.Values))
+		for _, channel := range setting.Values {
+			options = append(options, uikit.SelectOption{Value: channel, Label: n.text(setting.OptionLabelKeys[channel])})
 		}
 		kit.SettingsChoices(c, channelLabel, u.channel, options, true, disabled, func(channel string) {
 			n.saveSetting(protocol.SettingUpdateChannel, channel)

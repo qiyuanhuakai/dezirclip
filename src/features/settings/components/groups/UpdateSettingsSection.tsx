@@ -52,7 +52,7 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
                 <SettingsLabel label={t(updateChannelSetting.labelKey)} hintKey={updateChannelSetting.labelKey}
                     hint={t(state.channel === "stable" ? "updater_stable_hint" : "updater_preview_hint")} />
                 <SettingsChoices segmented label={t(updateChannelSetting.labelKey)} value={state.channel} disabled={disabled}
-                    options={updateChannelSetting.values.map(value => ({ value, label: t(`updater_channel_${value}_name`) }))}
+                    options={updateChannelSetting.values.map(value => ({ value, label: t(updateChannelSetting.optionLabelKeys[value]) }))}
                     onChange={channel => { setConfirmationId(null); void saveUpdatePreference("channel", channel); }} />
             </SettingsField>
             <UpdateVersionRow label={t("updater_current_version")} version={state.currentVersion} />

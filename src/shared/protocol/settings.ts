@@ -13,6 +13,10 @@ export const updateChannelSetting = {
         "stable",
         "preview"
     ],
+    "optionLabelKeys": {
+        "stable": "updater_channel_stable_name",
+        "preview": "updater_channel_preview_name"
+    },
     "labelKey": "updater_channel",
     "requiresRestart": false,
     "group": "updatePreferences"

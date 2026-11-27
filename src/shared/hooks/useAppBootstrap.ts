@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { DefaultAppsMap, InstalledAppOption } from "../../features/app/types";
 import { invoke } from "../lib/desktopInvoke";
+import { desktopProfile } from "../desktop/profile";
 
 interface UseAppBootstrapOptions {
   showSettings: boolean;
@@ -21,7 +22,7 @@ export const useAppBootstrap = ({
   const scannedRef = useRef(false);
   const defaultsReadRef = useRef(false);
   useEffect(() => {
-    invoke<string>("get_data_path").then(setDataPath).catch(console.error);
+    desktopProfile.dataPath().then(setDataPath).catch(console.error);
 
     invoke<boolean>("is_autostart_enabled").then(setAutoStart).catch(console.error);
 

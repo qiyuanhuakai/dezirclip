@@ -6,6 +6,7 @@ type Setting struct {
 	Group           string
 	Kind            string
 	Values          []string
+	OptionLabelKeys map[string]string
 	LabelKey        string
 	RequiresRestart bool
 	SeedDefault     *string
@@ -20,6 +21,7 @@ func UpdateAutoCheckSetting() Setting {
 		Group:           "updatePreferences",
 		Kind:            "boolean",
 		Values:          nil,
+		OptionLabelKeys: nil,
 		LabelKey:        SettingUpdateAutoCheckLabel,
 		RequiresRestart: false,
 		SeedDefault:     nil,
@@ -35,6 +37,7 @@ func UpdateChannelSetting() Setting {
 		Group:           "updatePreferences",
 		Kind:            "enum",
 		Values:          []string{"stable", "preview"},
+		OptionLabelKeys: map[string]string{"stable": "updater_channel_stable_name", "preview": "updater_channel_preview_name"},
 		LabelKey:        SettingUpdateChannelLabel,
 		RequiresRestart: false,
 		SeedDefault:     nil,

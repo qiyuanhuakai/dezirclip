@@ -2,6 +2,7 @@ import { displayPath } from "../../utils/displayPath";
 import { useEffect, useRef, useState } from "react";
 import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
+import { desktopProfile } from "../../../../shared/desktop/profile";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { SettingsDataPath, SettingsDataAction } from "@deziro/ui-react/components/SettingsData";
 import { BackupActions, BackupChoices, BackupDialog, BackupField, BackupPreview, BackupReplaceConfirmation } from "@deziro/ui-react/components/BackupDialog";
@@ -358,7 +359,7 @@ const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGro
                             </SettingsDataAction>
                             <SettingsDataAction disabled={!dataPath || checkingProfile || profileBusy} onClick={() => {
                                 setProfileError("");
-                                void invoke("open_data_folder").catch(() => setProfileError(t("native_profile_open_failed")));
+                                void desktopProfile.openDataFolder().catch(() => setProfileError(t("native_profile_open_failed")));
                             }}>
                                 {t("open_folder")}
                             </SettingsDataAction>
