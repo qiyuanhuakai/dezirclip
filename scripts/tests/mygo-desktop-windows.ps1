@@ -757,21 +757,32 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
 }
 
 function Assert-CustomBackgroundPresent($window) {
-    $frame = [MyGoInput+Rect]::new()
-    if (![MyGoInput]::GetWindowRect($window.MainWindowHandle, [ref]$frame)) { throw 'Cannot inspect the visible main window' }
-    $bitmap = [Drawing.Bitmap]::new($frame.right-$frame.left, $frame.bottom-$frame.top)
-    $graphics = [Drawing.Graphics]::FromImage($bitmap)
+    $observed = @{ hits = 0 }
     try {
-        $graphics.CopyFromScreen($frame.left, $frame.top, 0, 0, $bitmap.Size)
-        $hits = 0
-        for ($y = 24; $y -lt $bitmap.Height-24; $y += 24) {
-            for ($x = 24; $x -lt $bitmap.Width-24; $x += 24) {
-                $pixel = $bitmap.GetPixel($x, $y)
-                if ([Math]::Min([int]$pixel.R-$pixel.G, [int]$pixel.B-$pixel.G) -gt 60) { $hits++ }
+        $null = Wait-Until {
+            $window.Refresh()
+            if ($window.HasExited) { throw 'The main process exited before painting the custom background' }
+            $frame = [MyGoInput+Rect]::new()
+            $handle = $window.MainWindowHandle
+            if (![MyGoInput]::IsWindowVisible($handle) -or ![MyGoInput]::GetWindowRect($handle, [ref]$frame)) { return $false }
+            $bitmap = [Drawing.Bitmap]::new($frame.right-$frame.left, $frame.bottom-$frame.top)
+            $graphics = [Drawing.Graphics]::FromImage($bitmap)
+            try {
+                $graphics.CopyFromScreen($frame.left, $frame.top, 0, 0, $bitmap.Size)
+                $observed.hits = 0
+                for ($y = 24; $y -lt $bitmap.Height-24; $y += 24) {
+                    for ($x = 24; $x -lt $bitmap.Width-24; $x += 24) {
+                        $pixel = $bitmap.GetPixel($x, $y)
+                        if ([Math]::Min([int]$pixel.R-$pixel.G, [int]$pixel.B-$pixel.G) -gt 60) { $observed.hits++ }
+                    }
+                }
+                return $observed.hits -ge 20
+            } finally {
+                $graphics.Dispose()
+                $bitmap.Dispose()
             }
-        }
-        if ($hits -lt 20) { throw "Visible main window lacks its custom background: $hits colored samples" }
-    } finally { $graphics.Dispose(); $bitmap.Dispose() }
+        } 'The visible main window did not paint its custom background' 5
+    } finally { Write-Host "Custom background colored samples: $($observed.hits)" }
 }
 
 function Test-ScreenshotShortcutPreservesMain($Main, $Resident, [string]$Cli, [string]$Row) {
@@ -940,7 +951,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
 import os, sqlite3
 with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
-                   [('app.compact_mode','true'), ('app.preview_opacity','0')])
+                   [('app.compact_mode','true'), ('app.preview_opacity','0'), ('app.theme','macos')])
 '@ | python -
         if ($LASTEXITCODE) { throw 'Could not seed the isolated preview preferences' }
     }
@@ -1469,10 +1480,12 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     $build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuildNumber
     if ($build -ge 22621) {
         $observed = @{}
+        # Pixel comparisons use FlatWhite to observe the real backdrop without Acrylic tint.
+        $backdropType = if ($Capture -or $PinPreview) { 1 } else { 3 }
         try {
             $null = Wait-Until {
                 $matched = $true
-                foreach ($expected in @(@(38,3), @(20,1), @(34,([uint32]::MaxValue-1)))) {
+                foreach ($expected in @(@(38,$backdropType), @(20,1), @(34,([uint32]::MaxValue-1)))) {
                     [uint32]$value = 0
                     $hr = [MyGoInput]::DwmGetWindowAttribute($main.MainWindowHandle, $expected[0], [ref]$value, 4)
                     $observed[$expected[0]] = '0x{0:X8}/{1}' -f $hr,$value
@@ -1553,7 +1566,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         } 'Tray activation did not recreate the main WebView' 40
         $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
         if ($recoveryAction -eq 'settings') {
-            $null = Get-ControlPoint $root 'General Settings'
+            $null = Get-ControlPoint $root 'Launch at Startup'
         } else {
             $null = Get-ControlPoint $root $marker
             if ($recoveryAction -eq 'search') {

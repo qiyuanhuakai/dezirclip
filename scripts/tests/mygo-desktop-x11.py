@@ -2034,7 +2034,9 @@ def check_profile_move(executable, home, *, native_main=False):
         sentinel = 'Destination only ' + secrets.token_hex(8)
         run('add', sentinel)
         click('Ok')
-        wait(lambda: any('retry the connection' in (n+t) for _,n,_,t in nodes()), 'Reconnection failure dialog')
+        wait(lambda: any('Data moved. Select Retry to finish switching to the new directory.' in (n+t)
+                         and 'the replacement Service could not start' in (n+t) for _,n,_,t in nodes()),
+             'Reconnection failure dialog')
         click('Ok')
         # Close only this fixture's main window. The tray must recover without the old child.
         windows = {int(pid) for thread in Path(f'/proc/{process.pid}/task').glob('*/children')
@@ -2044,7 +2046,7 @@ def check_profile_move(executable, home, *, native_main=False):
         assert len(windows) == 1
         child = windows.pop()
         os.kill(child, 15)
-        wait(lambda: not Path(f'/proc/{child}').exists(), 'Old WebView exited')
+        wait(lambda: not Path(f'/proc/{child}').exists(), 'Old main process exited')
         unavailable.rename(service)
         wait(lambda: tray_item(process.pid, '设置'), 'Retry from resident tray')
         process.wait(timeout=12)
