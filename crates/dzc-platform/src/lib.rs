@@ -12,6 +12,8 @@ pub mod user_resource;
 pub mod runtime_display;
 pub mod native_clipboard;
 pub mod runtime;
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+pub mod startup;
 pub mod process_memory;
 pub mod crash_diagnostics;
 pub mod video_preview;

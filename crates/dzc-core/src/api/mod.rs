@@ -34,6 +34,8 @@ pub use crate::capture::{CaptureEngine, CaptureStore, EventSink};
 
 mod capture_store;
 mod settings;
+mod startup;
+pub use startup::probe_startup_disable_webview_gpu;
 mod themes;
 pub use themes::{ThemeImportOutcome, ThemeRemovalOutcome};
 mod queue;

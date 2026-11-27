@@ -18,7 +18,6 @@ use std::sync::atomic::Ordering;
 
 const APP_IDENTIFIER: &str = "io.github.qiyuanhuakai.dezirclip";
 const LEGACY_APP_IDENTIFIER: &str = "com.tiez.clipboard";
-const GPU_SETTING_KEY: &str = "app.disable_webview_gpu";
 
 fn resolve_default_app_data_dir_for(identifier: &str) -> Option<std::path::PathBuf> {
     #[cfg(target_os = "windows")]
@@ -48,30 +47,11 @@ fn resolve_startup_db_path() -> Option<std::path::PathBuf> {
     )
 }
 
-fn read_disable_webview_gpu_setting() -> bool {
-    let db_path = match resolve_startup_db_path() {
-        Some(path) if path.exists() => path,
-        _ => return false,
-    };
-    let conn = match rusqlite::Connection::open(db_path) {
-        Ok(conn) => conn,
-        Err(_) => return false,
-    };
-    let mut stmt = match conn.prepare("SELECT value FROM settings WHERE key = ?1 LIMIT 1") {
-        Ok(stmt) => stmt,
-        Err(_) => return false,
-    };
-    let value = stmt
-        .query_row([GPU_SETTING_KEY], |row| row.get::<_, String>(0))
-        .ok();
-    matches!(
-        value.as_deref(),
-        Some("true") | Some("1") | Some("TRUE") | Some("True")
-    )
-}
-
 fn should_disable_webview_gpu() -> bool {
-    read_disable_webview_gpu_setting()
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    return resolve_startup_db_path().as_deref().is_some_and(dzc_platform::startup::probe_disable_webview_gpu);
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    false
 }
 
 fn apply_webview2_gpu_switch() {
@@ -82,6 +62,99 @@ fn apply_webview2_gpu_switch() {
     // effect without an app restart.
     let enabled = should_disable_webview_gpu();
     app::gpu_switcher::apply_gpu_disable_env(enabled);
+}
+
+#[cfg(all(test, any(target_os = "windows", target_os = "linux")))]
+mod startup_probe_tests {
+    use dzc_platform::startup::probe_disable_webview_gpu;
+    use rusqlite::Connection;
+    use std::{ffi::OsString, fs, path::{Path, PathBuf}};
+
+    struct Profile(PathBuf);
+
+    impl Profile {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("dzc-startup-probe-{}", uuid::Uuid::new_v4()));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn database(&self) -> PathBuf {
+            self.0.join("剪贴板 profile #1.sqlite")
+        }
+
+        fn snapshot(&self) -> Vec<(OsString, Vec<u8>)> {
+            let mut files: Vec<_> = fs::read_dir(&self.0).unwrap().map(|entry| {
+                let entry = entry.unwrap();
+                (entry.file_name(), fs::read(entry.path()).unwrap())
+            }).collect();
+            files.sort_by(|left, right| left.0.cmp(&right.0));
+            files
+        }
+    }
+
+    impl Drop for Profile {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    }
+
+    fn settings_database(path: &Path) -> Connection {
+        let connection = Connection::open(path).unwrap();
+        connection.execute_batch(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO settings VALUES ('app.disable_webview_gpu', 'TRUE');"
+        ).unwrap();
+        connection
+    }
+
+    #[test]
+    fn startup_probe_does_not_initialize_missing_or_invalid_storage() {
+        let profile = Profile::new();
+        let path = profile.database();
+        assert!(!probe_disable_webview_gpu(&path));
+        assert!(profile.snapshot().is_empty());
+        fs::write(&path, b"unreadable as a SQLite database").unwrap();
+        let before = profile.snapshot();
+        assert!(!probe_disable_webview_gpu(&path));
+        assert_eq!(profile.snapshot(), before);
+    }
+
+    #[test]
+    fn startup_probe_reads_legacy_and_checkpointed_wal_profiles_without_mutating_files() {
+        let profile = Profile::new();
+        let path = profile.database();
+        let connection = settings_database(&path);
+        drop(connection);
+        assert!(probe_disable_webview_gpu(&path));
+        let mut connection = Connection::open(&path).unwrap();
+        assert_eq!(connection.query_row("PRAGMA journal_mode = WAL", [], |row| row.get::<_, String>(0)).unwrap(), "wal");
+        for (value, expected) in [("true", true), ("1", true), ("True", true), ("TRUE", true), ("false", false), ("yes", false)] {
+            connection.execute("UPDATE settings SET value = ?1", [value]).unwrap();
+            drop(connection);
+            let before = profile.snapshot();
+            assert_eq!(before.len(), 1, "SQLite has checkpointed the profile");
+            assert_eq!(probe_disable_webview_gpu(&path), expected, "{value}");
+            assert_eq!(profile.snapshot(), before);
+            connection = Connection::open(&path).unwrap();
+        }
+    }
+
+    #[test]
+    fn startup_probe_never_attempts_recovery_or_waits_on_an_active_writer() {
+        let profile = Profile::new();
+        let path = profile.database();
+        let connection = settings_database(&path);
+        connection.execute_batch("BEGIN IMMEDIATE; UPDATE settings SET value = 'false';").unwrap();
+        let before = profile.snapshot();
+        assert!(!probe_disable_webview_gpu(&path));
+        assert_eq!(profile.snapshot(), before);
+        connection.execute_batch("ROLLBACK; PRAGMA journal_mode = WAL; UPDATE settings SET value = 'True';").unwrap();
+        let before = profile.snapshot();
+        assert_eq!(before.len(), 3, "SQLite writer owns its WAL and SHM");
+        assert!(!probe_disable_webview_gpu(&path));
+        assert_eq!(profile.snapshot(), before);
+        drop(connection);
+        assert!(probe_disable_webview_gpu(&path));
+    }
 }
 
 fn main() {
