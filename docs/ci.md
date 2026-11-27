@@ -13,6 +13,7 @@
 | `master` push / 任意 PR | `frontend` 1、`rust-development` 4、`go-development` 2，共 7 个基础实例；特定路径变更再加 `mygo-installer` | 没有 full 的四目标桌面、standalone、六场景 NSIS 和 Flatpak |
 | 手动 CI，`full_validation=false`，其它开关关闭 | 上述 7 个基础实例，加历史 `mygo-installer`，共 8 个 | 手动触发没有 diff 基线，历史 installer 的 scope 默认要求执行 |
 | 手动 CI，默认 `full_validation=true`，其它开关关闭 | 基础 7 + 历史 installer 1 + 矩阵选择 1 + Tauri 4 + standalone 4 + NSIS 构建 1 与验收 6 + Flatpak 2，共 26 个 | Windows ARM64 是交叉构建；历史/合成 installer 与当前发布包各有验收入口 |
+| Darwin 基础 `macos_native_probe=true` | 手动在 GitHub 的 macOS ARM64 runner 验证原生文件、IPC 和签名对端，命令同时设置 `full_validation=false` | 不计入 Windows/Linux 发版门槛 |
 | 复用 `ci.yml` | `workflow_call` 的 `full_validation` 默认 true。Release 显式调用候选源码模式 | 不运行完整的打包测试矩阵 |
 | 候选源码验收 `source_acceptance=true` | 前端、Rust 与 Go 开发测试，Linux/Windows x64 真实客户端和桌面验收，汇总绑定被测 SHA | 可单独运行，与全量安装和升级验收互补 |
 | `v*` tag push | draft、四目标 standalone、四目标双桌面构建/上传、`publish-dual` | 以本页“正常 tag 发布”部分的实际门槛为准 |
@@ -66,11 +67,11 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 
 ## 正常 tag 发布
 
-`release.yml` 并行创建 draft、构建产物与执行候选源码验收。standalone 上传等待其构建和 draft，按当前 attempt 的固定 artifact ID 下载四份归档，核对校验文件、绑定 draft ID 并读回已上传 asset。桌面上传任务按源码 SHA 和 attempt 下载四个生产 artifact ID 对应的文件，先验证 12 个签名和 20 份桌面归档，再绑定 draft ID 上传。归档检查核对安装路径、可执行文件架构和适用的包元数据，并确认 Arch 二进制和 AUR 配方对应候选中的 Debian 包。首次发布任务按固定 artifact ID 下载源码记录与上传读回，将包检查结果与原 draft 资产的 ID、大小和 SHA-256 对应后再公开 release 并同步 stable/preview。 [发布脚本](../scripts/updater-release.mjs)
+`release.yml` 并行创建 draft、构建产物与执行候选源码验收。standalone 上传等待其构建和 draft，按当前 attempt 的固定 artifact ID 下载四份归档，核对校验文件、绑定 draft ID 并读回已上传 asset。桌面上传任务按源码 SHA 和 attempt 下载四个生产 artifact ID 对应的文件，先验证 12 个签名和 20 份桌面归档，再绑定 draft ID 上传。归档检查核对安装路径、可执行文件架构和适用的包元数据，并确认 Arch 二进制和 AUR 配方对应候选中的 Debian 包。Windows x64 的 Tauri 和 MyGo 安装包各交给独立 runner。验证从固定签名旧版 v0.2.0 升级、三个安装文件的 SHA-256、启动、重装、卸载和数据保留。首次发布任务按固定 artifact ID 下载源码记录、包检查、Windows 原生验收和上传读回，将结果与原 draft 资产的 ID、大小和 SHA-256 对应后再公开 release 并同步 stable/preview。 [发布脚本](../scripts/updater-release.mjs)
 
 每个目标用一次 Cargo 构建产出 Tauri、桌面配套 CLI 和 Service，随后 Tauri 打包阶段复用已暂存的二进制，MyGo 使用相同目录。独立 CLI 下载保持原 ABI 构建边界。生产 Web bundle 的浏览器测试在源码验收执行一次。本地以同一路径构建并解包 Windows x64 NSIS 和 Linux x64 deb，两个 helper 的 SHA-256 和实际 CLI/MCP 集成通过。Release 首次运行计时仍需候选实测。
 
-当前门槛保留仓库/tag/SHA/run/attempt、必需 job、资产目录及时间、签名/版本/文件名、updater 下载读回和防降级检查。恢复含 Arch 资产的候选时也核对原 Release run 的源码验收工作。归档检查提供静态证据。独立的最终包运行、真实旧版升级和候选封存仍待接入。
+当前门槛保留仓库/tag/SHA/run/attempt、必需 job、资产目录及时间、签名/版本/文件名、updater 下载读回和防降级检查。恢复含 Arch 资产的候选时也核对原 Release run 的源码验收工作。只读的 `replay-windows-candidate` 已用公开签名安装包验证两个桌面从 v0.2.0-rc5 升到 v0.2.0。未创建新 release，也未切换更新通道。Linux 独立最终包运行、候选封存和新候选的完整计时仍待执行。 [双桌面 Windows 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46040562056)
 
 ### 当前发布分支的精确资产集合：40 项
 
@@ -98,9 +99,8 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 | standalone Windows x64 | 解包后的 CLI 真实运行与验包 | 完整源码和 integrations 已运行；`package-only=true` 会跳过它们 |
 | standalone Windows ARM64 | 架构、依赖与静态 CRT 等 static-only 检查 | 在 ARM64 Windows 上运行过 |
 | MyGo Linux | deb payload hash、deb/AppImage BuildInfo 检查 | 最终包 GUI/安装/升级或 RPM 安装均已通过 |
-| MyGo Windows x64 | 实际安装、启动、同包重装、卸载与用户文件保留 smoke | focused 跳过的锁文件/中断场景及真实旧版升级已经通过 |
+| Tauri 和 MyGo Windows x64 | 独立 runner 从固定上一发布版升级，核对实际安装文件、启动、重装、卸载和历史记录。MyGo 另外保留同包应用内更新 smoke | 新候选中的锁文件和中断恢复各场景已经通过 |
 | MyGo Windows ARM64 | 交叉编译及 proof/static 检查 | 实际安装、GUI 或输入已验证 |
-| Tauri 最终包 | 构建、打包、签名和 updater 资产校验 | 当前 tag 已走旧最终 NSIS 升级/原生 identity workflows |
 | 两桌面的 updater 资产 | 四目标 updater 文件的签名、版本/文件名及下载读回 | 每个非 updater 出货资产已有同等内容与构建 hash 绑定 |
 
 `package-only=true` 仍会构建、验包并运行适用的 CLI/runtime；不应描述为“只打包完全不测”。Windows ARM64 当前没有对应原生 runner 验收；静态 CRT 契约属于 standalone CLI，桌面/helper 按各自既有依赖契约检查。
@@ -116,9 +116,9 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 | Schema 24 验收尚未接入真实 CLI | [test_sqlite_history_fixture.py](../scripts/tests/test_sqlite_history_fixture.py) 的跨连接用例和 seeder 需要 `DZC_TEST_BIN`，部分 seeder 还依赖 Pillow/psutil。BuildInfo 已安排在本次 CLI 构建后单独运行 |
 | 原生测试的“未执行”可能显示通过 | [capture/subscription.rs](../crates/dzc-platform/src/capture/subscription.rs)、[shortcut/x11.rs](../crates/dzc-platform/src/shortcut/x11.rs) 部分测试缺 opt-in 时直接 return；普通 Rust test 成功不能计为这些原生行为成功 |
 | Wayland 自动覆盖未接入 | 当前 Linux 产品 harness 是 X11；[Wayland 实验支持](./wayland-experimental.md) 的手工脚本不能算作本次 CI 已执行 |
-| 当前候选与发布闭环仍有缺口 | full 的历史/合成包和 tag 的部分 smoke 不能替代当前最终包验证；draft release ID 尚未贯穿全链、部分资产缺候选构建 hash 绑定、取消/频道中间状态恢复也未形成完整闭环 |
+| 当前候选与发布闭环仍有缺口 | Linux 格式的独立安装与运行、不可变候选附件，以及取消或频道同步中断后的恢复尚待完成 |
 
-源码准入和共享 NSIS 样件已接入。下一步是把独立最终包验收、候选封存和中断恢复接入同一条发布路径。当前含 Arch 的产品目录包含 40 项。Windows ARM64 产物按现有交叉构建级别验收。
+源码准入、共享 NSIS 样件和 Windows x64 最终包验收已接入。当前含 Arch 的产品目录包含 40 项。Windows ARM64 产物按现有交叉构建级别验收。
 
 ## 名称消费者、产物命名与仓库外设置
 

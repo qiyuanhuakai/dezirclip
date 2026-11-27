@@ -148,3 +148,6 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - 四个独立 CLI 归档和桌面包按 artifact ID 下载，绑定固定 draft 并按远端 asset ID 读回。共享 NSIS 样件的六个 Windows 场景已通过 GitHub Actions，其中 LegacyUninstall 继续使用固定的历史公开安装器。完整出货包验收、发布封存与中断恢复仍待完成。
 - 快贴布局的键、可选值和标签进入共享设置目录，Core、MyGo 和 React 使用相同的列表。Host 实际写入/读回、Go 测试与 React 类型检查通过。
 - MyGo Native 将设置保存与显示会话分开。更新通道、开关、窗口置顶和卡片固定可就地更新，表情页签保留导航并为内容区添加过渡。Linux X11 以实际程序和隔离 profile 验证了这四类操作，Windows/Linux 的 Go 套件通过。
+
+- **R6 旧桌面仓库边界**。Tauri 的数据路径迁移、快贴条目回查、表情资源写入、设置重置和旧敏感记录修复统一走现有 Core API。Linux 验证 Core 492 项测试与 Tauri 测试目标类型检查。配置重置失败会回滚，敏感历史修复可安全重试。
+- **C5 独立 Windows 最终包验收**。一次只读重放同时覆盖已发布签名 Tauri 和 MyGo 的 v0.2.0-rc5 → v0.2.0。验收检查旧设置和历史记录、三个实际安装文件的 SHA-256、启动、重装及卸载。发布器将两个验收报告和该次打包产物绑定到固定 draft。此处证据范围为 Windows x64 和该升级组合。 [Windows 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46040562056)

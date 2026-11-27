@@ -754,7 +754,7 @@ consumer 可以构建测试驱动，但不得重建产品包。校验应针对�
 
 #### 出货目标与最低验证级别
 
-下表是 C5 的最低准入政策；具体文件名由已有版本规则生成，不手写第二份目录。当前 dual 集合为 **36 个产品、签名和校验资产**；Flatpak 不在当前正常 tag 集合中。[C07]
+下表是 C5 的最低准入政策；具体文件名由已有版本规则生成，不手写第二份目录。当前含 Arch 的 dual 集合为 **40 个产品、签名和校验资产**。v0.2.0 等历史 dual 发行仍按 36 项验证。Flatpak 不在当前正常 tag 集合中。[C07]
 
 | 产物 | 必需验证 | 不能据此声称 |
 |---|---|---|
@@ -762,7 +762,7 @@ consumer 可以构建测试驱动，但不得重建产品包。校验应针对�
 | Windows x64 standalone | ZIP 中实际 CLI 的 BuildInfo/运行及相关隔离数据场景 | 测试构建的 CLI 代表 ZIP 中 CLI |
 | Windows x64 Tauri/MyGo installer | 实际候选安装、启动、组件定位、重装/卸载、用户数据保留；受支持旧版本到当前包升级，锁文件/异常恢复按场景映射执行 | 用同源码改版本的 debug NSIS fixture 替代真实发布包升级 |
 | Linux x64/arm64 standalone | 保留 AlmaLinux 8 构建 ABI，以及已覆盖 AlmaLinux/Ubuntu/Debian 实际运行 | 用普通桌面 CLI 替换兼容构建 |
-| Linux Tauri/MyGo deb/rpm/AppImage | 各格式真实解包/元数据/组件/权限检查；当前目标二进制实际运行；现有 X11 GUI/service smoke；相同 payload 的 GUI 场景可共享，包专属安装/更新语义不可省略 | deb 通过即 RPM 安装通过，或 X11 通过即 Wayland 通过 |
+| Linux Tauri/MyGo deb/rpm/AppImage/Arch | 各格式真实解包/元数据/组件/权限检查；当前目标二进制实际运行；现有 X11 GUI/service smoke；相同 payload 的 GUI 场景可共享，包专属安装/更新语义不可省略 | deb 通过即 RPM 安装通过，或 X11 通过即 Wayland 通过 |
 | Windows ARM64 | 保留 cross-build 架构、payload/签名/proof；standalone CLI 保持其静态 CRT 契约，桌面/helper 按各自既有依赖契约检查；记录 static-only | 原生 GUI、安装、输入和升级已经验证 |
 | Flatpak | full 中继续现有两架构 Platform runtime/打包验收 | 当前 tag 已出货 Flatpak；修改出货矩阵需单独纳入目录与发布政策 |
 
@@ -795,11 +795,11 @@ flowchart TD
 
 | 集合 | 规则 |
 |---|---|
-| 产品/签名/校验资产 | 当前 dual 精确 36 项；按 policy 生成完整名称集合，数量/ID 唯一；保留原 size/hash/state/时间/签名检查 |
+| 产品/签名/校验资产 | 当前含 Arch 的 dual 精确 40 项；按 policy 生成完整名称集合，数量/ID 唯一；保留原 size/hash/state/时间/签名检查 |
 | 候选证据附件 | 新 policy 精确一项固定名称，schema 与大小有界，内容 hash、asset 身份和 producer 可核验；仅记录来源/结果/远端身份，不含秘密 |
 | 未知附件 | 拒绝；不按 JSON 后缀或“非 updater”一概忽略 |
 
-新 policy 下总集合是“36 + 1”，旧版本仍按其已发布 policy 验证，不给历史 Release 补附件。证据内容列出 36 项产品身份、已完成 gates 的 producer 引用、既有远端 ID、目标频道/asset 名与预期 manifest hash。它不包含自己的 hash/asset ID，也不要求自己的封存 job 已写入 completed 状态，避免自引用；publisher 再通过 GitHub 核对封存 job 成功及证据 asset 的身份。
+新 policy 下总集合是“40 + 1”，旧版本仍按其已发布 policy 验证，不给历史 Release 补附件。证据内容列出 40 项产品身份、已完成 gates 的 producer 引用、既有远端 ID、目标频道/asset 名与预期 manifest hash。它不包含自己的 hash/asset ID，也不要求自己的封存 job 已写入 completed 状态，避免自引用；publisher 再通过 GitHub 核对封存 job 成功及证据 asset 的身份。
 
 **封存本身也必须可重入。** 若附件上传成功而封存 job 尚未完成就被取消，新封存检查读取原附件，重新核对固定 release ID、全部产品身份、原成功 producer 引用、内容及规定门槛。完全匹配则复用同一 asset ID/字节/hash，由本次检查成功完成；冲突停止，不 clobber。同一产品集合与成功前置应生成同一候选主体；不把每次封存的时钟、当前 attempt 或必须成功的自身 job ID 写进主体。附件初次上传来源与成功重入检查的 run/attempt 在运行证据/API 中分别核验。原失败/取消封存从不算通过，新成功检查才提供资格；源码和产品原前置仍须真实成功。
 
@@ -877,7 +877,7 @@ C 系列可在架构迁移前启动；与 R7/R8 共享目标，不重复建立�
 | C2 | 收敛 dispatch/source-acceptance modes、真值表、focused 动态矩阵、当前 MyGo installer 条件及唯一计划/结果汇总 | C0 | 请求必执行或早拒绝；full 包含当前候选；专项不展开无关平台；source gate 统一判定 |
 | C3 | 合并纯测试执行位置，共用两份 NSIS fixture producer | C0/C1；与 C2 场景映射同次更新；仅依赖所用 R7a helper | 跨 runner 实际消费通过后删重复构建；保留 fixture modified_checkout 与六场景隔离 |
 | C4 | 替换源码形状测试、移除空 E2E、退役字符串派生机制 | 各项只依赖自己的真实 helper/保留入口；R5 移测试同步发现范围 | 空 E2E 可独立退役；派生器待模块替代后删；行为与安全负控保留 |
-| C5 | 同 run 源码准入、当前最终包验证、release ID、固定 artifact 与冻结候选证据 | C0/C1/C2；协调 R4；policy/workflow/validator 同 PR | 一条真实候选链贯通；全部规定目标达标；36+1 严格集合；坏/缺/取消前置不得公开 |
+| C5 | 同 run 源码准入、当前最终包验证、release ID、固定 artifact 与冻结候选证据 | C0/C1/C2；协调 R4；policy/workflow/validator 同 PR | 一条真实候选链贯通；全部规定目标达标；40+1 严格集合；坏/缺/取消前置不得公开 |
 | C6 | publisher 有限状态恢复与失败记录；权限/缓存/产物边界 | 恢复依赖 C5 冻结证据可读回；只读权限等独立切片可提前 | 中断可重入；冻结证据不可变；不放宽前置；错 artifact/未知 channel draft 拒绝 |
 | C7 | 按消费者退役 alpha.2/alpha.9 入口与专用测试 | 不可执行菜单可先退役；活跃 helper/升级依赖其替代；当前恢复依赖 C5/C6 | 不以全部 C4/R7a 为前置；当前发布/旧版升级无断链，无失去消费者的 legacy 全套流程 |
 
@@ -896,7 +896,7 @@ C 系列可在架构迁移前启动；与 R7/R8 共享目标，不重复建立�
 - 源码文本派生和空 E2E 入口退出；有效 fake/配置/签名/来源负控继续存在。
 - current MyGo installer 与历史 alpha.9 fixture 明确区分。
 - 正常发布的 source gate 与最终包 gate 都绑定本次候选；failed/skipped/cancelled prerequisite 不可公开或改频道。
-- release ID/资产 hash/profile 贯穿；固定 producer artifact、36+1 集合与不可变候选证据实际验证；取消与频道半完成状态重入有离线行为测试。
+- release ID/资产 hash/profile 贯穿；固定 producer artifact、40+1 集合与不可变候选证据实际验证；取消与频道半完成状态重入有离线行为测试。
 - 旧 alpha 发布模式按消费者退役，未绕开原来源守卫。
 - 现有工作流数量不作为优化 KPI；没有新增通用 CI 平台、测试框架或发布 DSL。
 
@@ -1071,7 +1071,7 @@ Darwin 条件整理穿插 R3/R6/R5b，限于当前两平台等价的模块拆分
 | R5 Go/资源 | 新包构造与 owner、原名 bridge 方法集合、对应 locale/embed/resource hash 消费者 |
 | R6 最终初始化 | 原 GUI seed/PRAGMA/重置政策、共享 cache/session、托管 handle 与 legacy feature 删除 |
 | C3 测试/fixture 迁移 | 新 producer/入口、expected 场景、消费身份与结果汇总；通过后移除重复 producer |
-| C5 发布准入 | mode/workflow 图、当前 validator、required/skip policy、36+1 目录、封存 job、publisher 与反例测试 |
+| C5 发布准入 | mode/workflow 图、当前 validator、required/skip policy、40+1 目录、封存 job、publisher 与反例测试 |
 
 R4 和 C5 都会改构建/provenance/publisher 消费者。优先先完成 R4 或先完成 C5 的一个稳定切片，再 rebase 另一项并运行其受影响包验收；不让两个 PR 分别假定对方会修最后一段路径。大型文件同 crate 分模块可随对应职责后置，不作为首片前置。
 
@@ -1259,7 +1259,7 @@ cargo build --locked -p dzc-service --release
 | schema 整数/nullable 只读扫描 | 150 integer 节点，148 显式安全整数限界；0 optional+nullable | 支持 `4.4.1` 的按字段处理策略 |
 | Git/工作流/入口/生成链核对 | 基线及开轮远端 master 同为 `1f1641a0455bfcdbc72b4ba70a24d3cb810887a9`；无产品修改 | 事实与证据固定在该版本，不推断未观察的 Actions 成功率 |
 
-以上测试是**当前实现的测试**。它们不证明本 spec 新增的 source-only、36+1 资产 policy、取消恢复、externalBin 或 Swift 原型已经实现。尤其 publisher 用例通过不消除当前 dual 门槛的静态缺口；新增路径必须增加自己的正反例并通过真实候选验证。[C19] [C13] [V22] [V23]
+以上测试是**当前实现的测试**。它们不证明本 spec 新增的 source-only、40+1 资产 policy、取消恢复、externalBin 或 Swift 原型已经实现。尤其 publisher 用例通过不消除当前 dual 门槛的静态缺口；新增路径必须增加自己的正反例并通过真实候选验证。[C19] [C13] [V22] [V23]
 
 ### 13.3 仍需在实施阶段关闭的具体闸门
 
