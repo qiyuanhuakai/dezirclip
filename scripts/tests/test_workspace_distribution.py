@@ -8,6 +8,8 @@ import tomllib
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+VERSION_TOOL = ["scripts/set-release-version.mjs", "scripts/release-semver.mjs"]
+VERSION_MANIFESTS = ["Cargo.toml", "package.json", "src-tauri/tauri.conf.json"]
 
 
 class WorkspaceDistributionTests(unittest.TestCase):
@@ -36,12 +38,11 @@ class WorkspaceDistributionTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for version tooling")
     def test_version_tool_updates_all_members_and_locked_local_packages(self):
+        workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
+        member_manifests = [Path(member) / "Cargo.toml" for member in workspace["workspace"]["members"]]
         with tempfile.TemporaryDirectory(prefix="dzc-workspace-version-") as temporary:
             directory = Path(temporary)
-            for name in ["Cargo.toml", "Cargo.lock", "package.json", "src-tauri/tauri.conf.json",
-                         "src-tauri/Cargo.toml", "crates/dzc-core/Cargo.toml", "crates/dzc-platform/Cargo.toml", "crates/dzc-protocol/Cargo.toml",
-                         "crates/dzc-host/Cargo.toml", "crates/dzc-service/Cargo.toml", "scripts/set-release-version.mjs",
-                         "scripts/updater-release.mjs"]:
+            for name in [*VERSION_TOOL, *VERSION_MANIFESTS, "Cargo.lock", *member_manifests]:
                 target = directory / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / name, target)
@@ -49,15 +50,18 @@ class WorkspaceDistributionTests(unittest.TestCase):
             result = subprocess.run(["node", "scripts/set-release-version.mjs", "v" + version], cwd=directory,
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            workspace = tomllib.loads((directory / "Cargo.toml").read_text(encoding="utf-8"))
-            self.assertEqual(workspace["workspace"]["package"]["version"], version)
-            for member in workspace["workspace"]["members"]:
-                package = tomllib.loads((directory / member / "Cargo.toml").read_text(encoding="utf-8"))["package"]
+            updated = tomllib.loads((directory / "Cargo.toml").read_text(encoding="utf-8"))
+            self.assertEqual(updated["workspace"]["package"]["version"], version)
+            names = set()
+            for manifest in member_manifests:
+                package = tomllib.loads((directory / manifest).read_text(encoding="utf-8"))["package"]
                 self.assertEqual(package["version"], {"workspace": True})
+                names.add(package["name"])
+            self.assertEqual(len(names), len(member_manifests))
             locked = tomllib.loads((directory / "Cargo.lock").read_text(encoding="utf-8"))["package"]
             local = {package["name"]: package["version"] for package in locked
-                     if package["name"] in {"dezirclip", "dzc-core", "dzc-platform", "dzc-protocol", "dzc-host", "dzc-service"}}
-            self.assertEqual(local, {name: version for name in ["dezirclip", "dzc-core", "dzc-platform", "dzc-protocol", "dzc-host", "dzc-service"]})
+                     if "source" not in package}
+            self.assertEqual(local, dict.fromkeys(names, version))
             self.assertEqual(json.loads((directory / "src-tauri/tauri.conf.json").read_text())["version"], version)
             self.assertEqual(json.loads((directory / "package.json").read_text())["version"], version)
 
@@ -65,8 +69,7 @@ class WorkspaceDistributionTests(unittest.TestCase):
     def test_missing_lock_rejects_version_change_before_touching_manifests(self):
         with tempfile.TemporaryDirectory(prefix="dzc-workspace-version-incomplete-") as temporary:
             directory = Path(temporary)
-            for name in ["Cargo.toml", "package.json", "src-tauri/tauri.conf.json", "scripts/set-release-version.mjs",
-                         "scripts/updater-release.mjs"]:
+            for name in [*VERSION_TOOL, *VERSION_MANIFESTS]:
                 target = directory / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / name, target)

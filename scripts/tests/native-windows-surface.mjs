@@ -20,7 +20,7 @@ const normalized = value => path.resolve(value.replace(/^\\\\\?\\/, '')).toLower
 const nativeSource = fileURLToPath(new URL('./native-windows-surface-target.py', import.meta.url));
 const maximumLog = 16 * 1024 * 1024;
 const fixedSurfaceInputs = new Set(['package.json', 'Cargo.toml', 'Cargo.lock', 'src-tauri/tauri.conf.json',
-  'scripts/set-release-version.mjs', 'scripts/updater-release.mjs', 'scripts/build-surface.mjs',
+  'scripts/set-release-version.mjs', 'scripts/release-semver.mjs', 'scripts/build-surface.mjs',
   'scripts/mygo-surface-patch.mjs', 'scripts/generate-surface-tokens.mjs']);
 
 export function validateCiContext(env, platform, source) {

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { parseVersion } from "./updater-release.mjs";
+import { parseVersion } from "./release-semver.mjs";
 
 const args = process.argv.slice(2);
 const check = args[0] === "--check";
