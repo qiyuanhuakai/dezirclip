@@ -13,9 +13,11 @@ import { mainWebviewTargets } from './release-windows-upgrade.mjs';
 assert.equal(process.platform, 'win32');
 assert.equal(process.env.GITHUB_ACTIONS, 'true');
 assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
-const [binary, profile, python, source] = process.argv.slice(2);
+const [binary, profile, python, source, mode, replayInputs] = process.argv.slice(2);
 assert(binary && profile && python && path.isAbsolute(binary) && path.isAbsolute(profile) && path.isAbsolute(python));
 assert.match(source, /^[a-f0-9]{40}$/);
+assert(mode === undefined || mode === 'installed-candidate', 'Invalid desktop validation mode');
+assert(!replayInputs || (mode === 'installed-candidate' && path.isAbsolute(replayInputs)), 'Invalid replay input');
 for (const value of [binary, profile]) {
   const relative = path.relative(path.resolve(process.env.RUNNER_TEMP), path.resolve(value));
   assert(relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative), 'Only this disposable receipt directory may execute');
@@ -47,7 +49,8 @@ function observe(value, final = false) {
 }
 async function policy(mode, args = []) {
   try {
-    const result = await execute(python, ['-B', helper, mode, '--source', source, '--root', root, '--state', policyState, ...args],
+    const replay = replayInputs ? ['--candidate-inputs', replayInputs] : [];
+    const result = await execute(python, ['-B', helper, mode, '--source', source, '--root', root, '--state', policyState, ...replay, ...args],
       { windowsHide: true, env: process.env, timeout: 30000, maxBuffer: 1024 * 1024 });
     observe({ stage: 'policy', mode, stdout: result.stdout.slice(0, 16384), stderr: result.stderr.slice(0, 16384) });
   } catch (error) {
@@ -136,8 +139,11 @@ try {
     if (message.error) request.reject(new Error('Actual Desktop CDP command failed')); else request.resolve(message.result);
   });
   let result;
+  const rendered = mode === 'installed-candidate'
+    ? 'Array.from(document.querySelectorAll("#root button")).some(button => button.getAttribute("aria-label") === "Settings" || button.title === "Settings")'
+    : 'true';
   while (Date.now() < deadline) {
-    result = await call('Runtime.evaluate', { expression: '(async()=>typeof window.__TAURI_INTERNALS__?.invoke==="function"?await window.__TAURI_INTERNALS__.invoke("get_build_info"):null)()', awaitPromise: true, returnByValue: true });
+    result = await call('Runtime.evaluate', { expression: `(async()=>(${rendered})&&typeof window.__TAURI_INTERNALS__?.invoke==="function"?await window.__TAURI_INTERNALS__.invoke("get_build_info"):null)()`, awaitPromise: true, returnByValue: true });
     assert(!result.exceptionDetails, 'Actual Desktop get_build_info failed');
     if (result.result?.value) break;
     await delay(100);

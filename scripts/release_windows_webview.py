@@ -391,14 +391,34 @@ def main():
     parser.add_argument('--port', type=int)
     parser.add_argument('--pid', type=int)
     parser.add_argument('--executable', type=Path)
+    parser.add_argument('--candidate-inputs', type=Path)
     args = parser.parse_args()
     require(sys.platform == 'win32' and os.environ.get('GITHUB_ACTIONS') == 'true'
             and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted',
             'WebView QA policy requires the actual disposable Windows release job')
-    context = authority(args.source)
     temporary = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
     root = owned(args.root, temporary, exists=True)
     require(root.is_dir(), 'Owned release QA root must be a directory')
+    if args.candidate_inputs is None:
+        context = authority(args.source)
+    else:
+        receipt_path = owned(args.candidate_inputs, temporary, exists=True)
+        require(os.environ.get('GITHUB_REPOSITORY') == 'qiyuanhuakai/dezirclip'
+                and os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch'
+                and os.environ.get('GITHUB_WORKFLOW_REF', '').startswith(
+                    'qiyuanhuakai/dezirclip/.github/workflows/release.yml@refs/heads/')
+                and root.name == 'windows-candidate-inputs'
+                and receipt_path == root / 'windows-candidate-inputs.json',
+                'Published replay requires the isolated Windows release workflow')
+        receipt, receipt_sha = read_json(receipt_path)
+        require(receipt.get('schema_version') == 1 and receipt.get('origin') == 'published-replay'
+                and receipt.get('variant') == 'tauri' and receipt.get('target') == 'windows-x86_64'
+                and receipt.get('tag') == 'v0.2.0' and receipt.get('source_revision') == args.source
+                and receipt.get('run_id') == int(os.environ['GITHUB_RUN_ID'])
+                and receipt.get('run_attempt') == int(os.environ['GITHUB_RUN_ATTEMPT'])
+                and receipt.get('producer_artifact_id') is None, 'Invalid published replay installer receipt')
+        context = {'mode': 'published-replay', 'source_revision': args.source,
+                   'workflow_source_revision': os.environ['GITHUB_SHA'], 'receipt_sha256': receipt_sha}
     state = owned(args.state, root)
     require(state.parent.is_dir() and state.suffix in ('.json', '.log'), 'Owned JSON or log snapshot path required')
     config = json.loads((ROOT / 'src-tauri/tauri.conf.json').read_text(encoding='utf-8'))

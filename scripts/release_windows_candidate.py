@@ -8,7 +8,7 @@ import subprocess
 import sys
 import uuid
 
-from release_identities import json_output, native_target, require, run, safe_member, sha
+from release_identities import ROOT, json_output, native_target, require, run, safe_member, sha
 from release_identity_packages import desktop_package_files, unpack, windows_environment
 from release_identity_windows_paths import assert_disposable_windows, owned
 
@@ -26,14 +26,20 @@ $deadline = [Diagnostics.Stopwatch]::StartNew()
 while ($deadline.Elapsed.TotalSeconds -lt 60) {
     if (!(Get-Process -Id $rootPid -ErrorAction SilentlyContinue)) { throw 'Installed desktop process exited before rendering' }
     foreach ($app in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
-        if ($app.Path -ine $env:DZC_TEST_DESKTOP -or !$app.MainWindowHandle) { continue }
+        $handle = $app.MainWindowHandle
+        if ($app.Path -ine $env:DZC_TEST_DESKTOP -or !$handle) { continue }
         if ($app.Id -ne $rootPid) {
             $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$($app.Id)"
             if (!$owner -or $owner.ParentProcessId -ne $rootPid) { continue }
         }
-        $window = [Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
-        $button = $window.FindFirst([Windows.Automation.TreeScope]::Descendants, $caption)
-        if ($button -and $button.Current.IsEnabled -and !$button.Current.IsOffscreen) { exit 0 }
+        try {
+            $window = [Windows.Automation.AutomationElement]::FromHandle($handle)
+            $button = $window.FindFirst([Windows.Automation.TreeScope]::Descendants, $caption)
+            if ($button -and $button.Current.IsEnabled -and !$button.Current.IsOffscreen) { exit 0 }
+        } catch {
+            $current = Get-Process -Id $app.Id -ErrorAction SilentlyContinue
+            if ($current -and $current.MainWindowHandle -eq $handle) { throw }
+        }
     }
     Start-Sleep -Milliseconds 100
 }
@@ -61,8 +67,18 @@ def role_info(root, release, logs, stage, env):
                 and info.get('target') == 'x86_64-pc-windows-msvc', f'{stage} installed {role} identity differs')
 
 
-def launch(root, mygo, logs, env):
-    desktop = root / ('dzc-desktop.exe' if mygo else 'dezirclip.exe')
+def launch(root, receipt, logs, env):
+    if receipt['variant'] == 'tauri':
+        arguments = ['node', ROOT / 'scripts/release-identity-desktop.mjs', root / 'dezirclip.exe',
+                     logs.parent / 'desktop-profile', sys.executable, receipt['source_revision'], 'installed-candidate']
+        if receipt['origin'] == 'published-replay':
+            arguments.append(logs.parent / 'windows-candidate-inputs.json')
+        info = json_output(run(arguments, logs, 'desktop-info', env, timeout=170))
+        require(info.get('component') == 'desktop' and info.get('component_version') == receipt['tag'][1:]
+                and info.get('source_revision') == receipt['source_revision']
+                and info.get('target') == 'x86_64-pc-windows-msvc', 'Installed Tauri window identity differs')
+        return
+    desktop = root / 'dzc-desktop.exe'
     with (logs / 'desktop.stdout.log').open('xb') as stdout, (logs / 'desktop.stderr.log').open('xb') as stderr:
         process = subprocess.Popen([desktop], cwd=root, env=env, stdin=subprocess.DEVNULL,
                                    stdout=stdout, stderr=stderr)
@@ -74,8 +90,7 @@ def launch(root, mygo, logs, env):
             if process.poll() is None:
                 run(['taskkill.exe', '/pid', str(process.pid), '/t', '/f'], logs, 'desktop-exit', timeout=20)
             process.wait(timeout=10)
-            if mygo:
-                run([root / 'dzc.exe', 'service', 'stop'], logs, 'service-exit', env, timeout=20)
+            run([root / 'dzc.exe', 'service', 'stop'], logs, 'service-exit', env, timeout=20)
 
 
 def read_profile(database, marker):
@@ -154,7 +169,7 @@ def verify(directory, output):
     check_files('current')
     role_info(installed, receipt['current'], logs, 'upgraded', env)
     read_profile(database, marker)
-    launch(installed, mygo, logs, env)
+    launch(installed, receipt, logs, env)
     run([archives['current'], '/S', *install_directory], logs, 'reinstall', timeout=120)
     check_files('current')
     run([installed / 'uninstall.exe', '/S', '_?=' + str(installed)], logs, 'uninstall', timeout=120)
