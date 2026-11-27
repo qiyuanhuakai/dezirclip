@@ -27,7 +27,8 @@ func (n *nativeMain) drawPrivacySession(c *ui.Context, kit uikit.Kit) {
 				layout = "1/2/2006, 3:04:05 PM"
 			}
 			until := time.UnixMilli(*n.privateUntil).Local().Format(layout)
-			ui.Text(c, n.text("privacy_session_until")+" "+until).TextColor(c.Theme().TextMuted).Wrap()
+			ui.Text(c.Key("privacy-session-expiry"), n.text("privacy_session_until")+" "+until).
+				TextColor(c.Theme().TextMuted).Wrap().Transition(nativeSettingReveal)
 		}
 		const key = "app.privacy_session_hotkey"
 		shortcut := n.text("privacy_session_hotkey")
@@ -498,10 +499,7 @@ func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
 	n.drawSourceExclusions(c, kit)
 	kit.SettingsDisclosure(c, n.text("privacy_protection_kinds"), &n.privacyKindsOpen, func() {
 		const key = "app.privacy_protection_kinds"
-		raw, stored := n.preferences[key]
-		if !stored {
-			raw = "phone,idcard,email,secret,password"
-		}
+		raw := n.displayedSetting(key, "phone,idcard,email,secret,password")
 		var selected []string
 		for _, id := range strings.Split(raw, ",") {
 			if id = strings.TrimSpace(id); id != "" {

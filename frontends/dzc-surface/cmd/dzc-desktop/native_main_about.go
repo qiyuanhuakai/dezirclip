@@ -329,10 +329,10 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		support += "\n" + n.text("updater_not_checked")
 	}
 	kit.SettingsFieldLabel(c, title, n.settingsHelpLabel(title), support)
-	auto := u.automatic
+	auto := n.displayedToggle(protocol.SettingUpdateAutoCheck, u.automatic)
 	autoLabel := n.text(protocol.SettingUpdateAutoCheckLabel)
 	if kit.SettingsToggleField(c.Key(protocol.SettingUpdateAutoCheck), &auto, autoLabel, n.settingsHelpLabel(autoLabel), n.text("updater_auto_hint"),
-		disabled || n.pendingSettings[protocol.SettingUpdateAutoCheck]) {
+		disabled || n.preferenceBusy(protocol.SettingUpdateAutoCheck)) {
 		n.saveSetting(protocol.SettingUpdateAutoCheck, strconv.FormatBool(auto))
 	}
 	channelLabel := n.text(protocol.SettingUpdateChannelLabel)
@@ -347,7 +347,7 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		for _, channel := range setting.Values {
 			options = append(options, uikit.SelectOption{Value: channel, Label: n.text(setting.OptionLabelKeys[channel])})
 		}
-		kit.SettingsChoices(c, channelLabel, u.channel, options, true, disabled || n.pendingSettings[protocol.SettingUpdateChannel], func(channel string) {
+		kit.SettingsChoices(c, channelLabel, n.displayedSetting(protocol.SettingUpdateChannel, u.channel), options, true, disabled || n.preferenceBusy(protocol.SettingUpdateChannel), func(channel string) {
 			n.saveSetting(protocol.SettingUpdateChannel, channel)
 		})
 	})

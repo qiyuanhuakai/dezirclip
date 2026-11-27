@@ -32,7 +32,7 @@ func (n *nativeMain) pasteMethodSetting(c *ui.Context, kit uikit.Kit) {
 	if saved == "" {
 		saved = "shift_insert"
 	}
-	selected, label := saved, n.text("paste_method")
+	selected, label := n.displayedSetting(nativePasteMethodKey, saved), n.text("paste_method")
 	kit.SettingsField(c.Key(nativePasteMethodKey), uikit.SettingsFieldOptions{}).Children(func() {
 		kit.SettingsInlineLabel(c, label, n.settingsHelpLabel(label), n.text("paste_method_hint"))
 		if kit.Select(c, &selected, label, options, n.preferenceUnavailable(nativePasteMethodKey)).Changed() && selected != saved {
@@ -221,7 +221,9 @@ func (n *nativeMain) retentionSettings(c *ui.Context) {
 	if !n.settingEnabled("app.persistent", false) {
 		return
 	}
-	n.booleanSettingWithHelp(c, "app.persistent_limit_enabled", n.text("persistent_limit_enabled", "Limit stored clipboard entries"), n.text("persistent_limit_enabled_hint"), true)
+	ui.Column(c.Key("persistent-limit-toggle")).MinWidth(0).Transition(nativeSettingReveal).Children(func() {
+		n.booleanSettingWithHelp(c, "app.persistent_limit_enabled", n.text("persistent_limit_enabled", "Limit stored clipboard entries"), n.text("persistent_limit_enabled_hint"), true)
+	})
 	if !n.settingEnabled("app.persistent_limit_enabled", true) {
 		return
 	}

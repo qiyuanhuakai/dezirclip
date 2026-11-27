@@ -55,7 +55,7 @@ func (n *nativeMain) themeSettings(c *ui.Context, kit uikit.Kit, width float32) 
 }
 
 func (n *nativeMain) changeThemeFile(action nativeThemeAction, selected protocol.DesktopThemePackage) {
-	if n.appearanceBusy || n.preferenceUnavailable("app.theme") || n.pendingSettings[backgroundSetting] {
+	if n.appearanceBusy || n.preferenceUnavailable("app.theme") || n.preferenceBusy(backgroundSetting) {
 		return
 	}
 	n.appearanceBusy, n.notice = true, ""

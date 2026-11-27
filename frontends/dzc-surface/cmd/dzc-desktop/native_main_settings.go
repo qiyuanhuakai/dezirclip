@@ -147,7 +147,9 @@ func (n *nativeMain) settingsFooter(c *ui.Context, kit uikit.Kit, compact bool) 
 }
 
 func (n *nativeMain) settingsResetUnavailable() bool {
-	return n.preferenceUnavailable("") || len(n.pendingSettings) != 0 || n.capturing || n.savingShortcut || n.appearanceBusy
+	return n.preferenceUnavailable("") || len(n.pendingSettings) != 0 ||
+		n.sourceExclusions.pending != nil || n.customPrivacyRules.pending != nil ||
+		n.capturing || n.savingShortcut || n.appearanceBusy
 }
 
 func (n *nativeMain) confirmSettingsReset() {
@@ -175,7 +177,7 @@ type nativeBooleanSetting struct {
 
 func (n *nativeMain) booleanSettings(c *ui.Context, settings ...nativeBooleanSetting) {
 	for _, setting := range settings {
-		enabled := n.settingEnabled(setting.key, setting.initial)
+		enabled := n.displayedToggle(setting.key, setting.initial)
 		if n.mainKit().SettingsToggle(c.Key(setting.key), &enabled, setting.label).Disabled(n.preferenceUnavailable(setting.key)).Changed() {
 			n.saveSetting(setting.key, strconv.FormatBool(enabled))
 		}
@@ -183,7 +185,7 @@ func (n *nativeMain) booleanSettings(c *ui.Context, settings ...nativeBooleanSet
 }
 
 func (n *nativeMain) booleanSettingWithHelp(c *ui.Context, key, label, hint string, initial bool) {
-	enabled := n.settingEnabled(key, initial)
+	enabled := n.displayedToggle(key, initial)
 	if n.mainKit().SettingsToggleField(c.Key(key), &enabled, label, n.settingsHelpLabel(label), hint, n.preferenceUnavailable(key)) {
 		n.saveSetting(key, strconv.FormatBool(enabled))
 	}
@@ -200,14 +202,14 @@ func (n *nativeMain) generalSettings(c *ui.Context) {
 	kit := n.mainKit()
 	n.loginSettings(c.Key("login-startup"))
 	const trayKey = "app.hide_tray_icon"
-	hideTray := n.settingEnabled(trayKey, false)
+	hideTray := n.displayedToggle(trayKey, false)
 	if kit.SettingsToggleField(c.Key(trayKey), &hideTray, n.text("hide_tray_icon"), "", "", n.preferenceUnavailable(trayKey)) {
 		n.savePreference(trayKey, strconv.FormatBool(hideTray), 4*time.Second, func(ctx context.Context, epoch uint64) error {
 			return n.shell.SetTrayVisible(ctx, !hideTray, epoch)
 		}, nil)
 	}
 	const edge = "app.edge_docking"
-	dock, dockLabel := n.settingEnabled(edge, false), n.text("edge_docking")
+	dock, dockLabel := n.displayedToggle(edge, false), n.text("edge_docking")
 	if kit.SettingsToggleField(c.Key(edge), &dock, dockLabel, n.settingsHelpLabel(dockLabel), n.text("edge_docking_hint"),
 		n.preferenceUnavailable(edge) || !dock && !dockingAvailable()) {
 		n.saveSetting(edge, strconv.FormatBool(dock))
@@ -223,7 +225,7 @@ func (n *nativeMain) generalSettings(c *ui.Context) {
 	const arrowKeySelection = "app.arrow_key_selection"
 	n.booleanSettingWithHelp(c, arrowKeySelection, n.text("arrow_key_selection"), n.text("arrow_key_selection_hint"), false)
 	const previewKey = "app.preview_keyboard_enabled"
-	preview := n.settingEnabled(previewKey, false)
+	preview := n.displayedToggle(previewKey, false)
 	label := n.text("preview_keyboard_enabled")
 	if kit.SettingsDetailToggle(c.Key(previewKey), &preview, label, n.settingsHelpLabel(label), n.text("preview_keyboard_enabled_hint"),
 		n.preferenceBusy(previewKey) || !n.settingEnabled(arrowKeySelection, false)) {
@@ -314,7 +316,7 @@ func (n *nativeMain) changePrivateSession(active bool) {
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 4*time.Second)
 		defer cancel()
-		_, err := n.library.SetPrivacy(ctx, protocol.PrivacySetParams{Active: active})
+		status, err := n.library.SetPrivacy(ctx, protocol.PrivacySetParams{Active: active})
 		n.update(session, func() {
 			if err != nil {
 				n.mutating = false
@@ -323,7 +325,13 @@ func (n *nativeMain) changePrivateSession(active bool) {
 				n.loadPage()
 				return
 			}
-			n.prepare(n.resume)
+			if status.State.ServiceInstanceId != n.history.state.ServiceInstanceId || status.State.PrivacyEpoch != n.history.state.PrivacyEpoch {
+				n.prepare(n.resume)
+				return
+			}
+			n.mutating = false
+			n.loadBackground()
+			n.loadPage()
 		})
 	}()
 }
@@ -375,7 +383,7 @@ func (n *nativeMain) settingChoices(c *ui.Context, kit uikit.Kit, key, label, fa
 	}
 	row.Children(func() {
 		kit.SettingsLabel(c, label).Margin(0, 0, 8, 0)
-		value := n.preferences[key]
+		value := n.displayedSetting(key, fallback)
 		if value == "" {
 			value = fallback
 		}
@@ -438,6 +446,7 @@ func (n *nativeMain) panelCheckbox(c *ui.Context, kit uikit.Kit, id, label, hint
 	if id == "quick-paste" {
 		key = "app.quick_paste_enabled"
 	}
+	enabled = n.displayedToggle(key, enabled)
 	disabled := n.preferenceUnavailable(key) || n.capturing
 	if kit.SettingsToggleField(c, &enabled, label, n.settingsHelpLabel(label), hint, disabled) {
 		n.savePreference(key, strconv.FormatBool(enabled), 4*time.Second, func(ctx context.Context, epoch uint64) error {

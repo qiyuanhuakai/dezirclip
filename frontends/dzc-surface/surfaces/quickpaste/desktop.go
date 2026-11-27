@@ -74,9 +74,7 @@ func NewDesktopPanel(owner *client.Client, placeAtCursor func(*mygo.Window)) *Pa
 	p := &Panel{local: &desktopPresenter{owner: owner, placeAtCursor: placeAtCursor}, mode: "light", locale: "zh-CN", opacity: 1}
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 		p.stopping = true
-		if p.local.shortcut != "" {
-			mygo.GlobalShortcut.Unregister(p.local.shortcut)
-		}
+		p.ClearShortcut()
 		p.releaseDesktopDisplay()
 	})
 	p.RefreshShortcut()
@@ -155,6 +153,13 @@ func (p *Panel) applyAppearance(appearance theme.Appearance, kit uikit.Kit) {
 }
 
 func (p *Panel) HasShortcut() bool { return p.local != nil && p.local.shortcut != "" }
+
+func (p *Panel) ClearShortcut() {
+	if p.HasShortcut() {
+		mygo.GlobalShortcut.Unregister(p.local.shortcut)
+		p.local.shortcut = ""
+	}
+}
 
 func (p *Panel) RefreshShortcut() error {
 	if p.stopping {

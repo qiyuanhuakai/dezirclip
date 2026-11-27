@@ -67,7 +67,7 @@ func (n *nativeMain) applicationSetting(c *ui.Context, kind, label string) {
 
 	key := "app." + kind
 	path := n.preferences[key]
-	selected := path
+	selected := n.displayedSetting(key, path)
 	if path != "" && catalog.labelsByPath[path] == "" {
 		options = append(options, uikit.SelectOption{Value: path, Label: applicationFilename(path)})
 	}
@@ -91,7 +91,7 @@ func (n *nativeMain) applicationSetting(c *ui.Context, kind, label string) {
 
 func (n *nativeMain) applicationSelectionPending() bool {
 	for _, kind := range []string{"text", "rich_text", "image", "video", "code", "url"} {
-		if n.pendingSettings["app."+kind] {
+		if _, pending := n.pendingSettings["app."+kind]; pending {
 			return true
 		}
 	}

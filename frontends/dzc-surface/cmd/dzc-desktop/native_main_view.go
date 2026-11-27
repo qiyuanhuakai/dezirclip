@@ -37,6 +37,17 @@ var nativeSettingReveal = ui.ElementTransition{
 	Exit:     &ui.Motion{Y: -4, Collapse: true},
 }
 
+func animateNativeChange(element ui.Element, key string, revision uint64) {
+	last := ui.Local(element, key, func() uint64 { return revision })
+	if *last != revision {
+		*last = revision
+		element.Jump(key, 0.84)
+	}
+	if opacity := element.AnimateTo(key, 1, ui.Animation{Duration: nativeAppearanceMotion}); opacity < 1 {
+		element.Opacity(float32(opacity))
+	}
+}
+
 func (n *nativeMain) view(c *ui.Context) {
 	if n.shortcut != nil {
 		n.shortcut.rendered, n.shortcut.focusInRow = false, false
@@ -99,11 +110,15 @@ func (n *nativeMain) view(c *ui.Context) {
 		}
 		main.Children(func() {
 			queryComposing := false
+			displayPinned := n.pinned
+			if pending, ok := n.pendingSettings["app.window_pinned"]; ok {
+				displayPinned = pending == "true"
+			}
 			pinIcon := "pin"
-			if n.pinned {
+			if displayPinned {
 				pinIcon = "unpin"
 			}
-			pin := uikit.HeaderAction{Icon: pinIcon, Label: n.text("native_keep_on_top"), Active: n.pinned, Run: n.togglePin,
+			pin := uikit.HeaderAction{Icon: pinIcon, Label: n.text("native_keep_on_top"), Active: displayPinned, Run: n.togglePin,
 				Disabled: n.preferenceUnavailable("app.window_pinned")}
 			close := uikit.HeaderAction{Icon: "hide", Label: n.text("hide"), Run: n.hideWindow}
 			header := uikit.HeaderOptions{Title: "DezirClip", Actions: []uikit.HeaderAction{pin}, Draggable: true}
@@ -184,15 +199,7 @@ func (n *nativeMain) view(c *ui.Context) {
 					n.historyView(c, kit, width)
 				}
 			})
-			const appearance = "window-appearance"
-			last := ui.Local(panel, appearance, func() uint64 { return n.appearanceRevision })
-			if *last != n.appearanceRevision {
-				*last = n.appearanceRevision
-				panel.Jump(appearance, 0.84)
-			}
-			if opacity := panel.AnimateTo(appearance, 1, ui.Animation{Duration: nativeAppearanceMotion}); opacity < 1 {
-				panel.Opacity(float32(opacity))
-			}
+			animateNativeChange(panel, "window-appearance", n.appearanceRevision)
 			n.savePrivacyTexts(false)
 			if n.notice != "" {
 				ui.Text(c, n.notice).Padding(4, 8).TextColor(c.Theme().TextMuted)
@@ -403,6 +410,7 @@ func (n *nativeMain) historyRows(c *ui.Context, kit uikit.Kit, width float32) {
 			}
 		},
 	})
+	animateNativeChange(list, "history-layout", n.historyLayoutRevision)
 	list.TrackScroll(&n.historyScroll).HandleInput(func(event ui.InputEvent) bool {
 		if batch != nil && n.tagBatchKey(batch, event) {
 			return true

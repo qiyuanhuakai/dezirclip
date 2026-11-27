@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"maps"
 	"strconv"
 	"time"
@@ -24,7 +25,24 @@ func (n *nativeMain) preferenceUnavailable(key string) bool {
 }
 
 func (n *nativeMain) preferenceBusy(key string) bool {
-	return n.mutating || n.pendingSettings[key]
+	_, pending := n.pendingSettings[key]
+	return n.mutating || pending
+}
+
+// Show pending writes in the control that initiated them. Other parts of the
+// window still use acknowledged values for layout and platform side effects.
+func (n *nativeMain) displayedSetting(key, fallback string) string {
+	if pending, ok := n.pendingSettings[key]; ok {
+		return pending
+	}
+	if saved, ok := n.preferences[key]; ok {
+		return saved
+	}
+	return fallback
+}
+
+func (n *nativeMain) displayedToggle(key string, initial bool) bool {
+	return n.displayedSetting(key, strconv.FormatBool(initial)) == "true"
 }
 
 func (n *nativeMain) savePreference(key, value string, timeout time.Duration, write func(context.Context, uint64) error, finish func(error)) {
@@ -32,9 +50,12 @@ func (n *nativeMain) savePreference(key, value string, timeout time.Duration, wr
 		return
 	}
 	if n.pendingSettings == nil {
-		n.pendingSettings = make(map[string]bool)
+		n.pendingSettings = make(map[string]string)
 	}
-	n.pendingSettings[key] = true
+	n.pendingSettings[key] = value
+	if n.notice == n.text("native_setting_save_failed") {
+		n.notice = ""
+	}
 	n.viewSettingsRevision++
 	session, epoch := n.session, n.history.state.PrivacyEpoch
 	go func() {
@@ -43,13 +64,14 @@ func (n *nativeMain) savePreference(key, value string, timeout time.Duration, wr
 		err := write(ctx, epoch)
 		n.update(session, func() {
 			delete(n.pendingSettings, key)
-			if finish != nil {
-				finish(err)
-			}
 			if err == nil {
 				n.applySavedSetting(key, value)
 			} else {
+				log.Printf("Native preference %s: %v", key, err)
 				n.notice = n.text("native_setting_save_failed")
+			}
+			if finish != nil {
+				finish(err)
 			}
 			// Include external writes and recover an acknowledgement lost after commit.
 			n.refreshViewSettings()
@@ -137,9 +159,11 @@ func (n *nativeMain) applyViewSettings(settings map[string]string) bool {
 	if previous["app.theme"] != settings["app.theme"] || n.mode != n.colorMode(settings) ||
 		n.importedTheme != nil && previous["app.custom_themes"] != settings["app.custom_themes"] ||
 		n.language() != mainLanguage(settings["app.language"]) ||
-		nativeInterfaceFont(previous) != nativeInterfaceFont(settings) ||
-		!n.showSettings && (previous["app.compact_mode"] == "true") != (settings["app.compact_mode"] == "true") {
+		nativeInterfaceFont(previous) != nativeInterfaceFont(settings) {
 		n.startAppearanceMotion()
+	}
+	if (previous["app.compact_mode"] == "true") != (settings["app.compact_mode"] == "true") {
+		n.historyLayoutRevision++
 	}
 	n.configured(settings)
 	if next := n.backgroundKey(n.history.state); background != next && n.session != nil && n.window != nil {

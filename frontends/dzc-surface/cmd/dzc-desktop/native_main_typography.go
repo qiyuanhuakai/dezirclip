@@ -126,7 +126,7 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 		row.Transition(nativeSettingReveal)
 	}
 	edit := ui.Local(row, setting.key, func() draft { return draft{value: float64(saved)} })
-	if !edit.dirty && !n.pendingSettings[setting.key] {
+	if _, pending := n.pendingSettings[setting.key]; !edit.dirty && !pending {
 		edit.value = float64(saved)
 	}
 	row.Children(func() {

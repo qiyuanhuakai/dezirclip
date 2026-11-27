@@ -56,6 +56,7 @@ type nativeMain struct {
 	appearanceSync        bool
 	appearanceMotionUntil time.Time
 	appearanceRevision    uint64
+	historyLayoutRevision uint64
 	background            nativeBackground
 	systemDark            bool
 	windows11             bool
@@ -73,7 +74,7 @@ type nativeMain struct {
 	menuTransformsLoading bool
 	readingViewSettings   bool
 	viewSettingsRevision  uint64
-	pendingSettings       map[string]bool
+	pendingSettings       map[string]string
 	cardMediaRevision     uint64
 	resetOpen             bool
 	privacyKindsOpen      bool
@@ -211,7 +212,11 @@ func (n *nativeMain) open(session context.Context) {
 		if err == nil {
 			cancel()
 			n.update(session, func() {
-				n.configured(settings)
+				if n.preferences == nil {
+					n.configured(settings)
+				} else {
+					n.applyViewSettings(settings)
+				}
 				n.private = status.Privacy.Active
 				n.privateUntil = status.Privacy.ExpiresAtMs
 				n.history.reset(status.State, n.historyFilter())
@@ -424,13 +429,32 @@ func (n *nativeMain) watch(session context.Context, cursor uint64) {
 
 func (n *nativeMain) applyEvents(events protocol.EventsResult) bool {
 	current, next := n.history.state, events.State
-	if current.ServiceInstanceId != next.ServiceInstanceId || current.PrivacyEpoch != next.PrivacyEpoch || events.ResyncRequired {
+	reset := false
+	for _, event := range events.Events {
+		if event.Event == protocol.EventKindServiceStateChanged && event.Data.Status != nil && *event.Data.Status == "application_settings_reset" {
+			reset = true
+			break
+		}
+	}
+	if reset {
+		n.sourceExclusions, n.customPrivacyRules = nativePrivacyTextDraft{}, nativePrivacyTextDraft{}
+		n.mutating, n.resetOpen = false, false
+		n.resetOpacityPreviews()
+	}
+	if current.ServiceInstanceId != next.ServiceInstanceId || current.PrivacyEpoch != next.PrivacyEpoch {
 		n.cardThumbnails = nativeCardThumbnails{}
 		n.clearBackground()
 		n.prepare(n.resume)
 		return true
 	}
-	changed := false
+	changed := reset
+	if reset || events.ResyncRequired {
+		n.refreshViewSettings()
+	}
+	if events.ResyncRequired {
+		n.queueCount = nativeQueueCount{events: n.queueCount.events + 1}
+		changed = true
+	}
 	for _, event := range events.Events {
 		if dialog := n.privacyDialog; dialog != nil && dialog.params.Id != nil &&
 			(event.Event == protocol.EventKindHistoryReset ||
@@ -462,15 +486,10 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) bool {
 					continue
 				}
 				n.refreshViewSettings()
-			case "application_settings_reset":
-				n.mutating, n.resetOpen = false, false
-				n.resetOpacityPreviews()
-				n.refreshViewSettings()
-				changed = true
 			}
 		}
 	}
-	if next.HistoryRevision > current.HistoryRevision {
+	if next.HistoryRevision != current.HistoryRevision {
 		n.cardThumbnails = nativeCardThumbnails{}
 		affected, canReflow := historyRefreshEntries(current, events)
 		removed := historyDeletionEntries(current.HistoryRevision, events.Events)

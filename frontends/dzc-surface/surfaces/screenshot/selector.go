@@ -58,9 +58,7 @@ func New(owner *client.Client) *Selector {
 	s.Refresh()
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 		s.stopping = true
-		for _, key := range s.hotkeys {
-			mygo.GlobalShortcut.Unregister(key)
-		}
+		s.ClearShortcuts()
 		s.clear()
 	})
 	return s
@@ -99,9 +97,21 @@ func screenPreferences(ctx context.Context, host *client.Client) (protocol.Scree
 	return pref, err
 }
 
+func (s *Selector) ClearShortcuts() {
+	for _, key := range s.hotkeys {
+		mygo.GlobalShortcut.Unregister(key)
+	}
+	clear(s.hotkeys)
+}
+
 func (s *Selector) Refresh() error {
-	if !s.supported || s.stopping {
+	if s.stopping {
 		return errors.New("ScreenshotUnavailable")
+	}
+	if !s.supported {
+		// A profile can keep its screenshot preferences on a system
+		// without a capture backend. There are no shortcuts to bind here.
+		return nil
 	}
 	pref, err := s.preferences()
 	if err != nil {

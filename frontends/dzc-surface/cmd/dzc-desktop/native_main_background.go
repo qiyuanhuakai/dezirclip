@@ -223,7 +223,7 @@ func (n *nativeMain) drawBackgroundOpacity(c *ui.Context) {
 
 func (n *nativeMain) chooseBackground(label string) {
 	state := n.history.state
-	if n.appearanceBusy || n.preferenceUnavailable(backgroundSetting) || n.pendingSettings["app.theme"] {
+	if n.appearanceBusy || n.preferenceUnavailable(backgroundSetting) || n.preferenceBusy("app.theme") {
 		return
 	}
 	n.appearanceBusy, n.notice = true, ""

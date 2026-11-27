@@ -533,10 +533,8 @@ func runResident(owner *client.Client, minimized bool, activation string, update
 										reply(err)
 										break
 									}
-									relaunch, closing = true, true
-									log.Print("Settings reset acknowledged; rebuilding desktop")
+									// The Host's reset event refreshes the resident registrations.
 									reply(nil)
-									_, _ = io.WriteString(input, "rebuild\n")
 								case "appearance":
 									if request.Appearance == nil || !request.Appearance.Valid() {
 										reply(fmt.Errorf("InvalidNativeAppearance"))
@@ -895,22 +893,27 @@ func runResident(owner *client.Client, minimized bool, activation string, update
 				})
 			}
 		}
-		go watchSettingsReset(resetContext, owner, func() {
+		refreshRuntimeSettings := func(reset bool) {
 			mygo.RunOnMain(func() {
 				if resetContext.Err() != nil || stopping || migrating || moved || pending != nil || relaunch {
 					return
 				}
-				relaunch, closing = true, true
-				if commands == nil {
-					mygo.App.Quit()
-				} else {
-					_, _ = io.WriteString(commands, "rebuild\n")
-				}
-			})
-		}, func() {
-			mygo.RunOnMain(func() {
-				if resetContext.Err() != nil || stopping || migrating || moved || pending != nil || relaunch {
-					return
+				if reset {
+					// A default chord might be owned by another action in the old
+					// configuration. Release all old assignments before rebinding.
+					panel.ClearShortcut()
+					selector.ClearShortcuts()
+					clearKeys := func(keys map[string]bool) {
+						for key := range keys {
+							unregisterMainShortcut(key)
+						}
+						clear(keys)
+					}
+					clearKeys(registered)
+					clearKeys(searchKeys)
+					for _, keys := range pasteKeys {
+						clearKeys(keys)
+					}
 				}
 				panel.RefreshShortcut()
 				selector.Refresh()
@@ -920,8 +923,13 @@ func runResident(owner *client.Client, minimized bool, activation string, update
 				if settings != nil {
 					_ = setTrayVisible(settings["app.hide_tray_icon"] != "true")
 				}
+				if reset && refreshAppearance != nil {
+					refreshAppearance()
+				}
 			})
-		}, appearanceChanged)
+		}
+		go watchSettingsReset(resetContext, owner, func() { refreshRuntimeSettings(true) },
+			func() { refreshRuntimeSettings(false) }, appearanceChanged)
 		mygo.App.OnBeforeQuit(func(event *mygo.QuitEvent) {
 			log.Printf("Desktop quit requested (migrating=%t, relaunch=%t)", migrating, relaunch)
 			if migrating {
