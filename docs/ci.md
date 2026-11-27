@@ -12,7 +12,7 @@
 |---|---|---|
 | `master` push / 任意 PR | `frontend` 1、`rust-development` 4、`go-development` 2，共 7 个基础实例；特定路径变更再加 `mygo-installer` | 没有 full 的四目标桌面、standalone、六场景 NSIS 和 Flatpak |
 | 手动 CI，`full_validation=false`，其它开关关闭 | 上述 7 个基础实例，加历史 `mygo-installer`，共 8 个 | 手动触发没有 diff 基线，历史 installer 的 scope 默认要求执行 |
-| 手动 CI，默认 `full_validation=true`，其它开关关闭 | 基础 7 + 历史 installer 1 + 矩阵选择 1 + Tauri 4 + standalone 4 + NSIS 6 + Flatpak 2，共 25 个 | Windows ARM64 是交叉构建；历史/合成 installer 与当前发布包各有验收入口 |
+| 手动 CI，默认 `full_validation=true`，其它开关关闭 | 基础 7 + 历史 installer 1 + 矩阵选择 1 + Tauri 4 + standalone 4 + NSIS 构建 1 与验收 6 + Flatpak 2，共 26 个 | Windows ARM64 是交叉构建；历史/合成 installer 与当前发布包各有验收入口 |
 | 复用 `ci.yml` | `workflow_call` 的 `full_validation` 默认 true。Release 显式调用候选源码模式 | 不运行完整的打包测试矩阵 |
 | 候选源码验收 `source_acceptance=true` | 前端、Rust 与 Go 开发测试，Linux/Windows x64 真实客户端和桌面验收，汇总绑定被测 SHA | 可单独运行，与全量安装和升级验收互补 |
 | `v*` tag push | draft、四目标 standalone、四目标双桌面构建/上传、`publish-dual` | 以本页“正常 tag 发布”部分的实际门槛为准 |
@@ -47,11 +47,11 @@ PR 更新和新的 master push 会取消同组旧 CI。手动 full 不适用该�
 | Flatpak 最终环境 | [flatpak.yml](../.github/workflows/flatpak.yml)：Linux x64/ARM64，构建并经 `verify-flatpak.py` 验证后导出 | 在 org.gnome.Platform runtime 验证 OCR/paste；是 full 的验收 artifact，当前 tag 不发布 |
 | 性能与诊断 | `scripts/performance/tests` / frontend 的比较器与 fixture 单测；手动性能或崩溃入口 | 工具单测、崩溃诊断与真实性能测量分别报告，不互相代替 |
 
-Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rust 客户端和原生桌面。Tauri 测试任务只运行其 Cargo 包的套件。完整验证仍有跨目标 Python discovery 和 NSIS 场景重复的纯打包检查。
+Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rust 客户端和原生桌面。Tauri 测试任务只运行其 Cargo 包的套件。Windows NSIS 的纯打包检查集中到 fixture 构建任务，完整验证的跨目标 Python discovery 仍待收口。
 
 ### 六个 NSIS 场景的实际来源
 
-入口是 [test-native-windows-upgrade.ps1](../scripts/test-native-windows-upgrade.ps1)。除已发布的旧安装器外，新 fixture 由 [build-native-windows-fixture.ps1](../scripts/build-native-windows-fixture.ps1) 把当前源码临时设为 alpha.1/alpha.2，以 debug、无 updater 签名、`createUpdaterArtifacts=false` 构建。其来源允许 `modified_checkout`，不等于 clean release candidate。
+入口是 [test-native-windows-upgrade.ps1](../scripts/test-native-windows-upgrade.ps1)。同一任务用当前源码各构建一次 alpha.1 和 alpha.2，保留 debug、无 updater 签名和 `createUpdaterArtifacts=false`。各场景下载对应产物，核对安装器、NSIS 输入及源码 SHA，再在独立 Windows runner 运行。源代码会由版本设置器临时修改，因此 fixture 的来源标为 `modified_checkout`。 [构建脚本](../scripts/build-native-windows-fixture.ps1)
 
 | 场景 | 当前输入与目的 |
 |---|---|

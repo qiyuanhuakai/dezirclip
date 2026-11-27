@@ -1257,7 +1257,62 @@ jobs:
     with:
       artifact-prefix: acceptance-cli
 
+  native-nsis-fixtures:
+    name: Build shared native NSIS fixtures
+    if: inputs.full_validation && !inputs.source_acceptance
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      artifact: ${{ steps.fixtures.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
+      - name: Check native installer tests and packaging contracts
+        shell: pwsh
+        run: |
+          python -m unittest discover -s scripts/tests -p test_native_windows_clipboard.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B -m unittest discover -s scripts/tests -p test_native_windows_nsis_webview.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test scripts/tests/packaging-sidecars.node.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/tests/native-packaging-proof.ps1
+          ./scripts/tests/native-process-identity.ps1
+          ./scripts/tests/native-build-info.ps1
+          ./scripts/tests/native-installer-outcomes.ps1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: native-debug-installers
+      - run: pnpm install --frozen-lockfile
+      - name: Build the two same-source installer fixtures
+        id: fixtures
+        shell: pwsh
+        run: |
+          $root = New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/native-nsis-inputs"
+          ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.1 -Destination (Join-Path $root.FullName 'previous-setup.exe')
+          ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.2 -Destination (Join-Path $root.FullName 'candidate-setup.exe')
+          "artifact=native-nsis-inputs-$env:GITHUB_SHA-$env:GITHUB_RUN_ATTEMPT" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.fixtures.outputs.artifact }}
+          path: ${{ runner.temp }}/native-nsis-inputs/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
   native-windows-upgrade:
+    needs: native-nsis-fixtures
     if: inputs.full_validation && !inputs.source_acceptance
     # Keep scenario identities distinct for the full release acceptance gate.
     name: Native NSIS (${{ matrix.scenario }})
@@ -1271,12 +1326,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        if: matrix.scenario != 'LegacyUninstall'
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.0.9
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -1288,38 +1337,12 @@ jobs:
         with:
           python-version: '3.13.15'
 
-      - name: Check disposable native clipboard boundary
+      - name: Download the original same-source NSIS fixtures
         if: matrix.scenario != 'LegacyUninstall'
-        run: |
-          python -m unittest discover -s scripts/tests -p test_native_windows_clipboard.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -B -m unittest discover -s scripts/tests -p test_native_windows_nsis_webview.py
-
-      - name: Test sidecar packaging contracts
-        run: node --test scripts/tests/packaging-sidecars.node.mjs
-
-      - name: Test packaging proof and process identity decisions
-        shell: pwsh
-        run: |
-          ./scripts/tests/native-packaging-proof.ps1
-          ./scripts/tests/native-process-identity.ps1
-          ./scripts/tests/native-build-info.ps1
-          ./scripts/tests/native-installer-outcomes.ps1
-
-      - name: Install Rust stable
-        if: matrix.scenario != 'LegacyUninstall'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust artifacts
-        if: matrix.scenario != 'LegacyUninstall'
-        uses: swatinem/rust-cache@v2
+        uses: actions/download-artifact@v4
         with:
-          workspaces: . -> target
-          key: native-debug-installers
-
-      - name: Install frontend dependencies
-        if: matrix.scenario != 'LegacyUninstall'
-        run: pnpm install --frozen-lockfile
+          name: ${{ needs.native-nsis-fixtures.outputs.artifact }}
+          path: ${{ runner.temp }}/native-nsis-inputs
 
       - name: Download pinned published legacy installer
         if: matrix.scenario == 'LegacyUninstall' || matrix.scenario == 'OldToNew'
@@ -1333,20 +1356,11 @@ jobs:
         run: |
           Invoke-WebRequest -Uri 'https://github.com/qiyuanhuakai/dezirclip/releases/download/v0.2.0-alpha.1/DezirClip_0.2.0-alpha.1_x64-setup.exe' -OutFile "$env:RUNNER_TEMP/legacy-setup.exe" -MaximumRetryCount 3 -RetryIntervalSec 5
 
-      - name: Build previous unpublished fixture package
-        if: matrix.scenario == 'OwnedUpgrade'
-        shell: pwsh
-        run: ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.1 -Destination "$env:RUNNER_TEMP/previous-setup.exe"
-
-      - name: Build current unpublished fixture package
-        if: matrix.scenario != 'LegacyUninstall'
-        shell: pwsh
-        run: ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.2 -Destination "$env:RUNNER_TEMP/candidate-setup.exe"
-
       - name: Exercise actual installer and application
         shell: pwsh
         run: |
-          ./scripts/test-native-windows-upgrade.ps1 -Scenario '${{ matrix.scenario }}' -OldInstaller "$env:RUNNER_TEMP/legacy-setup.exe" -NewInstaller "$env:RUNNER_TEMP/candidate-setup.exe" -PreviousCandidate "$env:RUNNER_TEMP/previous-setup.exe"
+          $inputs = "$env:RUNNER_TEMP/native-nsis-inputs"
+          ./scripts/test-native-windows-upgrade.ps1 -Scenario '${{ matrix.scenario }}' -OldInstaller "$env:RUNNER_TEMP/legacy-setup.exe" -NewInstaller "$inputs/candidate-setup.exe" -PreviousCandidate "$inputs/previous-setup.exe"
 
       - name: Preserve isolated acceptance evidence
         if: always()

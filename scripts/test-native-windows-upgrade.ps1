@@ -89,6 +89,7 @@ function Read-CandidateManifest([string]$Installer) {
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     if ($manifest.schemaVersion -ne 5 -or $manifest.kind -ne 'dezirclip-native-nsis-fixture' -or $manifest.version -notin @('0.2.0-alpha.1', '0.2.0-alpha.2')) { throw 'Candidate manifest is invalid.' }
     if ($manifest.target -ne 'x86_64-pc-windows-msvc' -or $manifest.profile -ne 'debug' -or $manifest.updaterArtifacts -ne $false -or $manifest.sourceCommit -notmatch '^[a-fA-F0-9]{40}$') { throw 'Candidate build provenance is invalid.' }
+    if ($manifest.sourceCommit -cne $env:GITHUB_SHA) { throw 'Fixture installer source differs from the acceptance checkout.' }
     if ($manifest.sidecarVersion -notmatch ('(?:^|\s)' + [regex]::Escape($manifest.version) + '(?:\s|$)')) { throw 'Candidate manifest CLI version is invalid.' }
     if ($manifest.buildInfo.component_version -ne $manifest.version -or $manifest.buildInfo.source_revision -ne $manifest.sourceCommit -or $manifest.buildInfo.build_id -ne ($manifest.version + '@' + $manifest.sourceCommit)) { throw 'Candidate build identity differs from its source/version set.' }
     if ($manifest.buildInfo.metadata_version -ne 1 -or $manifest.buildInfo.component -ne 'cli' -or $manifest.buildInfo.target -ne $manifest.target -or @($manifest.buildInfo.linked_components).Count -ne 4) { throw 'Candidate component metadata is incomplete.' }

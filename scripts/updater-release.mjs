@@ -277,7 +277,7 @@ const optionalReleaseJobs = [
   'Full source acceptance / Published Windows memory comparison', 'Full source acceptance / native-file-drag',
   'Full source acceptance / Optional Windows Surface comparison or crash diagnostics',
   ...['Published Windows memory comparison', 'native-file-drag', 'Compatible standalone CLI',
-    'Native NSIS (${{ matrix.scenario }})', 'Verified Flatpak', 'MyGo installer acceptance',
+    'Build shared native NSIS fixtures', 'Native NSIS (${{ matrix.scenario }})', 'Verified Flatpak', 'MyGo installer acceptance',
     'Optional Windows Surface comparison or crash diagnostics'].map(name => `Source acceptance / ${name}`),
 ];
 
