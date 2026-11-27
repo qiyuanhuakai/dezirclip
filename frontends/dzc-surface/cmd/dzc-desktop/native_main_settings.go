@@ -472,6 +472,8 @@ func (n *nativeMain) captureScreenshot(full bool) {
 				if !n.showSettings {
 					n.notice = n.captureError
 				}
+			} else if full {
+				n.notice = n.text("screenshot_captured")
 			}
 		})
 	}()
