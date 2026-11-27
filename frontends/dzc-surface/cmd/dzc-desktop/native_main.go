@@ -252,7 +252,7 @@ func (n *nativeMain) colorMode(settings map[string]string) string {
 func (n *nativeMain) configured(settings map[string]string) {
 	themeName := settings["app.theme"]
 	if themeName == "" {
-		themeName = "mica"
+		themeName = model.DefaultBuiltinTheme
 	}
 	mode := n.colorMode(settings)
 	oldBase := n.themeBase()

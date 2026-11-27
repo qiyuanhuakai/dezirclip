@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 pub const MAX_THEME_BYTES: usize = 256 * 1024;
 pub const MAX_CUSTOM_THEMES: usize = 32;
 pub const MAX_CSS_DEPTH: usize = 128;
-pub const BUILTIN_THEMES: &[&str] = &["mica", "acrylic", "retro", "macos", "scifi", "liquid-glass"];
+#[path = "builtin_themes.rs"]
+mod builtin_themes;
+pub use builtin_themes::{BUILTIN_THEMES, DEFAULT_BUILTIN_THEME, builtin_windows_backdrop};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

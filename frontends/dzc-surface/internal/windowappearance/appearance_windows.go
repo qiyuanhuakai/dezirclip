@@ -4,6 +4,7 @@ import (
 	"unsafe"
 
 	"github.com/egoist/mygo"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/model"
 	"golang.org/x/sys/windows"
 )
 
@@ -43,13 +44,14 @@ func Apply(w *mygo.Window, theme, mode string, border bool) error {
 		dark = 1
 	}
 	material := mygo.VibrancyNone
-	if theme == "mica" && build >= 22000 {
+	backdrop := model.BuiltinWindowsBackdrop(theme)
+	if backdrop == "mica" && build >= 22000 {
 		material = mygo.VibrancyMica
-	} else if theme == "acrylic" && build >= 17763 {
+	} else if backdrop == "acrylic" && build >= 17763 {
 		material = mygo.VibrancyAcrylic
 	}
 	w.SetVibrancy(material)
-	w.SetHasShadow(border && (theme != "mica" && theme != "acrylic" || build >= 22000))
+	w.SetHasShadow(border && (backdrop == "" || build >= 22000))
 	if build >= 18985 {
 		if err := set(windows.DWMWA_USE_IMMERSIVE_DARK_MODE, dark); err != nil {
 			return err

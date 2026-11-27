@@ -7,6 +7,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/model"
 	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/uikit"
 )
 
@@ -19,9 +20,10 @@ const (
 )
 
 func (n *nativeMain) themeSettings(c *ui.Context, kit uikit.Kit, width float32) {
-	builtins := []uikit.SelectOption{
-		{Value: "retro", Label: n.text("theme_retro")}, {Value: "mica", Label: n.text("theme_mica")}, {Value: "acrylic", Label: n.text("theme_acrylic")},
-		{Value: "liquid-glass", Label: n.text("theme_liquid_glass")}, {Value: "macos", Label: n.text("theme_macos")}, {Value: "scifi", Label: n.text("theme_scifi")},
+	themes := model.BuiltinThemes()
+	builtins := make([]uikit.SelectOption, 0, len(themes))
+	for _, theme := range themes {
+		builtins = append(builtins, uikit.SelectOption{Value: theme.ID, Label: n.text(theme.LabelKey)})
 	}
 	imported := make([]uikit.SelectOption, 0, len(n.importedThemes))
 	for _, item := range n.importedThemes {
@@ -29,7 +31,7 @@ func (n *nativeMain) themeSettings(c *ui.Context, kit uikit.Kit, width float32) 
 	}
 	active := n.theme
 	if active == "" {
-		active = "mica"
+		active = model.DefaultBuiltinTheme
 	}
 	full := len(n.importedThemes) >= maxImportedThemes
 	options := uikit.ThemeManagerOptions{

@@ -1,0 +1,11 @@
+{
+  "default": "mica",
+  "themes": [
+    {"id": "retro", "labelKey": "theme_retro", "cssEntry": "styles/themes/retro.css"},
+    {"id": "mica", "labelKey": "theme_mica", "cssEntry": "styles/themes/mica.css", "windowsBackdrop": "mica"},
+    {"id": "acrylic", "labelKey": "theme_acrylic", "cssEntry": "styles/themes/acrylic.css", "windowsBackdrop": "acrylic"},
+    {"id": "liquid-glass", "labelKey": "theme_liquid_glass", "cssEntry": "styles/themes/liquid-glass.css"},
+    {"id": "macos", "labelKey": "theme_macos", "cssEntry": "styles/themes/macos.css"},
+    {"id": "scifi", "labelKey": "theme_scifi", "cssEntry": "styles/themes/scifi.css"}
+  ]
+}

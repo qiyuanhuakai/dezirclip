@@ -3,7 +3,8 @@ import { SettingsThemeManager } from "@deziro/ui-react/components/SettingsAppear
 import { invoke } from "../../../shared/lib/desktopInvoke";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { getCustomTheme, getCustomThemes, replaceCustomThemes, subscribeCustomThemes } from "../../../shared/lib/themeCatalog";
-import { BUILTIN_THEMES, MAX_CUSTOM_THEMES, parseThemePackage } from "../../../shared/lib/themePackage";
+import { MAX_CUSTOM_THEMES, parseThemePackage } from "../../../shared/lib/themePackage";
+import { themes as builtinThemes } from "../../../../design/themes.json";
 import { errorMessage } from "../../../shared/lib/errorMessage";
 
 type Props = {
@@ -11,11 +12,6 @@ type Props = {
   theme: string;
   setTheme: (theme: string) => void;
   saveAppSetting: (key: string, value: string) => void;
-};
-const themeLabel = (theme: string, t: Props["t"]) => {
-  const key = `theme_${theme.replace(/-/g, "_")}`;
-  const translated = t(key);
-  return translated && translated !== key ? translated : theme.split("-").map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 };
 const refreshThemes = async () => {
   const previous = getCustomThemes();
@@ -55,7 +51,7 @@ const ThemeManager = ({ t, theme, setTheme, saveAppSetting }: Props) => {
   const full = themes.length >= MAX_CUSTOM_THEMES;
   return <SettingsThemeManager label={t("visual_theme")} builtinLabel={t("theme_builtin")} importedLabel={t("theme_custom")}
     value={theme} disabled={busy} importDisabled={full}
-    builtins={BUILTIN_THEMES.map(value => ({ value, label: themeLabel(value, t) }))}
+    builtins={builtinThemes.map(({ id, labelKey }) => ({ value: id, label: t(labelKey) }))}
     imported={themes.map(item => ({ value: `custom:${item.id}`, label: item.name }))}
     importLabel={t("theme_import")} exportLabel={t("theme_export")} removeLabel={t("theme_delete")}
     limitMessage={full ? t("theme_limit_reached") : undefined} error={error} notice={notice} onChange={choose}

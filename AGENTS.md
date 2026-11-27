@@ -42,7 +42,7 @@ Generated files, inline tests and historical evidence are counted separately fro
 | Add Tauri command | `src-tauri/src/app/commands/*.rs` + register in `main.rs` invoke_handler | Pattern: split by domain (clipboard, settings, hotkey, file, ui, system, history) |
 | Add React UI | `src/features/<feature>/components/` + `hooks/` if stateful | Each feature is self-contained; re-export via barrel only if needed |
 | Add Rust platform code | `crates/dzc-platform/src`; inspect existing desktop-specific adapters when migrating | Platform must not depend on Tauri app code or Core repositories/SQL |
-| Modify theme | `src/styles/themes/` for variant, `src/styles/tokens/` for vars, `src/styles/theme-core/` for cross-theme shared rules | Tokens are pure CSS custom properties; themes reference tokens |
+| Modify theme | `design/themes.json` for metadata and the versioned Deziro UI packages for built-in CSS and presets | The settings menu order, label keys and Windows backdrop mapping come from the catalog |
 | Add i18n key | Edit `src/locales/zh.ts` first, then `en.ts`/`tw.ts`, then run `pnpm run i18n:check` | `zh.ts` is the canonical source |
 | Configure window/security | `src-tauri/tauri.conf.json` + `src-tauri/capabilities/default.json` | Window starts `visible: false, focusable: false, transparent: true` |
 | Test pure Rust logic | Inline `#[cfg(test)] mod tests` in the owning crate | Keep std-only assertions and existing fixtures; native/CLI integration also has separate scripts |

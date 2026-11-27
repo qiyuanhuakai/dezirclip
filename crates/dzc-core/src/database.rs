@@ -266,8 +266,8 @@ pub fn seed_defaults(conn: &Connection) -> Result<()> {
 pub(crate) fn seed_preference_defaults(conn: &Connection) -> Result<()> {
     // App settings
     conn.execute(
-        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.theme', 'mica')",
-        [],
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.theme', ?1)",
+        [crate::domain::theme::DEFAULT_BUILTIN_THEME],
     )?;
     conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.color_mode', 'system')",

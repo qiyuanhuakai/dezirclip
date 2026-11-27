@@ -109,9 +109,10 @@ struct WindowsThemePlan {
 fn windows_theme_plan(theme: &str, build: u32, show_border: bool) -> WindowsThemePlan {
     let is_win11 = build >= 22000;
     let is_win10_1803 = build >= 17134;
-    let effect = match theme {
-        "mica" if is_win11 => WindowsBackdropEffect::Mica,
-        "acrylic" if is_win10_1803 => WindowsBackdropEffect::Acrylic,
+    let backdrop = dzc_core::domain::theme::builtin_windows_backdrop(theme);
+    let effect = match backdrop {
+        Some("mica") if is_win11 => WindowsBackdropEffect::Mica,
+        Some("acrylic") if is_win10_1803 => WindowsBackdropEffect::Acrylic,
         _ => WindowsBackdropEffect::None,
     };
 
@@ -119,7 +120,7 @@ fn windows_theme_plan(theme: &str, build: u32, show_border: bool) -> WindowsThem
         effect,
         clear_native_backdrop: true,
         force_transparent_webview: true,
-        shadow: show_border && ((theme != "mica" && theme != "acrylic") || is_win11),
+        shadow: show_border && (backdrop.is_none() || is_win11),
     }
 }
 

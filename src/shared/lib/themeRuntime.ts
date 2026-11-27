@@ -1,5 +1,5 @@
 import { getCustomThemes, loadCachedCustomThemes, subscribeCustomThemes } from "./themeCatalog";
-import { resolveThemeSelection, type BuiltinTheme } from "./themePackage";
+import { DEFAULT_BUILTIN_THEME, resolveThemeSelection, type BuiltinTheme } from "./themePackage";
 import { applyImportedThemeCss } from "./themeStylesheet";
 import { loadBuiltinTheme, type ThemeMode } from "@deziro/ui-react/themes";
 import "@deziro/ui-react/styles/theme-core/custom-theme-fonts.shared.css";
@@ -7,8 +7,6 @@ import "@deziro/ui-react/styles/theme-core/custom-theme-fonts.shared.css";
 export type { ThemeMode } from "@deziro/ui-react/themes";
 export type ThemeColorMode = "light" | "dark" | "system";
 
-/** What the app falls back to before a theme has ever been chosen. */
-const DEFAULT_THEME = "mica";
 let currentTheme: string | null = null;
 
 export const resolveBuiltinTheme = (theme: string): BuiltinTheme =>
@@ -83,9 +81,9 @@ export const resolveThemeMode = (colorMode: ThemeColorMode, systemIsDark: boolea
 
 const readBootTheme = (): string => {
   try {
-    return localStorage.getItem("dezirclip_theme") || localStorage.getItem("tiez_theme") || DEFAULT_THEME;
+    return localStorage.getItem("dezirclip_theme") || localStorage.getItem("tiez_theme") || DEFAULT_BUILTIN_THEME;
   } catch {
-    return DEFAULT_THEME;
+    return DEFAULT_BUILTIN_THEME;
   }
 };
 

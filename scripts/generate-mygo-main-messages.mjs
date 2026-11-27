@@ -18,6 +18,8 @@ export function usedNativeMainMessageKeys() {
     keys.add(setting.labelKey);
     for (const key of Object.values(setting.optionLabelKeys ?? {})) keys.add(key);
   }
+  const { themes } = JSON.parse(readFileSync(new URL("../design/themes.json", import.meta.url), "utf8"));
+  for (const { labelKey } of themes) keys.add(labelKey);
   return [...keys].sort();
 }
 

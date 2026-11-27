@@ -136,3 +136,4 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **R2a 更新偏好目录**。自动检查与更新通道的设置标识、标签和通道选项由 `protocol/settings.catalog.json` 生成至 Rust、Go、React 和 wire schema。Core 显式保留 view mutation 与隐私 epoch 检查，两项在空库均不预写，旧配置字符串读取与按已安装版本选择通道照旧。Windows/Linux Core 回归、Rust/Go wire fixture、Go 桌面测试与 React 类型和更新策略测试通过。
 - **R5b 类型化 Profile 与事件入口**。应用通过明确的 profile 能力读取并打开数据目录，两种宿主适配器保留各自原有调用。MyGo 的事件和隐私状态中使用的 wire 类型由协议生成，现有运行时权限校验保留。Tauri 和 MyGo Web 生产构建、Tauri WebView 启动冒烟、Linux Go 桌面测试及三语更新文案生成检查通过。
 - **R6 自定义背景**。Tauri 查询背景改走共享 HistoryService，保留文件读取前后两次选择检查。Windows 和 Linux 测试用公开 Core 设置 API 写入实际 PNG 路径，核对读取字节，并验证切换选择后的旧资源请求会被拒绝。
+- **R2b 内置主题目录**。`design/themes.json` 登记原有六种主题的顺序、标签、配套 CSS 入口、默认主题及 Windows 原生材质。Core 与 MyGo 使用生成值，React 读取目录，构建校对固定 Deziro UI 的主题 ID、CSS 和三语标签。CSS、采样 presets 和许可证仍由原组件包提供。Windows/Linux 各通过八项 Core 主题测试，Windows 三项材质计划、Linux Go 模块及 React 主题包检查通过。

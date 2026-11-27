@@ -1,5 +1,6 @@
 import { isBuiltinTheme, type BuiltinTheme } from "@deziro/ui-react/themes";
-export { BUILTIN_THEMES, isBuiltinTheme, type BuiltinTheme } from "@deziro/ui-react/themes";
+import themeCatalog from "../../../design/themes.json";
+export { isBuiltinTheme, type BuiltinTheme } from "@deziro/ui-react/themes";
 import { validateThemeCss } from "./themeCss";
 
 export type ThemePackage = {
@@ -14,6 +15,7 @@ export type ThemePackage = {
 };
 export const MAX_CUSTOM_THEMES = 32;
 export const MAX_THEME_BYTES = 256 * 1024;
+export const DEFAULT_BUILTIN_THEME = themeCatalog.default as BuiltinTheme;
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const object = (value: unknown): Record<string, unknown> => {
@@ -34,7 +36,7 @@ const optionalText = (value: unknown, max: number, label: string): string | unde
   value === undefined || value === null ? undefined : text(value, max, false, label) || undefined;
 export const resolveThemeSelection = (selection: string, catalog: readonly ThemePackage[]): { base: BuiltinTheme; custom?: ThemePackage } => {
   const custom = selection.startsWith("custom:") ? catalog.find(theme => theme.id === selection.slice(7)) : undefined;
-  return { base: custom?.base ?? (isBuiltinTheme(selection) ? selection : "mica"), ...(custom ? { custom } : {}) };
+  return { base: custom?.base ?? (isBuiltinTheme(selection) ? selection : DEFAULT_BUILTIN_THEME), ...(custom ? { custom } : {}) };
 };
 
 export const parseThemePackage = (input: unknown): ThemePackage => {

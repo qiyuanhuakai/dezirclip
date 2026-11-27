@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/model"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/quickpaste"
 	"github.com/qiyuanhuakai/deziro-ui/packages/ui-native/theme"
 	"github.com/qiyuanhuakai/deziro-ui/packages/ui-presets"
@@ -76,7 +77,7 @@ func surfaceThemeSelection(settings map[string]string) (string, *protocol.Deskto
 		base = ""
 	}
 	if base == "" {
-		base = "mica"
+		base = model.DefaultBuiltinTheme
 	}
 	return base, nil
 }
