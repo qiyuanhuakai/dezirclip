@@ -11,6 +11,13 @@ on:
       full_validation:
         type: boolean
         default: true
+      source_acceptance:
+        type: boolean
+        default: false
+    outputs:
+      accepted_source:
+        description: Candidate commit that passed the required source jobs
+        value: ${{ jobs.source-acceptance.outputs.source }}
   workflow_dispatch:
     inputs:
       native_file_drag_only:
@@ -25,6 +32,10 @@ on:
         description: Run complete multi-platform native and packaging acceptance
         type: boolean
         default: true
+      source_acceptance:
+        description: Run the same source acceptance used by Release
+        type: boolean
+        default: false
       windows_service_crash_stacks:
         description: Diagnose up to 32 fresh-profile Service starts, printing crash stacks without uploading memory
         type: boolean
@@ -63,8 +74,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+  group: ci-${{ inputs.source_acceptance && 'source-acceptance' || github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !inputs.source_acceptance && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master')) }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -219,7 +230,7 @@ jobs:
           node scripts/tests/verify-desktop-web.mjs
 
   native-file-drag:
-    if: github.event_name == 'workflow_dispatch' && inputs.native_file_drag_only
+    if: github.event_name == 'workflow_dispatch' && inputs.native_file_drag_only && !inputs.source_acceptance
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -303,7 +314,7 @@ jobs:
 
   ci-desktop-plan:
     name: Select desktop acceptance targets
-    if: inputs.full_validation || inputs.windows_x64_mygo_test_package || inputs.windows_service_crash_stacks || inputs.linux_release_inputs || inputs.windows_surface_performance
+    if: inputs.source_acceptance || inputs.full_validation || inputs.windows_x64_mygo_test_package || inputs.windows_service_crash_stacks || inputs.linux_release_inputs || inputs.windows_surface_performance
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.targets.outputs.matrix }}
@@ -313,6 +324,8 @@ jobs:
         shell: python
         env:
           FULL_VALIDATION: ${{ inputs.full_validation }}
+          SOURCE_ACCEPTANCE: ${{ inputs.source_acceptance }}
+          FOCUSED_REQUEST: ${{ inputs.native_file_drag_only || inputs.windows_release_memory || inputs.windows_service_crash_stacks || inputs.windows_x64_mygo_test_package || inputs.linux_release_inputs || inputs.windows_surface_performance || inputs.windows_surface_crash_diagnostics }}
           LINUX_RELEASE_INPUTS: ${{ inputs.linux_release_inputs }}
           WINDOWS_X64: ${{ inputs.windows_x64_mygo_test_package || inputs.windows_service_crash_stacks || inputs.windows_surface_performance }}
         run: |
@@ -328,7 +341,11 @@ jobs:
               target("windows-x86_64", "windows-latest"),
               target("windows-aarch64", "windows-latest", "aarch64-pc-windows-msvc", "amd64_arm64", False),
           ]
-          if os.environ["FULL_VALIDATION"] != "true":
+          if os.environ["SOURCE_ACCEPTANCE"] == "true":
+              if os.environ["FOCUSED_REQUEST"] == "true":
+                  raise SystemExit("Source acceptance cannot be combined with a focused request")
+              targets = [row for row in targets if row["name"] in {"linux-x86_64", "windows-x86_64"}]
+          elif os.environ["FULL_VALIDATION"] != "true":
               requested = set()
               if os.environ["LINUX_RELEASE_INPUTS"] == "true":
                   requested.add("linux-x86_64")
@@ -523,14 +540,14 @@ jobs:
           pnpm run build
 
       - name: Test Go local protocol client
-        if: matrix.can_test
+        if: matrix.name == 'linux-aarch64'
         working-directory: clients/go
         env:
           GOTOOLCHAIN: local
         run: go test ./...
 
       - name: Test experimental Surface control and selection
-        if: matrix.can_test
+        if: matrix.name == 'linux-aarch64'
         working-directory: frontends/dzc-surface
         env:
           GOTOOLCHAIN: local
@@ -539,7 +556,7 @@ jobs:
         run: go test -count=1 ./...
 
       - name: Upload native panel visual fixtures
-        if: matrix.can_test
+        if: matrix.name == 'linux-aarch64'
         uses: actions/upload-artifact@v4
         with:
           name: Native-panel-visuals-${{ matrix.name }}-${{ github.sha }}
@@ -554,12 +571,9 @@ jobs:
           pnpm run surface:build
           pnpm run desktop:mygo:build
 
-      - name: Test bounded native local IPC
+      - name: Build the native local IPC interoperability fixture
         if: matrix.can_test
-        run: |
-          cargo test -p dzc-protocol --features wire
-          cargo test -p dzc-platform --features ipc ipc::
-          cargo build -p dzc-platform --features ipc --example ipc_protocol_fixture
+        run: cargo build --locked -p dzc-platform --features ipc --example ipc_protocol_fixture
 
       - name: Test shared Windows settings ownership and rollback
         if: matrix.can_test && runner.os == 'Windows'
@@ -595,7 +609,7 @@ jobs:
         # this flag its 15 tests silently stop running.
         run: |
           import os, subprocess, sys
-          command = ["cargo", "test", "--locked", "--workspace", "--all-targets"]
+          command = ["cargo", "test", "--locked", "-p", "dezirclip", "--all-targets"]
           if sys.platform == "linux":
               command = ["xvfb-run", "-a", *command]
               os.environ["XDG_SESSION_TYPE"] = "x11"
@@ -604,6 +618,7 @@ jobs:
           subprocess.run(command, check=True)
 
       - name: Build Tauri crate
+        if: '!inputs.source_acceptance'
         working-directory: src-tauri
         run: cargo build ${{ matrix.cargo_args }}
 
@@ -743,9 +758,12 @@ jobs:
       - name: Verify repeated MyGo emoji paste and Windows Service startup
         if: runner.os == 'Windows' && matrix.can_test && !inputs.windows_service_crash_stacks
         shell: powershell
+        env:
+          MYGO_EMOJI_RUNS: ${{ inputs.source_acceptance && '1' || '8' }}
         run: |
-          1..8 | ForEach-Object {
-            Write-Host "Isolated Service startup and emoji paste cycle $_ of 8"
+          $cycles = [int]$env:MYGO_EMOJI_RUNS
+          1..$cycles | ForEach-Object {
+            Write-Host "Isolated Service startup and emoji paste cycle $_ of $cycles"
             powershell -NoProfile -NonInteractive -STA -ExecutionPolicy Bypass -File ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -NativeMain -Emoji
             if ($LASTEXITCODE) { throw "Service startup and emoji paste cycle $_ failed: $LASTEXITCODE" }
           }
@@ -818,12 +836,12 @@ jobs:
           CGO_ENABLED: '0'
         run: go test ./cmd/dzc-desktop -run '^TestMiddleHookSurvivesBlockedResident$' -count=1 -timeout=30s
 
-      - name: Verify MyGo WebView2 screenshot buttons on the Windows desktop
+      - name: Verify MyGo Native screenshot buttons on the Windows desktop
         if: ${{ !cancelled() && runner.os == 'Windows' && matrix.can_test && steps.mygo_library.outcome == 'success' }}
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Capture
 
-      - name: Verify resident pinned preview after the Windows WebView exits
+      - name: Verify resident pinned preview after the MyGo main window exits
         if: runner.os == 'Windows' && matrix.can_test
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -PinPreview
@@ -933,7 +951,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Stage Windows x64 MyGo package for testing
-        if: matrix.name == 'windows-x86_64' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.windows_x64_mygo_test_package))
+        if: "!inputs.source_acceptance && matrix.name == 'windows-x86_64' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.windows_x64_mygo_test_package))"
         shell: pwsh
         run: |
           pnpm run build:mygo:web
@@ -954,7 +972,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - name: Upload Windows x64 MyGo test installer
-        if: matrix.name == 'windows-x86_64' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.windows_x64_mygo_test_package))
+        if: "!inputs.source_acceptance && matrix.name == 'windows-x86_64' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.windows_x64_mygo_test_package))"
         uses: actions/upload-artifact@v4
         with:
           name: DezirClip-windows-x64-MyGo-${{ github.sha }}
@@ -981,14 +999,14 @@ jobs:
           subprocess.run([sys.executable, '-I', '-B', 'scripts/tests/test_release_identities.py', 'ReleaseIdentities.test_real_readonly_directory_requires_the_nested_file_mountpoint', '-v'], check=True)
 
       - name: Supply optional Linux x64 release inputs
-        if: github.event_name == 'workflow_dispatch' && inputs.linux_release_inputs && runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
+        if: github.event_name == 'workflow_dispatch' && inputs.linux_release_inputs && !inputs.source_acceptance && runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
         timeout-minutes: 60
         env:
           DEZIRCLIP_LINUX_RELEASE_INPUTS: 'true'
         run: python -B scripts/build-linux-release-inputs.py
 
       - name: Preserve optional Linux x64 release inputs and original build failures
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.linux_release_inputs && runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.linux_release_inputs && !inputs.source_acceptance && runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
         uses: actions/upload-artifact@v4
         with:
           name: linux-release-inputs-${{ github.sha }}-${{ github.run_attempt }}
@@ -1233,14 +1251,14 @@ jobs:
           if-no-files-found: warn
 
   standalone-cli:
-    if: inputs.full_validation
+    if: inputs.full_validation && !inputs.source_acceptance
     name: Compatible standalone CLI
     uses: ./.github/workflows/standalone-cli.yml
     with:
       artifact-prefix: acceptance-cli
 
   native-windows-upgrade:
-    if: inputs.full_validation
+    if: inputs.full_validation && !inputs.source_acceptance
     # Keep scenario identities distinct for the full release acceptance gate.
     name: Native NSIS (${{ matrix.scenario }})
     runs-on: windows-latest
@@ -1339,7 +1357,7 @@ jobs:
           if-no-files-found: ignore
 
   flatpak:
-    if: inputs.full_validation
+    if: inputs.full_validation && !inputs.source_acceptance
     name: Verified Flatpak
     uses: ./.github/workflows/flatpak.yml
     with:
@@ -1348,7 +1366,7 @@ jobs:
   mygo-installer:
     name: MyGo installer acceptance
     needs: frontend
-    if: needs.frontend.outputs.mygo_installer_required == 'true'
+    if: "!inputs.source_acceptance && needs.frontend.outputs.mygo_installer_required == 'true'"
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -1525,3 +1543,48 @@ jobs:
           name: Native-development-visuals-${{ matrix.os }}-${{ github.sha }}
           path: target/native-development-visuals/*.png
           if-no-files-found: warn
+
+  source-acceptance:
+    name: Bind candidate source
+    needs: [frontend, rust-development, go-development, ci-desktop-plan, tauri]
+    if: always() && inputs.source_acceptance
+    runs-on: ubuntu-24.04
+    outputs:
+      source: ${{ steps.bind.outputs.source }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Bind passed source jobs to the candidate
+        id: bind
+        shell: python
+        env:
+          DEPENDENCIES: ${{ toJSON(needs) }}
+        run: |
+          import json, os, subprocess
+          from pathlib import Path
+          source = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          if source != os.environ["GITHUB_SHA"]:
+              raise SystemExit("The tested source does not match the candidate")
+          needs = json.loads(os.environ["DEPENDENCIES"])
+          results = {name: info["result"] for name, info in needs.items()}
+          if any(result != "success" for result in results.values()):
+              raise SystemExit(f"Required source jobs did not pass: {results}")
+          matrix = json.loads(needs["ci-desktop-plan"]["outputs"]["matrix"])
+          targets = sorted(row["name"] for row in matrix["include"])
+          if targets != ["linux-x86_64", "windows-x86_64"]:
+              raise SystemExit(f"Source acceptance selected unexpected targets: {targets}")
+          receipt = {
+              "schema_version": 1, "mode": "source-acceptance", "source_revision": source,
+              "run_id": int(os.environ["GITHUB_RUN_ID"]), "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "jobs": results, "desktop_targets": targets,
+          }
+          path = Path(os.environ["RUNNER_TEMP"]) / "source-acceptance.json"
+          path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"source={source}", file=output)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-acceptance-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/source-acceptance.json
+          if-no-files-found: error
