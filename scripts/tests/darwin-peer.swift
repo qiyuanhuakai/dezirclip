@@ -156,6 +156,13 @@ func request(_ fd: Int32, id: String, method: String, params: [String: Any]) thr
             throw ProbeFailure("accepted unexpected code")
         } catch let failure as ProbeFailure where failure.message == "helper code identity differs" {}
         try requireChild(fd, pid: child.processIdentifier, executable: helper)
+        let contender = Process()
+        contender.executableURL = helper
+        contender.arguments = ["--capture-lease-check"]
+        contender.standardError = FileHandle.nullDevice
+        try contender.run()
+        contender.waitUntilExit()
+        try require(contender.terminationStatus == 3, "second helper acquired the capture lease")
         let hello = try request(fd, id: "swift-hello", method: "hello", params: [
             "protocol_version": ["major": 1, "minor": 0],
             "client_version": "darwin-fixture", "client_role": "cli",
@@ -173,8 +180,9 @@ func request(_ fd: Int32, id: String, method: String, params: [String: Any]) thr
                     "system pasteboard did not receive the helper's text")
         let list = try request(fd, id: "swift-list", method: "surface.history.list", params: ["limit": 20, "offset": 0])
         try require((list["entries"] as? [Any])?.isEmpty == true, "invalid fixture page")
+        try require(list["keychain_verified"] as? Bool == true, "missing helper keychain proof")
         child.waitUntilExit()
         try require(child.terminationStatus == 0, "helper exited unsuccessfully")
-        print("Verified the Darwin UID, live signed helper, framed Rust wire responses, system pasteboard and owned child exit")
+        print("Verified the Darwin UID, live signed helper, framed Rust wire responses, system pasteboard, isolated Keychain and owned child exit")
     }
 }

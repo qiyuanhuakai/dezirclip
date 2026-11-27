@@ -24,6 +24,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if pid <= 1 { return Err("missing fixture parent".into()); }
         Some(pid as u32)
     } else { None };
+    #[cfg(target_os = "macos")]
+    let _capture_lease = expected_parent.map(|_| dzc_platform::ipc::CaptureLease::acquire()).transpose()?;
     tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async {
         let endpoint = Endpoint::in_directory(Path::new(&directory))?;
         let mut listener = endpoint.bind()?;
@@ -61,6 +63,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     serde_json::json!({"clipboard_text": marker})
                 }
                 (1, Method::Health) => serde_json::json!({}),
+                #[cfg(target_os = "macos")]
+                (2, Method::SurfaceHistoryList) if expected_parent.is_some() => {
+                    verify_darwin_keychain()?;
+                    serde_json::json!({"entries": [], "keychain_verified": true})
+                }
                 (2, Method::SurfaceHistoryList) => serde_json::json!({"entries":[]}),
                 _ => return Err("unexpected fixture method".into()),
             };
@@ -70,6 +77,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Ok::<_, Box<dyn std::error::Error>>(())
     })
+}
+
+#[cfg(target_os = "macos")]
+fn verify_darwin_keychain() -> Result<(), Box<dyn std::error::Error>> {
+    use security_framework::os::macos::keychain::{CreateOptions, SecKeychain};
+
+    // This signed process owns the isolated keychain. No system login
+    // keychain, search list, or release encryption configuration is changed.
+    let _no_prompt = SecKeychain::disable_user_interaction()?;
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("probe.keychain-db");
+    let password = uuid::Uuid::new_v4().simple().to_string();
+    let secret = *uuid::Uuid::new_v4().as_bytes();
+    const SERVICE: &str = "org.dezirclip.fixture";
+    const ACCOUNT: &str = "darwin-helper";
+    let keychain = CreateOptions::new().password(&password).prompt_user(false).create(&path)?;
+    keychain.add_generic_password(SERVICE, ACCOUNT, &secret)?;
+    drop(keychain);
+
+    let mut keychain = SecKeychain::open(&path)?;
+    keychain.unlock(Some(&password))?;
+    let (stored, item) = keychain.find_generic_password(SERVICE, ACCOUNT)?;
+    if stored.as_ref() != secret.as_slice() { return Err("Darwin keychain changed the fixture credential".into()); }
+    drop(stored);
+    item.delete();
+    const ITEM_NOT_FOUND: i32 = -25_300;
+    if !keychain.find_generic_password(SERVICE, ACCOUNT).is_err_and(|error| error.code() == ITEM_NOT_FOUND) {
+        return Err("Darwin keychain did not remove the fixture credential".into());
+    }
+    Ok(())
 }
 
 fn identity_client() -> Result<(), Box<dyn std::error::Error>> {

@@ -1630,6 +1630,7 @@ dependencies = [
  "quick-xml 0.39.4",
  "rand 0.8.6",
  "rusqlite",
+ "security-framework",
  "serde",
  "serde_json",
  "sha2",
