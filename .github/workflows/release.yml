@@ -196,6 +196,8 @@ jobs:
       contents: write
       actions: read
     runs-on: ubuntu-24.04
+    outputs:
+      readback: ${{ steps.readback.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -225,6 +227,7 @@ jobs:
           set -euo pipefail
           node scripts/updater-release.mjs attach-standalone "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUNNER_TEMP/standalone-candidates" "$RELEASE_ID" > "$RUNNER_TEMP/standalone-readback.json"
       - uses: actions/upload-artifact@v4
+        id: readback
         with:
           name: verified-standalone-assets-${{ github.run_attempt }}
           path: ${{ runner.temp }}/standalone-readback.json
@@ -448,6 +451,8 @@ jobs:
       contents: write
       actions: read
     runs-on: ubuntu-24.04
+    outputs:
+      readback: ${{ steps.readback.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -475,6 +480,7 @@ jobs:
           set -euo pipefail
           node scripts/updater-release.mjs attach-desktop "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUNNER_TEMP/desktop-candidates" "$RELEASE_ID" > "$RUNNER_TEMP/desktop-readback.json"
       - uses: actions/upload-artifact@v4
+        id: readback
         with:
           name: verified-desktop-assets-${{ github.run_attempt }}
           path: ${{ runner.temp }}/desktop-readback.json
@@ -545,12 +551,20 @@ jobs:
                   or receipt["desktop_targets"] != ["linux-x86_64", "windows-x86_64"]
                   or receipt["jobs"] != {name: "success" for name in ("frontend", "rust-development", "go-development", "ci-desktop-plan", "tauri")}):
               raise SystemExit("Source acceptance receipt does not attest the candidate")
+      - name: Download the desktop and standalone upload readbacks
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.upload-desktop.outputs.readback }},${{ needs.publish-standalone-cli.outputs.readback }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/candidate-readbacks
       - name: Verify both desktops and activate the update channel
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
         run: |
           set -euo pipefail
-          node scripts/updater-release.mjs publish-dual "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" | tee "$RUNNER_TEMP/updater-channel-sync.json"
+          node scripts/updater-release.mjs publish-dual "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$RUNNER_TEMP/candidate-readbacks" "$RELEASE_ID" | tee "$RUNNER_TEMP/updater-channel-sync.json"
       - uses: actions/upload-artifact@v4
         with:
           name: updater-channel-sync-attempt-${{ github.run_attempt }}

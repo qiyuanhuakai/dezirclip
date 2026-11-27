@@ -609,6 +609,36 @@ function verifiedUpgradeGate(evidence, receipt) {
   }
 }
 
+function verifyUploadReadbacks(release, tag, source, run, readbacks) {
+  const { value } = parseVersion(tag);
+  const expected = {
+    desktop: desktopReleaseTargets.flatMap(target => expectedDesktopCandidateFiles(tag, target, run.arch_packages)),
+    standalone: desktopReleaseTargets.flatMap(target => {
+      const name = standaloneArchiveName(value, target);
+      return [name, `${name}.sha256`];
+    }),
+  };
+  if (String(release.id) !== readbacks.releaseId) {
+    throw new Error('Upload readbacks identify a different draft release');
+  }
+  const remote = new Map(release.assets.map(asset => [asset.name, asset]));
+  for (const [kind, names] of Object.entries(expected)) {
+    const report = readbacks[kind];
+    if (report?.schema_version !== 1 || report.kind !== kind || report.tag !== tag || report.release_id !== readbacks.releaseId ||
+        report.source_revision !== source || report.run_id !== run.run_id || report.run_attempt !== run.run_attempt ||
+        !Array.isArray(report.assets)) {
+      throw new Error(`Invalid ${kind} upload readback provenance`);
+    }
+    requireExactNames(report.assets.map(asset => asset?.name), names, `${kind} upload readback`);
+    for (const entry of report.assets) {
+      const asset = remote.get(entry.name);
+      if (!asset || asset.id !== entry.id || asset.size !== entry.size || asset.digest !== `sha256:${entry.sha256}`) {
+        throw new Error(`Upload readback no longer matches ${entry.name}`);
+      }
+    }
+  }
+}
+
 function publication(mode, version, config, log, transport, bundle) {
   const dual = bundle?.dual === true;
   const client = githubClient(transport, dual);
@@ -625,6 +655,7 @@ function publication(mode, version, config, log, transport, bundle) {
   const repair = mode === 'sync-published' || resumeDraft;
   const run = synchronize ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, repair, dual) : null;
   const releaseAssets = synchronize ? verifiedReleaseAssets(release, parsed.value, run.asset_cutoff, dual, run.arch_packages) : null;
+  if (bundle?.readbacks) verifyUploadReadbacks(release, tag, commit, run, bundle.readbacks);
   if (synchronize && typeof release.draft !== 'boolean') throw new Error('Release draft state is missing');
   if (mode === 'sync-published' && (release.draft !== false || run.status !== 'completed')) {
     throw new Error('Published-channel synchronization requires a public release and completed eligible original run');
@@ -815,9 +846,14 @@ const dualActions = {
   'resume-dual-draft': 'resume-verified-draft',
 };
 
-export function publishDual(mode, version, config, runId, runAttempt, log = console.log, transport = gh) {
+export function publishDual(mode, version, config, runId, runAttempt, log = console.log, transport = gh, readbacks) {
   if (!Object.hasOwn(dualActions, mode)) throw new Error('Unknown dual desktop publication mode');
-  return publication(dualActions[mode], version, config, log, transport, { dual: true, runId, runAttempt });
+  return publication(dualActions[mode], version, config, log, transport, { dual: true, runId, runAttempt, readbacks });
+}
+
+function uploadReceipt(kind, tag, source, releaseId, assets) {
+  return { schema_version: 1, kind, tag, release_id: releaseId, source_revision: source,
+    run_id: Number(process.env.GITHUB_RUN_ID), run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT), assets };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
@@ -835,17 +871,23 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   } else if (mode === 'attach-desktop') {
     const assets = attachDesktopCandidates({ tag: version, source: acceptancePath, directory: runAttempt, releaseId: upgradePath,
       runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT });
-    console.log(JSON.stringify({ release_id: upgradePath, source_revision: acceptancePath, assets }));
+    console.log(JSON.stringify(uploadReceipt('desktop', version, acceptancePath, upgradePath, assets)));
   } else if (mode === 'attach-standalone') {
     const assets = attachReleaseFiles({ tag: version, source: acceptancePath, releaseId: upgradePath },
       readStandaloneCandidates(version, runAttempt), gh);
-    console.log(JSON.stringify({ release_id: upgradePath, source_revision: acceptancePath, assets }));
+    console.log(JSON.stringify(uploadReceipt('standalone', version, acceptancePath, upgradePath, assets)));
   } else if (mode === 'desktop-artifact-ids' || mode === 'standalone-artifact-ids') {
     const resolveIds = mode === 'desktop-artifact-ids' ? desktopArtifactIds : standaloneArtifactIds;
     console.log(resolveIds({ source: acceptancePath, runId: process.env.GITHUB_RUN_ID,
       attempt: process.env.GITHUB_RUN_ATTEMPT }).join(','));
   } else if (mode === 'publish-only') publishOnly(version, config);
-  else if (Object.hasOwn(dualActions, mode) && acceptancePath && runAttempt && !upgradePath) {
+  else if (mode === 'publish-dual' && acceptancePath && runAttempt && upgradePath && remaining.length === 1) {
+    const readbacks = { releaseId: remaining[0],
+      desktop: readEvidenceJson(join(upgradePath, 'desktop-readback.json')).value,
+      standalone: readEvidenceJson(join(upgradePath, 'standalone-readback.json')).value };
+    console.log(JSON.stringify(publishDual(mode, version, config, acceptancePath, runAttempt, console.error, gh, readbacks)));
+  }
+  else if (mode !== 'publish-dual' && Object.hasOwn(dualActions, mode) && acceptancePath && runAttempt && !upgradePath) {
     console.log(JSON.stringify(publishDual(mode, version, config, acceptancePath, runAttempt, console.error)));
   }
   else if (['publish-and-sync', 'sync-published', 'resume-verified-draft'].includes(mode) && acceptancePath && runAttempt && upgradePath) {
@@ -855,5 +897,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   }
   else if (mode === 'promote' && acceptancePath) {
     promote(version, config, acceptancePath);
-  } else throw new Error('Usage: node scripts/updater-release.mjs preflight|publish-only vVERSION; promote vVERSION ACCEPTANCE.json; publish-dual|sync-dual-channel|resume-dual-draft vVERSION RUN_ID ATTEMPT; publish-and-sync|sync-published|resume-verified-draft vVERSION RUN_ID ATTEMPT WINDOWS_UPGRADE.json');
+  } else throw new Error('Usage: node scripts/updater-release.mjs preflight|publish-only vVERSION; promote vVERSION ACCEPTANCE.json; publish-dual vVERSION RUN_ID ATTEMPT READBACK_DIR RELEASE_ID; sync-dual-channel|resume-dual-draft vVERSION RUN_ID ATTEMPT; publish-and-sync|sync-published|resume-verified-draft vVERSION RUN_ID ATTEMPT WINDOWS_UPGRADE.json');
 }

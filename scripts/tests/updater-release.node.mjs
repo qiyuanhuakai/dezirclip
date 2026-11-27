@@ -393,6 +393,39 @@ test('Arch packages and AUR recipes must be present before a Release with Arch p
   }
 });
 
+test('a current workflow publishes only the asset identities read back from its original draft', () => {
+  const version = '0.2.0-beta.4';
+  const tag = `v${version}`;
+  const make = () => {
+    const fixture = publisherFixture({ version, sync: true, dual: true, running: true, arch: true });
+    const readbacks = { releaseId: String(fixture.state.product.id) };
+    for (const kind of ['desktop', 'standalone']) {
+      const names = fixture.state.product.assets.filter(asset => asset.name.startsWith('dzc-') === (kind === 'standalone'));
+      readbacks[kind] = { schema_version: 1, kind, tag, source_revision: 'a'.repeat(40), release_id: readbacks.releaseId,
+        run_id: 7001, run_attempt: 1, assets: names.map(asset => ({ id: asset.id, size: asset.size,
+          name: asset.name, sha256: asset.digest.slice(7) })) };
+    }
+    return { ...fixture, readbacks };
+  };
+  const publish = fixture => publishDual('publish-dual', version, fixture.config, 7001, 1, () => {},
+    fixture.transport, fixture.readbacks);
+  assert.equal(publish(make()).status, 'synchronized');
+  for (const change of [
+    fixture => { delete fixture.readbacks.desktop; },
+    fixture => { fixture.readbacks.releaseId = '11'; },
+    fixture => { fixture.readbacks.desktop.run_attempt = 2; },
+    fixture => { fixture.readbacks.standalone.source_revision = 'b'.repeat(40); },
+    fixture => { fixture.readbacks.standalone.assets.pop(); },
+    fixture => { fixture.readbacks.desktop.assets[0].id += 900; },
+    fixture => { fixture.readbacks.desktop.assets[0].sha256 = 'b'.repeat(64); },
+  ]) {
+    const fixture = make();
+    change(fixture);
+    assert.throws(() => publish(fixture), /readback/i);
+    assert.deepEqual(fixture.state.mutations, []);
+  }
+});
+
 test('desktop download resolves only unique artifacts from the exact candidate attempt', () => {
   const candidate = { source: 'a'.repeat(40), runId: '7001', attempt: '2' };
   const artifacts = desktopReleaseTargets.map((target, index) => ({
