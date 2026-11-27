@@ -14,11 +14,12 @@
 | 手动 CI，`full_validation=false`，其它开关关闭 | 上述 7 个基础实例，加历史 `mygo-installer`，共 8 个 | 手动触发没有 diff 基线，历史 installer 的 scope 默认要求执行 |
 | 手动 CI，默认 `full_validation=true`，其它开关关闭 | 基础 7 + 历史 installer 1 + 矩阵选择 1 + Tauri 4 + standalone 4 + NSIS 6 + Flatpak 2，共 25 个 | Windows ARM64 是交叉构建；历史/合成 installer 与当前发布包各有验收入口 |
 | 复用 `ci.yml` | `workflow_call` 的 `full_validation` 默认 true | 当前 `release.yml` 没有调用它；不能据此声称 tag 等待 full |
+| 候选源码验收 `source_acceptance=true` | 前端、Rust 与 Go 开发测试，Linux/Windows x64 真实客户端和桌面验收，汇总绑定被测 SHA | 该入口可单独运行，尚待正常 Release 接入；与全量安装和升级验收互补 |
 | `v*` tag push | draft、四目标 standalone、四目标双桌面构建/上传、`publish-dual` | 以本页“正常 tag 发布”部分的实际门槛为准 |
 
 日常 `mygo-installer` 检查的是**固定 alpha.9 已发布 payload + 当前 checkout 的安装器源码**。scope 比较 CI/Release workflow、MyGo installer/packaging/harness、进程 receipt 和图标等路径；没有有效 diff 基线或比较失败时也要求执行。它不是当前 beta.4 payload 的安装验收。实际来源见 [历史 payload 准备器](../scripts/package-published-mygo.py)。
 
-专项输入目前是可叠加的布尔开关，并未实现互斥模式：
+专项输入可以叠加。候选源码验收使用自己的两个 x64 目标，遇到同时请求专项的配置会明确失败。
 
 | 输入 | 当前调度事实 |
 |---|---|
@@ -46,7 +47,7 @@ PR 更新和新的 master push 会取消同组旧 CI。手动 full 不适用该�
 | Flatpak 最终环境 | [flatpak.yml](../.github/workflows/flatpak.yml)：Linux x64/ARM64，构建并经 `verify-flatpak.py` 验证后导出 | 在 org.gnome.Platform runtime 验证 OCR/paste；是 full 的验收 artifact，当前 tag 不发布 |
 | 性能与诊断 | `scripts/performance/tests` / frontend 的比较器与 fixture 单测；手动性能或崩溃入口 | 工具单测、崩溃诊断与真实性能测量分别报告，不互相代替 |
 
-full 目前在 Tauri 四目标和 standalone 四目标中分别 discovery `scripts/tests`，性能工具单测也在 Tauri 四目标重复执行，NSIS 纯打包检查在六场景重复执行。这是后续合并执行位置的基线，不表示每次 discovery 都运行了所有需要外部环境的用例。
+Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rust 客户端和原生桌面。Tauri 测试任务只运行其 Cargo 包的套件。完整验证仍有跨目标 Python discovery 和 NSIS 场景重复的纯打包检查。
 
 ### 六个 NSIS 场景的实际来源
 
@@ -66,6 +67,8 @@ full 目前在 Tauri 四目标和 standalone 四目标中分别 discovery `scrip
 ## 正常 tag 发布
 
 `release.yml` 的正常 push 路径并行创建 draft 和构建产物，standalone 上传等待 draft 与 standalone 构建，desktop 上传自行等待 draft 可用。最终 `verify-publish-and-promote` 依赖 `create-release`、`publish-desktop`、`publish-standalone-cli`，调用 [updater-release.mjs](../scripts/updater-release.mjs) 的 `publish-dual`：验证后先公开产品 release，再同步 stable/preview 频道。
+
+每个目标用一次 Cargo 构建产出 Tauri、桌面配套 CLI 和 Service，随后 Tauri 打包阶段复用已暂存的二进制，MyGo 使用相同目录。独立 CLI 下载保持原 ABI 构建边界。本地以同一路径构建并解包 Windows x64 NSIS 和 Linux x64 deb，两个 helper 的 SHA-256 和实际 CLI/MCP 集成通过。Release 首次运行计时仍需候选实测。
 
 当前门槛保留仓库/tag/SHA/run/attempt、必需 job、资产目录及时间、签名/版本/文件名、updater 下载读回和防降级检查。`dualReleaseJobs` 不包含完整源码 CI；旧 identity/upgrade 门槛也被 dual 分支排除。创建 draft 时的少量发布脚本单测不等于完整源码准入。
 

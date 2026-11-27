@@ -305,6 +305,7 @@ jobs:
         shell: pwsh
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
+          TAURI_ENV_TARGET_TRIPLE: ${{ matrix.target }}
         run: |
           pnpm run build
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -316,9 +317,7 @@ jobs:
             node scripts/tests/verify-desktop-web.mjs
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
-          $build = @('build', '--locked', '--release', '--manifest-path', 'src-tauri/Cargo.toml',
-                     '--bin', 'dezirclip', '--features', 'tauri/custom-protocol', '--target', $env:TARGET_TRIPLE)
-          cargo @build
+          node scripts/prepare-tauri-sidecars.mjs --with-desktop --release --phase bundle
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           pnpm run desktop:mygo:build --target "$env:TARGET_TRIPLE"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -326,7 +325,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $buildRoot = Join-Path $metadata.target_directory $env:TARGET_TRIPLE
           "directory=$(Join-Path $buildRoot 'release')" >> $env:GITHUB_OUTPUT
-          "sidecars=$(Join-Path $metadata.target_directory "sidecar-build/$env:TARGET_TRIPLE/release")" >> $env:GITHUB_OUTPUT
+          "sidecars=$(Join-Path $buildRoot 'release')" >> $env:GITHUB_OUTPUT
 
       - name: Bundle and sign Tauri using the standalone sidecars
         shell: pwsh
@@ -337,13 +336,16 @@ jobs:
         run: |
           $bundle = @('exec', 'tauri', 'bundle', '--ci', '--target', $env:TARGET_TRIPLE,
                       '--features', 'tauri/custom-protocol', '--config', 'src-tauri/tauri.sidecars.json', '--bundles')
+          $override = Join-Path $env:RUNNER_TEMP 'release-bundle.json'
+          $config = @{ build = @{ beforeBundleCommand = $null } }
           if ($IsWindows) {
-            $override = Join-Path $env:RUNNER_TEMP 'release-nsis.json'
-            Set-Content -LiteralPath $override -Value '{"bundle":{"windows":{"nsis":{"compression":"zlib"}}}}' -Encoding utf8
-            $bundle += @('nsis', '--config', $override)
+            $config.bundle = @{ windows = @{ nsis = @{ compression = 'zlib' } } }
+            $bundle += 'nsis'
           } else {
             $bundle += 'deb,appimage'
           }
+          Set-Content -LiteralPath $override -Value ($config | ConvertTo-Json -Depth 6 -Compress) -Encoding utf8
+          $bundle += @('--config', $override)
           pnpm @bundle
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 

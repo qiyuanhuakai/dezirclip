@@ -64,13 +64,13 @@ function assertReleaseSourceRouting(workflow) {
   return { identities: sections["collect-release-identities"], upgrades: sections["verify-final-windows-upgrade"] };
 }
 
-function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = "release", portable = false, omitOutput = false } = {}) {
+function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = "release", portable = false, omitOutput = false, withDesktop = false } = {}) {
   const temporaryRoot = resolve(tmpdir());
   const directory = mkdtempSync(join(temporaryRoot, "dzc-sidecar-contract-"));
   assert.equal(dirname(resolve(directory)), temporaryRoot);
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const targetDirectory = join(directory, "custom cargo target");
-  const producer = join(targetDirectory, "sidecar-build");
+  const producer = withDesktop ? targetDirectory : join(targetDirectory, "sidecar-build");
   const extension = target.includes("windows") ? ".exe" : "";
   const source = join(producer, target, profile, `dzc${extension}`);
   const serviceSource = join(producer, target, profile, `dzc-service${extension}`);
@@ -101,7 +101,9 @@ function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = 
     if (args[0] === "metadata") return JSON.stringify({ target_directory: targetDirectory });
     assert.deepEqual(args, ["build", "--locked", "-p", "dzc-cli", "-p", "dzc-service", "--bin", "dzc", "--bin", "dzc-service",
       "--no-default-features", "--target", target, "--target-dir", producer, "--features", "dzc-cli/native-screen,dzc-service/native-screen",
-      ...(profile === "release" ? ["--release"] : []), ...(portable ? ["--features", "dzc-cli/portable,dzc-service/portable"] : [])]);
+      ...(profile === "release" ? ["--release"] : []),
+      ...(withDesktop ? ["-p", "dezirclip", "--bin", "dezirclip", "--features", "dezirclip/desktop,tauri/custom-protocol"] : []),
+      ...(portable ? ["--features", "dzc-cli/portable,dzc-service/portable"] : [])]);
     if (!omitOutput) {
       mkdirSync(dirname(source), { recursive: true });
       writeFileSync(source, payload);
@@ -238,7 +240,7 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(desktop, /python scripts\/bundle-mygo\.py --target "\$MYGO_PLATFORM" --sidecars "\$SIDECARS"/);
   assert.match(desktop, /--revision "\$GITHUB_SHA" --tag "\$GITHUB_REF_NAME" --smoke/);
   assert.doesNotMatch(desktop, /--portable|package-portable\.ps1|portable-release/);
-  assert.match(desktop, /'--bin', 'dezirclip', '--features', 'tauri\/custom-protocol'/);
+  assert.match(desktop, /prepare-tauri-sidecars\.mjs --with-desktop --release --phase bundle/);
   assert.match(desktop, /'tauri', 'bundle'/);
   assert.doesNotMatch(desktop, /needs:.*create-release/);
   assert.match(desktop, /gh release view "\$env:GITHUB_REF_NAME" --json isDraft,tagName/);
@@ -346,9 +348,13 @@ test("RPM wrapper skips Windows before reading files or starting any command", (
 });
 
 test("release RPM reuses verified sidecars in the explicit target directory", (t) => {
-  const f = fixture(t, { host: "aarch64-unknown-linux-gnu" });
+  const f = fixture(t, { host: "aarch64-unknown-linux-gnu", withDesktop: true });
   const env = { DZC_BUILD_REVISION: "a".repeat(40) };
-  prepareSidecars({ repoRoot: f.directory, run: f.run, args: ["--phase", "bundle"], env });
+  const proof = prepareSidecars({ repoRoot: f.directory, run: f.run, args: ["--with-desktop", "--release", "--phase", "bundle"], env });
+  assert.equal(proof.withDesktop, true);
+  assert.equal(proof.source, f.source);
+  assert.equal(proof.serviceHelper.source, f.serviceSource);
+  assert.equal(f.calls.filter(([command, args]) => command === "cargo" && args[0] === "build").length, 1);
   writeFileSync(join(f.directory, "src-tauri/tauri.conf.json"),
     JSON.stringify({ version: "0.2.0-alpha.1", productName: "DezirClip" }));
   const expected = join(f.targetDirectory, f.target, "release/bundle/rpm/DezirClip-0.2.0-0.alpha.1.aarch64.rpm");

@@ -41,9 +41,10 @@ export function bundleRpm({ repoRoot = root, platform = process.platform, env = 
         || proof.declaredBuildSet?.sourceRevision !== env.DZC_BUILD_REVISION) {
       throw new Error("Previous Tauri bundle did not prepare the current release sidecars");
     }
+    const producer = proof.withDesktop ? metadata.target_directory : join(metadata.target_directory, "sidecar-build");
     for (const [name, sha256] of [["dzc", proof.sha256], ["dzc-service", proof.serviceHelper?.sha256]]) {
       const paths = [join(repoRoot, "src-tauri/binaries", `${name}-${target}`),
-        join(metadata.target_directory, "sidecar-build", target, "release", name)];
+        join(producer, target, "release", name)];
       if (!paths.every(path => createHash("sha256").update(readFileSync(path)).digest("hex") === sha256)) {
         throw new Error(`RPM sidecar differs: ${name}`);
       }

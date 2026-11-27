@@ -12,10 +12,12 @@ export function sidecarOptions(args, env) {
   if (![undefined, "", "true", "false"].includes(env.TAURI_ENV_DEBUG)) throw new Error("Invalid TAURI_ENV_DEBUG value");
   let explicitProfile;
   let portable = false;
+  let withDesktop = false;
   let phase = "manual";
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--portable") portable = true;
+    else if (arg === "--with-desktop") withDesktop = true;
     else if (arg === "--debug" || arg === "--release") {
       const requested = arg.slice(2);
       if (explicitProfile && explicitProfile !== requested) throw new Error("Conflicting sidecar profiles");
@@ -24,7 +26,8 @@ export function sidecarOptions(args, env) {
     } else if (arg === "--phase" && ["build", "bundle", "portable", "manual"].includes(args[index + 1])) phase = args[++index];
     else throw new Error(`Unknown sidecar option: ${arg}`);
   }
-  return { profile, portable, phase };
+  if (withDesktop && (phase !== "bundle" || portable)) throw new Error("A shared Cargo build requires desktop bundle preparation");
+  return { profile, portable, phase, ...(withDesktop ? { withDesktop } : {}) };
 }
 
 export function prepareSidecars({ args = process.argv.slice(2), env = process.env, run = execFileSync, repoRoot = resolve(dirname(script), "..") } = {}) {
@@ -38,13 +41,15 @@ export function prepareSidecars({ args = process.argv.slice(2), env = process.en
   const metadata = JSON.parse(run("cargo", ["metadata", "--format-version", "1", "--no-deps", "--locked"], { cwd: repoRoot, encoding: "utf8" }));
   if (typeof metadata.target_directory !== "string" || !metadata.target_directory) throw new Error("Cargo target directory is unavailable");
   const targetDirectory = resolve(repoRoot, metadata.target_directory);
-  // Tauri may copy external binaries into its own Cargo output directory.
-  // Keep the original helpers in an isolated producer namespace.
-  const producer = join(targetDirectory, "sidecar-build");
+  // The Tauri CLI's build path can copy external binaries into its own
+  // target directory. The release workflow calls only the bundle command.
+  const producer = options.withDesktop ? targetDirectory : join(targetDirectory, "sidecar-build");
   const cargoArgs = ["build", "--locked", "-p", "dzc-cli", "-p", "dzc-service", "--bin", "dzc", "--bin", "dzc-service",
     "--no-default-features", "--target", targetTriple, "--target-dir", producer,
     "--features", "dzc-cli/native-screen,dzc-service/native-screen"];
   if (options.profile === "release") cargoArgs.push("--release");
+  if (options.withDesktop) cargoArgs.push("-p", "dezirclip", "--bin", "dezirclip",
+    "--features", "dezirclip/desktop,tauri/custom-protocol");
   if (options.portable) cargoArgs.push("--features", "dzc-cli/portable,dzc-service/portable");
   run("cargo", cargoArgs, { cwd: repoRoot, stdio: "inherit" });
   const source = join(producer, targetTriple, options.profile, `dzc${extension}`);
