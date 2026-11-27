@@ -1,28 +1,28 @@
 use crate::app_state::AppDataDir;
 use crate::database::DbState;
-use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use crate::infrastructure::user_resource;
 use std::path::Path;
 use tauri::{AppHandle, Manager};
 
-fn require_selected_background(configured: Option<&str>, expected_path: &str) -> Result<(), String> {
+fn require_selected_background(configured: &str, expected_path: &str) -> Result<(), String> {
     if expected_path.is_empty() || expected_path.len() > 32_768 { return Err("UserResourceUnavailable".into()); }
-    if configured != Some(expected_path) { return Err("CustomBackgroundPending".into()); }
+    if configured != expected_path { return Err("CustomBackgroundPending".into()); }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn get_custom_background_resource(app: AppHandle, expected_path: String) -> Result<String, String> {
-    let configured = app.state::<DbState>().settings_repo.get("app.custom_background").map_err(|_| "UserResourceUnavailable")?;
-    require_selected_background(configured.as_deref(), &expected_path)?;
+    let history = app.state::<DbState>().history_service();
+    let configured = history.selected_background().map_err(|_| "UserResourceUnavailable")?;
+    require_selected_background(&configured, &expected_path)?;
     let path = expected_path.clone();
     let data_dir = app.state::<AppDataDir>().0.lock().map_err(|_| "UserResourceUnavailable")?.clone();
     let data = tauri::async_runtime::spawn_blocking(move || {
         let selected = user_resource::selected_background_path(&data_dir, Path::new(&path))?;
         user_resource::read_image(&selected)
     }).await.map_err(|_| "UserResourceUnavailable")??;
-    let current = app.state::<DbState>().settings_repo.get("app.custom_background").map_err(|_| "UserResourceUnavailable")?;
-    require_selected_background(current.as_deref(), &expected_path)?;
+    let current = history.selected_background().map_err(|_| "UserResourceUnavailable")?;
+    require_selected_background(&current, &expected_path)?;
     Ok(data)
 }
 
@@ -30,8 +30,7 @@ pub async fn get_custom_background_resource(app: AppHandle, expected_path: Strin
 mod tests {
     use super::*;
     use base64::Engine;
-    use crate::infrastructure::repository::settings_repo::SqliteSettingsRepository;
-    use std::sync::{Arc, Mutex};
+    use dzc_core::api::HistoryService;
 
     #[test]
     fn selected_background_png_roundtrips_real_settings_filesystem_and_decoder() {
@@ -44,21 +43,20 @@ mod tests {
         let selected = owned.join("背景 测试.png");
         image::DynamicImage::new_rgba8(64, 48).save(&selected).unwrap();
         let expected = selected.to_str().unwrap();
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)", []).unwrap();
-        let repo = SqliteSettingsRepository::new(Arc::new(Mutex::new(conn)));
-        assert_eq!(require_selected_background(repo.get("app.custom_background").unwrap().as_deref(), expected).unwrap_err(), "CustomBackgroundPending");
-        repo.set("app.custom_background", expected).unwrap();
-        let persisted = repo.get("app.custom_background").unwrap();
-        require_selected_background(persisted.as_deref(), expected).unwrap();
+        let history = HistoryService::open(Path::new(":memory:")).unwrap();
+        let epoch = history.runtime_snapshot(0).unwrap().privacy_epoch;
+        assert_eq!(require_selected_background(&history.selected_background().unwrap(), expected).unwrap_err(), "CustomBackgroundPending");
+        history.update_view_setting("app.custom_background", expected, epoch).unwrap();
+        require_selected_background(&history.selected_background().unwrap(), expected).unwrap();
         let path = user_resource::selected_background_path(&data_dir, Path::new(expected)).unwrap();
         let url = user_resource::read_image(&path).unwrap();
         let bytes = base64::engine::general_purpose::STANDARD.decode(url.strip_prefix("data:image/png;base64,").unwrap()).unwrap();
         assert_eq!(bytes, std::fs::read(&selected).unwrap());
         assert_eq!(image::load_from_memory(&bytes).unwrap().width(), 64);
         assert_eq!(image::load_from_memory(&bytes).unwrap().height(), 48);
-        repo.set("app.custom_background", "new-selection.png").unwrap();
-        assert_eq!(require_selected_background(repo.get("app.custom_background").unwrap().as_deref(), expected).unwrap_err(), "CustomBackgroundPending");
+        let new_selection = selected.with_file_name("new-selection.png");
+        history.update_view_setting("app.custom_background", new_selection.to_str().unwrap(), epoch).unwrap();
+        assert_eq!(require_selected_background(&history.selected_background().unwrap(), expected).unwrap_err(), "CustomBackgroundPending");
     }
 }
 
