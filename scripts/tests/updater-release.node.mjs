@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, publishAndSync, publishDual, syncPublished, resumeVerifiedDraft, promote as promoteFile, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
-import { attachDesktopCandidates, desktopArtifactIds, desktopReleaseTargets, expectedDesktopCandidateFiles, stageDesktopCandidate } from '../updater-release.mjs';
+import { attachDesktopCandidates, desktopArtifactIds, desktopReleaseTargets, expectedDesktopCandidateFiles, readStandaloneCandidates, standaloneArtifactIds, stageDesktopCandidate } from '../updater-release.mjs';
 
 const gateNames = ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'];
 const gateReport = (receipt, kind) => ({ schema_version: 1, kind, status: 'passed',
@@ -409,6 +409,9 @@ test('desktop download resolves only unique artifacts from the exact candidate a
     { ...first, id: 42, name: first.name.replace(/-2$/, '-1') }, ...artifacts,
   ]));
   assert.deepEqual(ids, artifacts.map(artifact => artifact.id));
+  const standalone = artifacts.map((artifact, index) => ({ ...artifact, name: `release-cli-2-${desktopReleaseTargets[index]}` }));
+  assert.deepEqual(standaloneArtifactIds(candidate, transport(standalone)), ids);
+  assert.throws(() => standaloneArtifactIds(candidate, transport(artifacts)), /missing/);
   assert.throws(() => desktopArtifactIds(candidate, transport(remaining)), /missing/);
   assert.throws(() => desktopArtifactIds(candidate, transport([...artifacts, first])), /does not identify/);
   assert.throws(() => desktopArtifactIds(candidate, transport([{ ...first, id: remaining[0].id }, ...remaining])), /not unique/);
@@ -420,6 +423,27 @@ test('desktop download resolves only unique artifacts from the exact candidate a
   ]) {
     assert.throws(() => desktopArtifactIds(candidate, transport([{ ...first, ...other }, ...remaining])), /does not identify/);
   }
+});
+
+test('standalone attachment requires the exact archives and matching checksums', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'dezirclip-cli-assets-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const tag = 'v0.2.0-beta.4';
+  const names = desktopReleaseTargets.map(target =>
+    `dzc-0.2.0-beta.4-${target}.${target.startsWith('windows-') ? 'zip' : 'tar.gz'}`);
+  for (const name of names) {
+    const bytes = Buffer.from(name);
+    const sha = createHash('sha256').update(bytes).digest('hex');
+    writeFileSync(join(directory, name), bytes);
+    const newline = name.endsWith('.zip') ? '\r\n' : '\n';
+    writeFileSync(join(directory, `${name}.sha256`), `${sha}  ${name}${newline}`);
+  }
+  assert.deepEqual(readStandaloneCandidates(tag, directory).map(asset => asset.name),
+    names.flatMap(name => [name, `${name}.sha256`]));
+  writeFileSync(join(directory, names[0]), 'wrong payload');
+  assert.throws(() => readStandaloneCandidates(tag, directory), /archive digest differs/);
+  writeFileSync(join(directory, 'extra.txt'), 'untracked');
+  assert.throws(() => readStandaloneCandidates(tag, directory), /inventory differs/);
 });
 
 test('the desktop consumer attaches verified producer bytes to the fixed draft and resumes matching bytes', (t) => {
@@ -462,7 +486,7 @@ test('the desktop consumer attaches verified producer bytes to the fixed draft a
     }
     return '';
   };
-  assert.throws(() => attachDesktopCandidates({ ...candidate, releaseId: '11' }, fakeTransport), /original desktop draft/);
+  assert.throws(() => attachDesktopCandidates({ ...candidate, releaseId: '11' }, fakeTransport), /original draft/);
   assert.equal(uploads, 0);
   const uploaded = attachDesktopCandidates(candidate, fakeTransport);
   assert.equal(uploaded.length, 32);
@@ -471,7 +495,7 @@ test('the desktop consumer attaches verified producer bytes to the fixed draft a
   assert.equal(uploads, 1);
   const original = bodies.get(1);
   bodies.set(1, Buffer.from('different bytes despite stale metadata'));
-  assert.throws(() => attachDesktopCandidates(candidate, fakeTransport), /Uploaded desktop bytes differ/);
+  assert.throws(() => attachDesktopCandidates(candidate, fakeTransport), /Uploaded product bytes differ/);
   bodies.set(1, original);
   const windows = 'windows-x86_64';
   const path = join(directory, `release-desktop-${windows}-1`, expectedDesktopCandidateFiles(candidate.tag, windows)[0]);

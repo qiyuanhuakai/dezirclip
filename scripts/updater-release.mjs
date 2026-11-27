@@ -383,18 +383,18 @@ export function expectedDesktopCandidateFiles(version, target, archPackages = tr
 const desktopBuildReceipt = 'desktop-build.json';
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 
-function localDesktopAsset(path) {
+function localReleaseAsset(path) {
   const stat = lstatSync(path);
-  if (!stat.isFile() || !stat.size) throw new Error(`Invalid desktop asset: ${basename(path)}`);
+  if (!stat.isFile() || !stat.size) throw new Error(`Invalid release asset: ${basename(path)}`);
   const bytes = readFileSync(path);
-  if (bytes.length !== stat.size) throw new Error(`Desktop asset changed while reading: ${basename(path)}`);
+  if (bytes.length !== stat.size) throw new Error(`Release asset changed while reading: ${basename(path)}`);
   return { name: basename(path), size: bytes.length, sha256: digest(bytes) };
 }
 
 function requireExactNames(actual, expected, context) {
   if (actual.length !== expected.length || new Set(actual).size !== expected.length ||
       expected.some(name => !actual.includes(name))) {
-    throw new Error(`Desktop asset inventory differs: ${context}`);
+    throw new Error(`Release asset inventory differs: ${context}`);
   }
 }
 
@@ -405,12 +405,12 @@ export function stageDesktopCandidate({ tag, source, target, runId, attempt, des
   }
   const expected = expectedDesktopCandidateFiles(tag, target);
   requireExactNames(files.map(file => basename(file)), expected, target);
-  const inputs = files.map(file => ({ file, ...localDesktopAsset(file) }));
+  const inputs = files.map(file => ({ file, ...localReleaseAsset(file) }));
   mkdirSync(destination);
   const assets = inputs.map(({ file, name, size, sha256 }) => {
     const staged = join(destination, name);
     copyFileSync(file, staged, constants.COPYFILE_EXCL);
-    const asset = localDesktopAsset(staged);
+    const asset = localReleaseAsset(staged);
     if (asset.size !== size || asset.sha256 !== sha256) throw new Error(`Desktop staging changed ${name}`);
     return asset;
   });
@@ -435,45 +435,77 @@ export function readDesktopCandidates({ tag, source, runId, attempt, directory }
     requireExactNames(receipt.assets.map(asset => asset.name), expected, target);
     return receipt.assets.map(asset => {
       const path = join(root, asset.name);
-      const actual = localDesktopAsset(path);
+      const actual = localReleaseAsset(path);
       if (actual.size !== asset.size || actual.sha256 !== asset.sha256) throw new Error(`Desktop asset digest differs: ${asset.name}`);
       return { ...actual, path };
     });
   });
 }
 
-export function desktopArtifactIds({ source, runId, attempt }, transport = gh) {
+function candidateArtifactIds({ source, runId, attempt }, nameForTarget, transport) {
   if (!/^[a-f0-9]{40}$/.test(source) || !/^[1-9][0-9]*$/.test(runId) ||
-      !/^[1-9][0-9]*$/.test(attempt)) throw new Error("Invalid desktop artifact provenance");
+      !/^[1-9][0-9]*$/.test(attempt)) throw new Error("Invalid candidate artifact provenance");
   const pages = JSON.parse(transport(['api', `repos/${repository}/actions/runs/${runId}/artifacts?per_page=100`,
     '--paginate', '--slurp']));
   if (!Array.isArray(pages) || !pages.length || pages.some(page => !Array.isArray(page.artifacts))) {
-    throw new Error("Incomplete desktop artifact listing");
+    throw new Error("Incomplete candidate artifact listing");
   }
   const artifacts = pages.flatMap(page => page.artifacts);
   const ids = desktopReleaseTargets.map(target => {
-    const requested = `release-desktop-${target}-${attempt}`;
+    const requested = nameForTarget(target, attempt);
     const matches = artifacts.filter(artifact => artifact.name === requested);
     const [artifact] = matches;
     if (matches.length !== 1 || !Number.isSafeInteger(artifact.id) || artifact.id <= 0 || artifact.expired !== false ||
         artifact.workflow_run?.id !== Number(runId) || artifact.workflow_run.head_sha !== source ||
         artifact.workflow_run.head_repository_id !== artifact.workflow_run.repository_id ||
         !/^sha256:[a-f0-9]{64}$/.test(artifact.digest ?? '')) {
-      throw new Error(`Desktop producer artifact is missing or does not identify the candidate: ${target}`);
+      throw new Error(`Producer artifact is missing or does not identify the candidate: ${requested}`);
     }
     return artifact.id;
   });
-  if (new Set(ids).size !== desktopReleaseTargets.length) throw new Error("Desktop producer IDs are not unique");
+  if (new Set(ids).size !== desktopReleaseTargets.length) throw new Error("Candidate producer IDs are not unique");
   return ids;
 }
 
-export function attachDesktopCandidates({ tag, source, runId, attempt, directory, releaseId }, transport = gh) {
-  const assets = readDesktopCandidates({ tag, source, runId, attempt, directory });
+export function desktopArtifactIds(candidate, transport = gh) {
+  return candidateArtifactIds(candidate, (target, attempt) => `release-desktop-${target}-${attempt}`, transport);
+}
+
+export function standaloneArtifactIds(candidate, transport = gh) {
+  return candidateArtifactIds(candidate, (target, attempt) => `release-cli-${attempt}-${target}`, transport);
+}
+
+function standaloneArchiveName(version, target) {
+  return `dzc-${version}-${target}.${target.startsWith('windows-') ? 'zip' : 'tar.gz'}`;
+}
+
+export function readStandaloneCandidates(tag, directory) {
+  const { value } = parseVersion(tag);
+  const archives = desktopReleaseTargets.map(target => standaloneArchiveName(value, target));
+  requireExactNames(readdirSync(directory), archives.flatMap(name => [name, `${name}.sha256`]), 'standalone archives');
+  return archives.flatMap(name => {
+    const path = join(directory, name);
+    const checksum = `${path}.sha256`;
+    const archive = { ...localReleaseAsset(path), path };
+    const companion = { ...localReleaseAsset(checksum), path: checksum };
+    const contents = readFileSync(checksum, 'utf8').replace(/\r\n$/, '\n');
+    if (contents !== `${archive.sha256}  ${name}\n`) {
+      throw new Error(`Standalone archive digest differs: ${name}`);
+    }
+    return [archive, companion];
+  });
+}
+
+export function attachDesktopCandidates(candidate, transport = gh) {
+  return attachReleaseFiles(candidate, readDesktopCandidates(candidate), transport);
+}
+
+function attachReleaseFiles({ tag, source, releaseId }, assets, transport) {
   const client = githubClient(transport, true);
   const assertDraft = () => {
     const release = client.releaseByTag(tag);
     if (String(release.id) !== releaseId || release.draft !== true || client.releaseCommit(tag) !== source) {
-      throw new Error("The original desktop draft no longer identifies this candidate");
+      throw new Error("The original draft no longer identifies this candidate");
     }
     return release;
   };
@@ -483,7 +515,7 @@ export function attachDesktopCandidates({ tag, source, runId, attempt, directory
     const [asset] = matches;
     if (matches.length !== 1 || asset.state !== 'uploaded' || asset.size !== expected.size ||
         asset.digest !== `sha256:${expected.sha256}` || !Number.isSafeInteger(asset.id) || asset.id <= 0) {
-      throw new Error(`Desktop draft conflicts with the candidate: ${expected.name}`);
+      throw new Error(`Release draft conflicts with the candidate: ${expected.name}`);
     }
     return asset;
   };
@@ -494,7 +526,7 @@ export function attachDesktopCandidates({ tag, source, runId, attempt, directory
   return assets.map(asset => {
     const remote = matching(uploaded, asset);
     if (!remote || digest(client.downloadAsset(remote)) !== asset.sha256) {
-      throw new Error(`Uploaded desktop bytes differ: ${asset.name}`);
+      throw new Error(`Uploaded product bytes differ: ${asset.name}`);
     }
     return { id: remote.id, name: asset.name, size: asset.size, sha256: asset.sha256 };
   });
@@ -505,7 +537,7 @@ function verifiedReleaseAssets(release, version, cutoff, dual = false, archPacka
   const rpm = rpmBundleConfig(value);
   const rpmVersion = rpm.version, rpmRelease = rpm.bundle.linux.rpm.release;
   const updater = Object.values(expectedPlatforms).map(suffix => `DezirClip_${value}_${suffix}`);
-  const cli = Object.keys(expectedPlatforms).map(platform => `dzc-${value}-${platform}.${platform.startsWith('windows-') ? 'zip' : 'tar.gz'}`);
+  const cli = desktopReleaseTargets.map(target => standaloneArchiveName(value, target));
   const deb = ['amd64', 'arm64'].map(arch => `DezirClip_${value}_${arch}.deb`);
   const names = cli.flatMap(name => [name, `${name}.sha256`]);
   if (dual) {
@@ -804,8 +836,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const assets = attachDesktopCandidates({ tag: version, source: acceptancePath, directory: runAttempt, releaseId: upgradePath,
       runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT });
     console.log(JSON.stringify({ release_id: upgradePath, source_revision: acceptancePath, assets }));
-  } else if (mode === 'desktop-artifact-ids') {
-    console.log(desktopArtifactIds({ source: acceptancePath, runId: process.env.GITHUB_RUN_ID,
+  } else if (mode === 'attach-standalone') {
+    const assets = attachReleaseFiles({ tag: version, source: acceptancePath, releaseId: upgradePath },
+      readStandaloneCandidates(version, runAttempt), gh);
+    console.log(JSON.stringify({ release_id: upgradePath, source_revision: acceptancePath, assets }));
+  } else if (mode === 'desktop-artifact-ids' || mode === 'standalone-artifact-ids') {
+    const resolveIds = mode === 'desktop-artifact-ids' ? desktopArtifactIds : standaloneArtifactIds;
+    console.log(resolveIds({ source: acceptancePath, runId: process.env.GITHUB_RUN_ID,
       attempt: process.env.GITHUB_RUN_ATTEMPT }).join(','));
   } else if (mode === 'publish-only') publishOnly(version, config);
   else if (Object.hasOwn(dualActions, mode) && acceptancePath && runAttempt && !upgradePath) {

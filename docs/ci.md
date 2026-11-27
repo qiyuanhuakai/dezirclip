@@ -66,9 +66,9 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 
 ## 正常 tag 发布
 
-`release.yml` 并行创建 draft、构建产物与执行候选源码验收。standalone 上传等待其构建和 draft。桌面构建将签名后的文件与每个目标的哈希上传为 Actions 产物，上传任务按当前运行的源码 SHA 和 attempt 解析四个生产 artifact ID，下载并复核各目标的目录后绑定 draft ID，通过版本 tag 上传，并按远端 asset ID 读回桌面文件校验内容。最终发布任务按源码验收任务返回的 artifact ID 下载记录并核对同一次运行的源码 SHA，再公开产品 release 并同步 stable/preview。 [发布脚本](../scripts/updater-release.mjs)
+`release.yml` 并行创建 draft、构建产物与执行候选源码验收。standalone 上传等待其构建和 draft，按当前 attempt 的固定 artifact ID 下载四份归档，核对校验文件、绑定 draft ID 并读回已上传 asset。桌面构建将签名后的文件与每个目标的哈希上传为 Actions 产物，上传任务按当前运行的源码 SHA 和 attempt 解析四个生产 artifact ID，下载并复核各目标的目录后绑定 draft ID，通过版本 tag 上传，并按远端 asset ID 读回桌面文件校验内容。最终发布任务按源码验收任务返回的 artifact ID 下载记录并核对同一次运行的源码 SHA，再公开产品 release 并同步 stable/preview。 [发布脚本](../scripts/updater-release.mjs)
 
-每个目标用一次 Cargo 构建产出 Tauri、桌面配套 CLI 和 Service，随后 Tauri 打包阶段复用已暂存的二进制，MyGo 使用相同目录。独立 CLI 下载保持原 ABI 构建边界。本地以同一路径构建并解包 Windows x64 NSIS 和 Linux x64 deb，两个 helper 的 SHA-256 和实际 CLI/MCP 集成通过。Release 首次运行计时仍需候选实测。
+每个目标用一次 Cargo 构建产出 Tauri、桌面配套 CLI 和 Service，随后 Tauri 打包阶段复用已暂存的二进制，MyGo 使用相同目录。独立 CLI 下载保持原 ABI 构建边界。生产 Web bundle 的浏览器测试在源码验收执行一次。本地以同一路径构建并解包 Windows x64 NSIS 和 Linux x64 deb，两个 helper 的 SHA-256 和实际 CLI/MCP 集成通过。Release 首次运行计时仍需候选实测。
 
 当前门槛保留仓库/tag/SHA/run/attempt、必需 job、资产目录及时间、签名/版本/文件名、updater 下载读回和防降级检查。恢复含 Arch 资产的候选时也核对原 Release run 的源码验收工作。最终包的独立验证与候选封存仍待接入。
 
@@ -123,7 +123,7 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 ## 名称消费者、产物命名与仓库外设置
 
 - 发布 verifier 以 job 显示名称作精确匹配：当前 `dualReleaseJobs`、以及历史 `fullSourceJobs`、`nativeReleaseJobs`、`releaseGateJobs`、`optionalReleaseJobs` 均在 `updater-release.mjs`。改名、复用前缀、skip 规则或新增后置 job 时要同步该消费者及 [updater-release.node.mjs](../scripts/tests/updater-release.node.mjs)、[packaging-sidecars.node.mjs](../scripts/tests/packaging-sidecars.node.mjs) 等连接契约，不能把所有 skipped 一概视为通过。
-- `ci.yml` 的复用验收 artifact 使用 `acceptance-cli-*`、`acceptance-flatpak-*`；正常 Release 的 standalone 使用 `release-cli-*`，下载器只选择该前缀。当前正常 tag 没有 `release-flatpak-*` 生产者。
+- `ci.yml` 的复用验收 artifact 使用 `acceptance-cli-*`、`acceptance-flatpak-*`；正常 Release 的 standalone 使用 `release-cli-<attempt>-<target>`，通过固定 ID 下载。当前正常 tag 没有 `release-flatpak-*` 生产者。
 - [release-identities.yml](../.github/workflows/release-identities.yml)、[release-windows-upgrade.yml](../.github/workflows/release-windows-upgrade.yml) 当前仅由 `resume-existing-alpha2` 历史分支调用。beta.4 checkout 不满足该恢复路径的版本/来源约束；菜单存在不代表当前可执行。它们及旧脚本仍有公共 helper/历史行为消费者，不能仅按年代删除。
 - branch/tag protection、外部 required checks、environment 审批、组织 token 策略及 runner 配额未在本次本地核对中取得；不能声称已经设置。更改 check 名称前须只读核对实际规则及消费者。当前没有统一“计划与实际执行集合”汇总 gate，绿色界面本身不能证明请求的所有场景均已执行。
 

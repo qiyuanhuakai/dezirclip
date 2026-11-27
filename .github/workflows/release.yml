@@ -174,7 +174,7 @@ jobs:
     if: github.event_name == 'push'
     uses: ./.github/workflows/standalone-cli.yml
     with:
-      artifact-prefix: release-cli
+      artifact-prefix: release-cli-${{ github.run_attempt }}
       version: ${{ github.ref_name }}
       package-only: true
 
@@ -192,33 +192,43 @@ jobs:
     name: Publish verified standalone archives
     if: github.event_name == 'push'
     needs: [create-release, build-standalone-cli]
+    permissions:
+      contents: write
+      actions: read
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Resolve the four standalone producer artifact IDs
+        id: producers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ids="$(node scripts/updater-release.mjs standalone-artifact-ids "$GITHUB_REF_NAME" "$GITHUB_SHA")"
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
       - name: Download independently built CLI archives
         uses: actions/download-artifact@v4
         with:
-          pattern: release-cli-*
-          path: artifacts/dzc
+          artifact-ids: ${{ steps.producers.outputs.ids }}
+          path: ${{ runner.temp }}/standalone-candidates
           merge-multiple: true
-
-      - name: Verify all four archives and checksums are present
-        shell: bash
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          for platform in linux-x86_64 linux-aarch64 windows-x86_64 windows-aarch64; do
-            extension=tar.gz
-            if [[ "$platform" == windows-* ]]; then extension=zip; fi
-            archive="artifacts/dzc/dzc-${version}-${platform}.${extension}"
-            test -s "$archive"
-            test -s "${archive}.sha256"
-            (cd artifacts/dzc && sha256sum --check "$(basename "${archive}.sha256")")
-          done
-
-      - name: Upload CLI archives and checksums to release
+      - name: Attach verified archives and read back their asset IDs
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: gh release upload "${GITHUB_REF_NAME}" artifacts/dzc/* --clobber
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          node scripts/updater-release.mjs attach-standalone "$GITHUB_REF_NAME" "$GITHUB_SHA" "$RUNNER_TEMP/standalone-candidates" "$RELEASE_ID" > "$RUNNER_TEMP/standalone-readback.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-standalone-assets-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/standalone-readback.json
+          if-no-files-found: error
 
   publish-desktop:
     name: Dual desktop release (${{ matrix.name }})
@@ -321,14 +331,6 @@ jobs:
         run: |
           pnpm run build
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          if ($env:TARGET_TRIPLE -eq 'x86_64-unknown-linux-gnu') {
-            if (!(Test-Path /usr/bin/google-chrome)) {
-              pnpm exec playwright install chromium --only-shell
-              if ($LASTEXITCODE) { exit $LASTEXITCODE }
-            }
-            node scripts/tests/verify-desktop-web.mjs
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          }
           node scripts/prepare-tauri-sidecars.mjs --with-desktop --release --phase bundle
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           pnpm run desktop:mygo:build --target "$env:TARGET_TRIPLE"

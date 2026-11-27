@@ -140,3 +140,9 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **R3 早期 GPU 探针**。启动时先尝试取得 SQLite 主文件现有锁，Core 仅查询已检查点的只读数据库，不初始化或恢复数据库。活跃写入、未清理的 journal/WAL/SHM 或不支持锁时保留 false fallback。Linux 取得排他锁需要可写描述符，探针本身没有写操作。Windows/Linux 各通过三项测试，覆盖缺库、无效库、旧库、正常关闭的 WAL、并发 writer 和原有布尔值。
 - **C4 WebView 验收测试**。Windows 原生升级验收调用独立的 CDP 页面查找函数。现有 fake clock 用例现在直接调用同一个函数，覆盖拒绝、超时、预算用尽、到期后响应和正常响应。移除 Python 读取源码并用 `node -e` 间接运行的入口，Windows 本地成功执行七项 Node 用例和八项其余 Python 检查。
 - **R6 快贴和更新设置**。Tauri 从同一次 Core 读取取得列表/环形布局及扇区数量，保留旧设置值的回退规则。自动检查仅在明确开启后调度，原有通道偏好和分通道时间戳由窄 Core API 访问。Windows/Linux 桌面类型检查与更新设置回归通过，Windows 验证了快贴读取缺省值和无效旧值。
+
+### 启动设置与候选产物
+
+- Tauri 通过 Core 的桌面启动接口装配原有数据库、仓库与缓存，并通过类型化设置读取窗口尺寸、置顶和启动偏好。Windows 和 Linux 的实际 SQLite 测试验证原有 WAL、默认值、旧配置、保存窗口大小及游戏模式回退。尚有其它命令使用 legacy bridge。
+- 两端 React Web 构建共用隐私状态。MyGo 兼容桥直接读取会话状态，避免桥接与会话生命周期之间的循环依赖。TypeScript 和 18 项隐私测试通过。
+- 四个独立 CLI 归档和桌面包按 artifact ID 下载，绑定固定 draft 并按远端 asset ID 读回。共享 NSIS 样件的六个 Windows 场景已通过 GitHub Actions，其中 LegacyUninstall 继续使用固定的历史公开安装器。完整出货包验收、发布封存与中断恢复仍待完成。

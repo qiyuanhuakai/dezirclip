@@ -28,7 +28,7 @@ test("standalone acceptance and release artifacts have disjoint namespaces", () 
   });
   assert(prefixes.every(Boolean));
   assert.notEqual(prefixes[0], prefixes[1]);
-  assert.match(releaseJob(release, "publish-standalone-cli"), /pattern: release-cli-\*/);
+  assert.match(releaseJob(release, "publish-standalone-cli"), /artifact-ids:/);
 });
 
 function releaseJob(workflow, name) {
