@@ -324,8 +324,11 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
   }
   const currentContract = dual && (archSteps.length === 1 || jobs.some(job => candidateSourceJobs.includes(job.name)));
   if (currentContract && archSteps.length === 0) throw new Error('Arch Linux package verification did not execute');
+  const windowsJobs = windowsVariants.map(windowsCandidateJob);
+  const windowsCandidateGate = dual && jobs.some(job => windowsJobs.includes(job.name));
   const requiredJobs = dual
-    ? (currentContract ? [...dualReleaseJobs, desktopUploadJob, ...candidateSourceJobs] : dualReleaseJobs)
+    ? [...(currentContract ? [...dualReleaseJobs, desktopUploadJob, ...candidateSourceJobs] : dualReleaseJobs),
+      ...(windowsCandidateGate ? windowsJobs : [])]
     : [...releaseGateJobs, ...nativeReleaseJobs];
   const publishers = jobs.filter(job => publisherJobs.includes(job.name));
   if (publishers.length !== 1 || (!dual && requiresMyGo(tag) && jobs.filter(job => job.name === mygoJob).length !== 1)
@@ -349,7 +352,8 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
   }
   return { run_id: Number(runId), run_attempt: Number(runAttempt), workflow_id: workflow.id,
     status: run.status, conclusion: run.conclusion, asset_cutoff: dual ? Math.max(...times) : Math.min(...times),
-    ...(dual ? { run_started_at: run.run_started_at, arch_packages: archSteps.length === 1, source_acceptance: currentContract } : {}),
+    ...(dual ? { run_started_at: run.run_started_at, arch_packages: archSteps.length === 1, source_acceptance: currentContract,
+      windows_candidate_gate: windowsCandidateGate } : {}),
     jobs: jobs.map(job => ({ id: job.id, name: job.name, status: job.status, conclusion: job.conclusion,
       started_at: job.started_at })).sort((a, b) => a.id - b.id) };
 }
@@ -422,27 +426,30 @@ export function stageDesktopCandidate({ tag, source, target, runId, attempt, des
 export function readDesktopCandidates({ tag, source, runId, attempt, directory }) {
   const names = desktopReleaseTargets.map(target => `release-desktop-${target}-${attempt}`);
   requireExactNames(readdirSync(directory), names, 'producer artifacts');
-  return desktopReleaseTargets.flatMap((target, index) => {
-    const root = join(directory, names[index]);
-    if (!lstatSync(root).isDirectory()) throw new Error(`Invalid desktop producer directory: ${target}`);
-    const expected = expectedDesktopCandidateFiles(tag, target);
-    requireExactNames(readdirSync(root), [...expected, desktopBuildReceipt], target);
-    const { value: receipt } = readEvidenceJson(join(root, desktopBuildReceipt));
-    if (receipt.schema_version !== 1 || receipt.tag !== tag || receipt.source_revision !== source ||
-        receipt.target !== target || receipt.run_id !== runId || receipt.run_attempt !== attempt || !Array.isArray(receipt.assets)) {
-      throw new Error(`Desktop receipt has the wrong provenance: ${target}`);
-    }
-    requireExactNames(receipt.assets.map(asset => asset.name), expected, target);
-    return receipt.assets.map(asset => {
-      const path = join(root, asset.name);
-      const actual = localReleaseAsset(path);
-      if (actual.size !== asset.size || actual.sha256 !== asset.sha256) throw new Error(`Desktop asset digest differs: ${asset.name}`);
-      return { ...actual, path, target };
-    });
+  return desktopReleaseTargets.flatMap((target, index) => readDesktopCandidate({
+    tag, source, runId, attempt, target, directory: join(directory, names[index]),
+  }));
+}
+
+function readDesktopCandidate({ tag, source, runId, attempt, target, directory }) {
+  if (!lstatSync(directory).isDirectory()) throw new Error(`Invalid desktop producer directory: ${target}`);
+  const expected = expectedDesktopCandidateFiles(tag, target);
+  requireExactNames(readdirSync(directory), [...expected, desktopBuildReceipt], target);
+  const { value: receipt } = readEvidenceJson(join(directory, desktopBuildReceipt));
+  if (receipt.schema_version !== 1 || receipt.tag !== tag || receipt.source_revision !== source ||
+      receipt.target !== target || receipt.run_id !== runId || receipt.run_attempt !== attempt || !Array.isArray(receipt.assets)) {
+    throw new Error(`Desktop receipt has the wrong provenance: ${target}`);
+  }
+  requireExactNames(receipt.assets.map(asset => asset.name), expected, target);
+  return receipt.assets.map(asset => {
+    const path = join(directory, asset.name);
+    const actual = localReleaseAsset(path);
+    if (actual.size !== asset.size || actual.sha256 !== asset.sha256) throw new Error(`Desktop asset digest differs: ${asset.name}`);
+    return { ...actual, path, target };
   });
 }
 
-function candidateArtifactIds({ source, runId, attempt }, nameForTarget, transport) {
+function candidateArtifactIds({ source, runId, attempt }, nameForTarget, transport, targets = desktopReleaseTargets) {
   if (!/^[a-f0-9]{40}$/.test(source) || !/^[1-9][0-9]*$/.test(runId) ||
       !/^[1-9][0-9]*$/.test(attempt)) throw new Error("Invalid candidate artifact provenance");
   const pages = JSON.parse(transport(['api', `repos/${repository}/actions/runs/${runId}/artifacts?per_page=100`,
@@ -451,7 +458,7 @@ function candidateArtifactIds({ source, runId, attempt }, nameForTarget, transpo
     throw new Error("Incomplete candidate artifact listing");
   }
   const artifacts = pages.flatMap(page => page.artifacts);
-  const ids = desktopReleaseTargets.map(target => {
+  const ids = targets.map(target => {
     const requested = nameForTarget(target, attempt);
     const matches = artifacts.filter(artifact => artifact.name === requested);
     const [artifact] = matches;
@@ -463,7 +470,7 @@ function candidateArtifactIds({ source, runId, attempt }, nameForTarget, transpo
     }
     return artifact.id;
   });
-  if (new Set(ids).size !== desktopReleaseTargets.length) throw new Error("Candidate producer IDs are not unique");
+  if (new Set(ids).size !== targets.length) throw new Error("Candidate artifact IDs are not unique");
   return ids;
 }
 
@@ -473,6 +480,103 @@ export function desktopArtifactIds(candidate, transport = gh) {
 
 export function standaloneArtifactIds(candidate, transport = gh) {
   return candidateArtifactIds(candidate, (target, attempt) => `release-cli-${attempt}-${target}`, transport);
+}
+
+const windowsX64 = 'windows-x86_64';
+const windowsVariants = ['tauri', 'mygo'];
+const windowsCandidateJob = variant => `Verify final Windows installer (${variant})`;
+const windowsPublished = {
+  'v0.2.0': { source: 'ba0ad71f7b9d8caddac45d0bc5588254a8273482', releaseId: 460242002,
+    tauri: [799308519, 799308514, 'e9406e6da0ad5cbe64d1f45209ac82e34d8161d5d6ce2da50737f835c83e25dd'],
+    mygo: [799308522, 799308518, 'f7d408f94eec8118767457db90c43ef5e232ae0b6cce63d8c80c0704c33fca92'] },
+  'v0.2.0-rc5': { source: '026c931a06656a4e9a40ef28360acf13564c9f03', releaseId: 460224068,
+    tauri: [799245488, 799245496, '2d20646581c453ba86d7954c34f6710d9d416a9c49065a1715e3eb038bc40202'],
+    mygo: [799245492, 799245493, '1ca4ee2050edf7afd858d1194d2f30e1e12d657d6faf01b97423e03c04dd93fd'] },
+};
+
+function windowsInstaller(tag, variant) {
+  const { value } = parseVersion(tag);
+  return variant === 'mygo' ? mygoAsset(value, windowsX64) : `DezirClip_${value}_x64-setup.exe`;
+}
+
+function publishedWindowsInstaller(tag, variant, publicKey, transport) {
+  const pinned = windowsPublished[tag];
+  const [id, signatureId, sha256] = pinned[variant];
+  const name = windowsInstaller(tag, variant);
+  const client = githubClient(transport, true);
+  const release = client.releaseByTag(tag);
+  if (release.draft || release.id !== pinned.releaseId || client.releaseCommit(tag) !== pinned.source) {
+    throw new Error(`Historical Windows installer release differs: ${tag}`);
+  }
+  const find = (id, name) => {
+    const asset = release.assets.find(item => item.id === id && item.name === name && item.state === 'uploaded');
+    if (!asset) throw new Error(`Historical Windows asset missing: ${name}`);
+    return asset;
+  };
+  const bytes = client.downloadAsset(find(id, name));
+  const signature = client.downloadAsset(find(signatureId, `${name}.sig`));
+  if (digest(bytes) !== sha256) throw new Error(`Historical Windows installer bytes differ: ${name}`);
+  verifyTauriSignature(bytes, signature.toString('utf8'), publicKey, tag, name);
+  return { name, tag, source_revision: pinned.source, sha256, bytes };
+}
+
+export function stageWindowsCandidate({ tag, source, runId, attempt, directory, artifactId, variant, destination, publicKey, replay },
+  transport = gh) {
+  if (!windowsVariants.includes(variant)) throw new Error('Invalid Windows desktop variant');
+  let current;
+  if (replay) {
+    tag = 'v0.2.0';
+    current = publishedWindowsInstaller(tag, variant, publicKey, transport);
+    source = current.source_revision;
+    artifactId = null;
+  } else {
+    const [id] = candidateArtifactIds({ source, runId, attempt },
+      (target, attempt) => `release-desktop-${target}-${attempt}`, transport, [windowsX64]);
+    if (String(id) !== artifactId || compareVersions(tag, 'v0.2.0') <= 0) throw new Error('Invalid Windows candidate provenance or version');
+    const assets = readDesktopCandidate({ tag, source, runId, attempt, target: windowsX64, directory });
+    const name = windowsInstaller(tag, variant);
+    const installer = assets.find(asset => asset.name === name);
+    const bytes = readFileSync(installer.path);
+    if (digest(bytes) !== installer.sha256) throw new Error('Candidate installer changed during staging');
+    verifyTauriSignature(bytes, readFileSync(assets.find(asset => asset.name === `${name}.sig`).path, 'utf8'), publicKey, tag, name);
+    current = { name, tag, source_revision: source, sha256: installer.sha256, bytes };
+  }
+  const previous = publishedWindowsInstaller(replay ? 'v0.2.0-rc5' : 'v0.2.0', variant, publicKey, transport);
+  mkdirSync(destination);
+  const write = ({ bytes, ...identity }) => {
+    writeFileSync(join(destination, identity.name), bytes, { flag: 'wx' });
+    return identity;
+  };
+  writeFileSync(join(destination, 'windows-candidate-inputs.json'), JSON.stringify({
+    schema_version: 1, origin: replay ? 'published-replay' : 'release-producer', target: windowsX64, variant,
+    source_revision: source, tag, run_id: Number(runId), run_attempt: Number(attempt), producer_artifact_id: artifactId,
+    current: write(current), previous: write(previous),
+  }), { flag: 'wx' });
+}
+
+function verifyWindowsCandidateReports(reports, desktop, tag, source, run) {
+  if (!Array.isArray(reports)) throw new Error('Missing Windows candidate reports');
+  requireExactNames(reports.map(report => report?.variant), windowsVariants, 'Windows candidate reports');
+  const baselines = windowsPublished['v0.2.0'];
+  const producerIds = new Set();
+  for (const { schema_version, status, origin, target, variant, source_revision, tag: testedTag, run_id, run_attempt,
+    producer_artifact_id, current, previous, members } of reports) {
+    const name = windowsInstaller(tag, variant);
+    const archive = desktop.archives.find(item => item.name === name);
+    if (schema_version !== 1 || status !== 'passed' || origin !== 'release-producer' || target !== windowsX64 ||
+        testedTag !== tag || source_revision !== source || run_id !== run.run_id || run_attempt !== run.run_attempt ||
+        !/^[1-9][0-9]*$/.test(producer_artifact_id ?? '') || current?.name !== name || current.tag !== tag ||
+        current.source_revision !== source || current.sha256 !== archive?.sha256 ||
+        previous?.tag !== 'v0.2.0' || previous.source_revision !== baselines.source ||
+        previous.name !== windowsInstaller(previous.tag, variant) || previous.sha256 !== baselines[variant][2] ||
+        !members || Object.keys(members).length !== 3 ||
+        ['desktop', 'cli', 'service'].some(role => members[role]?.path !== archive?.members[role]?.path ||
+          members[role]?.sha256 !== archive?.members[role]?.sha256)) {
+      throw new Error(`Windows candidate report does not match the final signed installer: ${name}`);
+    }
+    producerIds.add(producer_artifact_id);
+  }
+  if (producerIds.size !== 1) throw new Error('Windows variants must come from the same producer artifact');
 }
 
 function standaloneArchiveName(version, target) {
@@ -679,6 +783,7 @@ function verifyUploadReadbacks(release, tag, source, run, readbacks) {
     }
     if (kind === 'desktop') {
       requireArchiveReadback(report.archives, archives, new Map(report.assets.map(asset => [asset.name, asset])));
+      if (run.windows_candidate_gate) verifyWindowsCandidateReports(readbacks.windows, report, tag, source, run);
     }
   }
 }
@@ -922,6 +1027,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const assets = attachReleaseFiles({ tag: version, source: acceptancePath, releaseId: upgradePath },
       readStandaloneCandidates(version, runAttempt), gh);
     console.log(JSON.stringify(uploadReceipt('standalone', version, acceptancePath, upgradePath, assets)));
+  } else if (mode === 'windows-producer-id' || mode === 'windows-report-ids') {
+    const producer = mode === 'windows-producer-id';
+    const names = producer ? (target, attempt) => `release-desktop-${target}-${attempt}`
+      : (variant, attempt) => `windows-candidate-${variant}-${attempt}`;
+    console.log(candidateArtifactIds({ source: acceptancePath, runId: process.env.GITHUB_RUN_ID,
+      attempt: process.env.GITHUB_RUN_ATTEMPT }, names, gh, producer ? [windowsX64] : windowsVariants).join(','));
+  } else if (mode === 'stage-windows-candidate' && remaining.length === 2) {
+    stageWindowsCandidate({ tag: version, source: acceptancePath, variant: runAttempt, directory: upgradePath,
+      destination: remaining[0], artifactId: remaining[1], publicKey: config.plugins.updater.pubkey,
+      runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT });
+  } else if (mode === 'replay-windows-candidate' && process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
+    stageWindowsCandidate({ replay: true, variant: version, destination: acceptancePath,
+      publicKey: config.plugins.updater.pubkey, runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT });
   } else if (mode === 'desktop-artifact-ids' || mode === 'standalone-artifact-ids') {
     const resolveIds = mode === 'desktop-artifact-ids' ? desktopArtifactIds : standaloneArtifactIds;
     console.log(resolveIds({ source: acceptancePath, runId: process.env.GITHUB_RUN_ID,
@@ -930,7 +1048,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   else if (mode === 'publish-dual' && acceptancePath && runAttempt && upgradePath && remaining.length === 1) {
     const readbacks = { releaseId: remaining[0],
       desktop: readEvidenceJson(join(upgradePath, 'desktop-readback.json')).value,
-      standalone: readEvidenceJson(join(upgradePath, 'standalone-readback.json')).value };
+      standalone: readEvidenceJson(join(upgradePath, 'standalone-readback.json')).value,
+      windows: windowsVariants.map(variant => readEvidenceJson(join(upgradePath, `windows-candidate-${variant}.json`)).value) };
     console.log(JSON.stringify(publishDual(mode, version, config, acceptancePath, runAttempt, console.error, gh, readbacks)));
   }
   else if (mode !== 'publish-dual' && Object.hasOwn(dualActions, mode) && acceptancePath && runAttempt && !upgradePath) {

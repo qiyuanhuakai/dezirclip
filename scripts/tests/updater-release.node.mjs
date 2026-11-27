@@ -195,10 +195,8 @@ function publisherFixture(options = {}) {
       state.jobs.push({ ...state.jobs[0], id: 8_000 + state.jobs.length, name: `Source acceptance / ${name}` });
     }
     state.jobs.push({ ...state.jobs[0], id: 8_000 + state.jobs.length, name: 'Upload verified desktop assets' });
-    for (const name of ['dezirclip-bin', 'dezirclip-mygo-bin']) {
-      state.product.assets.push(asset(`${name}-0.2.0beta4-1-x86_64.pkg.tar.zst`, Buffer.from('arch package')),
-        asset(`${name}-0.2.0beta4-1.src.tar.gz`, Buffer.from('aur recipe')));
-    }
+    const archFiles = expectedDesktopCandidateFiles(tag, 'linux-x86_64').filter(name => name.startsWith('dezirclip-'));
+    for (const name of archFiles) state.product.assets.push(asset(name, Buffer.from('arch package')));
   }
   if (options.channel) {
     state.channel = { id: 20, tag_name: 'updater-channels', draft: options.channel === 'draft',
@@ -394,9 +392,9 @@ test('Arch packages and AUR recipes must be present before a Release with Arch p
 });
 
 test('a current workflow publishes only the asset identities read back from its original draft', () => {
-  const version = '0.2.0-beta.4';
+  const version = '0.2.1-beta.1';
   const tag = `v${version}`;
-  const make = () => {
+  const make = (native = false) => {
     const fixture = publisherFixture({ version, sync: true, dual: true, running: true, arch: true });
     const readbacks = { releaseId: String(fixture.state.product.id) };
     for (const kind of ['desktop', 'standalone']) {
@@ -411,11 +409,30 @@ test('a current workflow publishes only the asset identities read back from its 
         members: name.endsWith('.src.tar.gz') ? {} : Object.fromEntries(['desktop', 'cli', 'service'].map(role =>
           [role, { path: role, sha256: 'c'.repeat(64) }])),
       })));
+    if (native) {
+      const variants = [
+        { variant: 'tauri', current: `DezirClip_${version}_x64-setup.exe`,
+          previous: 'DezirClip_0.2.0_x64-setup.exe', sha256: 'e9406e6da0ad5cbe64d1f45209ac82e34d8161d5d6ce2da50737f835c83e25dd' },
+        { variant: 'mygo', current: `DezirClip-v${version}-windows-x64-MyGo-setup.exe`,
+          previous: 'DezirClip-v0.2.0-windows-x64-MyGo-setup.exe', sha256: 'f7d408f94eec8118767457db90c43ef5e232ae0b6cce63d8c80c0704c33fca92' },
+      ];
+      readbacks.windows = variants.map(({ variant, current, previous, sha256 }) => {
+        const jobs = fixture.state.jobs;
+        jobs.push({ ...jobs[0], id: 8_000 + jobs.length, name: `Verify final Windows installer (${variant})` });
+        const archive = readbacks.desktop.archives.find(item => item.name === current);
+        return { schema_version: 1, origin: 'release-producer', status: 'passed', variant, tag, target: 'windows-x86_64',
+          source_revision: 'a'.repeat(40), run_id: 7001, run_attempt: 1, producer_artifact_id: '925',
+          current: { name: current, tag, source_revision: 'a'.repeat(40), sha256: archive.sha256 },
+          previous: { name: previous, tag: 'v0.2.0', source_revision: 'ba0ad71f7b9d8caddac45d0bc5588254a8273482', sha256 },
+          members: structuredClone(archive.members) };
+      });
+    }
     return { ...fixture, readbacks };
   };
   const publish = fixture => publishDual('publish-dual', version, fixture.config, 7001, 1, () => {},
     fixture.transport, fixture.readbacks);
   assert.equal(publish(make()).status, 'synchronized');
+  assert.equal(publish(make(true)).status, 'synchronized');
   for (const change of [
     fixture => { delete fixture.readbacks.desktop; },
     fixture => { fixture.readbacks.releaseId = '11'; },
@@ -439,6 +456,20 @@ test('a current workflow publishes only the asset identities read back from its 
     const fixture = make();
     change(fixture.readbacks.desktop.archives);
     assert.throws(() => publish(fixture), /package inspection|packaged executable|inventory differs/i);
+    assert.deepEqual(fixture.state.mutations, []);
+  }
+  for (const change of [
+    fixture => { delete fixture.readbacks.windows; },
+    fixture => { fixture.readbacks.windows[0].origin = 'published-replay'; },
+    fixture => { fixture.readbacks.windows[0].current.sha256 = 'f'.repeat(64); },
+    fixture => { fixture.readbacks.windows[0].previous.sha256 = 'f'.repeat(64); },
+    fixture => { fixture.readbacks.windows[0].members.service.sha256 = 'f'.repeat(64); },
+    fixture => { fixture.readbacks.windows[0].producer_artifact_id = '926'; },
+    fixture => { fixture.state.jobs.pop(); },
+  ]) {
+    const fixture = make(true);
+    change(fixture);
+    assert.throws(() => publish(fixture), /Windows|gates/i);
     assert.deepEqual(fixture.state.mutations, []);
   }
 });

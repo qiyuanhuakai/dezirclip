@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Synchronize a channel, resume a verified draft, or recover original alpha.2 assets
+        description: Synchronize a channel, recover a release, or verify a published Windows installer upgrade
         required: true
         type: choice
         default: sync-dual-channel
-        options: [sync-published-channel, resume-verified-draft, sync-dual-channel, resume-dual-draft, resume-existing-alpha2, publish-mygo-installer]
+        options: [sync-published-channel, resume-verified-draft, sync-dual-channel, resume-dual-draft, resume-existing-alpha2, publish-mygo-installer, replay-windows-candidate]
       tag:
         description: Original version tag for channel synchronization or verified draft recovery
         required: false
@@ -34,7 +34,7 @@ env:
   DZC_BUILD_REVISION: ${{ github.sha }}
 
 concurrency:
-  group: release-updater-channels
+  group: ${{ inputs.mode == 'replay-windows-candidate' && format('release-windows-candidate-replay-{0}', github.ref) || 'release-updater-channels' }}
   queue: max
   cancel-in-progress: false
 
@@ -498,6 +498,79 @@ jobs:
           path: ${{ runner.temp }}/desktop-readback.json
           if-no-files-found: error
 
+  verify-windows-candidate:
+    name: Verify final Windows installer (${{ matrix.variant }})
+    if: ${{ !cancelled() && ((github.event_name == 'push' && needs.publish-desktop.result == 'success') || inputs.mode == 'replay-windows-candidate') }}
+    needs: publish-desktop
+    runs-on: windows-latest
+    timeout-minutes: 12
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [tauri, mygo]
+    env:
+      VARIANT: ${{ matrix.variant }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
+          architecture: x64
+      - name: Resolve the exact Windows x64 producer artifact
+        if: github.event_name == 'push'
+        id: producer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_id="$(node scripts/updater-release.mjs windows-producer-id "$GITHUB_REF_NAME" "$GITHUB_SHA")"
+          echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          artifact-ids: ${{ steps.producer.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/windows-producer
+      - name: Authenticate both installers with the release signing key
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCER_ID: ${{ steps.producer.outputs.artifact_id }}
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP "windows-candidate-inputs"
+          if ($env:GITHUB_EVENT_NAME -eq 'push') {
+            node scripts/updater-release.mjs stage-windows-candidate "$env:GITHUB_REF_NAME" "$env:GITHUB_SHA" "$env:VARIANT" `
+              (Join-Path $env:RUNNER_TEMP "windows-producer") $fixture "$env:PRODUCER_ID"
+          } else {
+            node scripts/updater-release.mjs replay-windows-candidate "$env:VARIANT" $fixture
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upgrade, launch, reinstall and uninstall the signed Windows package
+        shell: pwsh
+        run: |
+          python scripts/release_windows_candidate.py (Join-Path $env:RUNNER_TEMP "windows-candidate-inputs") `
+            (Join-Path $env:RUNNER_TEMP "windows-candidate-$env:VARIANT.json")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-candidate-${{ matrix.variant }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/windows-candidate-${{ matrix.variant }}.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-candidate-diagnostics-${{ matrix.variant }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/windows-candidate-inputs/**/*.log
+
   collect-release-identities:
     name: Collect actual final package identities
     needs: create-release
@@ -528,7 +601,7 @@ jobs:
   verify-publish-and-promote:
     name: Verify signed artifacts, publish and synchronize update channel
     if: github.event_name == 'push'
-    needs: [create-release, upload-desktop, publish-standalone-cli, accept-source]
+    needs: [create-release, upload-desktop, publish-standalone-cli, accept-source, verify-windows-candidate]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -563,10 +636,19 @@ jobs:
                   or receipt["desktop_targets"] != ["linux-x86_64", "windows-x86_64"]
                   or receipt["jobs"] != {name: "success" for name in ("frontend", "rust-development", "go-development", "ci-desktop-plan", "tauri")}):
               raise SystemExit("Source acceptance receipt does not attest the candidate")
-      - name: Download the desktop and standalone upload readbacks
+      - name: Resolve the two Windows candidate report IDs
+        id: windows-reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ids="$(node scripts/updater-release.mjs windows-report-ids "$GITHUB_REF_NAME" "$GITHUB_SHA")"
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
+      - name: Download the upload readbacks and native Windows reports
         uses: actions/download-artifact@v4
         with:
-          artifact-ids: ${{ needs.upload-desktop.outputs.readback }},${{ needs.publish-standalone-cli.outputs.readback }}
+          artifact-ids: ${{ needs.upload-desktop.outputs.readback }},${{ needs.publish-standalone-cli.outputs.readback }},${{ steps.windows-reports.outputs.ids }}
           merge-multiple: true
           path: ${{ runner.temp }}/candidate-readbacks
       - name: Verify both desktops and activate the update channel
