@@ -14,8 +14,6 @@ pub trait SettingsRepository {
     fn get(&self, key: &str) -> Result<Option<String>>;
     #[cfg(feature = "legacy-bridge")]
     fn get_all(&self) -> Result<HashMap<String, String>>;
-    #[cfg(feature = "legacy-bridge")]
-    fn clear(&self) -> Result<()>;
 }
 
 pub struct SqliteSettingsRepository {
@@ -224,11 +222,4 @@ impl SettingsRepository for SqliteSettingsRepository {
         Ok(settings)
     }
 
-    #[cfg(feature = "legacy-bridge")]
-    fn clear(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM settings", [])?;
-        // Note: seed_defaults should probably be called by the caller or we move it here
-        Ok(())
-    }
 }

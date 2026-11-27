@@ -56,35 +56,45 @@ pub(crate) fn list_emoji_favorite_paths_in_dir(data_dir: &Path) -> AppResult<Vec
     dzc_platform::user_resource::list_emoji_favorites(data_dir).map_err(AppError::Internal)
 }
 
+fn change_emoji_favorites<T>(db: &DbState, change: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+    let privacy = db.history_service().privacy();
+    let now = chrono::Utc::now().timestamp_millis();
+    let epoch = privacy.status(now).map_err(|error| AppError::Internal(error.to_string()))?.privacy_epoch;
+    privacy.with_writable_profile(epoch, now, change).map_err(|error| AppError::Internal(error.to_string()))?
+}
+
 #[tauri::command]
 pub async fn save_emoji_favorite(
     app_data: State<'_, AppDataDir>,
     db: State<'_, DbState>,
     source_path: String,
 ) -> AppResult<String> {
-    let conn = db.conn.lock().map_err(|error| AppError::Internal(error.to_string()))?;
-    crate::database::ensure_writable(&conn).map_err(AppError::Internal)?;
-    let source_path = source_path.trim();
-    if source_path.is_empty() {
-        return Err(AppError::Validation("source_path is empty".to_string()));
-    }
+    change_emoji_favorites(&db, || {
+        let source_path = source_path.trim();
+        if source_path.is_empty() {
+            return Err(AppError::Validation("source_path is empty".to_string()));
+        }
 
-    if image_ext_from_filename(source_path).is_none() { return Err(AppError::Validation("unsupported file type".into())); }
-    let bytes = dzc_platform::user_resource::read_image_bytes(Path::new(source_path)).map_err(AppError::Internal)?;
-    let data_dir = app_data.0.lock().unwrap().clone();
-    dzc_platform::user_resource::prepare_emoji_favorite(&data_dir, &bytes).and_then(|image| image.publish()).map_err(AppError::Internal)
+        if image_ext_from_filename(source_path).is_none() {
+            return Err(AppError::Validation("unsupported file type".into()));
+        }
+        let bytes = dzc_platform::user_resource::read_image_bytes(Path::new(source_path)).map_err(AppError::Internal)?;
+        let data_dir = app_data.0.lock().unwrap().clone();
+        dzc_platform::user_resource::prepare_emoji_favorite(&data_dir, &bytes)
+            .and_then(|image| image.publish()).map_err(AppError::Internal)
+    })
 }
 
 #[tauri::command]
 pub async fn remove_emoji_favorite(app_data: State<'_, AppDataDir>, db: State<'_, DbState>, path: String) -> AppResult<()> {
-    let conn = db.conn.lock().map_err(|error| AppError::Internal(error.to_string()))?;
-    crate::database::ensure_writable(&conn).map_err(AppError::Internal)?;
-    if path.trim().is_empty() {
-        return Ok(());
-    }
+    change_emoji_favorites(&db, || {
+        if path.trim().is_empty() {
+            return Ok(());
+        }
 
-    let data_dir = app_data.0.lock().unwrap().clone();
-    dzc_platform::user_resource::remove_emoji_favorite(&data_dir, Path::new(&path)).map_err(AppError::Internal)
+        let data_dir = app_data.0.lock().unwrap().clone();
+        dzc_platform::user_resource::remove_emoji_favorite(&data_dir, Path::new(&path)).map_err(AppError::Internal)
+    })
 }
 
 #[tauri::command]
@@ -100,14 +110,18 @@ pub async fn save_emoji_favorite_data_url(
     data_url: String,
     file_name: Option<String>,
 ) -> AppResult<String> {
-    let conn = db.conn.lock().map_err(|error| AppError::Internal(error.to_string()))?;
-    crate::database::ensure_writable(&conn).map_err(AppError::Internal)?;
     let _ = file_name;
-    let payload = if data_url.starts_with("data:") {
-        data_url.split_once(',').map(|(_, data)| data).unwrap_or("")
-    } else { &data_url };
-    if payload.len() > 22_369_624 { return Err(AppError::Validation("image exceeds 16 MiB".into())); }
-    let bytes = base64::engine::general_purpose::STANDARD.decode(payload).map_err(|error| AppError::Validation(error.to_string()))?;
-    let data_dir = app_data.0.lock().unwrap().clone();
-    dzc_platform::user_resource::prepare_emoji_favorite(&data_dir, &bytes).and_then(|image| image.publish()).map_err(AppError::Internal)
+    change_emoji_favorites(&db, || {
+        let payload = if data_url.starts_with("data:") {
+            data_url.split_once(',').map(|(_, data)| data).unwrap_or("")
+        } else { &data_url };
+        if payload.len() > 22_369_624 {
+            return Err(AppError::Validation("image exceeds 16 MiB".into()));
+        }
+        let bytes = base64::engine::general_purpose::STANDARD.decode(payload)
+            .map_err(|error| AppError::Validation(error.to_string()))?;
+        let data_dir = app_data.0.lock().unwrap().clone();
+        dzc_platform::user_resource::prepare_emoji_favorite(&data_dir, &bytes)
+            .and_then(|image| image.publish()).map_err(AppError::Internal)
+    })
 }

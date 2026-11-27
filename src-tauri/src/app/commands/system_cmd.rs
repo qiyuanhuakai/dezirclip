@@ -287,7 +287,7 @@ pub async fn set_data_path(app_handle: AppHandle, move_state: State<'_, ProfileM
         let redirect = app_handle.path().app_data_dir().map_err(AppError::from)?.join("datapath.txt");
         let destination = new_data_path.clone();
         let db = app_handle.state::<DbState>();
-        let history = dzc_core::api::HistoryService::from_legacy_connection(db.conn.clone());
+        let history = db.history_service();
         tauri::async_runtime::spawn_blocking(move || {
             history.migrate_profile_at_epoch(&old_path_buf, &destination, &redirect, expected_epoch)
         }).await.map_err(|error| AppError::Internal(error.to_string()))?.map_err(AppError::from)?;

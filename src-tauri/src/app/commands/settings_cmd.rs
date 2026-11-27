@@ -467,20 +467,10 @@ pub fn reset_settings(
     state: State<'_, DbState>,
     settings_state: State<'_, crate::app_state::SettingsState>,
 ) -> AppResult<()> {
-    use crate::database::seed_defaults;
-
-    state.settings_repo.clear().map_err(AppError::from)?;
-    {
-        let conn = state.conn.lock().unwrap();
-        seed_defaults(&conn).map_err(AppError::from)?;
-    }
-
     let machine_id = crate::app::system::get_machine_id();
     let new_id = format!("{}-0000-0000-0000-000000000000", machine_id);
-    state
-        .settings_repo
-        .set("app.anon_id", &new_id)
-        .map_err(AppError::from)?;
+    state.history_service().reset_desktop_preferences(&new_id)
+        .map_err(|error| AppError::Database(error.to_string()))?;
 
     let main_hotkey = state
         .settings_repo

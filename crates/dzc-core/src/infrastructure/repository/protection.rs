@@ -1,6 +1,9 @@
 #[cfg(test)]
 use crate::infrastructure::encryption::EncryptionError;
 use rusqlite::Connection;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use super::clipboard_repo::SqliteClipboardRepository;
 
 /// File cleanup is deferred until the outer commit; a legacy nested caller cannot acknowledge it.
 pub(super) fn atomic_with_cleanup<T>(
@@ -65,7 +68,6 @@ pub(super) fn atomic<T>(
 }
 
 /// One-time alignment discards obsolete FTS segments from legacy history.
-#[cfg(any(feature = "legacy-bridge", test))]
 pub(super) fn rebuild_search(conn: &Connection) -> Result<(), String> {
     conn.execute_batch("PRAGMA secure_delete = ON;")
         .map_err(|error| error.to_string())?;
@@ -74,6 +76,97 @@ pub(super) fn rebuild_search(conn: &Connection) -> Result<(), String> {
         [],
     )
     .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn needs_legacy_alignment(content: &str, preview: &str, html: Option<&str>, ocr: Option<&str>) -> bool {
+    [Some(content), Some(preview), html, ocr]
+        .into_iter()
+        .flatten()
+        .any(|value| !crate::infrastructure::encryption::has_ciphertext_envelope(value))
+}
+
+pub(super) fn align_legacy_sensitive_history(
+    connection: &Arc<Mutex<Connection>>,
+    repository: &SqliteClipboardRepository,
+) -> Result<(), String> {
+    const MARKER: &str = "db.sensitive_alignment_done";
+    const BATCH_SIZE: i64 = 200;
+    let already_aligned: bool = connection.lock().map_err(|error| error.to_string())?
+        .query_row("SELECT EXISTS(SELECT 1 FROM settings WHERE key=?1 AND value='true')",
+            [MARKER], |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+    if already_aligned {
+        return Ok(());
+    }
+    let sensitive_tags = crate::privacy::SENSITIVE_TAGS.iter()
+        .map(|tag| format!("'{}'", tag.replace('\'', "''")))
+        .collect::<Vec<_>>().join(",");
+    let query = format!(
+        "SELECT ch.id, ch.timestamp, ch.content, ch.preview, ch.html_content,
+                EXISTS (SELECT 1 FROM entry_tags se WHERE se.entry_id = ch.id
+                        AND se.tag COLLATE NOCASE IN ({sensitive_tags})),
+                ch.ocr_text, ch.tags
+         FROM clipboard_history ch
+         WHERE ch.timestamp < ?1 OR (ch.timestamp = ?1 AND ch.id < ?2)
+         ORDER BY ch.timestamp DESC, ch.id DESC LIMIT ?3"
+    );
+    let mut cursor = (i64::MAX, i64::MAX);
+    let mut first_error = None;
+    loop {
+        let conn = connection.lock().map_err(|error| error.to_string())?;
+        let mut next = None;
+        let mut candidates = Vec::new();
+        let mut invalid = false;
+        {
+            let mut statement = conn.prepare(&query).map_err(|error| error.to_string())?;
+            let rows = statement.query_map([cursor.0, cursor.1, BATCH_SIZE], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?, row.get::<_, Option<String>>(4)?, row.get::<_, bool>(5)?,
+                    row.get::<_, Option<String>>(6)?, row.get::<_, String>(7)?))
+            }).map_err(|error| error.to_string())?;
+            for row in rows {
+                let (id, timestamp, content, preview, html, linked, ocr, tags) = match row {
+                    Ok(row) => row,
+                    Err(error) => {
+                        first_error.get_or_insert_with(|| error.to_string());
+                        invalid = true;
+                        continue;
+                    }
+                };
+                next = Some((timestamp, id));
+                let tags = match serde_json::from_str::<Vec<String>>(&tags) {
+                    Ok(tags) => tags,
+                    Err(error) => {
+                        first_error.get_or_insert_with(|| error.to_string());
+                        invalid = true;
+                        continue;
+                    }
+                };
+                if (linked || crate::privacy::has_sensitive_tag(&tags))
+                    && needs_legacy_alignment(&content, &preview, html.as_deref(), ocr.as_deref())
+                {
+                    candidates.push(id);
+                }
+            }
+        }
+        let Some(next_cursor) = next else { break };
+        if !invalid {
+            if let Err(error) = repository.encrypt_entries_with_conn(&conn, &candidates) {
+                first_error.get_or_insert(error);
+            }
+        }
+        cursor = next_cursor;
+        drop(conn);
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    if let Some(error) = first_error {
+        return Err(error);
+    }
+    connection.lock().map_err(|error| error.to_string())?.execute(
+        "INSERT INTO settings(key,value) VALUES(?1,'true') ON CONFLICT(key) DO UPDATE SET value='true'",
+        [MARKER],
+    ).map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -95,6 +188,15 @@ pub(super) fn require_secure_search(conn: &Connection) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
+
+    #[test]
+    fn legacy_ocr_and_ordinary_prefix_text_need_alignment() {
+        let encrypted = format!("linux:{}", base64::engine::general_purpose::STANDARD.encode([1u8; 40]));
+        assert!(!needs_legacy_alignment(&encrypted, &encrypted, Some(&encrypted), Some(&encrypted)));
+        assert!(needs_legacy_alignment(&encrypted, &encrypted, Some(&encrypted), Some("legacy private OCR")));
+        assert!(needs_legacy_alignment("linux:ordinary prefix", &encrypted, None, None));
+    }
 
     #[test]
     fn v19_retries_legacy_alignment_once_and_keeps_future_success_marker() {
@@ -297,6 +399,35 @@ mod batch_tests {
         conn.prepare("SELECT id,content,preview,html_content,ocr_text FROM clipboard_history WHERE id<=20 ORDER BY id").unwrap()
             .query_map([], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?))).unwrap()
             .collect::<rusqlite::Result<_>>().unwrap()
+    }
+
+    #[test]
+    fn legacy_alignment_repairs_json_and_linked_tags_and_keeps_its_completion_marker() {
+        let (repository, shared) = fixture();
+        shared.lock().unwrap().execute(
+            "INSERT INTO entry_tags(entry_id,tag) VALUES(21,'sensitive')", [],
+        ).unwrap();
+        repository.align_legacy_sensitive_history().unwrap();
+        let conn = shared.lock().unwrap();
+        assert!(snapshot(&conn).iter().all(|(_, content, _, _, _)| content.starts_with("sealed:")));
+        let linked: String = conn.query_row(
+            "SELECT content FROM clipboard_history WHERE id=21", [], |row| row.get(0),
+        ).unwrap();
+        let ordinary: String = conn.query_row(
+            "SELECT content FROM clipboard_history WHERE id=22", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(linked, "sealed:probe21");
+        assert_eq!(ordinary, "probe22");
+        let marker: String = conn.query_row(
+            "SELECT value FROM settings WHERE key='db.sensitive_alignment_done'", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(marker, "true");
+        let changes: i64 = conn.query_row("SELECT total_changes()", [], |row| row.get(0)).unwrap();
+        drop(conn);
+        repository.align_legacy_sensitive_history().unwrap();
+        let after: i64 = shared.lock().unwrap()
+            .query_row("SELECT total_changes()", [], |row| row.get(0)).unwrap();
+        assert_eq!(after, changes);
     }
 
     #[test]

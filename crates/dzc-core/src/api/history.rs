@@ -76,6 +76,11 @@ pub struct HistoryService {
 }
 
 impl HistoryService {
+    /// A one-time local maintenance task for historical protected entries and their search index.
+    pub fn align_legacy_sensitive_history(&self) -> CoreResult<()> {
+        self.repository.align_legacy_sensitive_history().map_err(Into::into)
+    }
+
     /// Publish a standalone profile snapshot and reserve this source connection for reads until restart.
     pub fn migrate_profile(&self, source: &Path, destination: &Path, redirect: &Path) -> Result<(), super::MigrationError> {
         self.repository.migrate_profile(source, destination, redirect, None)

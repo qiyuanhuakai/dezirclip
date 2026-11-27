@@ -35,11 +35,17 @@ pub fn ensure_system_tags(conn: &Connection) -> rusqlite::Result<()> {
 
 #[cfg(any(feature = "legacy-bridge", test))]
 pub fn ensure_tags_if_protected(conn: &Connection) -> rusqlite::Result<()> {
-    let transaction = rusqlite::Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    if SqliteSettingsRepository::get_raw(&transaction, PRIVACY_SETTING)?.as_deref() != Some("false")
-    {
-        ensure_system_tags(&transaction)?;
+    let ensure = |conn: &Connection| {
+        if SqliteSettingsRepository::get_raw(conn, PRIVACY_SETTING)?.as_deref() != Some("false") {
+            ensure_system_tags(conn)?;
+        }
+        Ok(())
+    };
+    if !conn.is_autocommit() {
+        return ensure(conn);
     }
+    let transaction = rusqlite::Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    ensure(&transaction)?;
     transaction.commit()
 }
 

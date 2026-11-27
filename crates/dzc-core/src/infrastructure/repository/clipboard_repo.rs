@@ -511,12 +511,14 @@ impl SqliteClipboardRepository {
     }
 
     /// Protect one startup batch and discard obsolete search segments once.
-    #[cfg(feature = "legacy-bridge")]
-    pub fn encrypt_entries_with_conn(&self, conn: &Connection, ids: &[i64]) -> Result<(), String> {
+    pub(super) fn encrypt_entries_with_conn(&self, conn: &Connection, ids: &[i64]) -> Result<(), String> {
         self.encrypt_entries_with_rebuild(conn, ids, super::protection::rebuild_search)
     }
 
-    #[cfg(any(feature = "legacy-bridge", test))]
+    pub(crate) fn align_legacy_sensitive_history(&self) -> Result<(), String> {
+        super::protection::align_legacy_sensitive_history(&self.conn, self)
+    }
+
     pub(super) fn encrypt_entries_with_rebuild(
         &self,
         conn: &Connection,

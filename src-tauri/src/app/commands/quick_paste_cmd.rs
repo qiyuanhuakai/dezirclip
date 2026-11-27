@@ -470,17 +470,11 @@ pub async fn paste_quick_paste_selection(
 
     let entry = if let Some(entry)=bridge.summary(entry_id,expected_host_instance_id.as_deref()).await? {entry.entry}
     else if entry_id<0 {session.0.lock().map_err(|_|"PrivacyStateUnavailable")?.iter().find(|entry|entry.id==entry_id).cloned().ok_or("ClipboardRecordUnavailable")?}
-    else {{
-        let conn = state
-            .conn
-            .lock()
-            .map_err(|e| format!("DB lock poisoned: {e}"))?;
-        state
-            .repo
-            .get_entry_by_id_with_conn(&conn, entry_id)
-            .map_err(|e| format!("Failed to load entry {entry_id}: {e}"))?
-    }
-    .ok_or_else(|| format!("Entry not found: {entry_id}"))?};
+    else {
+        state.history_service().get_entry_by_id(entry_id)
+            .map_err(|error| format!("Failed to load entry {entry_id}: {error}"))?
+            .ok_or_else(|| format!("Entry not found: {entry_id}"))?
+    };
 
     let (content, content_type, plan) =
         build_paste_dispatch_plan(entry.id, &entry.content, &entry.content_type);
