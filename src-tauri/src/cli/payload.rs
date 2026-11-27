@@ -1,4 +1,4 @@
-use crate::domain::models::ClipboardEntry;
+use dzc_core::api::ClipboardEntry;
 
 pub fn mime_for(entry: &ClipboardEntry) -> &'static str {
     match entry.content_type.as_str() {
@@ -36,7 +36,7 @@ pub fn files(content: &str) -> Result<Vec<String>, String> {
 }
 
 pub fn file_uri(path: &str) -> String {
-    crate::infrastructure::native_clipboard::file_uri(path)
+    dzc_platform::native_clipboard::file_uri(path)
 }
 
 pub fn bytes_for(entry: &ClipboardEntry, mime: &str) -> Result<Vec<u8>, String> {

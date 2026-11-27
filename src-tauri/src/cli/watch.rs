@@ -44,7 +44,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::domain::models::ClipboardEntry;
+use dzc_core::api::ClipboardEntry;
 use crate::api::HistoryService;
 
 use super::list::CliEntry;

@@ -23,7 +23,7 @@
 use std::io::Read;
 use std::path::Path;
 
-use crate::domain::models::ClipboardEntry;
+use dzc_core::api::ClipboardEntry;
 use crate::api::HistoryService;
 
 /// Args for the `add` subcommand. The bin resolves the positional

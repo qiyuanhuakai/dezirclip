@@ -1,26 +1,11 @@
-#[path = "infrastructure/login_start.rs"]
-pub mod login_start;
-
-#[path = "infrastructure/cli_path.rs"]
-mod cli_path;
-
-#[path = "infrastructure/desktop_tools.rs"]
-pub mod desktop_tools;
-
 #[path = "infrastructure/encryption.rs"]
 pub mod encryption;
 
 #[path = "infrastructure/attachments.rs"]
 pub mod attachments;
 
-#[path = "infrastructure/local_file.rs"]
-pub mod local_file;
-
 #[path = "infrastructure/repository/mod.rs"]
 pub mod repository;
-
-#[path = "infrastructure/native_clipboard.rs"]
-pub mod native_clipboard;
 
 #[path = "infrastructure/osc52.rs"]
 pub mod osc52;

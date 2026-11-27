@@ -36,7 +36,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::domain::models::ClipboardEntry;
+use dzc_core::api::ClipboardEntry;
 use crate::api::HistoryService;
 
 /// Default `top` count when `--top` is omitted.

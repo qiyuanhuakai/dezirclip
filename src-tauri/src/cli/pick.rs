@@ -1,7 +1,7 @@
 //! External selectors receive sanitized metadata and return only listed candidates.
 
 use super::frontend::{self, BrowseOptions};
-use crate::domain::models::ClipboardEntry;
+use dzc_core::api::ClipboardEntry;
 use crate::api::HistoryService;
 use clap::ValueEnum;
 use std::io::{Read, Write};

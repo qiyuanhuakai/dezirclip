@@ -2,6 +2,7 @@ use rusqlite::{Connection, Result};
 
 use base64::Engine;
 use std::borrow::Cow;
+pub use crate::privacy::{has_sensitive_tag, SENSITIVE_TAGS};
 
 #[cfg(feature = "legacy-bridge")]
 pub use crate::infrastructure::encryption::{self, ENCRYPT_PREFIX};
@@ -54,15 +55,8 @@ impl DbState {
 
 const SENSITIVE_KEYS: &[&str] = &[];
 
-pub const SENSITIVE_TAGS: &[&str] = &["sensitive", "密码"];
-
 pub fn is_sensitive_key(key: &str) -> bool {
     SENSITIVE_KEYS.iter().any(|k| k.eq_ignore_ascii_case(key))
-}
-
-pub fn has_sensitive_tag(tags: &[String]) -> bool {
-    tags.iter()
-        .any(|t| SENSITIVE_TAGS.iter().any(|s| s.eq_ignore_ascii_case(t.trim())))
 }
 
 pub fn is_text_type(content_type: &str) -> bool {

@@ -1,4 +1,4 @@
-use dezirclip::infrastructure::desktop_tools::{self, AgentSkill, CliInfo, CliPathResult, find_filesystem_skill_path_in, install_folder_from_skill_path, open_folder};
+use dzc_platform::desktop_tools::{self, AgentSkill, CliInfo, CliPathResult, find_filesystem_skill_path_in, install_folder_from_skill_path, open_folder};
 use std::path::{Path, PathBuf};
 use tauri::{path::BaseDirectory, AppHandle, Manager};
 

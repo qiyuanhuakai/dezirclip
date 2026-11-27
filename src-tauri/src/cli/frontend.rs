@@ -1,5 +1,5 @@
 //! Common history queries and output actions for the native terminal frontends.
-use crate::domain::models::ClipboardEntry;
+use dzc_core::api::ClipboardEntry;
 use crate::infrastructure::osc52::{self, Passthrough};
 use crate::api::{HistoryQuery, HistoryService};
 use std::io::Write;

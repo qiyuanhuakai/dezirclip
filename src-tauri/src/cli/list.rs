@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 
-use crate::domain::models::ClipboardEntry;
+use dzc_core::api::ClipboardEntry;
 use crate::api::HistoryQuery;
 use crate::api::HistoryService;
 
@@ -108,7 +108,7 @@ pub fn json_view(entry: &ClipboardEntry, metadata: bool) -> Result<OutputEntry<'
         pinned: entry.is_pinned,
         timestamp: entry.timestamp,
         mime: super::payload::mime_for(entry),
-        sensitive: crate::database::has_sensitive_tag(&entry.tags),
+        sensitive: dzc_core::privacy::has_sensitive_tag(&entry.tags),
     })
 }
 

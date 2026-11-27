@@ -1,6 +1,9 @@
 //! OS adapters depend on Core's ports; Core never depends on this crate.
 pub mod apps;
 pub mod desktop_system;
+pub mod desktop_tools;
+pub mod login_start;
+mod cli_path;
 pub mod sound;
 pub mod encryption;
 pub mod capture;

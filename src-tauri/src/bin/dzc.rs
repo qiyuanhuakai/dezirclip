@@ -24,7 +24,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum, CommandFactory, FromArgMatches};
 
 use dezirclip::cli;
 use dezirclip::cli::search::SearchMode;
-use dezirclip::api::HistoryService;
+use dzc_core::api::HistoryService;
 
 const APP_IDENTIFIER: &str = "io.github.qiyuanhuakai.dezirclip";
 const LEGACY_APP_IDENTIFIER: &str = "com.tiez.clipboard";
@@ -191,10 +191,10 @@ enum ThemeCommand {
 }
 
 fn run_theme(args: ThemeCliArgs) -> Result<(), String> {
-    use dezirclip::domain::theme::{ThemePackage, MAX_THEME_BYTES};
+    use dzc_core::domain::theme::{ThemePackage, MAX_THEME_BYTES};
     match args.command {
         ThemeCommand::Validate { path, json } => {
-            let bytes = dezirclip::infrastructure::local_file::read_bounded_regular(&path, MAX_THEME_BYTES)
+            let bytes = dzc_core::filesystem::read_bounded_regular(&path, MAX_THEME_BYTES)
                 .map_err(|error| error.to_string())?;
             let theme = ThemePackage::parse(&bytes)?;
             if json {
@@ -529,8 +529,8 @@ enum ClipboardCommand {
 fn native_payload(
     content: Vec<u8>,
     mime: &str,
-) -> Result<dezirclip::ports::ClipboardPayload, String> {
-    use dezirclip::ports::ClipboardPayload as Payload;
+) -> Result<dzc_core::ports::ClipboardPayload, String> {
+    use dzc_core::ports::ClipboardPayload as Payload;
     if mime == "image/png" {
         return Ok(Payload::Image { bytes: content, mime: "image/png".to_owned() });
     }
@@ -675,7 +675,7 @@ enum DesktopTool {
 }
 
 fn run_desktop_tool(action: DesktopTool) -> Result<(), String> {
-    use dezirclip::infrastructure::desktop_tools::{self, AgentSkill};
+    use dzc_platform::desktop_tools::{self, AgentSkill};
     let cli = std::env::current_exe().map_err(|e| e.to_string())?;
     let directory = cli.parent().ok_or("install folder not found")?;
     let guide = |skill: AgentSkill| {
@@ -711,7 +711,7 @@ fn run_desktop_tool(action: DesktopTool) -> Result<(), String> {
         DesktopTool::Info => serde_json::to_value(desktop_tools::cli_info(Some(cli.clone()), guide)),
         DesktopTool::AddToPath => serde_json::to_value(desktop_tools::install_cli_path(Some(cli))?),
         DesktopTool::LoginStatus | DesktopTool::EnableLogin | DesktopTool::DisableLogin => {
-            use dezirclip::infrastructure::login_start;
+            use dzc_platform::login_start;
             let desktop = directory.join(format!("dzc-desktop{}", std::env::consts::EXE_SUFFIX));
             if !desktop.is_file() { return Err("sibling MyGo desktop not found".into()); }
             if !matches!(action, DesktopTool::LoginStatus) {
@@ -737,8 +737,8 @@ fn run(args: Cli) -> Result<(), String> {
     let command = match args.selected_command() {
         Commands::DesktopTools { action } => return run_desktop_tool(action),
         Commands::BuildInfo { json } => {
-            let info = dezirclip::protocol::build_info::BuildInfo::current_with_host(
-                dezirclip::protocol::build_info::Component::Cli, dezirclip::api::DATABASE_SCHEMA_VERSION);
+            let info = dzc_core::protocol::build_info::BuildInfo::current_with_host(
+                dzc_core::protocol::build_info::Component::Cli, dzc_core::api::DATABASE_SCHEMA_VERSION);
             if json { println!("{}", serde_json::to_string_pretty(&info).map_err(|error| error.to_string())?); }
             else { println!("dzc {} · build {} · {} · protocol {}.{} · schema {}", info.component_version,
                 info.build_id.as_deref().unwrap_or("unknown"), info.source_state,
@@ -759,7 +759,7 @@ fn run(args: Cli) -> Result<(), String> {
         Commands::Pwsh => return cli::shell::run(cli::shell::Shell::Pwsh, None),
         Commands::Clipboard(a) => return run_clipboard(a),
         Commands::ClipboardOwner => {
-            return dezirclip::infrastructure::native_clipboard::serve_owner()
+            return dzc_platform::native_clipboard::serve_owner()
         }
         command => command,
     };
@@ -844,7 +844,7 @@ fn run(args: Cli) -> Result<(), String> {
             clip_repo.as_ref(),
         ),
         Commands::Copy(a) => {
-            use dezirclip::ports::ClipboardPayload as Payload;
+            use dzc_core::ports::ClipboardPayload as Payload;
             let passthrough = osc52_passthrough(a.target, a.osc52_passthrough)?;
             let entry = cli::get::resolve(&a.id, false, clip_repo.as_ref())?;
             if a.target == ClipboardTarget::Osc52 {
@@ -1076,7 +1076,7 @@ fn database_path_from_override(path: Option<PathBuf>) -> Result<PathBuf, String>
         return Ok(path);
     }
     let executable = std::env::current_exe().ok();
-    Ok(dezirclip::api::resolve_database_path(
+    Ok(dzc_core::api::resolve_database_path(
         &data_dir()?,
         &legacy_data_dir()?,
         executable.as_deref().and_then(std::path::Path::parent),

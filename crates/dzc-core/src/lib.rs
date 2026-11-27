@@ -13,6 +13,7 @@ mod services;
 pub mod crypto {
     pub use crate::infrastructure::encryption::{
         decode_for_mutation, decode_stored_text, encrypt_sensitive, encrypt_value, encrypt_with_key,
+        has_ciphertext_envelope,
         install_key_provider, EncryptedPayload, EncryptionError, KeyProvider, StoredText,
         ENCRYPT_PREFIX, LINUX_ENCRYPT_PREFIX,
     };

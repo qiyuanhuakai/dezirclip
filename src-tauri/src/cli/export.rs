@@ -39,7 +39,7 @@ use std::path::Path;
 use base64::{engine::general_purpose::STANDARD, Engine};
 
 #[cfg(test)]
-use crate::domain::models::ClipboardEntry;
+use dzc_core::api::ClipboardEntry;
 use crate::api::{BackupService, HistoryService};
 #[cfg(test)]
 use crate::api::HistoryQuery;

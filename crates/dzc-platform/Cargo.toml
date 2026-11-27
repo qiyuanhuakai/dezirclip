@@ -19,6 +19,7 @@ native-ocr = ["dep:windows-core", "windows/Win32_System_WinRT"]
 
 [dependencies]
 tempfile = "3"
+dirs.workspace = true
 dunce = "1"
 font-kit = { workspace = true, optional = true }
 xcap = { workspace = true, optional = true }
@@ -41,7 +42,6 @@ tokio = { workspace = true, optional = true, features = ["net", "io-util", "rt",
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libloading = "0.8"
-dirs.workspace = true
 keyring.workspace = true
 x11rb = { workspace = true, features = ["randr", "xkb"] }
 libc.workspace = true

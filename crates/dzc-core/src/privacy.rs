@@ -6,6 +6,14 @@ pub(crate) use scan::ScanTimer;
 #[cfg(test)]
 pub(crate) use scan::with_scan_clock;
 
+pub const SENSITIVE_TAGS: &[&str] = &["sensitive", "密码"];
+
+/// Recognizes the protected-history tags from both supported on-disk names.
+pub fn has_sensitive_tag(tags: &[String]) -> bool {
+    tags.iter()
+        .any(|tag| SENSITIVE_TAGS.iter().any(|name| name.eq_ignore_ascii_case(tag.trim())))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceSource {

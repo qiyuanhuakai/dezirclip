@@ -1,5 +1,5 @@
 //! Fetch complete stored content; raw and MIME output never append a newline.
-use crate::domain::models::ClipboardEntry;
+use dzc_core::api::ClipboardEntry;
 use crate::api::{HistoryQuery, HistoryService};
 use std::io::Write;
 

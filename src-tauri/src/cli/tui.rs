@@ -1,7 +1,7 @@
 //! Native terminal history browser. Selection output is emitted after restoration.
 
 use super::frontend::{self, BrowseOptions};
-use crate::domain::models::ClipboardEntry;
+use dzc_core::api::ClipboardEntry;
 use crate::api::HistoryService;
 
 use crate::infrastructure::terminal_ui::Terminal;

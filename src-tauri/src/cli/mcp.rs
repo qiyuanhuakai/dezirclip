@@ -1,6 +1,6 @@
 //! Bounded, read-only MCP over stdio with a fresh Core ordinary-data permit per query.
 
-use crate::domain::models::ClipboardEntry;
+use dzc_core::api::ClipboardEntry;
 use crate::api::{HistoryQuery, HistoryService};
 use serde_json::{json, Map, Value};
 use std::io::{BufRead, Read, Write};
@@ -328,14 +328,14 @@ fn bounded(value: &str, limit: usize) -> String {
 }
 
 fn metadata(entry: &ClipboardEntry) -> Result<Value, String> {
-    if crate::database::has_sensitive_tag(&entry.tags)
+    if dzc_core::privacy::has_sensitive_tag(&entry.tags)
         || [&entry.content, &entry.preview]
             .iter()
-            .any(|value| crate::infrastructure::encryption::has_ciphertext_envelope(value))
+            .any(|value| dzc_core::crypto::has_ciphertext_envelope(value))
         || entry
             .html_content
             .as_deref()
-            .is_some_and(crate::infrastructure::encryption::has_ciphertext_envelope)
+            .is_some_and(dzc_core::crypto::has_ciphertext_envelope)
     {
         return Err("This entry is unavailable to the MCP adapter".to_string());
     }

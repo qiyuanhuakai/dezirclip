@@ -42,12 +42,12 @@ pub fn open_data_folder(state: State<'_, AppDataDir>) -> AppResult<()> {
 
 #[tauri::command]
 pub fn toggle_autostart(enabled: bool) -> AppResult<()> {
-    Ok(dezirclip::infrastructure::login_start::set(&std::env::current_exe()?, enabled)?)
+    Ok(dzc_platform::login_start::set(&std::env::current_exe()?, enabled)?)
 }
 
 #[tauri::command]
 pub fn is_autostart_enabled() -> AppResult<bool> {
-    Ok(dezirclip::infrastructure::login_start::enabled(&std::env::current_exe()?)?)
+    Ok(dzc_platform::login_start::enabled(&std::env::current_exe()?)?)
 }
 
 #[tauri::command]
