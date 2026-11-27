@@ -193,10 +193,10 @@ func (n *nativeMain) backgroundSettings(c *ui.Context, kit uikit.Kit) {
 		label = n.text("change_background")
 		filename = filepath.Base(path)
 	}
-	ui.Column(c.Key("background")).ColumnSpan(-1).Children(func() {
+	ui.Column(c.Key("background")).ColumnSpan(-1).Transition(nativeSettingReveal).Children(func() {
 		kit.SettingsBackground(c, uikit.SettingsBackgroundOptions{
 			Label: n.text("custom_background"), ChooseLabel: label, ClearLabel: n.text("clear_background"), Filename: filename,
-			Disabled: n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "",
+			Disabled: n.appearanceBusy || n.preferenceUnavailable(backgroundSetting),
 			OnChoose: func() { n.chooseBackground(label) },
 			OnClear:  func() { n.saveSetting(backgroundSetting, "") },
 		}, func() {
@@ -223,10 +223,10 @@ func (n *nativeMain) drawBackgroundOpacity(c *ui.Context) {
 
 func (n *nativeMain) chooseBackground(label string) {
 	state := n.history.state
-	if n.session == nil || state.ServiceInstanceId == "" || n.mutating {
+	if n.appearanceBusy || n.preferenceUnavailable(backgroundSetting) || n.pendingSettings["app.theme"] {
 		return
 	}
-	n.mutating, n.appearanceBusy, n.notice = true, true, ""
+	n.appearanceBusy, n.notice = true, ""
 	window, session, language := n.window, n.session, n.language()
 	wasVisible, visibility := window.IsVisible(), n.shell.resumeSequence.Load()
 	n.shell.dock.dialogs.Add(1)
@@ -264,7 +264,7 @@ func (n *nativeMain) chooseBackground(label string) {
 				return
 			}
 			defer window.Invalidate()
-			n.mutating, n.appearanceBusy = false, false
+			n.appearanceBusy = false
 			if wasVisible && visibility == n.shell.resumeSequence.Load() && !window.IsMinimized() {
 				n.shell.dock.shown = time.Now()
 				if !window.IsVisible() {

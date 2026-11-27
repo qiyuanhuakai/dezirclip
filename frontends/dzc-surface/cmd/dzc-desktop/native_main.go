@@ -55,6 +55,7 @@ type nativeMain struct {
 	appearanceBusy        bool
 	appearanceSync        bool
 	appearanceMotionUntil time.Time
+	appearanceRevision    uint64
 	background            nativeBackground
 	systemDark            bool
 	windows11             bool
@@ -72,6 +73,7 @@ type nativeMain struct {
 	menuTransformsLoading bool
 	readingViewSettings   bool
 	viewSettingsRevision  uint64
+	pendingSettings       map[string]bool
 	cardMediaRevision     uint64
 	resetOpen             bool
 	privacyKindsOpen      bool
@@ -84,6 +86,7 @@ type nativeMain struct {
 	privacyRules          nativePrivacyRules
 	privacyDialog         *nativePrivacyDialog
 	shortcut              *nativeShortcutForm
+	savingShortcut        bool
 	shortcutErrKey        string
 	shortcutErrText       string
 	queueCount            nativeQueueCount
@@ -146,6 +149,7 @@ func (n *nativeMain) stopSession() {
 	n.resetOpen = false
 	n.clearHistoryOpen = false
 	n.menuTransformsLoading, n.readingViewSettings = false, false
+	n.pendingSettings = nil
 	n.appearanceBusy, n.appearanceSync = false, false
 	n.resetOpacityPreviews()
 	n.background.pause()
@@ -155,6 +159,7 @@ func (n *nativeMain) stopSession() {
 	n.closeBackup()
 	n.closePrivacyDialog()
 	n.cancelShortcut()
+	n.savingShortcut = false
 	n.shortcutErrKey, n.shortcutErrText = "", ""
 	if !n.winV.changing {
 		n.winV = nativeWinVState{}
@@ -303,6 +308,7 @@ func (n *nativeMain) systemAppearanceChanged() {
 	mode := n.colorMode(n.preferences)
 	if mode != n.mode {
 		n.mode = mode
+		n.startAppearanceMotion()
 		n.resetPreviewSelection()
 	}
 	// The OS can update the compositor material even with an explicit palette.
@@ -411,36 +417,41 @@ func (n *nativeMain) watch(session context.Context, cursor uint64) {
 		}
 		cursor = events.State.EventSequence
 		if len(events.Events) > 0 || events.ResyncRequired {
-			n.update(session, func() { n.applyEvents(events) })
+			n.updateIfChanged(session, func() bool { return n.applyEvents(events) })
 		}
 	}
 }
 
-func (n *nativeMain) applyEvents(events protocol.EventsResult) {
+func (n *nativeMain) applyEvents(events protocol.EventsResult) bool {
 	current, next := n.history.state, events.State
 	if current.ServiceInstanceId != next.ServiceInstanceId || current.PrivacyEpoch != next.PrivacyEpoch || events.ResyncRequired {
 		n.cardThumbnails = nativeCardThumbnails{}
 		n.clearBackground()
 		n.prepare(n.resume)
-		return
+		return true
 	}
+	changed := false
 	for _, event := range events.Events {
 		if dialog := n.privacyDialog; dialog != nil && dialog.params.Id != nil &&
 			(event.Event == protocol.EventKindHistoryReset ||
 				(event.Event == protocol.EventKindEntryUpdated || event.Event == protocol.EventKindEntryDeleted) &&
 					event.Data.EntryId != nil && *event.Data.EntryId == *dialog.params.Id) {
 			n.closePrivacyDialog()
+			changed = true
 		}
 		if event.Event == protocol.EventKindEntryUpdated && event.Data.EntryId != nil &&
 			*event.Data.EntryId == n.ocrJob.id && n.ocrJob.status != "processing" {
 			n.ocrJob = nativeOCRJob{}
+			changed = true
 		}
 		if event.Event == protocol.EventKindHistoryReset {
 			n.cardTagColors = nil
 			n.tagColorRevision++
 		}
 		if event.Event == protocol.EventKindServiceStateChanged && event.Data.Status != nil {
-			n.queueCount.observe(*event.Data.Status)
+			if n.queueCount.observe(*event.Data.Status) && n.settingEnabled("app.sequential_mode", false) {
+				changed = true
+			}
 			switch *event.Data.Status {
 			case "view_settings_changed", "capture_settings_changed", "custom_themes_changed", "PrivacyHotkeyChanged":
 				if n.winV.changing {
@@ -455,6 +466,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 				n.mutating, n.resetOpen = false, false
 				n.resetOpacityPreviews()
 				n.refreshViewSettings()
+				changed = true
 			}
 		}
 	}
@@ -500,7 +512,9 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 			n.loadPage()
 		}
 		n.tagCatalog.invalidate()
+		changed = true
 	}
+	return changed
 }
 
 func (n *nativeMain) editQuery(composing bool) {

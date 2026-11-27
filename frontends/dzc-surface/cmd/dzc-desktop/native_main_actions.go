@@ -37,9 +37,22 @@ func (n *nativeMain) openClearHistory() {
 }
 
 func (n *nativeMain) clearHistory() {
-	n.writeSetting(func(ctx context.Context, epoch uint64) error {
-		return n.library.ClearHistory(ctx, epoch)
-	})
+	if n.session == nil || n.mutating || n.history.state.ServiceInstanceId == "" {
+		return
+	}
+	n.mutating, n.notice = true, ""
+	session, state := n.session, n.history.state
+	go func() {
+		ctx, cancel := context.WithTimeout(session, 4*time.Second)
+		defer cancel()
+		err := n.library.ClearHistory(ctx, state.PrivacyEpoch)
+		n.update(session, func() {
+			n.mutating = false
+			if err != nil {
+				n.notice = n.text("native_setting_save_failed")
+			}
+		})
+	}()
 }
 
 func (n *nativeMain) rowAction(row protocol.DesktopEntry, generation uint64, action nativeRowAction) {

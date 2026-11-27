@@ -33,9 +33,9 @@ func (n *nativeMain) pasteMethodSetting(c *ui.Context, kit uikit.Kit) {
 		saved = "shift_insert"
 	}
 	selected, label := saved, n.text("paste_method")
-	kit.SettingsField(c, uikit.SettingsFieldOptions{}).Children(func() {
+	kit.SettingsField(c.Key(nativePasteMethodKey), uikit.SettingsFieldOptions{}).Children(func() {
 		kit.SettingsInlineLabel(c, label, n.settingsHelpLabel(label), n.text("paste_method_hint"))
-		if kit.Select(c, &selected, label, options, n.mutating).Changed() && selected != saved {
+		if kit.Select(c, &selected, label, options, n.preferenceUnavailable(nativePasteMethodKey)).Changed() && selected != saved {
 			if selected == "game_mode" {
 				n.enableGameMode(saved)
 			} else {
@@ -47,7 +47,7 @@ func (n *nativeMain) pasteMethodSetting(c *ui.Context, kit uikit.Kit) {
 
 func (n *nativeMain) enableGameMode(previous string) {
 	state := n.history.state
-	if n.session == nil || n.mutating || state.ServiceInstanceId == "" {
+	if n.preferenceUnavailable(nativePasteMethodKey) {
 		return
 	}
 	n.mutating, n.notice = true, ""
@@ -130,14 +130,17 @@ type nativeQueueCount struct {
 	known, reading, failed bool
 }
 
-func (q *nativeQueueCount) observe(status string) {
+func (q *nativeQueueCount) observe(status string) bool {
 	if count, ok := strings.CutPrefix(status, "paste_queue_changed:"); ok {
 		value, err := strconv.ParseUint(count, 10, 32)
 		if err == nil && value <= 32768 {
+			changed := !q.known || q.count != uint32(value)
 			q.events++
 			q.count, q.known, q.failed = uint32(value), true, false
+			return changed
 		}
 	}
+	return false
 }
 
 func (q *nativeQueueCount) finishRead(token uint64, count uint32, err error) {
@@ -179,7 +182,8 @@ func (n *nativeMain) sequentialSettings(c *ui.Context) {
 		}
 	case n.queueCount.known && n.queueCount.count > 0:
 		kit := n.mainKit()
-		kit.SettingsField(c, uikit.SettingsFieldOptions{}).ColumnSpan(-1).Children(func() {
+		kit.SettingsField(c.Key("sequential-queue"), uikit.SettingsFieldOptions{}).
+			ColumnSpan(-1).Transition(nativeSettingReveal).Children(func() {
 			label := strings.ReplaceAll(n.text("sequential_paste_queue_count"), "{count}", strconv.FormatUint(uint64(n.queueCount.count), 10))
 			kit.SettingsLabel(c, label).Grow(1).Wrap()
 			if kit.Button(c, uikit.ButtonOptions{
@@ -233,7 +237,7 @@ func (n *nativeMain) numberSetting(c *ui.Context, key, label, hint string, fallb
 		value, saved string
 	}
 	kit := n.mainKit()
-	row := kit.SettingsField(c.Key(key), uikit.SettingsFieldOptions{Detail: key == "app.idle_destroy_seconds"})
+	row := kit.SettingsField(c.Key(key), uikit.SettingsFieldOptions{Detail: key == "app.idle_destroy_seconds"}).Transition(nativeSettingReveal)
 	draft := ui.Local(row, key, func() limitDraft { return limitDraft{value: saved, saved: saved} })
 	if draft.saved != saved {
 		draft.value, draft.saved = saved, saved
@@ -246,10 +250,18 @@ func (n *nativeMain) numberSetting(c *ui.Context, key, label, hint string, fallb
 			return
 		}
 		limit, valid := nativeBoundedNumber(draft.value, minimum, maximum)
-		draft.value = saved
-		if valid && limit != saved {
-			n.saveSetting(key, limit)
+		if !valid || limit == saved || n.preferenceUnavailable(key) {
+			draft.value = saved
+			return
 		}
+		draft.value = limit
+		n.savePreference(key, limit, 4*time.Second, func(ctx context.Context, epoch uint64) error {
+			return n.library.SetSetting(ctx, key, limit, epoch)
+		}, func(err error) {
+			if err != nil && draft.value == limit {
+				draft.value = saved
+			}
+		})
 	})
 }
 

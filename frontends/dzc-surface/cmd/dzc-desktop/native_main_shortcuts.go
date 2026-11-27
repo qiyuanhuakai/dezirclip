@@ -31,7 +31,7 @@ type nativeShortcutForm struct {
 
 func (n *nativeMain) shortcutAvailable() bool {
 	return n.session != nil && n.history.state.ServiceInstanceId != "" && !n.mutating &&
-		n.shortcut == nil && n.privacyDialog == nil && n.backup == nil && !n.winV.changing
+		n.shortcut == nil && !n.savingShortcut && n.privacyDialog == nil && n.backup == nil && !n.winV.changing
 }
 
 func (n *nativeMain) shortcutValue(key, fallback string) string {
@@ -46,7 +46,7 @@ func (n *nativeMain) globalShortcutSettings(c *ui.Context) {
 	kit := n.mainKit()
 	bindings := nativeMainChords(n.shortcutValue(mainShortcutSetting, ""))
 	disabled := !n.shortcutAvailable()
-	ui.Column(c).ColumnSpan(-1).Children(func() {
+	ui.Column(c.Key(mainShortcutSetting)).ColumnSpan(-1).Children(func() {
 		kit.HotkeyListEditor(c, label, func() {
 			n.shortcutBinding(c, kit, mainShortcutSetting, "+ "+label, "", "+ "+label)
 		}, func() {
@@ -85,7 +85,12 @@ func (n *nativeMain) shortcutSettingWithOptions(c *ui.Context, key, label, fallb
 		options.OnClear = nil
 	}
 	kit := n.mainKit()
-	ui.Column(c).MinWidth(0).Children(func() {
+	row := ui.Column(c.Key(key)).MinWidth(0)
+	switch key {
+	case "app.screenshot_hotkey", "app.screenshot_full_hotkey", "app.quick_paste_hotkey", "app.sequential_hotkey":
+		row.Transition(nativeSettingReveal)
+	}
+	row.Children(func() {
 		kit.HotkeyRowWithOptions(c, label, options, func() {
 			n.shortcutBinding(c, kit, key, label, value, n.text("not_set"))
 		})
@@ -392,7 +397,7 @@ func (n *nativeMain) saveNativeShortcut(key, value string) {
 		return
 	}
 	session, state := n.session, n.history.state
-	n.mutating = true
+	n.savingShortcut = true
 	n.shortcutErrKey, n.shortcutErrText = "", ""
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 15*time.Second)
@@ -411,7 +416,7 @@ func (n *nativeMain) saveNativeShortcut(key, value string) {
 			err = n.shell.SetPanelHotkey(ctx, key, value, state.PrivacyEpoch)
 		}
 		n.update(session, func() {
-			n.mutating = false
+			n.savingShortcut = false
 			if err != nil {
 				n.reportShortcutError(key, n.shortcutError(err))
 				return

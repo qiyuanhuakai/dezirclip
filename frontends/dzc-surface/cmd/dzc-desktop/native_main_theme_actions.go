@@ -37,7 +37,7 @@ func (n *nativeMain) themeSettings(c *ui.Context, kit uikit.Kit, width float32) 
 	options := uikit.ThemeManagerOptions{
 		Label: n.text("visual_theme"), BuiltinLabel: n.text("theme_builtin", "Built-in themes"), ImportedLabel: n.text("theme_custom", "Imported themes"),
 		Active: active, Builtins: builtins, Imported: imported, ImportDisabled: full,
-		Disabled:    n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "",
+		Disabled:    n.appearanceBusy || n.preferenceUnavailable("app.theme"),
 		ImportLabel: n.text("theme_import"), ExportLabel: n.text("theme_export"), RemoveLabel: n.text("theme_delete"),
 		OnChange: func(value string) { n.saveSetting("app.theme", value) },
 		OnImport: func() {
@@ -55,10 +55,10 @@ func (n *nativeMain) themeSettings(c *ui.Context, kit uikit.Kit, width float32) 
 }
 
 func (n *nativeMain) changeThemeFile(action nativeThemeAction, selected protocol.DesktopThemePackage) {
-	if n.session == nil || n.mutating || n.history.state.ServiceInstanceId == "" {
+	if n.appearanceBusy || n.preferenceUnavailable("app.theme") || n.pendingSettings[backgroundSetting] {
 		return
 	}
-	n.mutating, n.appearanceBusy, n.notice = true, true, ""
+	n.appearanceBusy, n.notice = true, ""
 	session, epoch, window := n.session, n.history.state.PrivacyEpoch, n.window
 	language := n.language()
 	n.shell.dock.dialogs.Add(1)
@@ -75,7 +75,7 @@ func (n *nativeMain) changeThemeFile(action nativeThemeAction, selected protocol
 			cancel()
 		}
 		n.update(session, func() {
-			n.mutating, n.appearanceBusy = false, false
+			n.appearanceBusy = false
 			if refresh || n.appearanceSync {
 				n.appearanceSync = false
 				n.refreshViewSettings()

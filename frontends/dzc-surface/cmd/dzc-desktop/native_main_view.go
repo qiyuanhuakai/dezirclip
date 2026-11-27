@@ -30,6 +30,13 @@ var nativePanelEnter = ui.ElementTransition{
 	Enter:    &ui.Motion{Y: 4},
 }
 
+var nativeSettingReveal = ui.ElementTransition{
+	Duration: nativeAppearanceMotion,
+	Position: true,
+	Enter:    &ui.Motion{Y: -4, Collapse: true},
+	Exit:     &ui.Motion{Y: -4, Collapse: true},
+}
+
 func (n *nativeMain) view(c *ui.Context) {
 	if n.shortcut != nil {
 		n.shortcut.rendered, n.shortcut.focusInRow = false, false
@@ -96,7 +103,8 @@ func (n *nativeMain) view(c *ui.Context) {
 			if n.pinned {
 				pinIcon = "unpin"
 			}
-			pin := uikit.HeaderAction{Icon: pinIcon, Label: n.text("native_keep_on_top"), Active: n.pinned, Run: n.togglePin, Disabled: n.mutating}
+			pin := uikit.HeaderAction{Icon: pinIcon, Label: n.text("native_keep_on_top"), Active: n.pinned, Run: n.togglePin,
+				Disabled: n.preferenceUnavailable("app.window_pinned")}
 			close := uikit.HeaderAction{Icon: "hide", Label: n.text("hide"), Run: n.hideWindow}
 			header := uikit.HeaderOptions{Title: "DezirClip", Actions: []uikit.HeaderAction{pin}, Draggable: true}
 			if n.showSettings {
@@ -163,7 +171,7 @@ func (n *nativeMain) view(c *ui.Context) {
 			}
 			n.sourceExclusions.editing, n.sourceExclusions.composing = false, false
 			n.customPrivacyRules.editing, n.customPrivacyRules.composing = false, false
-			kit.WindowContent(c, func() {
+			panel := kit.WindowContent(c.Key("window-content"), func() {
 				switch {
 				case n.showSettings:
 					n.settingsView(c, kit, surfaceOpacity)
@@ -176,6 +184,15 @@ func (n *nativeMain) view(c *ui.Context) {
 					n.historyView(c, kit, width)
 				}
 			})
+			const appearance = "window-appearance"
+			last := ui.Local(panel, appearance, func() uint64 { return n.appearanceRevision })
+			if *last != n.appearanceRevision {
+				*last = n.appearanceRevision
+				panel.Jump(appearance, 0.84)
+			}
+			if opacity := panel.AnimateTo(appearance, 1, ui.Animation{Duration: nativeAppearanceMotion}); opacity < 1 {
+				panel.Opacity(float32(opacity))
+			}
 			n.savePrivacyTexts(false)
 			if n.notice != "" {
 				ui.Text(c, n.notice).Padding(4, 8).TextColor(c.Theme().TextMuted)

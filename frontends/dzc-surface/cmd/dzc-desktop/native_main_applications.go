@@ -76,21 +76,26 @@ func (n *nativeMain) applicationSetting(c *ui.Context, kind, label string) {
 		kit.SettingsLabel(c, strings.ToUpper(label)).FontSize(11).Opacity(0.8).Margin(0, 0, 8, 0)
 		_, changed := kit.SearchSelect(c, uikit.SearchSelectOptions{
 			Label: label, Placeholder: n.text("not_configured"), NoMatches: n.text("no_matching_apps"),
-			Value: &selected, Choices: options, Disabled: n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "",
+			Value: &selected, Choices: options, Disabled: n.preferenceUnavailable(key) || n.applicationSelectionPending(),
 		})
 		if path != "" {
 			ui.Text(c, applicationFilename(path)).FontSize(10).TextColor(c.Theme().TextMuted).Margin(2, 0, 0).Wrap()
 		}
 		if changed {
-			n.writeSettingWithResult(nativeExternalApplicationTimeout, func(ctx context.Context, epoch uint64) error {
+			n.savePreference(key, selected, nativeExternalApplicationTimeout, func(ctx context.Context, epoch uint64) error {
 				return n.library.SetSetting(ctx, key, selected, epoch)
-			}, func(err error) {
-				if err == nil {
-					n.applySavedSetting(key, selected)
-				}
-			})
+			}, nil)
 		}
 	})
+}
+
+func (n *nativeMain) applicationSelectionPending() bool {
+	for _, kind := range []string{"text", "rich_text", "image", "video", "code", "url"} {
+		if n.pendingSettings["app."+kind] {
+			return true
+		}
+	}
+	return false
 }
 
 func applicationFilename(path string) string {

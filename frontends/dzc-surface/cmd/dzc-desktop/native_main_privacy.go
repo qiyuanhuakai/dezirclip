@@ -519,7 +519,7 @@ func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
 		for _, kind := range labels {
 			options = append(options, uikit.PrivacyDetectionOption{Value: kind.id, Label: kind.label, Checked: slices.Contains(selected, kind.id)})
 		}
-		kit.PrivacyDetectionOptions(c, options, n.mutating, func(value string, checked bool) {
+		kit.PrivacyDetectionOptions(c, options, n.preferenceUnavailable(key), func(value string, checked bool) {
 			next := slices.DeleteFunc(slices.Clone(selected), func(id string) bool { return id == value })
 			if checked {
 				next = append(next, value)

@@ -96,16 +96,14 @@ func nativeUpdateChannel(version, saved string) string {
 func (n *nativeMain) configureUpdater(saved string, automatic bool) {
 	u := &n.updater
 	channel := nativeUpdateChannel(buildinfo.Version, saved)
-	if u.channel == channel && u.automatic == automatic {
-		return
-	}
-	n.stopUpdater()
+	u.automatic = automatic
 	if channel != u.channel {
+		n.stopUpdater()
 		u.result, u.err, u.checked, u.notesOpen = nativeUpdateResult{}, nil, time.Time{}, false
 		u.result.installTarget, u.result.installSupport = mygoUpdateTarget()
+		u.channel = channel
+		n.restoreUpdateCheck(channel)
 	}
-	u.channel, u.automatic = channel, automatic
-	n.restoreUpdateCheck(channel)
 }
 
 func (n *nativeMain) restoreUpdateCheck(channel string) {
@@ -333,7 +331,8 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	kit.SettingsFieldLabel(c, title, n.settingsHelpLabel(title), support)
 	auto := u.automatic
 	autoLabel := n.text(protocol.SettingUpdateAutoCheckLabel)
-	if kit.SettingsToggleField(c, &auto, autoLabel, n.settingsHelpLabel(autoLabel), n.text("updater_auto_hint"), disabled) {
+	if kit.SettingsToggleField(c.Key(protocol.SettingUpdateAutoCheck), &auto, autoLabel, n.settingsHelpLabel(autoLabel), n.text("updater_auto_hint"),
+		disabled || n.pendingSettings[protocol.SettingUpdateAutoCheck]) {
 		n.saveSetting(protocol.SettingUpdateAutoCheck, strconv.FormatBool(auto))
 	}
 	channelLabel := n.text(protocol.SettingUpdateChannelLabel)
@@ -341,14 +340,14 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	if u.channel == "preview" {
 		channelHint = n.text("updater_preview_hint")
 	}
-	kit.SettingsField(c, uikit.SettingsFieldOptions{}).Children(func() {
+	kit.SettingsField(c.Key(protocol.SettingUpdateChannel), uikit.SettingsFieldOptions{}).Children(func() {
 		kit.SettingsInlineLabel(c, channelLabel, n.settingsHelpLabel(channelLabel), channelHint)
 		setting := protocol.UpdateChannelSetting()
 		options := make([]uikit.SelectOption, 0, len(setting.Values))
 		for _, channel := range setting.Values {
 			options = append(options, uikit.SelectOption{Value: channel, Label: n.text(setting.OptionLabelKeys[channel])})
 		}
-		kit.SettingsChoices(c, channelLabel, u.channel, options, true, disabled, func(channel string) {
+		kit.SettingsChoices(c, channelLabel, u.channel, options, true, disabled || n.pendingSettings[protocol.SettingUpdateChannel], func(channel string) {
 			n.saveSetting(protocol.SettingUpdateChannel, channel)
 		})
 	})
@@ -362,7 +361,7 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		channelVersion = u.result.Available.Version
 	}
 	if channelVersion != "" {
-		kit.UpdateVersionRow(c, n.text("updater_channel_version"), channelVersion)
+		kit.UpdateVersionRow(c.Key("updater-channel-version"), n.text("updater_channel_version"), channelVersion)
 	}
 	check := n.text("updater_check_now")
 	if u.checking {

@@ -60,7 +60,7 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 			{ID: "emoji", Label: n.text("emoji_tab")},
 			{ID: "symbols", Label: n.text("emoji_symbols_tab")},
 			{ID: "favorites", Label: n.text("emoji_favorites")},
-		}, tab, n.mutating, func(selection string) {
+		}, tab, n.preferenceUnavailable(nativeEmojiTabSetting), func(selection string) {
 			n.saveSetting(nativeEmojiTabSetting, selection)
 		})
 		ui.Column(c.Key("character-tab-content")).FillWidth().Grow(1).Shrink(1).MinHeight(0).Clip().Children(func() {

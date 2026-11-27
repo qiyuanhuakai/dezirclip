@@ -103,7 +103,7 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label, hint string, choices
 		kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), hint)
 		_, changed := kit.SearchSelect(c, uikit.SearchSelectOptions{
 			Label: label, Placeholder: system, NoMatches: n.text("no_matching_fonts"),
-			Value: &selected, Choices: options, Disabled: n.mutating || n.session == nil || n.history.state.ServiceInstanceId == "",
+			Value: &selected, Choices: options, Disabled: n.preferenceUnavailable(key),
 		})
 		if changed {
 			n.saveFont(key, selected)
@@ -122,8 +122,11 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 	}
 	kit := n.mainKit()
 	row := kit.SettingsField(c.Key(setting.key), uikit.SettingsFieldOptions{Stacked: true, Last: setting == nativeBackgroundOpacity})
+	if setting.key == "app.sound_volume" {
+		row.Transition(nativeSettingReveal)
+	}
 	edit := ui.Local(row, setting.key, func() draft { return draft{value: float64(saved)} })
-	if !edit.dirty && !n.mutating {
+	if !edit.dirty && !n.pendingSettings[setting.key] {
 		edit.value = float64(saved)
 	}
 	row.Children(func() {
@@ -131,12 +134,13 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 			kit.SettingsFieldLabel(c, label, n.settingsHelpLabel(label), hint).Grow(1)
 			kit.SettingsLabel(c, strconv.Itoa(int(edit.value))+setting.unit).FontSize(11).TextColor(c.Theme().TextMuted)
 		})
+		disabled := n.preferenceBusy(setting.key)
 		slider := kit.Slider(c, &edit.value, float64(setting.minimum), float64(setting.maximum), label).
-			Step(1).FillWidth().Disabled(n.mutating)
+			Step(1).FillWidth().Disabled(disabled)
 		edit.dirty = edit.dirty || slider.Changed()
 		value := int(edit.value)
 		// Keep dragging local and save once the pointer is released.
-		if edit.dirty && !slider.Pressed() && !n.mutating {
+		if edit.dirty && !slider.Pressed() && !disabled {
 			edit.dirty = false
 			if value != saved {
 				switch setting {
@@ -155,12 +159,9 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 
 func (n *nativeMain) saveOpacity(preference string, value int, draft **int) {
 	saved := strconv.Itoa(value)
-	n.writeSettingWithResult(4*time.Second, func(ctx context.Context, epoch uint64) error {
+	n.savePreference(preference, saved, 4*time.Second, func(ctx context.Context, epoch uint64) error {
 		return n.library.SetSetting(ctx, preference, saved, epoch)
-	}, func(err error) {
-		if err == nil {
-			n.applySavedSetting(preference, saved)
-		}
+	}, func(error) {
 		*draft = nil
 	})
 }

@@ -117,7 +117,7 @@ func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nat
 				for _, pane := range panes {
 					open := n.settingsOpen[pane.ID]
 					wasOpen := *open
-					kit.SettingsSectionCard(c, pane.Label, open, pane.draw)
+					kit.SettingsSectionCard(c.Key(pane.ID), pane.Label, open, pane.draw)
 					if *open && !wasOpen {
 						n.settingsSection = pane.ID
 					} else if !*open && wasOpen && pane.ID == "appearance" {
@@ -139,16 +139,20 @@ func (n *nativeMain) settingsFooter(c *ui.Context, kit uikit.Kit, compact bool) 
 	kit.SettingsFooter(c, uikit.SettingsFooterOptions{
 		ProductName: "DezirClip", Feedback: n.text("feedback"), Website: n.text("official_website"),
 		Reset: n.text("reset_defaults"), Compact: compact,
-		ResetDisabled: n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating || n.capturing,
+		ResetDisabled: n.settingsResetUnavailable(),
 		OnFeedback:    func() { open(desktopProjectURL + "/issues") },
 		OnReset:       func() { n.resetOpen = true },
 		OnWebsite:     func() { open(desktopProjectURL) },
 	})
 }
 
+func (n *nativeMain) settingsResetUnavailable() bool {
+	return n.preferenceUnavailable("") || len(n.pendingSettings) != 0 || n.capturing || n.savingShortcut || n.appearanceBusy
+}
+
 func (n *nativeMain) confirmSettingsReset() {
 	state := n.history.state
-	if n.session == nil || state.ServiceInstanceId == "" || n.mutating || n.capturing {
+	if n.settingsResetUnavailable() {
 		return
 	}
 	n.mutating, n.notice = true, ""
@@ -172,7 +176,7 @@ type nativeBooleanSetting struct {
 func (n *nativeMain) booleanSettings(c *ui.Context, settings ...nativeBooleanSetting) {
 	for _, setting := range settings {
 		enabled := n.settingEnabled(setting.key, setting.initial)
-		if n.mainKit().SettingsToggle(c, &enabled, setting.label).Disabled(n.mutating).Changed() {
+		if n.mainKit().SettingsToggle(c.Key(setting.key), &enabled, setting.label).Disabled(n.preferenceUnavailable(setting.key)).Changed() {
 			n.saveSetting(setting.key, strconv.FormatBool(enabled))
 		}
 	}
@@ -180,7 +184,7 @@ func (n *nativeMain) booleanSettings(c *ui.Context, settings ...nativeBooleanSet
 
 func (n *nativeMain) booleanSettingWithHelp(c *ui.Context, key, label, hint string, initial bool) {
 	enabled := n.settingEnabled(key, initial)
-	if n.mainKit().SettingsToggleField(c.Key(key), &enabled, label, n.settingsHelpLabel(label), hint, n.mutating) {
+	if n.mainKit().SettingsToggleField(c.Key(key), &enabled, label, n.settingsHelpLabel(label), hint, n.preferenceUnavailable(key)) {
 		n.saveSetting(key, strconv.FormatBool(enabled))
 	}
 }
@@ -197,15 +201,15 @@ func (n *nativeMain) generalSettings(c *ui.Context) {
 	n.loginSettings(c.Key("login-startup"))
 	const trayKey = "app.hide_tray_icon"
 	hideTray := n.settingEnabled(trayKey, false)
-	if kit.SettingsToggleField(c.Key(trayKey), &hideTray, n.text("hide_tray_icon"), "", "", n.mutating) {
-		n.writeSettingWithEffect(func(ctx context.Context, epoch uint64) error {
+	if kit.SettingsToggleField(c.Key(trayKey), &hideTray, n.text("hide_tray_icon"), "", "", n.preferenceUnavailable(trayKey)) {
+		n.savePreference(trayKey, strconv.FormatBool(hideTray), 4*time.Second, func(ctx context.Context, epoch uint64) error {
 			return n.shell.SetTrayVisible(ctx, !hideTray, epoch)
-		}, func() { n.applySavedSetting(trayKey, strconv.FormatBool(hideTray)) })
+		}, nil)
 	}
 	const edge = "app.edge_docking"
 	dock, dockLabel := n.settingEnabled(edge, false), n.text("edge_docking")
 	if kit.SettingsToggleField(c.Key(edge), &dock, dockLabel, n.settingsHelpLabel(dockLabel), n.text("edge_docking_hint"),
-		n.mutating || !dock && !dockingAvailable()) {
+		n.preferenceUnavailable(edge) || !dock && !dockingAvailable()) {
 		n.saveSetting(edge, strconv.FormatBool(dock))
 	}
 	n.booleanSettingWithHelp(c, "app.follow_mouse", n.text("follow_mouse"), "", true)
@@ -222,7 +226,7 @@ func (n *nativeMain) generalSettings(c *ui.Context) {
 	preview := n.settingEnabled(previewKey, false)
 	label := n.text("preview_keyboard_enabled")
 	if kit.SettingsDetailToggle(c.Key(previewKey), &preview, label, n.settingsHelpLabel(label), n.text("preview_keyboard_enabled_hint"),
-		n.mutating || !n.settingEnabled(arrowKeySelection, false)) {
+		n.preferenceBusy(previewKey) || !n.settingEnabled(arrowKeySelection, false)) {
 		n.saveSetting(previewKey, strconv.FormatBool(preview))
 	}
 	if runtime.GOOS == "windows" {
@@ -265,7 +269,10 @@ func (n *nativeMain) soundSettings(c *ui.Context) {
 	if n.settingEnabled(enabled, false) {
 		volume := nativeRangeSetting{key: "app.sound_volume", unit: "%", maximum: 100, fallback: 70}
 		n.rangeSetting(c, volume, n.text("sound_volume"), "", volume.value(n.preferences))
-		n.booleanSettingWithHelp(c, "app.sound_paste_enabled", n.text("paste_sound"), "", true)
+		const key = "app.sound_paste_enabled"
+		ui.Column(c.Key("paste-sound-detail")).MinWidth(0).Transition(nativeSettingReveal).Children(func() {
+			n.booleanSettingWithHelp(c, key, n.text("paste_sound"), "", true)
+		})
 	}
 }
 
@@ -361,13 +368,18 @@ func (n *nativeMain) resetOpacityPreviews() {
 }
 
 func (n *nativeMain) settingChoices(c *ui.Context, kit uikit.Kit, key, label, fallback string, options []uikit.SelectOption) {
-	kit.SettingsField(c.Key(key), uikit.SettingsFieldOptions{Stacked: true, Last: key == "app.language"}).Children(func() {
+	row := kit.SettingsField(c.Key(key), uikit.SettingsFieldOptions{Stacked: true, Last: key == "app.language"})
+	switch key {
+	case nativeQuickPasteLayout.Key, "app.quick_paste_full_sectors", "app.quick_paste_half_sectors":
+		row.Transition(nativeSettingReveal)
+	}
+	row.Children(func() {
 		kit.SettingsLabel(c, label).Margin(0, 0, 8, 0)
 		value := n.preferences[key]
 		if value == "" {
 			value = fallback
 		}
-		disabled := n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating
+		disabled := n.preferenceUnavailable(key)
 		kit.SettingsChoices(c, label, value, options, false, disabled, func(value string) { n.saveSetting(key, value) })
 	})
 }
@@ -385,11 +397,13 @@ func (n *nativeMain) toolsSettings(c *ui.Context, kit uikit.Kit) {
 	if enabled {
 		n.shortcutSetting(c, "app.screenshot_hotkey", n.text("screenshot_hotkey"), "Ctrl+Shift+A")
 		n.shortcutSetting(c, "app.screenshot_full_hotkey", n.text("screenshot_full_hotkey"), "Ctrl+Shift+F")
-		kit.CaptureSettingsActions(c, uikit.CaptureSettingsActionsOptions{
-			Label: n.text("capture_now"), Region: n.text("capture_region_now"), Full: n.text("capture_full_now"),
-			Disabled: n.session == nil || n.history.state.ServiceInstanceId == "" || n.capturing || n.mutating,
-			OnRegion: func() { n.captureScreenshot(false) }, OnFull: func() { n.captureScreenshot(true) },
-			Error: n.captureError,
+		ui.Column(c.Key("capture-now")).ColumnSpan(-1).Transition(nativeSettingReveal).Children(func() {
+			kit.CaptureSettingsActions(c, uikit.CaptureSettingsActionsOptions{
+				Label: n.text("capture_now"), Region: n.text("capture_region_now"), Full: n.text("capture_full_now"),
+				Disabled: n.preferenceUnavailable("app.screenshot_enabled") || n.capturing,
+				OnRegion: func() { n.captureScreenshot(false) }, OnFull: func() { n.captureScreenshot(true) },
+				Error: n.captureError,
+			})
 		})
 	}
 	quick := n.settingEnabled("app.quick_paste_enabled", true)
@@ -410,7 +424,9 @@ func (n *nativeMain) toolsSettings(c *ui.Context, kit uikit.Kit) {
 			n.settingChoices(c, kit, "app.quick_paste_full_sectors", n.text("quick_paste_full_sectors"), "8", options)
 			n.settingChoices(c, kit, "app.quick_paste_half_sectors", n.text("quick_paste_half_sectors"), "5", options[:6])
 		}
-		kit.FixedCaptureRenderer(c, n.text("quick_paste_renderer"), "MyGo Native")
+		ui.Column(c.Key("quick-paste-renderer")).MinWidth(0).Transition(nativeSettingReveal).Children(func() {
+			kit.FixedCaptureRenderer(c, n.text("quick_paste_renderer"), "MyGo Native")
+		})
 	}
 	n.booleanSettingWithHelp(c, "app.ocr_enabled", n.text("ocr_enabled"), n.text("ocr_enabled_hint"), true)
 	n.drawOCREngine(c, kit)
@@ -418,15 +434,15 @@ func (n *nativeMain) toolsSettings(c *ui.Context, kit uikit.Kit) {
 }
 
 func (n *nativeMain) panelCheckbox(c *ui.Context, kit uikit.Kit, id, label, hint string, enabled bool) {
-	disabled := n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating || n.capturing
+	key := "app.screenshot_enabled"
+	if id == "quick-paste" {
+		key = "app.quick_paste_enabled"
+	}
+	disabled := n.preferenceUnavailable(key) || n.capturing
 	if kit.SettingsToggleField(c, &enabled, label, n.settingsHelpLabel(label), hint, disabled) {
-		key := "app.screenshot_enabled"
-		if id == "quick-paste" {
-			key = "app.quick_paste_enabled"
-		}
-		n.writeSettingWithEffect(func(ctx context.Context, epoch uint64) error {
+		n.savePreference(key, strconv.FormatBool(enabled), 4*time.Second, func(ctx context.Context, epoch uint64) error {
 			return n.shell.SetNativePanelEnabled(ctx, id, enabled, epoch)
-		}, func() { n.applySavedSetting(key, strconv.FormatBool(enabled)) })
+		}, nil)
 	}
 }
 
