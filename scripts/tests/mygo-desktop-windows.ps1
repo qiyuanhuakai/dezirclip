@@ -269,7 +269,14 @@ function Get-SettingsCheckbox($root, [string]$Label = 'Disable WebView GPU') {
 }
 
 function Test-EdgeDocking($Main, $Root) {
-    if (!(Get-SettingsCheckbox $Root 'Edge Docking')) { Click-Control $Main (Get-ControlPoint $Root 'General Settings') }
+    if (!(Get-SettingsCheckbox $Root 'Edge Docking')) {
+        $name = [Windows.Automation.AutomationElement]::NameProperty
+        $general = [Windows.Automation.OrCondition]::new(
+            [Windows.Automation.PropertyCondition]::new($name, 'General'),
+            [Windows.Automation.PropertyCondition]::new($name, 'General Settings'))
+        $section = Wait-Until { $Root.FindFirst([Windows.Automation.TreeScope]::Descendants, $general) } 'General settings navigation unavailable'
+        Click-Control $Main (Get-ControlPoint $Root $section.Current.Name)
+    }
     $box = Wait-Until { Get-SettingsCheckbox $Root 'Edge Docking' } 'Edge docking setting unavailable'
     $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
     $window = $Main.MainWindowHandle
