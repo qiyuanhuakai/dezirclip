@@ -1,0 +1,118 @@
+# 架构整理实施记录
+
+**更新日期：** 2026-11-27（北京时间；补充分支提交说明）
+
+**规范：** [DZC-ARCH-001 v1.2 Final](specs/architecture-simplification.md)
+
+**源码基线：** `1f1641a0455bfcdbc72b4ba70a24d3cb810887a9`，`0.2.0-beta.4`
+
+**工作分支：** `refactor/architecture-phase1`
+
+本页记录规范交付后的实际实施情况。规范中的现状统计、历史验证和发布分析仍对应冻结基线；本页的“已实现”“已检查”“未执行”分别描述代码、验证和剩余工作。第一批实现与验证记录完成于 2026-11-20；2026-11-27 按用户要求整理为提交，目标远端分支为 `refactor/architecture-phase1`。本批保留上述源码基线，合入后续主线前仍须处理适配并完成第 5 节验收。
+
+## 1. 第一批范围与状态
+
+| 任务 | 本批交付 | 当前状态与剩余门槛 |
+|---|---|---|
+| R0 | 将最终规范归档到仓库；校准 [AGENTS.md](../AGENTS.md) 的目录、依赖、运行入口、平台范围和构建说明 | 基线归档及文档校准完成；本轮未重算全仓库行数，冻结统计见规范第 2 章 |
+| C0 | 重写 [CI 基线](ci.md)，核对真实触发、测试入口、六个 NSIS 场景、36 项发布资产和名称消费者 | 本地配置与文档核对完成；外部保护设置、当前完整运行耗时和成功率未核实，不能将 C0 全部验收标为完成 |
+| R1 | 主题 Core API 返回事务 outcome；Tauri 主题命令使用共享 HistoryService；约束主题库提交及事件发布顺序 | 实现与两轮静态复核完成；新增 Rust 测试未运行，编译、客户端和原生验收待完成 |
+| 其余任务 | R2–R8、C1–C7、M0–M4 按规范保留 | 本批未进入；CI/Release 行为及 macOS 产品支持没有因本批文档调整而改变 |
+
+本批没有修改 workflow、Cargo/pnpm manifests 或 lockfile、协议 schema、数据库 migrations、设置键和 release profile。未进行远程 CI、安装、签名或发布操作。
+
+## 2. R1：已实现的主题边界
+
+### 2.1 Core 对外接口
+
+[主题 API](../crates/dzc-core/src/api/themes.rs) 新增以下公开能力，两个 outcome 从 [api 模块](../crates/dzc-core/src/api/mod.rs) 导出：
+
+| API / 类型 | 用途与语义 |
+|---|---|
+| `HistoryService::custom_themes()` | 读取完整自定义主题库 |
+| `HistoryService::import_theme(ThemePackage)` | 返回 `ThemeImportOutcome { theme, themes }`；主题包含校验、规范化后的保存值，列表来自该次已提交事务 |
+| `HistoryService::remove_theme_with_outcome(id)` | 返回 `ThemeRemovalOutcome { themes, active_reset }`；删除活动主题时，主题库和 `app.theme=mica` 仍在同一事务提交 |
+| `HistoryService::effective_base_theme(theme)` | 非 `custom:` 值原样返回；自定义主题不存在、读取失败或内容损坏时返回 `mica`，不写入设置 |
+
+原有 `import_theme_file()` 仍返回单个 `ThemePackage`；原有 `remove_theme()` 仍返回 `bool`。这两个接口投影新的 outcome，保留已有 CLI/Host 消费者的调用契约。
+
+[Repository](../crates/dzc-core/src/infrastructure/repository/custom_themes.rs) 保留原来的事务、验证和回滚逻辑，将原先被丢弃的完整列表向上传递。API 不在提交后另行读取列表，因此事件使用的是本次事务结果。
+
+### 2.2 Tauri 消费者迁移
+
+[theme_cmd.rs](../src-tauri/src/app/commands/theme_cmd.rs) 的列表、导入、删除、导出和有效 base 查询统一使用 `DbState.history_service()`。该文件不再直接使用 repository、原始连接或 `HistoryService::from_legacy_connection`。初始化和其它领域的 bridge 保留到 R6，未改变 GUI 初始化策略或 RAM session。
+
+新增应用级 `ThemePublicationState`，由 [setup.rs](../src-tauri/src/app/setup.rs) 注册为 Tauri managed state。导入和删除按以下顺序执行：
+
+1. 导入时，文件读取和解析在阻塞任务内完成，随后才取得发布锁。
+2. 发布锁覆盖 Core mutation 和 `custom-themes-changed` 完整列表事件；Core 返回时数据库锁已经释放。
+3. `commit_and_publish` 返回时释放发布锁。
+4. 删除活动主题时，随后沿原路径执行 `set_theme("mica")`；成功后再发 `settings-changed`。
+
+发布锁不跨 `.await`，也不覆盖原生窗口外观操作。它只协调该 GUI 通过此入口进行的主题库修改，不声称串行化其它 Host 客户端或所有设置写入。事件发送失败仍按原有行为处理，不把已经提交的操作改成可重试的失败。
+
+Tauri 显式映射为原有 `AppError::Validation`，保留错误类别和显示文案。命令名、前端传入参数和事件 payload 不变；新增 `State` 由 Tauri 注入。启动时缺少主题设置的 `retro` 默认值也保持原状，与自定义主题异常时的 `mica` fallback 分开。
+
+### 2.3 测试代码
+
+新增 3 个 Core inline tests，覆盖完整事务快照、规范化结果、旧文件导入返回值、失败不改主题库/选择、活动删除 fallback、旧 bool 接口及损坏库的有效 base 回退。现有 2 个 repository tests 加强完整列表断言；已有事务失败触发器继续覆盖主题库和 fallback 回滚。
+
+新增 2 个 Tauri inline tests，使用真实 Core 内存库和标准库线程/channel：
+
+- `theme_publication_preserves_commit_order_while_a_publisher_is_paused`：暂停首次事件发布，确认数据库可以读取、发布锁仍阻止后续 GUI 提交，并检查发布顺序。
+- `theme_publication_does_not_emit_failed_mutations_or_change_error_kind`：失败不发事件、不改变错误类别/文案，随后有效操作仍可完成。
+
+没有增加 Rust dev-dependencies 或测试框架。这些 Rust 测试尚未执行，静态复核不能代替编译和运行结果。
+
+## 3. C0：已修正的 CI 文档
+
+[docs/ci.md](ci.md) 现在按实际配置区分日常、手动 full 和正常 tag 发布，明确以下事项：
+
+- 日常 7 个基础 job，加按路径选择的历史 MyGo installer；手动默认 full 展开为 24 个实例。
+- 正常 tag 发布不调用完整源码 CI，也不发布 Flatpak；当前精确集合是 36 个资产。
+- 历史/合成 NSIS fixture、当前最终包、纯逻辑 fixture、真实性能和原生执行是不同证据。
+- Windows ARM64 当前是交叉构建及静态检查，不能记为原生执行成功。
+- CLI 环境变量缺失、原生测试直接 return、未接入的 Host/Wayland 验收、当前候选和恢复链仍有缺口。
+- `source-acceptance`、36+1 资产规则、冻结候选和恢复状态机属于 C1–C7 后续实施；本批没有将它们接入发布。
+
+job 显示名称、artifact 前缀、旧恢复流程消费者及外部保护配置的未知项已列出，供后续改 workflow 时同步处理。
+
+## 4. 本批实际验证
+
+以下命令在 2026-11-20 的实施工作区运行，均从仓库根目录执行；不沿用规范第 13 章的历史测试计数。2026-11-27 提交前只复核改动范围及补丁空白，未重复运行产品测试。
+
+| 检查 | 实际结果 | 能证明的范围 |
+|---|---|---|
+| `node --test scripts/tests/packaging-sidecars.node.mjs` | 24 项：23 通过、0 失败、1 跳过 | 打包/sidecar 契约的 fixture 检查；不是真实最终安装包验收 |
+| `python3 -B -m unittest discover -s scripts/tests -p test_privacy_window_permissions.py -v` | 1 项通过 | 现有隐私窗口权限静态检查 |
+| `python3 -B scripts/generate-protocol.py --check` | exit 0 | 当前协议生成一致性 |
+| `git diff --check` | 通过 | 已跟踪改动的补丁空白检查 |
+| 文档链接及改动范围检查 | 31 个相对链接有效，9 个预期文件有变更，无额外文件 | 文档可定位；新文档无行尾空白；本批修改范围一致 |
+| API 调用点、State 注册、事务结果、锁/借用边界静态复核 | 未发现阻断项 | 代码审查结论，不是 Rust 编译或运行结论 |
+
+跳过的 Node 用例为 `native acceptance refuses local execution before any product operation`，其条件是 `process.platform !== "win32"`；当前 Linux 环境未执行该 Windows 用例。不能把 24 项全部记为通过。
+
+本环境可用 Python 3.12.14、Node 24.22.3；未找到 `cargo`、`rustc`、`rustup`，也没有项目 `node_modules`。因此本批没有运行 Rust 编译/测试、前端测试/构建、Tauri 原生窗口或真实安装/发布验收。
+
+## 5. R1 剩余验收
+
+在具备仓库要求的 Rust 工具链、桌面系统依赖及既有构建输入的环境中，先执行：
+
+```bash
+cargo test --locked -p dzc-core --lib
+cargo test --locked -p dezirclip --no-default-features --features desktop --bin dezirclip app::commands::theme_cmd::tests -- --nocapture
+```
+
+必须在输出中确认 3 个新增 Core 主题测试、2 个原有 repository 主题测试和 2 个 Tauri 发布测试实际运行。Tauri 过滤命令应匹配并执行 2 个测试；零匹配、skip、early return 或仅 `cargo check` 均不能代替运行验收。现有平台所需的其它测试继续按 [CI 基线](ci.md) 和规范执行。
+
+随后在当前支持的 Windows/Linux 客户端检查：主题列表、合法/非法/重复导入、导出内容、删除非活动和活动主题、失败时数据及选择不变，以及连续/并发操作的完整列表事件顺序。活动删除还需观察实际窗口外观与 `theme-changed` / `settings-changed` 顺序。此项不能仅用内存库的 publication helper 测试替代。
+
+上述检查通过并记录实际 source revision、feature/profile、平台和结果后，才可将 R1 标为完成。当前不具备宣称性能改善、编译通过或原生行为等价的运行证据。
+
+## 6. 维护量、回退与后续顺序
+
+本批 5 个 Rust 文件相对固定基线净增 283 个物理行；按各文件首个 inline test module 边界计，55 行在测试模块前，228 行位于测试模块中，包含空行和注释。这是新增 outcome、发布顺序保护和回归测试的成本，不是产品 SLOC 或性能测量。收益是主题消费者退出数据库内部访问，不能以本批净行数宣称仓库已缩小。
+
+没有数据库、协议或设置格式迁移。回退本批代码不需要转换用户数据；提交前可按本页列出的文件撤回本批改动，提交后用对应变更提交的 revert，并保留用户之后产生的独立修改。无需删除数据库或重置配置。
+
+下一步先完成 R1 运行验收；随后按规范推进 R3 路径/依赖闭包以及 C1/C2 的真实测试状态与执行范围。R4 CLI/Service 拆分须等 R3 和打包契约准备完成。Swift/macOS 继续以 M0 的真实系统操作切片为起点，本批没有增加空平台实现或新的发行承诺。

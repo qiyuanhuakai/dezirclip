@@ -34,6 +34,7 @@ pub use crate::capture::{CaptureEngine, CaptureStore, EventSink};
 mod capture_store;
 mod settings;
 mod themes;
+pub use themes::{ThemeImportOutcome, ThemeRemovalOutcome};
 mod queue;
 pub use queue::PreparedQueueEntry;
 mod privacy_policy;

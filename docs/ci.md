@@ -1,13 +1,131 @@
-# CI 验证范围与耗时
+# CI 验证范围与发布基线
 
-日常 PR / master CI 的目标是从触发到结束不超过 10 分钟；正式发布保留完整验收，允许更长时间。运行器排队和外部下载可能影响实际耗时，不能用超时终止代替成功验收。
+本页记录 `1f1641a0455bfcdbc72b4ba70a24d3cb810887a9`（`0.2.0-beta.4`）的工作流与测试入口。它是架构整理 C0 的事实基线；本次只校正文档，没有改变 CI 或发布行为。后续修改 workflow 时应同时更新本页。
 
-日常任务并行执行：前端与脚本门槛、Windows/Linux Rust 核心和 CLI 测试、两个平台的完整桌面编译检查、Windows ConPTY 交互测试、两个平台的 Go 测试，以及 MyGo NSIS 安装验收。Rust 测试与桌面检查使用分开的缓存，不生成无用调试符号。重复 PR 提交自动取消旧运行。
+**当前正常 tag 发布不调用完整源码 CI，也不构建或发布 Flatpak。** 手动 full、日常开发检查和 tag 发布是不同路径；一个路径通过不能替代另一路径的验收。以下“执行”描述配置选中的步骤，不代表本次已经取得对应 Actions 成功运行。
 
-完整的四平台 Tauri 原生验收、独立 CLI 兼容性、六种 NSIS 升级场景和双架构 Flatpak 打包，仍在手动 CI 的 `full_validation=true` 以及 tag 发布时执行。发布工作流必须等完整源码验收成功后才能公开版本；日常检查通过并不代表原生升级或所有发布平台已经通过。
+## 触发与任务范围
 
-GitHub 在判断 job 条件后才展开矩阵。日常跳过的 Tauri / Native NSIS 行可能显示 `${{ matrix.name }}` / `${{ matrix.scenario }}` 原文，这是跳过状态的显示限制；全量执行时才显示具体平台与场景。发布门槛按这些展开后的唯一名称逐项验收。
+入口见 [CI 工作流](../.github/workflows/ci.yml) 和 [Release 工作流](../.github/workflows/release.yml)。实例数按矩阵展开后的实际 job 计算，不计被跳过的模板或复用工作流的外层名称。
 
-复用工作流的验收产物使用 `acceptance-cli-*` / `acceptance-flatpak-*`，发布产物使用 `release-cli-*` / `release-flatpak-*`。发布下载器只选择 `release-cli-*`，避免同一 run 中重名或误下载。
+| 触发 | 当前选择的任务 | 覆盖限制 |
+|---|---|---|
+| `master` push / 任意 PR | `frontend` 1、`rust-development` 4、`go-development` 2，共 7 个基础实例；特定路径变更再加 `mygo-installer` | 没有 full 的四目标桌面、standalone、六场景 NSIS 和 Flatpak |
+| 手动 CI，`full_validation=false`，其它开关关闭 | 上述 7 个基础实例，加历史 `mygo-installer`，共 8 个 | 手动触发没有 diff 基线，历史 installer 的 scope 默认要求执行 |
+| 手动 CI，默认 `full_validation=true`，其它开关关闭 | 基础 7 + 历史 installer 1 + Tauri 4 + standalone 4 + NSIS 6 + Flatpak 2，共 24 个 | Windows ARM64 是交叉构建；历史/合成 installer 不等于当前发布包 |
+| 复用 `ci.yml` | `workflow_call` 的 `full_validation` 默认 true | 当前 `release.yml` 没有调用它；不能据此声称 tag 等待 full |
+| `v*` tag push | draft、四目标 standalone、四目标双桌面构建/上传、`publish-dual` | 以本页“正常 tag 发布”部分的实际门槛为准 |
 
-2026-11-09 的基线运行 `42557275483` 中，Windows Tauri 任务耗时约 19.4 分钟，Flatpak x64 约 14.8 分钟（该次运行失败，不能视为成功验收耗时）。调整后的首轮 PR 运行 `42560409914` 全部成功，从 04:11:27 UTC 到 04:16:45 UTC，约 5 分 18 秒，包含 Windows 原生终端交互测试。此数据是一次实际测量，并非所有后续运行的时间保证。
+日常 `mygo-installer` 检查的是**固定 alpha.9 已发布 payload + 当前 checkout 的安装器源码**。scope 比较 CI/Release workflow、MyGo installer/packaging/harness、进程 receipt 和图标等路径；没有有效 diff 基线或比较失败时也要求执行。它不是当前 beta.4 payload 的安装验收。实际来源见 [历史 payload 准备器](../scripts/package-published-mygo.py)。
+
+专项输入目前是可叠加的布尔开关，并未实现互斥模式：
+
+| 输入 | 当前调度事实 |
+|---|---|
+| `native_file_drag_only`、`windows_release_memory` | 分别增加原生文件拖放/截图检查、已发布 alpha.8/alpha.9 内存比较；不会自动关闭基础任务或默认 full |
+| `windows_x64_mygo_test_package`、`windows_service_crash_stacks`、`linux_release_inputs` | 即使 full=false，也会展开整个四目标 `tauri` 矩阵；具体专项步骤另有条件 |
+| `windows_surface_performance` | 要求 frontend 和 tauri 成功；单独设置此开关且 full=false 不会开启 tauri，因此测量会被跳过 |
+| `windows_surface_crash_diagnostics` | 有独立的手动诊断条件；不等同于性能比较或完整原生验收 |
+
+PR 更新和新的 master push 会取消同组旧 CI。手动 full 不适用该取消条件。普通日常检查的耗时目标仍为 10 分钟以内；排队、外部下载和真实原生验收耗时须分别记录，超时或取消不能算成功。
+
+## 测试入口与证据种类
+
+主入口在 `ci.yml`；下表区分源码契约、真实客户端、原生行为和最终包。脚本名字含 `native` 或 `performance` 本身不证明执行了原生操作或性能测量。
+
+| 类别 | 当前主入口与对象 | 结果含义 |
+|---|---|---|
+| 前端、生成一致性和工具纯逻辑 | `frontend`：i18n、版本、Surface tokens、协议生成、CSS、Node/Python fixture 与发布逻辑检查；`pnpm run test:unit`、前端 build | Vitest 发现 `src` 下的测试；fixture/mock 通过不等于真实窗口或发布通过 |
+| Rust 业务与客户端 | `rust-development`：Linux/Windows 各跑 `core-tests` 和 `desktop-check` | 前者是 workspace/all-targets、no-default-features + `dezirclip/native-screen` 测试；后者是 `cargo check`，不执行桌面 |
+| Go 客户端和 UI 逻辑 | `go-development`：Linux/Windows 分别在 `clients/go`、`packages/ui-native`、`packages/ui-presets`、`frontends/dzc-surface` 跑 `go test ./...` | 四个独立 module 均保留；PNG 导出附件不是全面视觉或原生验收 |
+| 真实 CLI / TUI | 日常 Windows `core-tests` 的 ConPTY 用例；full 的 standalone integrations 设置 `DZC_TEST_BIN` | 需真实本次二进制和终端环境；Windows ARM64 不运行这些 integrations |
+| 桌面与原生 OS | full/对应专项的 `tauri`：Linux x64/ARM64、Windows x64 的真实 harness；Windows clipboard、Explorer、private lease 等显式用例 | Linux MyGo 使用隔离 X11；Windows ARM64 `can_test=false`，不能称为四目标均已原生执行 |
+| 安装与升级 | `native-windows-upgrade` 六场景；历史 `mygo-installer`；当前 MyGo installer 的专项步骤 | 来源与构建形态见下文，不能互换成正式候选证据 |
+| standalone 最终 archive | [standalone-cli.yml](../.github/workflows/standalone-cli.yml)：隔离构建、依赖/架构检查、解包及适用平台运行 | Linux 还在 AlmaLinux 8、Ubuntu 22.04、Debian 12 运行；Windows ARM64 只做 static-only |
+| Flatpak 最终环境 | [flatpak.yml](../.github/workflows/flatpak.yml)：Linux x64/ARM64，构建并经 `verify-flatpak.py` 验证后导出 | 在 org.gnome.Platform runtime 验证 OCR/paste；是 full 的验收 artifact，当前 tag 不发布 |
+| 性能与诊断 | `scripts/performance/tests` / frontend 的比较器与 fixture 单测；手动性能或崩溃入口 | 工具单测、崩溃诊断与真实性能测量分别报告，不互相代替 |
+
+full 目前在 Tauri 四目标和 standalone 四目标中分别 discovery `scripts/tests`，性能工具单测也在 Tauri 四目标重复执行，NSIS 纯打包检查在六场景重复执行。这是后续合并执行位置的基线，不表示每次 discovery 都运行了所有需要外部环境的用例。
+
+### 六个 NSIS 场景的实际来源
+
+入口是 [test-native-windows-upgrade.ps1](../scripts/test-native-windows-upgrade.ps1)。除已发布的旧安装器外，新 fixture 由 [build-native-windows-fixture.ps1](../scripts/build-native-windows-fixture.ps1) 把当前源码临时设为 alpha.1/alpha.2，以 debug、无 updater 签名、`createUpdaterArtifacts=false` 构建。其来源允许 `modified_checkout`，不等于 clean release candidate。
+
+| 场景 | 当前输入与目的 |
+|---|---|
+| `LegacyUninstall` | 固定已发布 `0.1.20`；复现旧卸载器破坏设置/Explorer 的行为，作为历史负向基线 |
+| `OldToNew` | 已发布 `0.1.20` → 当前源码生成的 alpha.2 fixture；检查迁移、GUI、卸载和设置保留 |
+| `PublishedAlphaToAlpha` | 固定已发布 alpha.1 → alpha.2 fixture；核对旧版本身份/数据库 schema 后升级 |
+| `OwnedUpgrade` | 同源码 alpha.1 fixture → alpha.2 fixture；检查系统设置所有权 receipt 跨升级及卸载恢复 |
+| `OwnedExternalEdit` | alpha.2 fixture；取得设置所有权后模拟外部修改，卸载须保留较新的外部值 |
+| `DeniedGuiUpgrade` | alpha.2 fixture；检查 GUI 升级被拒绝时的处理和 Explorer 保留 |
+
+这些场景保护历史迁移和安装器行为，不能证明“上一受支持正式版本 → 当前已签名最终包”已经通过。当前四目标桌面 job 内的 MyGo 安装器步骤只在 `windows_x64_mygo_test_package=true` 的手动触发中可达：它的 push 分支被外围 `tauri` 条件挡住，默认 full 也不选择这个步骤。
+
+## 正常 tag 发布
+
+`release.yml` 的正常 push 路径并行创建 draft 和构建产物，standalone 上传等待 draft 与 standalone 构建，desktop 上传自行等待 draft 可用。最终 `verify-publish-and-promote` 依赖 `create-release`、`publish-desktop`、`publish-standalone-cli`，调用 [updater-release.mjs](../scripts/updater-release.mjs) 的 `publish-dual`：验证后先公开产品 release，再同步 stable/preview 频道。
+
+当前门槛保留仓库/tag/SHA/run/attempt、必需 job、资产目录及时间、签名/版本/文件名、updater 下载读回和防降级检查。`dualReleaseJobs` 不包含完整源码 CI；旧 identity/upgrade 门槛也被 dual 分支排除。创建 draft 时的少量发布脚本单测不等于完整源码准入。
+
+### 当前精确资产集合：36 项
+
+以 `updater-release.mjs` 的 `verifiedReleaseAssets(..., dual=true)` 为准，版本与文件名按现有规则生成；下表是格式数量说明，不是第二套文件名配置。
+
+| 产品资产 | 架构/格式 | 文件数（含签名或 checksum） |
+|---|---|---:|
+| Tauri updater | Windows x64/ARM64 NSIS、Linux x64/ARM64 AppImage，各带 `.sig` | 8 |
+| Tauri deb | amd64/arm64，各带 `.sig` | 4 |
+| Tauri rpm | x86_64/aarch64 | 2 |
+| MyGo updater | Windows x64/ARM64 NSIS、Linux x64/ARM64 AppImage，各带 `.sig` | 8 |
+| MyGo deb | amd64/arm64，各带 `.sig` | 4 |
+| MyGo rpm | x86_64/aarch64 | 2 |
+| standalone CLI | 四目标 archive，各带 `.sha256` | 8 |
+| 合计 | 14 个 Tauri + 14 个 MyGo + 8 个 standalone 文件 | **36** |
+
+当前集合没有 Flatpak，也没有 `dezirclip-candidate.json`。额外附件会被严格目录检查拒绝。历史版本的目录及 alpha.9 installer supplement 有自己的规则，不能套用为当前 dual 集合。
+
+### 当前发布验证级别
+
+| 对象 | 当前正常 tag 路径的证据 | 尚不能据此声称 |
+|---|---|---|
+| standalone Linux x64/ARM64 | archive 解包、真实 CLI/历史操作，以及三个 Linux runtime 执行 | 全部桌面/GUI 行为已验证 |
+| standalone Windows x64 | 解包后的 CLI 真实运行与验包 | 完整源码和 integrations 已运行；`package-only=true` 会跳过它们 |
+| standalone Windows ARM64 | 架构、依赖与静态 CRT 等 static-only 检查 | 在 ARM64 Windows 上运行过 |
+| MyGo Linux | deb payload hash、deb/AppImage BuildInfo 检查 | 最终包 GUI/安装/升级或 RPM 安装均已通过 |
+| MyGo Windows x64 | 实际安装、启动、同包重装、卸载与用户文件保留 smoke | focused 跳过的锁文件/中断场景及真实旧版升级已经通过 |
+| MyGo Windows ARM64 | 交叉编译及 proof/static 检查 | 实际安装、GUI 或输入已验证 |
+| Tauri 最终包 | 构建、打包、签名和 updater 资产校验 | 当前 tag 已走旧最终 NSIS 升级/原生 identity workflows |
+| 两桌面的 updater 资产 | 四目标 updater 文件的签名、版本/文件名及下载读回 | 每个非 updater 出货资产已有同等内容与构建 hash 绑定 |
+
+`package-only=true` 仍会构建、验包并运行适用的 CLI/runtime；不应描述为“只打包完全不测”。Windows ARM64 当前没有对应原生 runner 验收；静态 CRT 契约属于 standalone CLI，桌面/helper 按各自既有依赖契约检查。
+
+发布 desktop job 将 release profile 覆盖为 thin LTO、codegen-units=8；根 Cargo 默认是 full LTO、codegen-units=1。比较性能、缓存或产物身份时须记录生效配置，同 SHA 不等于同字节。
+
+## 已知未执行缺口与后续边界
+
+以下是当前配置的限制，尚未通过本次文档修订解决：
+
+| 缺口 | 定位与解释 |
+|---|---|
+| Python discovery 未设置真实 CLI | [test_build_info.py](../scripts/tests/test_build_info.py)、[test_sqlite_history_fixture.py](../scripts/tests/test_sqlite_history_fixture.py) 的真实 CLI/schema24 用例需要 `DZC_TEST_BIN`；当前前置 discovery 未设置它，后面 integrations 的 env 不会回溯生效。部分 seeder 还需要 Pillow/psutil |
+| 日常 ConPTY 的二进制来源待冷缓存验证 | Windows `core-tests` 在 `cargo test` 后直接读取 `target/debug/dzc.exe`，没有独立 build 步骤；这是待验证风险，不能直接断言现有运行失败 |
+| Host 客户端验收未挂自动入口 | 已有 [test-local-clients.py](../scripts/test-local-clients.py) 的 grant/revoke/session/no-fallback 场景未由当前 workflow 调用 |
+| 原生测试的“未执行”可能显示通过 | [capture/subscription.rs](../crates/dzc-platform/src/capture/subscription.rs)、[shortcut/x11.rs](../crates/dzc-platform/src/shortcut/x11.rs) 部分测试缺 opt-in 时直接 return；普通 Rust test 成功不能计为这些原生行为成功 |
+| Wayland 自动覆盖未接入 | 当前 Linux 产品 harness 是 X11；[Wayland 实验支持](./wayland-experimental.md) 的手工脚本不能算作本次 CI 已执行 |
+| 当前候选与发布闭环仍有缺口 | full 的历史/合成包和 tag 的部分 smoke 不能替代当前最终包验证；draft release ID 尚未贯穿全链、部分资产缺候选构建 hash 绑定、取消/频道中间状态恢复也未形成完整闭环 |
+
+后续 C1/C2 负责真实执行状态、CLI 来源、模式和汇总；C3 合并重复纯测试及 fixture 构建，同时保留平台/feature/历史行为覆盖。C5/C6 才接入同 run 的 source-only 源码准入、实际候选产物验证、固定身份/证据附件和有限状态恢复。**这些都是待实施事项**：当前没有 `source-acceptance` 模式，没有“36 + 1”资产 policy，也没有取消 publisher 后的完整恢复保证。提升 Windows ARM64 到原生准入须先有真实执行来源。
+
+## 名称消费者、产物命名与仓库外设置
+
+- 发布 verifier 以 job 显示名称作精确匹配：当前 `dualReleaseJobs`、以及历史 `fullSourceJobs`、`nativeReleaseJobs`、`releaseGateJobs`、`optionalReleaseJobs` 均在 `updater-release.mjs`。改名、复用前缀、skip 规则或新增后置 job 时要同步该消费者及 [updater-release.node.mjs](../scripts/tests/updater-release.node.mjs)、[packaging-sidecars.node.mjs](../scripts/tests/packaging-sidecars.node.mjs) 等连接契约，不能把所有 skipped 一概视为通过。
+- `ci.yml` 的复用验收 artifact 使用 `acceptance-cli-*`、`acceptance-flatpak-*`；正常 Release 的 standalone 使用 `release-cli-*`，下载器只选择该前缀。当前正常 tag 没有 `release-flatpak-*` 生产者。
+- [release-identities.yml](../.github/workflows/release-identities.yml)、[release-windows-upgrade.yml](../.github/workflows/release-windows-upgrade.yml) 当前仅由 `resume-existing-alpha2` 历史分支调用。beta.4 checkout 不满足该恢复路径的版本/来源约束；菜单存在不代表当前可执行。它们及旧脚本仍有公共 helper/历史行为消费者，不能仅按年代删除。
+- branch/tag protection、外部 required checks、environment 审批、组织 token 策略及 runner 配额未在本次本地核对中取得；不能声称已经设置。更改 check 名称前须只读核对实际规则及消费者。当前没有统一“计划与实际执行集合”汇总 gate，绿色界面本身不能证明请求的所有场景均已执行。
+
+## 耗时与验证记录
+
+此前文档记录的 [运行 42557275483](https://github.com/qiyuanhuakai/dezirclip/actions/runs/42557275483) 中，Windows Tauri 约 19.4 分钟、Flatpak x64 约 14.8 分钟，但整次运行失败；[PR 运行 42560409914](https://github.com/qiyuanhuakai/dezirclip/actions/runs/42560409914) 记录为 2026-11-09 04:11:27–04:16:45 UTC，约 5 分 18 秒且全部成功。这些保留为历史记录，本次未重新查询其 API，也不是当前基线完整 CI/Release 的成功耗时证明。
+
+本次 C0 校准来自本地 workflow、脚本和测试入口的静态核对；没有触发 GitHub Actions、原生安装或发布。当前候选完整运行的耗时、成功率和外部保护设置仍未核实。后续记录应带 source revision、workflow/run/attempt、实际选择/执行/跳过场景及原因；逻辑单测、诊断、性能和最终包结果分开报告。

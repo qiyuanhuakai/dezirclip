@@ -495,6 +495,7 @@ fn setup_state(
     ).into()));
     app.manage(AppDataDir(std::sync::Mutex::new(app_dir)));
     app.manage(SearchHistory::default());
+    app.manage(crate::app::commands::theme_cmd::ThemePublicationState::default());
 }
 
 fn apply_saved_size(window: &tauri::WebviewWindow, size: Option<(u32, u32)>) {

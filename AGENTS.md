@@ -1,48 +1,49 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-06-15
-**Commit:** 2eb3edf
-**Branch:** slim
+**Verified:** 2026-11-20
+
+**Architecture baseline:** `1f1641a0455bfcdbc72b4ba70a24d3cb810887a9`
+
+**Implementation plan:** [DZC-ARCH-001](docs/specs/architecture-simplification.md)
+
+**Current progress:** [Architecture implementation](docs/architecture-implementation.md)
 
 ## OVERVIEW
-TieZ (tiez-clipboard) — a Tauri 2 desktop clipboard manager for Windows and Linux. Rust backend + React 19 + TypeScript frontend. Fork of [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard) that dropped macOS and all networking features, added Linux X11 support, and built a custom CSS theme engine.
+
+DezirClip is a local clipboard workspace for Windows and Linux. Its Rust Core, Platform, Protocol, Host and Service crates support Tauri + React, MyGo, CLI/TUI, MCP and shell clients. Tauri defaults to Embedded Host; MyGo uses the Rust Service. Ordinary local CLI commands may use Core directly; explicitly requested Host modes must not silently fall back to database access.
+
+The signed updater is the permitted networking exception. Future macOS/Swift work follows the separate M0–M4 gates in DZC-ARCH-001; current releases remain Windows/Linux. The design is an evolution of the existing code, not a second Core or a requirement to route all clients through IPC.
 
 ## STRUCTURE
-```
-tiez-clipboard/
-├── src/                  # React 19 frontend (80 .ts/.tsx files)
-│   ├── features/         # Feature-sliced UI: app/clipboard/emoji/settings/tag
-│   ├── shared/           # Cross-cutting hooks, lib, types, components
-│   ├── styles/           # Custom CSS theme engine (tokens/theme-core/themes/components)
-│   ├── locales/          # i18n: en.ts / zh.ts / tw.ts (zh is base)
-│   ├── App.tsx           # 772-line root composer; orchestrates ~30 hooks
-│   └── main.tsx          # Entry — preloads theme CSS, multi-window routing
-├── src-tauri/            # Rust backend (58 .rs files)
-│   ├── src/app/          # App subsystem: setup, window_manager, idle_destroyer, gpu_switcher, webview_memory, hooks, commands
-│   ├── src/services/     # Business: clipboard_ops, content_handler, paste_queue, encryption_queue, clipboard pipeline (subdir)
-│   ├── src/infrastructure/ # Platform abstraction: windows_api, linux_api, repository, encryption
-│   ├── src/domain/       # Domain models
-│   ├── global_state.rs   # 30+ process-global atomics (WINDOW_PINNED, LAST_HIDDEN_TIMESTAMP, lifecycle state, etc.)
-│   └── app_state.rs      # Tauri-managed state (SettingsState, SessionHistory, PasteQueue, EncryptionQueueState)
-├── scripts/i18n-check.mjs # Custom i18n key auditor (zh→en/tw consistency)
-├── public/               # Static assets (emoji-data.json)
-├── docs/                 # Upstream-fork READMEs (en-US, zh-CN)
-├── src-tauri/icons/      # App + tray icons (Win/Linux/Android/iOS variants)
-├── src-tauri/capabilities/ # Tauri 2 permissions (main-capability + gen/)
-├── src-tauri/nsis/       # NSIS uninstall hooks (Windows installer)
-└── src-tauri/tauri.conf.json # Window/CSP/bundle config
-```
+
+| Location | Current responsibility |
+|---|---|
+| `crates/dzc-core` | Business APIs, SQLite history, settings, privacy, attachments, backups and injected ports |
+| `crates/dzc-platform` | OS clipboard/input, permissions, local IPC, process identity and key providers |
+| `crates/dzc-protocol` / `protocol/schema` | Shared wire contracts; schema author source and generated Rust/Go representations |
+| `crates/dzc-host` | Embedded/Service coordination, grants, sessions, capture ownership, events and snapshots |
+| `crates/dzc-service` | Service implementation; its executable is still declared by the Tauri package until R4 |
+| `src-tauri` | Tauri commands, window/tray/hotkey wiring, desktop lifecycle and transitional legacy adapters |
+| `src-tauri/src/bin` / `src-tauri/src/cli` | Current CLI/Service executable ownership and CLI/TUI/MCP/shell implementation; R4 will move these |
+| `src` | React product features, hooks, desktop adapters, locales and visual styles |
+| `clients/go` / `frontends/dzc-surface` | Host client SDK and MyGo desktop, including React WebView fallback |
+| `packages/ui-react` / `packages/ui-native` / `packages/ui-presets` | Shared UI components and generated visual presets; retain license boundaries |
+| `scripts` / `integrations` | Build, package, release, native acceptance, performance and compatibility tools |
+| `.github/workflows` | Six current CI/release workflows; actual triggers and evidence are documented in `docs/ci.md` |
+| `docs/specs` | Current behavior contracts and the staged architecture cleanup specification |
+
+Generated files, inline tests and historical evidence are counted separately from handwritten product behavior. Do not use total physical lines as a deletion target. `crates/dzc-cli` and Swift packages are targets in the spec, not existing packages at this stage.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
 | Add Tauri command | `src-tauri/src/app/commands/*.rs` + register in `main.rs` invoke_handler | Pattern: split by domain (clipboard, settings, hotkey, file, ui, system, history) |
 | Add React UI | `src/features/<feature>/components/` + `hooks/` if stateful | Each feature is self-contained; re-export via barrel only if needed |
-| Add Rust platform code | `src-tauri/src/infrastructure/{windows_api,linux_api}/` | NEVER touch `app/` from platform code — it goes the other way |
+| Add Rust platform code | `crates/dzc-platform/src`; inspect existing desktop-specific adapters when migrating | Platform must not depend on Tauri app code or Core repositories/SQL |
 | Modify theme | `src/styles/themes/` for variant, `src/styles/tokens/` for vars, `src/styles/theme-core/` for cross-theme shared rules | Tokens are pure CSS custom properties; themes reference tokens |
 | Add i18n key | Edit `src/locales/zh.ts` first, then `en.ts`/`tw.ts`, then run `pnpm run i18n:check` | `zh.ts` is the canonical source |
 | Configure window/security | `src-tauri/tauri.conf.json` + `src-tauri/capabilities/default.json` | Window starts `visible: false, focusable: false, transparent: true` |
-| Test pure Rust logic | Inline `#[cfg(test)] mod tests` in source file | 9 files have inline tests; no integration tests, no mock framework |
+| Test pure Rust logic | Inline `#[cfg(test)] mod tests` in the owning crate | Keep std-only assertions and existing fixtures; native/CLI integration also has separate scripts |
 
 ## CONVENTIONS (project-specific deviations)
 
@@ -55,21 +56,25 @@ tiez-clipboard/
 ### Feature-sliced frontend, no global state library
 Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows via props or custom events emitted from Tauri (`app.emit(...)` ↔ `listen(...)` on the frontend).
 
-### Rust backend organized by concern, not layer
-- `app/` — bootstrap, command dispatching, window lifecycle, hooks
-- `services/` — business logic (clipboard ops, paste queue, encryption)
-- `infrastructure/` — OS-specific platform code (only place with `cfg(target_os = ...)` blocks touching syscalls)
-- `domain/` — pure data models, no IO
-- `global_state.rs` — process-wide atomics for cross-thread coordination (NEVER use a Mutex here for hot-path data)
+### Rust dependency and ownership boundaries
 
-### Single gitignored pattern: AI-tool artifacts
-`.gitignore` excludes `.trae/`, `.opencode/`, `.omo/`, `CLAUDE.md`, `AGENTS.md`. These are session-local. **The committed AGENTS.md is the curated knowledge base; CLAUDE.md / session-specific notes are not committed.**
+- Core depends on Protocol and existing foundations; it accepts injected ports/providers and does not import concrete Platform or UI implementations.
+- Platform may use controlled public Core APIs, ports and providers, but not repository types, history connections or SQL.
+- Host depends on Core/Platform/Protocol and owns authenticated sessions, capture coordination and event contracts.
+- Tauri keeps window lifecycle and native UI coordination. Transitional `legacy-bridge` callers migrate by capability; remove the bridge only after constructors and consumers are migrated.
+- Reuse `DbState.history_service()` during that transition. It shares repositories/cache; constructing a fresh facade per command from the connection does not.
+- Do not replace the GUI initializer with `HistoryService::open` without preserving the existing PRAGMA, migrations, seed and shared session policy.
+- `global_state.rs` contains cross-thread lifecycle atomics. Do not replace hot-path CAS coordination with a global Mutex.
+
+### Repository hygiene
+
+Generated build output and session artifacts remain ignored. The tracked `AGENTS.md` is the curated project knowledge base. Preserve independent lockfiles, generated mirrors and historical evidence when they have real consumers; retire compatibility code only after its replacement or end of support is explicit.
 
 ### Manual Vite chunk splitting
 `vite.config.ts` splits output by feature (`settings`, `tag`, `emoji`, `compact-preview`) and by vendor (`vendor-react-select`, `vendor-motion`, `vendor-virtuoso`, `vendor-tauri`, `vendor-react`). When adding a heavy new feature, add a `manualChunks` entry to keep cold-start parse time bounded.
 
 ### Linux service opt-out via env var
-`TIEZ_DISABLE_LINUX_SERVICES=window_tracker,edge_docking,mouse_hotkey` skips three Linux-specific background services. Used in `pnpm run tauri:dev:safe`. Pattern: any new Linux service must support this kill switch.
+`DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking,mouse_hotkey` is used by `pnpm run tauri:dev:safe`; the existing `TIEZ_DISABLE_LINUX_SERVICES` alias remains accepted. Keep supported service opt-outs when moving startup wiring.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -79,7 +84,7 @@ Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows v
 
 3. **NO committing `dist/` or `src-tauri/target/`.** Despite these appearing in the working tree, they are gitignored. Build output must NEVER be committed.
 
-4. **NO macOS code.** `cfg(target_os = "macos")` is forbidden. README states macOS support was deliberately removed. Any re-introduction = fork principle violation.
+4. **Current releases remain Windows/Linux; macOS/Swift preparation is allowed under DZC-ARCH-001.** Preserve existing Windows/Linux behavior while separating Linux-specific assumptions. Actual Darwin code, Swift SDK/UI and release claims require the separate M0–M4 platform work and real acceptance. Do not create empty platform implementations or report unavailable capabilities as successful.
 
 5. **NO networking features beyond the explicitly approved signed updater.** Cloud sync, MQTT and AI assistant remain removed. The v0.2 updater may use its fixed GitHub release endpoints for signed application updates; local IPC Host/Service does not permit remote network access. See `docs/updater.md` and `docs/specs/v0.2-execution.md` for this limited exception.
 
@@ -87,11 +92,11 @@ Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows v
 
 7. **NO cargo `[dev-dependencies]` section.** All tests use inline `#[cfg(test)] mod tests` with std-only assertions. No `mockall`, no `rstest`, no `criterion`.
 
-8. **NO frontend test framework EXCEPT scoped vitest exemption for NEW pure-logic hooks/utils only.** 已有代码、UI 组件、UI hooks 禁止添加测试。AGENTS.md 修订日期 2026-06-17，附 §roadmap-2026 G16 guardrail。
+8. **NO frontend test framework EXCEPT scoped vitest exemption for NEW pure-logic hooks/utils only.** 已有代码、UI 组件、UI hooks 禁止添加测试。AGENTS.md 修订日期 2026-06-17，附 `roadmap-2026 G16 guardrail。
 
 9. **NO ESLint / Prettier / rustfmt config.** Project relies on `tsc --strict` + `cargo clippy` (not configured either) + code review. Adding these is a deliberate decision, not an oversight.
 
-10. **NO new general-purpose CI workflows.** The approved v0.2 execution scope maintains the existing `.github/workflows/{ci,release,standalone-cli,flatpak}.yml` for signed releases and focused protocol, platform, privacy, packaging and native upgrade gates. Extending those existing checks for Phase 1–5 follows `docs/specs/v0.2-execution.md`; it does not authorize unrelated automation. Normal local builds continue through pnpm scripts.
+10. **NO new general-purpose CI workflows.** Work within the existing CI/release entry points; the two historical identities/upgrade workflows remain until current consumers and supported upgrades are accounted for. Follow `docs/ci.md` for actual execution and DZC-ARCH-001 C0–C7 for proposed changes. Do not describe source-acceptance, candidate sealing or recovery targets as already implemented. Normal local frontend builds use pnpm scripts.
 
 11. **NO npm commands for project management.** `package.json` pins `packageManager: pnpm@11.0.9`; use `pnpm install`, `pnpm run ...`, and `pnpm exec ...` for all frontend/Tauri package tasks. Do not use `npm install`, `npm run ...`, or `npx` in project instructions or local verification commands.
 
@@ -105,15 +110,16 @@ Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows v
 - Theme switch is runtime-only; no build-time theme stripping
 
 ### WebView2 memory hint + idle-destroy as the memory-pressure strategy
-The fork's defining feature. NOT `--disable-gpu` (that breaks rendering quality). Instead:
+Preserve the existing combination of memory hints, idle destruction and the explicitly configured GPU option:
 1. `app/webview_memory.rs` calls `ICoreWebView2_19::SetMemoryUsageTargetLevel(LOW)` via Tauri `with_webview` whenever the window hides
 2. `app/idle_destroyer.rs` runs a background thread that destroys the webview after N seconds of inactivity (default 60s, range 5–3600)
 3. `app/gpu_switcher.rs` optionally collapses the WebView2 GPU process entirely via `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` (user-toggleable via `app.disable_webview_gpu` setting, requires webview recreate to take effect)
 
 The four-atomics state machine in `global_state.rs` (LAST_HIDDEN_TIMESTAMP, WINDOW_LIFECYCLE, IS_DESTROYED, RECREATE_PENDING) coordinates the destroy/recreate cycle. **Never read/modify these without understanding the CAS ordering rules** — see `src-tauri/src/app/idle_destroyer.rs`.
 
-### Platform-conditional Rust, no `cfg` blocks in `app/`
-`src-tauri/src/app/` is platform-agnostic orchestration. All `#[cfg(target_os = "windows")]` / `#[cfg(target_os = "linux")]` blocks touching syscalls live in `src-tauri/src/infrastructure/{windows_api,linux_api}/`. `app/hooks/mod.rs` has Win32 blocks because the hooks themselves are Win32-only; this is the **one** exception.
+### Platform-conditional Rust
+
+Shared native operations belong in `crates/dzc-platform`. Existing Tauri modules also contain desktop-specific Win32/Linux calls and UI wiring; move those only with the relevant adapter and lifecycle validation. Do not assume every `not(windows)` branch is portable Unix code or apply Linux credentials, /proc or XDG behavior to Darwin.
 
 ### Cargo release profile is aggressive-size, not aggressive-speed
 ```toml
@@ -124,7 +130,7 @@ opt-level = "s"         # optimize for size (not "z", not "3")
 strip = true            # remove symbols + debug info
 panic = "abort"         # no unwinding tables
 ```
-Result: ~10–20% smaller binary. **Do not change `opt-level` to "3"** — that regresses size. Do not add `incremental = true` to release — it defeats LTO.
+These are the root Cargo defaults. Current desktop Release jobs override LTO to thin and codegen-units to 8; record the effective configuration when comparing binaries or performance. **Do not change `opt-level` to `"3"` or add release incremental compilation as part of structural cleanup.** Any profile change needs its own measurements.
 
 ## COMMANDS
 
@@ -150,11 +156,9 @@ pnpm run build:portable
 # i18n key audit (zh→en/tw consistency)
 pnpm run i18n:check
 
-# Rust tests (inline #[cfg(test)] modules)
-cd src-tauri && cargo test
-
-# Cleanup after Cargo dep-version stalemates
-cd src-tauri && cargo clean -p <broken-crate>
+# Rust checks from the repository root; native dependencies are required
+cargo test --locked -p dzc-core --lib
+cargo test --locked --workspace --all-targets
 
 # Frontend E2E (currently unconfigured — would fail)
 pnpm run test:e2e
@@ -164,7 +168,7 @@ pnpm run test:e2e
 
 ### Where things can go wrong
 - **`dist/web/` must exist** before `pnpm run tauri:build` — the `beforeBuildCommand` runs `pnpm run build` but Cargo doesn't fail visibly if frontendDist is missing. Build will succeed with an empty window.
-- **Cargo caches failed compiles.** After changing webview2-com or windows versions, run `cargo clean -p windows-future` before retrying. Otherwise a stale error persists across dep changes.
+- **Build output is not acceptance evidence.** Sidecars, packaged binaries and test executables must have the expected source/profile/feature identity. Diagnose a demonstrated cache or staging mismatch before cleaning targets; a cache hit does not prove the candidate was tested.
 - **WebView2 `--disable-gpu` is browser-startup-only.** Cannot hot-toggle. Changing the setting requires `app.gpu_switcher::apply_gpu_disable_env()` then a webview recreate.
 - **Tauri's `WebviewWindow::destroy()` is async (message-based).** The `main` label isn't released synchronously. `idle_destroyer::recreate_main_window()` polls up to 200ms before rebuilding via `WebviewWindowBuilder::from_config`. Don't shortcut this.
 - **Window resize save is debounced** (250ms in `setup.rs::persist_window_size`). Don't read `LAST_WINDOW_SIZE` from another thread without going through `app_handle.state::<DbState>()`.

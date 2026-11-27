@@ -8,13 +8,13 @@ impl super::clipboard_repo::SqliteClipboardRepository {
         let conn = self.conn.lock().map_err(|error| error.to_string())?;
         load(&conn)
     }
-    pub(crate) fn import_theme(&self, theme: ThemePackage) -> Result<(), String> {
+    pub(crate) fn import_theme(&self, theme: ThemePackage) -> Result<Vec<ThemePackage>, String> {
         let mut conn = self.conn.lock().map_err(|error| error.to_string())?;
-        upsert(&mut conn, theme, false).map(|_| ())
+        upsert(&mut conn, theme, false)
     }
-    pub(crate) fn remove_theme(&self, id: &str) -> Result<bool, String> {
+    pub(crate) fn remove_theme(&self, id: &str) -> Result<(Vec<ThemePackage>, bool), String> {
         let mut conn = self.conn.lock().map_err(|error| error.to_string())?;
-        remove(&mut conn, id).map(|(_, active)| active)
+        remove(&mut conn, id)
     }
 }
 
@@ -118,8 +118,9 @@ mod tests {
             theme.id = format!("sample-{index}");
             upsert(&mut conn, theme, false).unwrap();
         }
+        let original = load(&conn).unwrap();
         assert!(upsert(&mut conn, sample(), false).is_err());
-        assert_eq!(load(&conn).unwrap().len(), MAX_CUSTOM_THEMES);
+        assert_eq!(load(&conn).unwrap(), original);
         conn.execute(
             "INSERT INTO settings VALUES('app.theme','custom:sample-0')",
             [],
@@ -127,7 +128,7 @@ mod tests {
         .unwrap();
         conn.execute_batch("CREATE TRIGGER fail_catalog BEFORE UPDATE ON settings WHEN NEW.key='app.custom_themes' BEGIN SELECT RAISE(ABORT,'fixture failure');END;").unwrap();
         assert!(remove(&mut conn, "sample-0").is_err());
-        assert_eq!(load(&conn).unwrap().len(), MAX_CUSTOM_THEMES);
+        assert_eq!(load(&conn).unwrap(), original);
         assert_eq!(
             conn.query_row(
                 "SELECT value FROM settings WHERE key='app.theme'",
@@ -161,6 +162,7 @@ mod tests {
         .unwrap();
         let (themes, active) = remove(&mut conn, "sample").unwrap();
         assert!(active && themes.is_empty());
+        assert_eq!(load(&conn).unwrap(), themes);
         assert_eq!(
             conn.query_row(
                 "SELECT value FROM settings WHERE key='app.theme'",
