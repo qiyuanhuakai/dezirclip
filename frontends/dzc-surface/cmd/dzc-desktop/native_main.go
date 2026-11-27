@@ -448,9 +448,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) bool {
 		return true
 	}
 	changed := reset
-	if reset || events.ResyncRequired {
-		n.refreshViewSettings()
-	}
+	settingsChanged := reset || events.ResyncRequired
 	if events.ResyncRequired {
 		n.queueCount = nativeQueueCount{events: n.queueCount.events + 1}
 		changed = true
@@ -478,15 +476,16 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) bool {
 			}
 			switch *event.Data.Status {
 			case "view_settings_changed", "capture_settings_changed", "custom_themes_changed", "PrivacyHotkeyChanged":
-				if n.winV.changing {
-					continue
-				}
-				if n.appearanceBusy {
-					n.appearanceSync = true
-					continue
-				}
-				n.refreshViewSettings()
+				settingsChanged = true
 			}
+		}
+	}
+	if settingsChanged {
+		switch {
+		case n.appearanceBusy:
+			n.appearanceSync = true
+		case !n.winV.changing:
+			n.refreshViewSettings()
 		}
 	}
 	if next.HistoryRevision != current.HistoryRevision {

@@ -336,8 +336,9 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		n.saveSetting(protocol.SettingUpdateAutoCheck, strconv.FormatBool(auto))
 	}
 	channelLabel := n.text(protocol.SettingUpdateChannelLabel)
+	displayedChannel := n.displayedSetting(protocol.SettingUpdateChannel, u.channel)
 	channelHint := n.text("updater_stable_hint")
-	if u.channel == "preview" {
+	if displayedChannel == "preview" {
 		channelHint = n.text("updater_preview_hint")
 	}
 	kit.SettingsField(c.Key(protocol.SettingUpdateChannel), uikit.SettingsFieldOptions{}).Children(func() {
@@ -347,7 +348,7 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		for _, channel := range setting.Values {
 			options = append(options, uikit.SelectOption{Value: channel, Label: n.text(setting.OptionLabelKeys[channel])})
 		}
-		kit.SettingsChoices(c, channelLabel, n.displayedSetting(protocol.SettingUpdateChannel, u.channel), options, true, disabled || n.preferenceBusy(protocol.SettingUpdateChannel), func(channel string) {
+		kit.SettingsChoices(c, channelLabel, displayedChannel, options, true, disabled || n.preferenceBusy(protocol.SettingUpdateChannel), func(channel string) {
 			n.saveSetting(protocol.SettingUpdateChannel, channel)
 		})
 	})
@@ -355,31 +356,33 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	if u.result.CurrentVersion != "" {
 		current = u.result.CurrentVersion
 	}
-	kit.UpdateVersionRow(c, n.text("updater_current_version"), current)
+	kit.UpdateVersionRow(c.Key("updater-current-version"), n.text("updater_current_version"), current)
 	channelVersion := u.result.ChannelVersion
 	if channelVersion == "" && u.result.Available != nil {
 		channelVersion = u.result.Available.Version
 	}
 	if channelVersion != "" {
-		kit.UpdateVersionRow(c.Key("updater-channel-version"), n.text("updater_channel_version"), channelVersion)
+		ui.Column(c.Key("updater-channel-version")).FillWidth().Transition(nativeSettingReveal).Children(func() {
+			kit.UpdateVersionRow(c, n.text("updater_channel_version"), channelVersion)
+		})
 	}
 	check := n.text("updater_check_now")
 	if u.checking {
 		check = n.text("updater_checking")
 	}
-	kit.UpdateActions(c, func() {
-		if kit.UpdateAction(c, uikit.UpdateCheck, check, disabled).Clicked() {
+	kit.UpdateActions(c.Key("updater-actions"), func() {
+		if kit.UpdateAction(c.Key("updater-check"), uikit.UpdateCheck, check, disabled).Clicked() {
 			n.checkForUpdates()
 		}
 		label, target := n.text("updater_all_releases"), desktopReleasesURL
 		if available := u.result.Available; available != nil {
 			label, target = n.text("updater_open_release"), available.ReleaseURL
 			if available.Artifact != nil && u.result.installTarget != "" &&
-				kit.UpdateAction(c, uikit.UpdateInstall, n.text("updater_install"), disabled).Clicked() {
+				kit.UpdateAction(c.Key("updater-install"), uikit.UpdateInstall, n.text("updater_install"), disabled).Clicked() {
 				u.confirm = true
 			}
 		}
-		if kit.UpdateAction(c, uikit.UpdateReleases, label, false).Clicked() {
+		if kit.UpdateAction(c.Key("updater-releases"), uikit.UpdateReleases, label, false).Clicked() {
 			if err := n.shell.OpenURL(target); err != nil {
 				u.err = errUpdateLink
 			} else if errors.Is(u.err, errUpdateLink) {
@@ -400,19 +403,19 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		status = n.text("updater_unpublished")
 	}
 	if !busy && status != "" {
-		ui.Text(c, status).Wrap()
+		ui.Text(c.Key("updater-status"), status).Wrap()
 	}
 	if !u.checked.IsZero() {
-		ui.Text(c, n.text("updater_checked_at")+" "+u.checked.Format("15:04:05")).Wrap()
+		ui.Text(c.Key("updater-checked"), n.text("updater_checked_at")+" "+u.checked.Format("15:04:05")).Wrap()
 	}
 	if !busy && updateErr != nil {
-		ui.Text(c, n.updateError(updateErr)).TextColor(c.Theme().Danger).Wrap()
+		ui.Text(c.Key("updater-error"), n.updateError(updateErr)).TextColor(c.Theme().Danger).Wrap()
 	}
 	if u.channel == "preview" && u.result.Status != "unpublished" && slices.Contains(u.result.UnpublishedChannels, "preview") {
-		ui.Text(c, n.text("updater_preview_index_missing")).Wrap()
+		ui.Text(c.Key("updater-preview-missing"), n.text("updater_preview_index_missing")).Wrap()
 	}
 	if available := u.result.Available; available != nil {
-		kit.SettingsDisclosure(c, n.text("updater_release_notes"), &u.notesOpen, func() {
+		kit.SettingsDisclosure(c.Key("updater-release-notes"), n.text("updater_release_notes"), &u.notesOpen, func() {
 			notes := available.Notes
 			if notes == "" {
 				notes = n.text("updater_no_notes")

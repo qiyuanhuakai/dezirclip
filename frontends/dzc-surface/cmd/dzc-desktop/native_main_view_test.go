@@ -1074,6 +1074,37 @@ func TestNativeWallpaperStaysBehindHistoryAndControls(t *testing.T) {
 	}
 }
 
+func TestNativeBackgroundKeepsFocusedSearchAcrossAppearanceChanges(t *testing.T) {
+	window := nativeMain{theme: "mica", mode: "light", preferences: map[string]string{
+		"app.language": "en", "app.custom_background_opacity": "75",
+	}}
+	window.history.state.ServiceInstanceId = "fixture"
+	view := ui.NewTester(window.view, 400, 420)
+	if err := view.Click("Search clipboard…"); err != nil {
+		t.Fatal(err)
+	}
+	view.Type("before")
+	if window.query != "before" {
+		t.Fatalf("clipboard search did not take focus: %q", window.query)
+	}
+
+	window.preferences[backgroundSetting] = "/fixture.png"
+	window.background.key = window.backgroundKey(window.history.state)
+	window.background.bitmap = ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 8, 8)))
+	view.Frame()
+	view.Type(" added")
+	if window.query != "before added" {
+		t.Fatalf("adding a background moved focus away from clipboard search: %q", window.query)
+	}
+
+	window.preferences[nativeBackgroundOpacity.key] = "0"
+	view.Frame()
+	view.Type(" hidden")
+	if window.query != "before added hidden" {
+		t.Fatalf("hiding the background moved focus away from clipboard search: %q", window.query)
+	}
+}
+
 func TestNativeMainSearchShortcutWithoutFocusedControl(t *testing.T) {
 	window := nativeMain{preferences: map[string]string{"app.show_search_box": "false", "app.language": "en"}}
 	tester := ui.NewTester(window.view, 360, 400)

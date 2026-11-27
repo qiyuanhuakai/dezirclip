@@ -162,11 +162,14 @@ func (n *nativeMain) applyViewSettings(settings map[string]string) bool {
 		nativeInterfaceFont(previous) != nativeInterfaceFont(settings) {
 		n.startAppearanceMotion()
 	}
-	if (previous["app.compact_mode"] == "true") != (settings["app.compact_mode"] == "true") {
+	if (previous["app.compact_mode"] == "true") != (settings["app.compact_mode"] == "true") ||
+		nativeItemSize.value(previous) != nativeItemSize.value(settings) ||
+		nativeTagSize.value(previous) != nativeTagSize.value(settings) {
 		n.historyLayoutRevision++
 	}
 	n.configured(settings)
 	if next := n.backgroundKey(n.history.state); background != next && n.session != nil && n.window != nil {
+		n.appearanceMotionUntil = time.Now().Add(nativeAppearanceMotion)
 		n.loadBackground()
 	} else if previous[nativeBackgroundOpacity.key] != settings[nativeBackgroundOpacity.key] && n.window != nil {
 		n.animateBackground()

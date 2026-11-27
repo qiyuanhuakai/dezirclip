@@ -90,7 +90,7 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label, hint string, choices
 	system := n.text("font_default_option")
 	options := make([]uikit.SelectOption, 1, len(choices)+2)
 	options[0] = uikit.SelectOption{Label: system}
-	selected := n.preferences[key]
+	selected := n.displayedSetting(key, "")
 	found := selected == ""
 	for _, family := range choices {
 		options = append(options, uikit.SelectOption{Value: family, Label: family, FontFamily: family})

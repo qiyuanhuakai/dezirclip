@@ -102,7 +102,7 @@ func (n *nativeMain) view(c *ui.Context) {
 		if n.surfaceOpacityDraft == nil && time.Now().Before(n.appearanceMotionUntil) {
 			motion = nativeAppearanceMotion
 		}
-		main := ui.Column(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).
+		main := ui.Column(c.Key("main-surface")).Absolute().Top(0).Right(0).Bottom(0).Left(0).
 			Gap(6).Background(background).Radius(cornerRadius).
 			Transition(ui.ElementTransition{Colors: true, Duration: motion})
 		if n.preferences["app.show_app_border"] != "false" {

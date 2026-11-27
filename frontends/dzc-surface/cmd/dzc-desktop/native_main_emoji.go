@@ -88,18 +88,20 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 		})
 		var composing bool
 		if tab != "favorites" {
-			kit.CharacterSearch(c.Key("character-search"), &panel.query, n.text("emoji_search"), func(editingComposition bool) {
-				composing = editingComposition
+			ui.Column(c.Key("character-search")).FillWidth().Transition(nativeSettingReveal).Children(func() {
+				kit.CharacterSearch(c, &panel.query, n.text("emoji_search"), func(editingComposition bool) {
+					composing = editingComposition
+				})
 			})
 		}
 		ui.Column(c.Key("character-tab-content")).FillWidth().Grow(1).Shrink(1).MinHeight(0).Clip().Children(func() {
-			if tab == "favorites" {
-				ui.Column(c.Key(tab)).Fill().Shrink(1).MinHeight(0).Transition(nativePanelEnter).Children(func() {
+			ui.Column(c.Key(tab)).Fill().Shrink(1).MinHeight(0).Transition(nativePanelEnter).Children(func() {
+				if tab == "favorites" {
 					n.emojiFavoritesView(c, contentWidth)
-				})
-			} else {
-				n.drawEmojiResults(c, kit, tab, contentWidth, composing)
-			}
+				} else {
+					n.drawEmojiResults(c, kit, tab, contentWidth, composing)
+				}
+			})
 		})
 	})
 }
@@ -124,10 +126,8 @@ func (n *nativeMain) drawEmojiResults(c *ui.Context, kit uikit.Kit, tab string, 
 	if tab == "symbols" {
 		label = n.text("emoji_symbols_tab")
 	}
-	ui.Column(c.Key(tab)).Fill().Shrink(1).MinHeight(0).Transition(nativePanelEnter).Children(func() {
-		kit.CharacterList(c, &panel.characters, contentWidth, panel.groups, label,
-			n.text("emoji_search_empty"), n.mutating, func(value string) { n.sendEmoji("text", value) })
-	})
+	kit.CharacterList(c.Key("character-results"), &panel.characters, contentWidth, panel.groups, label,
+		n.text("emoji_search_empty"), n.mutating, func(value string) { n.sendEmoji("text", value) })
 }
 
 var (

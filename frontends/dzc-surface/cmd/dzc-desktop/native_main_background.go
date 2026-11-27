@@ -67,9 +67,14 @@ func (n *nativeMain) loadBackground() {
 		n.clearBackground()
 		return
 	}
-	if n.background.key == key && n.background.bitmap != nil {
-		n.animateBackground()
-		return
+	if n.background.key == key {
+		if n.background.loading {
+			return
+		}
+		if n.background.bitmap != nil {
+			n.animateBackground()
+			return
+		}
 	}
 	n.clearBackground()
 	n.background = nativeBackground{key: key, loading: true}
@@ -90,6 +95,7 @@ func (n *nativeMain) loadBackground() {
 			n.background.bitmap, n.background.gif, n.background.loading = bitmap, animation, false
 			if bitmap != nil {
 				n.background.enterUntil = time.Now().Add(nativeAppearanceMotion)
+				n.appearanceMotionUntil = n.background.enterUntil
 			}
 			if bitmap == nil && n.notice == "" {
 				n.notice = n.text("custom_background_load_failed")
