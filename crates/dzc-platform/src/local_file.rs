@@ -16,7 +16,7 @@ pub fn open_preview_file(path: &std::path::Path) -> Option<std::fs::File> {
             if std::fs::symlink_metadata(ancestor).ok()?.file_attributes() & 0x400 != 0 { return None; }
         }
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     for ancestor in path.ancestors() {
         if std::fs::symlink_metadata(ancestor).ok()?.file_type().is_symlink() { return None; }
     }

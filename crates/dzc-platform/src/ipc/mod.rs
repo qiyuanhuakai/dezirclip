@@ -2,10 +2,10 @@
 use std::{io, path::Path, time::Duration};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-#[cfg(target_os = "linux")]
-mod linux;
-#[cfg(target_os = "linux")]
-pub use linux::{current_identity, Endpoint, Listener, Stream};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod unix;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub use unix::{current_identity, Endpoint, Listener, Stream};
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
@@ -29,6 +29,7 @@ impl PeerIdentity {
     pub fn user(&self) -> &str { &self.user }
     /// Windows: verified token session ID. Linux: the local endpoint's graphical
     /// scope label, not an OS-authenticated claim about the peer's session.
+    /// macOS: a per-user scope, independent of a graphical login session.
     pub fn session(&self) -> &str { &self.session }
     pub fn pid(&self) -> Option<u32> { self.pid }
 }
@@ -98,7 +99,7 @@ mod tests {
     fn private_native_endpoint_authenticates_and_releases_ownership() {
         let directory = std::env::temp_dir().join(format!("dzc-ipc-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         { use std::os::unix::fs::PermissionsExt; std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap(); }
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
             let endpoint = Endpoint::in_directory(&directory).unwrap();

@@ -6,7 +6,7 @@ use std::path::Path;
 fn open_readonly(path: &Path) -> io::Result<File> {
     let mut options = OpenOptions::new();
     options.read(true);
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY);
@@ -18,7 +18,7 @@ fn open_readonly(path: &Path) -> io::Result<File> {
 pub fn open_regular_nofollow(path: &Path) -> io::Result<File> {
     let mut options = OpenOptions::new();
     options.read(true);
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY | libc::O_NOFOLLOW);
@@ -146,8 +146,8 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "existing");
     }
 
-    #[cfg(target_os = "linux")]
-    mod linux {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    mod unix {
         use super::*;
         use std::ffi::CString;
         use std::os::unix::ffi::OsStrExt;

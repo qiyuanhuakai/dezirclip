@@ -5,6 +5,7 @@ use std::io::Read;
 /// An exit observation opened before requesting shutdown. It never terminates
 /// the peer and cannot accidentally follow a subsequently reused process ID.
 pub struct ProcessExit {
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     pid: u32,
     #[cfg(target_os="windows")]
     handle: windows::Win32::Foundation::HANDLE,
@@ -23,6 +24,11 @@ impl ProcessExit {
         Self::open_pid(pid)
     }
     fn open_pid(pid: u32) -> io::Result<Self> {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = pid;
+            Err(io::Error::new(io::ErrorKind::Unsupported, "ServiceProcessObservationUnsupported"))
+        }
         #[cfg(target_os="windows")]
         {
             use windows::Win32::System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE};
@@ -45,6 +51,13 @@ impl ProcessExit {
     /// Compare OS-reported executable identities while both process generations
     /// remain alive. No client-provided path or window property is trusted.
     pub fn shares_executable(&self, pid: u32) -> io::Result<bool> {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = pid;
+            Err(io::Error::new(io::ErrorKind::Unsupported, "ServiceProcessObservationUnsupported"))
+        }
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        {
         let other = Self::open_pid(pid)?;
         if !self.is_running()? || !other.is_running()? { return Err(super::denied()); }
         #[cfg(target_os="windows")]
@@ -58,6 +71,7 @@ impl ProcessExit {
         };
         if !self.is_running()? || !other.is_running()? { return Err(super::denied()); }
         Ok(same)
+        }
     }
     pub fn wait(self, timeout: std::time::Duration) -> io::Result<()> { self.observe(timeout) }
 
@@ -70,6 +84,11 @@ impl ProcessExit {
     }
 
     fn observe(&self, timeout: std::time::Duration) -> io::Result<()> {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = timeout;
+            Err(io::Error::new(io::ErrorKind::Unsupported, "ServiceProcessObservationUnsupported"))
+        }
         #[cfg(target_os="windows")]
         {
             use windows::Win32::{Foundation::{WAIT_OBJECT_0, WAIT_TIMEOUT}, System::Threading::WaitForSingleObject};
@@ -113,7 +132,7 @@ fn process_image(pid: u32) -> io::Result<String> {
 #[cfg(target_os="windows")]
 impl Drop for ProcessExit { fn drop(&mut self) { unsafe { let _ = windows::Win32::Foundation::CloseHandle(self.handle); } } }
 pub struct BackgroundChild {
-    #[cfg(target_os="linux")]
+    #[cfg(any(target_os="linux", target_os="macos"))]
     child: std::process::Child,
     #[cfg(target_os="windows")]
     handle: windows::Win32::Foundation::HANDLE,
@@ -125,11 +144,11 @@ pub struct BackgroundChild {
 unsafe impl Send for BackgroundChild {}
 impl BackgroundChild {
     pub fn id(&self) -> u32 {
-        #[cfg(target_os="linux")] { self.child.id() }
+        #[cfg(any(target_os="linux", target_os="macos"))] { self.child.id() }
         #[cfg(target_os="windows")] { self.pid }
     }
     pub fn try_wait(&mut self) -> io::Result<Option<()>> {
-        #[cfg(target_os="linux")] { self.child.try_wait().map(|status|status.map(|_|())) }
+        #[cfg(any(target_os="linux", target_os="macos"))] { self.child.try_wait().map(|status|status.map(|_|())) }
         #[cfg(target_os="windows")]
         {
             use windows::Win32::{Foundation::{WAIT_OBJECT_0, WAIT_TIMEOUT}, System::Threading::WaitForSingleObject};
@@ -139,11 +158,11 @@ impl BackgroundChild {
         }
     }
     pub fn kill(&mut self) -> io::Result<()> {
-        #[cfg(target_os="linux")] { self.child.kill() }
+        #[cfg(any(target_os="linux", target_os="macos"))] { self.child.kill() }
         #[cfg(target_os="windows")] { unsafe { windows::Win32::System::Threading::TerminateProcess(self.handle, 1).map_err(io::Error::other) } }
     }
     pub fn wait(&mut self) -> io::Result<()> {
-        #[cfg(target_os="linux")] { self.child.wait().map(|_|()) }
+        #[cfg(any(target_os="linux", target_os="macos"))] { self.child.wait().map(|_|()) }
         #[cfg(target_os="windows")]
         {
             use windows::Win32::{Foundation::WAIT_OBJECT_0, System::Threading::WaitForSingleObject};
@@ -189,7 +208,7 @@ pub fn spawn_background(executable: &Path, arguments: &[OsString]) -> io::Result
         unsafe { let _ = CloseHandle(process.hThread); }
         return Ok(BackgroundChild { handle: process.hProcess, pid: process.dwProcessId });
     }
-    #[cfg(target_os="linux")]
+    #[cfg(any(target_os="linux", target_os="macos"))]
     {
     let mut command = Command::new(executable);
     command.args(arguments).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
@@ -246,7 +265,7 @@ fn inspect_command(mut command:Command,arguments:&[&str],timeout:std::time::Dura
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(target_os = "linux", target_os = "windows")))]
 mod identity_tests {
     use super::*;
 

@@ -5,7 +5,10 @@ use tokio::{io::{AsyncRead, AsyncWrite, ReadBuf}, net::{UnixListener, UnixStream
 pub fn current_identity() -> io::Result<PeerIdentity> {
     // Native identity is independent of USER, HOME and any hello message.
     let uid = unsafe { libc::geteuid() };
+    #[cfg(target_os = "linux")]
     let session = std::env::var("WAYLAND_DISPLAY").or_else(|_| std::env::var("DISPLAY")).unwrap_or_else(|_| "headless".into());
+    #[cfg(target_os = "macos")]
+    let session = "user".into();
     Ok(PeerIdentity { user: uid.to_string(), session, pid: Some(std::process::id()) })
 }
 
@@ -26,7 +29,12 @@ pub struct Endpoint { path: PathBuf, identity: PeerIdentity }
 impl Endpoint {
     pub fn for_current_session(data_directory: &Path) -> io::Result<Self> {
         let identity = current_identity()?;
+        #[cfg(target_os = "linux")]
         let root = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(|| data_directory.to_path_buf());
+        // The Darwin socket path has a short sockaddr_un limit. The
+        // sticky system directory contains a private, per-user profile scope.
+        #[cfg(target_os = "macos")]
+        let root = Path::new("/private/tmp");
         let directory = root.join(format!("dzc-{}", namespace(data_directory, &identity)));
         Self::in_directory(&directory)
     }
@@ -41,11 +49,8 @@ impl Endpoint {
     pub fn control_path(&self) -> PathBuf { self.path.with_extension("control.json") }
     pub async fn connect(&self, timeout: Duration) -> io::Result<Stream> {
         let stream = tokio::time::timeout(timeout, UnixStream::connect(&self.path)).await.map_err(|_| io::Error::from(io::ErrorKind::TimedOut))??;
-        let peer = stream.peer_cred()?;
-        if peer.uid().to_string() != self.identity.user { return Err(denied()); }
-        let mut identity = self.identity.clone();
-        identity.pid = peer.pid().and_then(|pid| u32::try_from(pid).ok());
-        Ok(Stream(stream, identity))
+        let peer = authenticated_peer(&stream, &self.identity)?;
+        Ok(Stream(stream, peer))
     }
     pub fn bind(&self) -> io::Result<Listener> {
         let lock = fs::OpenOptions::new().read(true).write(true).create(true).mode(0o600).custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC).open(self.path.with_extension("lock"))?;
@@ -73,14 +78,20 @@ pub struct Listener { listener: UnixListener, endpoint: Endpoint, _lock: fs::Fil
 impl Listener {
     pub async fn accept(&mut self) -> io::Result<Stream> {
         let (stream, _) = self.listener.accept().await?;
-        let peer = stream.peer_cred()?;
-        if peer.uid().to_string() != self.endpoint.identity.user { return Err(denied()); }
-        let mut identity = self.endpoint.identity.clone();
-        identity.pid = peer.pid().and_then(|pid| u32::try_from(pid).ok());
-        Ok(Stream(stream, identity))
+        let peer = authenticated_peer(&stream, &self.endpoint.identity)?;
+        Ok(Stream(stream, peer))
     }
 }
 impl Drop for Listener { fn drop(&mut self) { let _ = fs::remove_file(&self.endpoint.path); } }
+
+fn authenticated_peer(stream: &UnixStream, local: &PeerIdentity) -> io::Result<PeerIdentity> {
+    let peer = stream.peer_cred()?;
+    if peer.uid().to_string() != local.user { return Err(denied()); }
+    let pid = peer.pid().and_then(|pid| u32::try_from(pid).ok()).filter(|&pid| pid != 0);
+    #[cfg(target_os = "macos")]
+    if pid.is_none() { return Err(denied()); }
+    Ok(PeerIdentity { pid, ..local.clone() })
+}
 
 pub struct Stream(UnixStream, PeerIdentity);
 impl Stream {

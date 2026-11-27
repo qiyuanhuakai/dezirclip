@@ -32,7 +32,7 @@ pub fn write_private(path: &Path, value: &[u8]) -> io::Result<()> {
     result
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn open(path: &Path, create: bool) -> io::Result<File> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     let file = std::fs::OpenOptions::new().read(true).write(create).create_new(create)
@@ -79,7 +79,7 @@ mod tests {
         write_private(&path, b"second").unwrap();
         assert_eq!(read_private(&path).unwrap(), b"second");
         assert!(write_private(&path, &[0;4097]).is_err());
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             use std::os::unix::fs::{symlink, PermissionsExt};
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();

@@ -23,6 +23,10 @@ on:
         value: ${{ jobs.source-acceptance.outputs.artifact }}
   workflow_dispatch:
     inputs:
+      macos_native_probe:
+        description: Run the opt-in Darwin native foundations before SwiftUI integration
+        type: boolean
+        default: false
       native_file_drag_only:
         description: Run focused native file drag acceptance without the Tauri packaging build
         type: boolean
@@ -86,6 +90,31 @@ env:
   DEZIRCLIP_DISABLE_LINUX_SERVICES: window_tracker,edge_docking,mouse_hotkey
 
 jobs:
+  darwin-native:
+    name: Darwin native foundations
+    if: github.event_name == 'workflow_dispatch' && inputs.macos_native_probe && !inputs.source_acceptance
+    runs-on: macos-26
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          key: darwin-native
+      - name: Exercise real Darwin path and transport guards
+        run: |
+          cargo test --locked -p dzc-core --lib infrastructure::local_file::tests
+          cargo test --locked -p dzc-platform --features ipc --lib ipc::
+          cargo check --locked -p dzc-host
+      - name: Bind the Swift client to its signed Rust fixture over the local socket
+        run: |
+          cargo build --locked -p dzc-platform --features ipc --example ipc_protocol_fixture
+          socket_dir=$(mktemp -d /private/tmp/dzc-m0.XXXXXX)
+          swiftc -parse-as-library scripts/tests/darwin-peer.swift -o "$RUNNER_TEMP/dzc-darwin-peer"
+          codesign --force --sign - target/debug/examples/ipc_protocol_fixture
+          codesign --force --sign - "$RUNNER_TEMP/dzc-darwin-peer"
+          "$RUNNER_TEMP/dzc-darwin-peer" "$PWD/target/debug/examples/ipc_protocol_fixture" "$socket_dir"
+
   windows-release-memory:
     name: Published Windows memory comparison
     if: github.event_name == 'workflow_dispatch' && inputs.windows_release_memory == true
@@ -117,6 +146,7 @@ jobs:
           retention-days: 14
 
   frontend:
+    if: '!inputs.macos_native_probe'
     name: Frontend
     runs-on: ubuntu-22.04
     outputs:
@@ -1417,6 +1447,7 @@ jobs:
           if-no-files-found: error
 
   rust-development:
+    if: '!inputs.macos_native_probe'
     name: Rust development (${{ matrix.os }}, ${{ matrix.mode }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -1488,6 +1519,7 @@ jobs:
         run: cargo check --locked --workspace --all-targets
 
   go-development:
+    if: '!inputs.macos_native_probe'
     name: Go development (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:

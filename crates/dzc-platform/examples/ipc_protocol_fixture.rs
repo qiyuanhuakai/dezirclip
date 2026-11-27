@@ -18,12 +18,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return identity_client();
     }
     let directory = std::env::args_os().nth(1).ok_or("private fixture directory required")?;
+    #[cfg(target_os = "macos")]
+    let expected_parent = if std::env::args().nth(2).as_deref() == Some("--darwin-parent") {
+        let pid = unsafe { libc::getppid() };
+        if pid <= 1 { return Err("missing fixture parent".into()); }
+        Some(pid as u32)
+    } else { None };
     tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async {
         let endpoint = Endpoint::in_directory(Path::new(&directory))?;
         let mut listener = endpoint.bind()?;
         println!("{}", endpoint.address().display());
         io::stdout().flush()?;
-        let mut stream = tokio::time::timeout(Duration::from_secs(20), listener.accept()).await??;
+        let mut stream = tokio::time::timeout(Duration::from_secs(20), async {
+            #[cfg(target_os = "macos")]
+            if let Some(pid) = expected_parent {
+                loop {
+                    let stream = listener.accept().await?;
+                    if stream.authenticate_after_read()?.pid() == Some(pid) {
+                        return Ok(stream);
+                    }
+                }
+            }
+            listener.accept().await
+        }).await??;
         for index in 0..3 {
             let bytes = read_frame(&mut stream, Duration::from_secs(5)).await?;
             let _peer = stream.authenticate_after_read()?;

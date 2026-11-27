@@ -1,3 +1,4 @@
+#[cfg(any(target_os = "linux", target_os = "windows", test))]
 use base64::Engine;
 
 #[cfg(windows)]
@@ -49,19 +50,19 @@ extern "system" {
     fn LocalFree(hmem: *mut c_void) -> *mut c_void;
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 use dzc_core::crypto::encrypt_with_key;
 use dzc_core::crypto::EncryptionError;
 #[cfg(windows)]
 use dzc_core::crypto::ENCRYPT_PREFIX;
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 use dzc_core::crypto::LINUX_ENCRYPT_PREFIX;
 
 static DIAGNOSTIC_SINK: std::sync::OnceLock<fn(&str)> = std::sync::OnceLock::new();
 pub fn set_diagnostic_sink(sink: fn(&str)) {
     let _ = DIAGNOSTIC_SINK.set(sink);
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn diagnostic(message: &str) {
     if let Some(sink) = DIAGNOSTIC_SINK.get() {
         sink(message);
@@ -69,7 +70,7 @@ fn diagnostic(message: &str) {
         eprintln!("{message}");
     }
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 macro_rules! warn {
     ($($argument:tt)*) => { diagnostic(&format!($($argument)*)) };
 }
@@ -144,15 +145,15 @@ pub fn decrypt_value(cipher: &str) -> Option<String> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 const MASTER_KEY_SERVICE: &str = "dezirclip";
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 const MASTER_KEY_ACCOUNT: &str = "encryption-master-key";
 
 // Why the key is looked up in two places, in enough detail that it does not
@@ -200,7 +201,7 @@ const MASTER_KEY_ACCOUNT: &str = "encryption-master-key";
 // error type so the decision built on it can be reasoned about -- and tested --
 // on any platform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(any(not(windows), test))]
+#[cfg(any(target_os = "linux", test))]
 enum MasterKeyRead {
     /// A key is stored and decoded to 32 bytes.
     Present,
@@ -214,7 +215,7 @@ enum MasterKeyRead {
 
 // What to do about it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(any(not(windows), test))]
+#[cfg(any(target_os = "linux", test))]
 enum MasterKeyPlan {
     Use,
     Create,
@@ -227,7 +228,7 @@ enum MasterKeyPlan {
 /// fresh key over the old one, and everything encrypted under the old key stops
 /// being readable -- permanently, with no way back. Only a store that reports
 /// nothing is allowed to be written to.
-#[cfg(any(not(windows), test))]
+#[cfg(any(target_os = "linux", test))]
 fn plan_master_key(read: MasterKeyRead) -> MasterKeyPlan {
     match read {
         MasterKeyRead::Present => MasterKeyPlan::Use,
@@ -240,7 +241,7 @@ fn plan_master_key(read: MasterKeyRead) -> MasterKeyPlan {
 
 /// Decode a stored key. A value that is not exactly 32 base64-encoded bytes is
 /// not a key, and is treated as an unreadable store rather than as absence.
-#[cfg(any(not(windows), test))]
+#[cfg(any(target_os = "linux", test))]
 fn decode_master_key(stored: &str) -> Option<[u8; 32]> {
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(stored)
@@ -254,7 +255,7 @@ fn decode_master_key(stored: &str) -> Option<[u8; 32]> {
 }
 
 /// One store's answer about the master key.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StoreProbe {
     /// A key is stored here and decoded to 32 bytes.
@@ -266,7 +267,7 @@ enum StoreProbe {
     Unavailable,
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn probe_store(
     store: Option<&(dyn keyring::credential::CredentialApi + Send + Sync)>,
     label: &str,
@@ -291,7 +292,7 @@ fn probe_store(
 }
 
 /// Where a key came from, and whether anything durable now holds it.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum KeyOrigin {
     /// Already in the persistent store. Nothing to do.
@@ -313,7 +314,7 @@ enum KeyOrigin {
 /// same bargain: a key that only exists for this session turns every row written
 /// with it into a row that dies with the session, and no later retry can undo
 /// that because the ciphertext has already been produced and stored.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ResolvedMasterKey {
     key: [u8; 32],
@@ -326,7 +327,7 @@ struct ResolvedMasterKey {
 /// every key this build has written is already there. keyutils is only reached
 /// when Secret Service has nothing -- which is exactly the state a machine that
 /// upgraded without rebooting is in.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn open_stores() -> (
     Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
     Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
@@ -357,7 +358,7 @@ fn open_stores() -> (
 /// The decision is a function of what the two stores say, not of what any of
 /// them failed to answer, so it is written as one and tested through the same
 /// seams the real stores are reached by.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn resolve_master_key(
     persistent: &Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
     legacy: &Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
@@ -411,7 +412,7 @@ fn resolve_master_key(
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn read_master_key() -> Result<ResolvedMasterKey, MasterKeyRead> {
     let (persistent, legacy) = open_stores();
     if persistent.is_none() && legacy.is_none() {
@@ -425,7 +426,7 @@ fn read_master_key() -> Result<ResolvedMasterKey, MasterKeyRead> {
 /// Cached only after a key has actually been decoded, so a keyring that was
 /// briefly unavailable is asked again on the next call instead of being
 /// remembered as "there is no key".
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 static MASTER_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
 
 /// A key recovered from the legacy store that nothing durable holds yet.
@@ -434,7 +435,7 @@ static MASTER_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
 /// deliberately *not* the cache a writer consults: encrypting new rows under it
 /// would produce ciphertext whose key dies with the session keyring, and no
 /// later successful migration can rescue rows that were already written.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 static RECOVERED_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
 
 /// Two threads that both find nothing stored would otherwise each generate a
@@ -455,7 +456,7 @@ static RECOVERED_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new()
 /// once. That would need arbitration the kernel provides, which is out of scope
 /// here; what this lock does guarantee is that one process never hands two
 /// different keys to two callers.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 static MASTER_KEY_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Persists the key this process should be using, minting one only if there is
@@ -470,7 +471,7 @@ static MASTER_KEY_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// the read path has nothing to fall back to; writing both is what the
 /// two-store design the feature selects was supposed to do in the first place.
 /// A failure of the second store is not fatal once the first has taken the key.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn persist_master_key(recovered: Option<[u8; 32]>) -> Result<[u8; 32], EncryptionError> {
     let (persistent, legacy) = open_stores();
     let persistent = persistent.ok_or(EncryptionError::KeyUnavailable)?;
@@ -514,7 +515,7 @@ fn persist_master_key(recovered: Option<[u8; 32]>) -> Result<[u8; 32], Encryptio
 /// The value returned is whatever ended up in the cache, never a local copy.
 /// That is what stops two callers from disagreeing when the second one loses
 /// the publish.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn initialise_master_key(
     cache: &std::sync::OnceLock<[u8; 32]>,
     recovered: &std::sync::OnceLock<[u8; 32]>,
@@ -598,7 +599,7 @@ fn initialise_master_key(
 
 /// The key used for writing. Returns `None` when the store cannot be read and
 /// must not be written. Sensitive persistence rejects an unavailable key.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn master_key() -> Result<[u8; 32], EncryptionError> {
     let failure = std::cell::Cell::new(EncryptionError::KeyUnavailable);
     initialise_master_key(
@@ -622,7 +623,7 @@ fn master_key() -> Result<[u8; 32], EncryptionError> {
 /// The key used for reading. It never creates one: decryption has to be able to
 /// fail honestly rather than replace the key it is about to be measured
 /// against.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn existing_master_key() -> Option<[u8; 32]> {
     initialise_master_key(
         &MASTER_KEY,
@@ -635,7 +636,7 @@ fn existing_master_key() -> Option<[u8; 32]> {
     )
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 pub(crate) fn encrypt_platform(plain: &str) -> Result<String, EncryptionError> {
     encrypt_with_key(plain, master_key, |nonce| {
         rand::RngCore::try_fill_bytes(&mut rand::rngs::OsRng, nonce)
@@ -643,7 +644,7 @@ pub(crate) fn encrypt_platform(plain: &str) -> Result<String, EncryptionError> {
     })
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 pub fn decrypt_value(cipher: &str) -> Option<String> {
     let payload = cipher.strip_prefix(LINUX_ENCRYPT_PREFIX)?;
     let decoded = base64::engine::general_purpose::STANDARD
@@ -661,6 +662,16 @@ pub fn decrypt_value(cipher: &str) -> Option<String> {
     let plaintext = cipher.decrypt(nonce, &decoded[12..]).ok()?;
 
     String::from_utf8(plaintext).ok()
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn encrypt_platform(_: &str) -> Result<String, EncryptionError> {
+    Err(EncryptionError::EncryptionFailed)
+}
+
+#[cfg(target_os = "macos")]
+pub fn decrypt_value(_: &str) -> Option<String> {
+    None
 }
 
 #[cfg(test)]
@@ -725,7 +736,7 @@ mod tests {
     // arguments precisely so a test can own them: the production ones are
     // process-wide statics, and a test sharing them would be racing every other
     // test in the binary.
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     mod linux_key_init {
         use super::*;
         use std::cell::Cell;

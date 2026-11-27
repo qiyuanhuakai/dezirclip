@@ -4,19 +4,20 @@ use std::{io, sync::Arc};
 pub struct CaptureLease {
     #[cfg(target_os = "windows")]
     handle: windows::Win32::Foundation::HANDLE,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     _file: std::fs::File,
 }
 
 impl CaptureLease {
     /// Windows: one lease per verified user/token session. Linux: conservatively
     /// one per UID across graphical sessions, independent of display labels or
-    /// database paths. Aliases cannot create a second clipboard capturer.
+    /// database paths. macOS also uses one lease per effective UID.
+    /// Aliases cannot create a second clipboard capturer.
     pub fn acquire() -> io::Result<Arc<Self>> {
         #[cfg(target_os = "windows")]
         { windows_lease() }
-        #[cfg(target_os = "linux")]
-        { linux_lease() }
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        { unix_lease() }
     }
 }
 
@@ -60,11 +61,15 @@ impl Drop for CaptureLease {
     }
 }
 
-#[cfg(target_os = "linux")]
-fn linux_lease() -> io::Result<Arc<CaptureLease>> {
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn unix_lease() -> io::Result<Arc<CaptureLease>> {
     use std::{fs, os::{fd::AsRawFd, unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt}}, path::Path};
     let identity = super::current_identity()?;
-    let directory = Path::new("/tmp").join(format!("dezirclip-capture-{}", identity.user()));
+    #[cfg(target_os = "linux")]
+    let root = Path::new("/tmp");
+    #[cfg(target_os = "macos")]
+    let root = Path::new("/private/tmp");
+    let directory = root.join(format!("dezirclip-capture-{}", identity.user()));
     match fs::DirBuilder::new().mode(0o700).create(&directory) {
         Ok(()) => (), Err(error) if error.kind() == io::ErrorKind::AlreadyExists => (), Err(error) => return Err(error),
     }
