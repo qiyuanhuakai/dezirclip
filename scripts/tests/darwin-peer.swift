@@ -131,6 +131,28 @@ func request(_ fd: Int32, id: String, method: String, params: [String: Any]) thr
     return result
 }
 
+func verifyCancelledRead(helper: URL, directory: String, socket: String) throws {
+    let child = Process()
+    let lifetime = Pipe()
+    child.executableURL = helper
+    child.arguments = [directory, "--darwin-parent"]
+    child.standardInput = lifetime
+    try child.run()
+    defer {
+        if child.isRunning { child.terminate() }
+        child.waitUntilExit()
+    }
+    let fd = try connect(to: socket, until: Date().addingTimeInterval(5))
+    defer { Darwin.close(fd) }
+    try requireChild(fd, pid: child.processIdentifier, executable: helper)
+    var partialHeader: UInt8 = 0
+    try require(Darwin.write(fd, &partialHeader, 1) == 1, "failed to start a partial frame")
+    try lifetime.fileHandleForWriting.close()
+    let deadline = Date().addingTimeInterval(2)
+    while child.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+    try require(!child.isRunning && child.terminationStatus == 0, "closing the parent did not cancel the partial frame")
+}
+
 @main struct DarwinPeerProbe {
     static func main() throws {
         let args = CommandLine.arguments
@@ -138,8 +160,10 @@ func request(_ fd: Int32, id: String, method: String, params: [String: Any]) thr
         let helper = URL(fileURLWithPath: args[1])
         let socket = URL(fileURLWithPath: args[2]).appendingPathComponent("host.sock").path
         let child = Process()
+        let lifetime = Pipe()
         child.executableURL = helper
         child.arguments = [args[2], "--darwin-parent"]
+        child.standardInput = lifetime
         try child.run()
         defer {
             if child.isRunning { child.terminate() }
@@ -183,6 +207,7 @@ func request(_ fd: Int32, id: String, method: String, params: [String: Any]) thr
         try require(list["keychain_verified"] as? Bool == true, "missing helper keychain proof")
         child.waitUntilExit()
         try require(child.terminationStatus == 0, "helper exited unsuccessfully")
-        print("Verified the Darwin UID, live signed helper, framed Rust wire responses, system pasteboard, isolated Keychain and owned child exit")
+        try verifyCancelledRead(helper: helper, directory: args[2], socket: socket)
+        print("Verified the Darwin UID, live signed helper, framed Rust wire responses, system pasteboard, isolated Keychain and cancelled partial read")
     }
 }

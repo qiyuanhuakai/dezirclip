@@ -26,7 +26,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else { None };
     #[cfg(target_os = "macos")]
     let _capture_lease = expected_parent.map(|_| dzc_platform::ipc::CaptureLease::acquire()).transpose()?;
-    tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async {
+    #[cfg(target_os = "macos")]
+    let parent_closed = expected_parent.map(|_| watch_parent_lifetime()).transpose()?;
+    let requests = async {
         let endpoint = Endpoint::in_directory(Path::new(&directory))?;
         let mut listener = endpoint.bind()?;
         println!("{}", endpoint.address().display());
@@ -76,7 +78,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             write_frame(&mut stream, &bytes, Duration::from_secs(5)).await?;
         }
         Ok::<_, Box<dyn std::error::Error>>(())
+    };
+    tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async {
+        #[cfg(target_os = "macos")]
+        if let Some(parent_closed) = parent_closed {
+            return tokio::select! {
+                _ = parent_closed => Ok(()),
+                result = requests => result,
+            };
+        }
+        requests.await
     })
+}
+
+#[cfg(target_os = "macos")]
+fn watch_parent_lifetime() -> io::Result<tokio::sync::oneshot::Receiver<()>> {
+    use std::io::Read;
+    let (closed, observed) = tokio::sync::oneshot::channel();
+    std::thread::Builder::new().name("darwin-parent-lifetime".into()).spawn(move || {
+        // The read end belongs to this child. The launcher retains the only
+        // write end and closes it on shutdown, including unexpected exit.
+        let _ = io::stdin().read(&mut [0u8]);
+        let _ = closed.send(());
+    })?;
+    Ok(observed)
 }
 
 #[cfg(target_os = "macos")]
