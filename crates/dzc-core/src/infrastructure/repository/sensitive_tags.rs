@@ -8,6 +8,7 @@ use std::path::{Component, Path, PathBuf};
 
 mod html_refs;
 
+#[cfg(feature = "legacy-bridge")]
 pub fn has_unsupported_sensitive_resources(html: &str) -> bool {
     let references = html_refs::references(html);
     !references.complete || !references.values.is_empty()
@@ -32,6 +33,7 @@ pub fn ensure_system_tags(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+#[cfg(any(feature = "legacy-bridge", test))]
 pub fn ensure_tags_if_protected(conn: &Connection) -> rusqlite::Result<()> {
     let transaction = rusqlite::Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     if SqliteSettingsRepository::get_raw(&transaction, PRIVACY_SETTING)?.as_deref() != Some("false")

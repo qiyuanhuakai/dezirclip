@@ -1,4 +1,5 @@
 use super::{CaptureFailure, CaptureStage, CaptureSource};
+#[cfg(any(feature = "legacy-bridge", test))]
 use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
 use crate::infrastructure::attachments::{plan_html_attachments, HtmlAttachmentPlan};
@@ -115,6 +116,7 @@ fn failure(stage: CaptureStage, error: impl ToString) -> CaptureFailure {
     CaptureFailure { stage, code }
 }
 
+#[cfg(any(feature = "legacy-bridge", test))]
 impl DbState {
     /// Transitional embedded adapter; the capture contract itself exposes no connection.
     pub fn capture_store<'a>(&'a self, directory: &'a Path) -> impl CaptureStore + 'a {
@@ -301,10 +303,9 @@ impl CaptureStore for SqliteCaptureStore<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::repository::{
-        clipboard_repo::SqliteClipboardRepository, settings_repo::SqliteSettingsRepository,
-        tag_repo::SqliteTagRepository,
-    };
+    use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+    #[cfg(feature = "legacy-bridge")]
+    use crate::infrastructure::repository::{settings_repo::SqliteSettingsRepository, tag_repo::SqliteTagRepository};
     use crate::services::capture::*;
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};
@@ -318,7 +319,9 @@ mod tests {
         ));
         let state = DbState {
             repo: SqliteClipboardRepository::new(connection.clone()),
+            #[cfg(feature = "legacy-bridge")]
             settings_repo: SqliteSettingsRepository::new(connection.clone()),
+            #[cfg(feature = "legacy-bridge")]
             tag_repo: SqliteTagRepository::new(connection.clone()),
             conn: connection,
         };

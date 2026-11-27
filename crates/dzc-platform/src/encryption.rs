@@ -1560,9 +1560,7 @@ fn dpapi_per_value_cost() {
 #[cfg(all(test, windows))]
 mod native_contract_tests {
     use super::*;
-    use dzc_core::crypto::{
-        decode_for_mutation, decode_stored_text, encrypt_sensitive, encrypt_value, StoredText,
-    };
+    use dzc_core::crypto::{decode_stored_text, encrypt_value, StoredText};
     #[cfg(windows)]
     #[test]
     fn native_dpapi_markers_decrypt_once_and_tampered_signatures_fail() {
@@ -1587,6 +1585,8 @@ mod native_contract_tests {
     #[cfg(all(windows, not(feature = "portable")))]
     #[test]
     fn dpapi_sensitive_payload_round_trips_prefix_text() {
+        use dzc_core::crypto::{decode_for_mutation, encrypt_sensitive};
+
         crate::install_default_key_provider();
         let plain = "dpapi:ordinary private text";
         let sealed = encrypt_sensitive(plain).unwrap().into_string();

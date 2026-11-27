@@ -3,18 +3,27 @@ use rusqlite::{Connection, Result};
 use base64::Engine;
 use std::borrow::Cow;
 
+#[cfg(feature = "legacy-bridge")]
 pub use crate::infrastructure::encryption::{self, ENCRYPT_PREFIX};
 
+#[cfg(any(feature = "legacy-bridge", test))]
 pub use crate::domain::models::ClipboardEntry;
+#[cfg(any(feature = "legacy-bridge", test))]
 use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+#[cfg(feature = "legacy-bridge")]
 use crate::infrastructure::repository::settings_repo::SqliteSettingsRepository;
+#[cfg(feature = "legacy-bridge")]
 use crate::infrastructure::repository::tag_repo::SqliteTagRepository;
+#[cfg(any(feature = "legacy-bridge", test))]
 use std::sync::{Arc, Mutex};
 
+#[cfg(any(feature = "legacy-bridge", test))]
 pub struct DbState {
     pub conn: Arc<Mutex<Connection>>,
     pub repo: SqliteClipboardRepository,
+    #[cfg(feature = "legacy-bridge")]
     pub settings_repo: SqliteSettingsRepository,
+    #[cfg(feature = "legacy-bridge")]
     pub tag_repo: SqliteTagRepository,
 }
 
@@ -197,6 +206,7 @@ pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
     Some(thumbnail_hash(&img))
 }
 
+#[cfg(any(feature = "legacy-bridge", test))]
 pub fn init_db(path: &str) -> Result<Connection> {
     let mut conn = Connection::open(path)?;
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
@@ -253,6 +263,7 @@ pub fn save_image_to_file(data_url: &str, data_dir: &std::path::Path) -> Option<
 
 // delete_entry_db, delete_entry, enforce_storage_limit, clear_history removed (migrated to repository)
 
+#[cfg(any(feature = "legacy-bridge", test))]
 pub fn seed_defaults(conn: &Connection) -> Result<()> {
     seed_preference_defaults(conn)?;
     crate::infrastructure::repository::sensitive_tags::ensure_tags_if_protected(conn)

@@ -65,6 +65,7 @@ pub(super) fn atomic<T>(
 }
 
 /// One-time alignment discards obsolete FTS segments from legacy history.
+#[cfg(any(feature = "legacy-bridge", test))]
 pub(super) fn rebuild_search(conn: &Connection) -> Result<(), String> {
     conn.execute_batch("PRAGMA secure_delete = ON;")
         .map_err(|error| error.to_string())?;

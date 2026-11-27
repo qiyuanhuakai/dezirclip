@@ -138,6 +138,7 @@ impl ImportMode {
 /// （按 id 冲突的 Merge 模式保留旧行）。`mode` 是策略字符串，
 /// 方便前端无歧义地展示。
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[cfg(any(feature = "legacy-bridge", test))]
 pub struct ImportSummary {
     pub imported: usize,
     pub skipped: usize,
@@ -251,6 +252,7 @@ fn serialize_json(entries: Vec<ExportEntry>) -> Result<String, BackupError> {
 /// 解析导出 JSON，校验 `version` 字段，返回 [`ImportSummary`]。
 /// **不写数据库**。调用方（`import_cmd`）拿到 summary 后再决定
 /// 如何落库（merge 走 upsert、replace 走 delete-all + insert）。
+#[cfg(any(feature = "legacy-bridge", test))]
 pub fn import_from_json(json: &str, mode: ImportMode) -> Result<ImportSummary, BackupError> {
     let file: ExportFile = serde_json::from_str(json)?;
     validate_version(&file.version)?;
@@ -359,6 +361,7 @@ pub fn export_to_encrypted(
 /// 错误的 passphrase 会产生 AES-GCM 认证 tag 校验失败 →
 /// `aes_gcm::Error` → `BackupError::WrongPassphrase`。
 /// 其他解析/版本错误走对应变体。
+#[cfg(any(feature = "legacy-bridge", test))]
 pub fn import_from_encrypted(data: &[u8], passphrase: &str) -> Result<ImportSummary, BackupError> {
     if data.len() < NONCE_LEN + SALT_LEN {
         return Err(BackupError::InvalidFormat(format!(
