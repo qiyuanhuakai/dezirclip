@@ -4,7 +4,7 @@ import { emit, hostGeneration } from "./events";
 import { shellCall } from "./bridge";
 import { getCustomThemes } from "../lib/themeCatalog";
 import { resolveThemeSelection } from "../lib/themePackage";
-import { getPrivacyViewState } from "../lib/privacySession";
+import { getPrivacyViewState } from "../lib/privacyViewState";
 import { readMyGoProfile } from "./profile";
 import type { PrivacyState, RuntimeState } from "../protocol/wire";
 import type { TagBatchSelection } from "../../features/tag/utils/tagBatchSelection";

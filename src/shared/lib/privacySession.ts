@@ -3,6 +3,8 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { getAllWindows, getCurrentWindow } from "./desktopWindow";
 import { createPrivacyFence, parsePrivacySnapshot } from "./privacyRuntime";
 import type { PrivacyRuntimeSnapshot } from "./privacyRuntime";
+import { privacyViewState as model, setPrivacyViewState } from "./privacyViewState";
+import type { PrivacyViewState } from "./privacyViewState";
 import type { ClipboardEntry } from "../types";
 import { entryInstanceArgs } from "./historyIdentity";
 import { privacyBlurScope, samePrivacyAuthority, sharesPrivacyFocusLifecycle } from "./privacyViewLifecycle";
@@ -14,18 +16,13 @@ import type { PageStamp } from "./resumePage";
 import { privacyStatusRecoveryDelay } from "./privacyStatusRecovery";
 export type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
 
-export interface PrivacyViewState {
-  phase: "loading" | "ready" | "unavailable";
-  snapshot: PrivacyRuntimeSnapshot | null;
-  pending: boolean;
-  generation: number;
-}
+export { getPrivacyViewState } from "./privacyViewState";
+export type { PrivacyViewState } from "./privacyViewState";
 const fence = createPrivacyFence();
 const listFence = createPrivacyFence();
 let mainPageStamp: PageStamp | null = null;
 export const getMainPageStamp = () => mainPageStamp;
 const reveals = new WeakMap<ClipboardEntry, ReturnType<typeof fence.capture>>();
-let model: PrivacyViewState = { phase: "loading", snapshot: null, pending: false, generation: 0 };
 const observers = new Set<() => void>();
 const invalidators = new Set<(scope: PrivacyInvalidationScope, hidden: boolean) => void>();
 let stopEvents: (() => void) | null = null;
@@ -52,9 +49,8 @@ export function privacyRevealEpoch(entry: ClipboardEntry): number | null {
     ? model.snapshot?.privacy_epoch ?? null : null;
 }
 
-export const getPrivacyViewState = () => model;
 const publish = (next: Partial<PrivacyViewState>) => {
-  model = { ...model, ...next, generation: fence.current() };
+  setPrivacyViewState({ ...model, ...next, generation: fence.current() });
   observers.forEach(observer => observer());
 };
 const revoke = (scope: PrivacyInvalidationScope = "all", hidden = false) => {
@@ -298,7 +294,7 @@ export function subscribePrivacyState(observer: () => void): () => void {
       nativeBlurPending = false;
       activationRequest = null;
       recoveryAttempts = 0;
-      model = { phase: "loading", snapshot: null, pending: false, generation: fence.current() };
+      setPrivacyViewState({ phase: "loading", snapshot: null, pending: false, generation: fence.current() });
     }
   };
 }
