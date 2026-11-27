@@ -1151,8 +1151,14 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Write-Host 'Verified native history, Settings close, and collapsed Privacy'
         $beforeDrag = [MyGoInput+Rect]::new()
         if (![MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$beforeDrag)) { throw 'Cannot read native main bounds' }
-        $dragX = $beforeDrag.left + 60
-        $dragY = $beforeDrag.top + 24
+        # Theme padding and DPI can put a fixed offset outside the draggable title.
+        $title = Get-ControlPoint $root 'DezirClip' ([Windows.Automation.ControlType]::Text)
+        $dragX, $dragY = $title.X, $title.Y
+        $hit = [MyGoInput+Point]::new()
+        $hit.x, $hit.y = $dragX, $dragY
+        if ([MyGoInput]::GetAncestor([MyGoInput]::WindowFromPoint($hit), 2) -ne $main.MainWindowHandle) {
+            throw 'The native title is obscured at the drag start point'
+        }
         if (![MyGoInput]::SetCursorPos($dragX, $dragY)) { throw 'Cannot reach native title bar' }
         [MyGoInput]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
         try {
