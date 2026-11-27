@@ -27,7 +27,7 @@ while ($deadline.Elapsed.TotalSeconds -lt 60) {
     if (!(Get-Process -Id $rootPid -ErrorAction SilentlyContinue)) { throw 'Installed desktop process exited before rendering' }
     foreach ($app in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
         $handle = $app.MainWindowHandle
-        if ($app.Path -ine $env:DZC_TEST_DESKTOP -or !$handle) { continue }
+        if ($app.Path -ine $env:DZC_TEST_DESKTOP -or $handle -eq [IntPtr]::Zero) { continue }
         if ($app.Id -ne $rootPid) {
             $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$($app.Id)"
             if (!$owner -or $owner.ParentProcessId -ne $rootPid) { continue }
