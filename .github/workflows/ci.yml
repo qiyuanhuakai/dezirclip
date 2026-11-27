@@ -162,6 +162,9 @@ jobs:
       - name: Check shared Surface design tokens
         run: pnpm run surface:tokens --check
 
+      - name: Check embedded emoji catalog
+        run: node scripts/emoji-catalog/sync-embed.mjs --check
+
       - name: Test independent Surface build identity
         run: node --test scripts/tests/surface-build.node.mjs
 

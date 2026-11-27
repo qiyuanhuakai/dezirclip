@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import catalogData from "../../../frontends/dzc-surface/cmd/dzc-desktop/emoji-data.json";
+import catalogData from "../../../assets/catalogs/emoji.json";
 import { createCharacterSearch } from "./characterCatalog";
 
 const searchCharacters = createCharacterSearch(catalogData);

@@ -47,7 +47,7 @@ try {
   await page.locator(".settings-view .settings-layout").waitFor({ state: "attached", timeout: 5000 });
   await page.locator("header").getByRole("button", { name: "Close", exact: true }).click();
   const [catalog] = await Promise.all([
-    page.waitForResponse(response => /\/assets\/emoji-data-[^/]+\.json$/.test(response.url()), { timeout: 5000 }),
+    page.waitForResponse(response => /\/assets\/emoji-[^/]+\.json$/.test(response.url()), { timeout: 5000 }),
     page.getByTitle("Stickers", { exact: true }).click({ timeout: 5000 }),
   ]);
   assert.ok(catalog.ok(), "the packaged character catalog must load");

@@ -1,4 +1,4 @@
-import catalogUrl from "../../../frontends/dzc-surface/cmd/dzc-desktop/emoji-data.json?url";
+import catalogUrl from "../../../assets/catalogs/emoji.json?url";
 
 interface Character {
   value: string;

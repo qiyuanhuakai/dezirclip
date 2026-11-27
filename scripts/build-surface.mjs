@@ -58,6 +58,7 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
   run(process.execPath, ['scripts/generate-surface-tokens.mjs', '--check']);
   if (component === 'mygo-desktop') {
     run(process.execPath, ['scripts/generate-mygo-main-messages.mjs', '--check'], { stdio: 'inherit' });
+    run(process.execPath, ['scripts/emoji-catalog/sync-embed.mjs', '--check'], { stdio: 'inherit' });
   }
   const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
   const revision = run('git', ['rev-parse', 'HEAD']).trim();
@@ -75,7 +76,8 @@ export function buildSurface(args = process.argv.slice(2), env = process.env) {
   const fingerprint = () => {
     const paths = run('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--',
       'frontends/dzc-surface', 'clients/go', 'design', 'package.json', 'Cargo.toml', 'Cargo.lock', 'src-tauri/tauri.conf.json',
-      ...(component === 'mygo-desktop' ? ['src/locales',        'src-tauri/icons/icon.ico', 'scripts/build-windows-icon.py', 'scripts/generate-mygo-main-messages.mjs'] : []),
+      ...(component === 'mygo-desktop' ? ['src/locales', 'src-tauri/icons/icon.ico', 'scripts/build-windows-icon.py',
+        'scripts/generate-mygo-main-messages.mjs', 'assets/catalogs/emoji.json', 'scripts/emoji-catalog/sync-embed.mjs'] : []),
       'scripts/set-release-version.mjs', 'scripts/release-semver.mjs', 'scripts/build-surface.mjs', 'scripts/mygo-surface-patch.mjs', 'scripts/generate-surface-tokens.mjs'])
       .split('\0').filter(Boolean).sort();
     return paths.map(path => ({ path, sha256: sha256(readFileSync(join(root, path))) }));

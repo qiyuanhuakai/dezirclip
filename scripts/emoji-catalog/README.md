@@ -1,6 +1,6 @@
 # Unicode character catalog
 
-The emoji panel in both desktop renderers reads the same generated `frontends/dzc-surface/cmd/dzc-desktop/emoji-data.json`. The catalog ships in the app and search works offline.
+The catalog lives at [assets/catalogs/emoji.json](../../assets/catalogs/emoji.json). React loads it directly. Go embeds a generated copy in its own package so it can build independently. Both renderers search offline.
 
 - Emoji entries use the Unicode 17 dataset and shortcodes from [emojis 0.8.2](https://docs.rs/emojis/0.8.2/emojis/).
 - Standalone symbols use Unicode general categories and names from [unicode-general-category](https://docs.rs/unicode-general-category/) and [unicode_names2](https://docs.rs/unicode_names2/).
@@ -12,7 +12,8 @@ Download the base and derived annotation files for `zh`, `zh-Hant` and `en` from
 cargo run --locked --manifest-path scripts/emoji-catalog/Cargo.toml -- \
   zh-base.json zh-Hant-base.json en-base.json \\
   zh-derived.json zh-Hant-derived.json en-derived.json \\
-  frontends/dzc-surface/cmd/dzc-desktop/emoji-data.json
+  assets/catalogs/emoji.json
+node scripts/emoji-catalog/sync-embed.mjs
 ```
 
 | File | SHA-256 |
@@ -25,6 +26,8 @@ cargo run --locked --manifest-path scripts/emoji-catalog/Cargo.toml -- \
 | `en-derived.json` | `15c9457afa703a32dcc78d54626418a91e820fe0ddd67b7d491c4c4d9f5846ab` |
 
 Both renderers rank glyph and whole-name matches before word fragments. If there are no direct results, one English word or Chinese phrase of four or more characters can differ by one insertion, deletion, replacement or adjacent swap.
+
+CI and MyGo desktop packaging verify that the copy matches the source by SHA-256.
 
 Regenerate the shared flag atlas and preview fonts with
 `python scripts/emoji-catalog/build-previews.py` (requires Pillow and fontTools).

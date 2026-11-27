@@ -90,7 +90,7 @@ def build_fonts(points):
 
 
 def main():
-    catalog = json.loads((DESKTOP / "emoji-data.json").read_text(encoding="utf-8"))
+    catalog = json.loads((ROOT / "assets/catalogs/emoji.json").read_text(encoding="utf-8"))
     flags = [entry["value"] for group in catalog["emoji"] if group["id"] == "flags" for entry in group["entries"]]
     points = {ord(entry["value"]) for group in catalog["symbols"] for entry in group["entries"]}
     OUTPUT.mkdir(exist_ok=True)

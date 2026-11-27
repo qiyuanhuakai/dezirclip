@@ -126,3 +126,5 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **C0/C1**。CI 文档已按 v0.2.0 和 Arch 发布分支校准。Windows ConPTY 入口明确构建当前 CLI，零测试和 skip 会失败。可运行的完整桌面矩阵使用同一份实际 CLI/Service 执行 Host 客户端和 BuildInfo 验收，两项已使用当前 Windows 本地构建的二进制跑通。Schema 24、原生 opt-in 和发布源准入继续按规范推进。
 - **C2 桌面专项矩阵**。按请求选择完整矩阵、Linux x64、Windows x64 或两者的并集。仅请求 Windows 性能比较时会选择其 Windows x64 前置验收。独立诊断入口沿用既有规则，完整的场景计划与结果汇总仍待接入。
 - **R3 更新策略归属**。Host 的离线模块为 Tauri 更新和 MyGo 通过 CLI 的索引检查提供同一份版本、平台、文件名和签名元数据规则。网络、安装和退出协调仍由对应桌面入口处理。
+- **R2b 字符目录**。React 直接读取 `assets/catalogs/emoji.json`，Go 独立构建时内嵌自己目录中的生成副本。CI、MyGo 打包逐字节计算 SHA-256，现有内容及顺序保持。Tauri 和 MyGo Web 前端生产构建、Tauri 打包目录搜索、31 项字符单元测试和 Linux Go 桌面包测试已通过。主题目录仍待迁移。
+- **C0 版本与性能 fixture**。版本脚本在独立 fixture 中只需要版本解析与需要更新的文件，测试从 Cargo 清单获取完整工作区成员。Windows 性能 fixture 校准了受审查的输入清单哈希。Linux 本地包装测试运行 427 项，16 项在本地环境按既有条件跳过。
