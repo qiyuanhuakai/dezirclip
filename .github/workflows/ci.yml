@@ -18,6 +18,9 @@ on:
       accepted_source:
         description: Candidate commit that passed the required source jobs
         value: ${{ jobs.source-acceptance.outputs.source }}
+      accepted_artifact:
+        description: Immutable artifact ID of the exact source acceptance receipt
+        value: ${{ jobs.source-acceptance.outputs.artifact }}
   workflow_dispatch:
     inputs:
       native_file_drag_only:
@@ -1263,7 +1266,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     outputs:
-      artifact: ${{ steps.fixtures.outputs.artifact }}
+      artifact: ${{ steps.upload-fixtures.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -1296,16 +1299,15 @@ jobs:
           key: native-debug-installers
       - run: pnpm install --frozen-lockfile
       - name: Build the two same-source installer fixtures
-        id: fixtures
         shell: pwsh
         run: |
           $root = New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/native-nsis-inputs"
           ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.1 -Destination (Join-Path $root.FullName 'previous-setup.exe')
           ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.2 -Destination (Join-Path $root.FullName 'candidate-setup.exe')
-          "artifact=native-nsis-inputs-$env:GITHUB_SHA-$env:GITHUB_RUN_ATTEMPT" >> $env:GITHUB_OUTPUT
       - uses: actions/upload-artifact@v4
+        id: upload-fixtures
         with:
-          name: ${{ steps.fixtures.outputs.artifact }}
+          name: native-nsis-inputs-${{ github.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/native-nsis-inputs/
           if-no-files-found: error
           compression-level: 0
@@ -1341,7 +1343,8 @@ jobs:
         if: matrix.scenario != 'LegacyUninstall'
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.native-nsis-fixtures.outputs.artifact }}
+          artifact-ids: ${{ needs.native-nsis-fixtures.outputs.artifact }}
+          merge-multiple: true
           path: ${{ runner.temp }}/native-nsis-inputs
 
       - name: Download pinned published legacy installer
@@ -1565,6 +1568,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       source: ${{ steps.bind.outputs.source }}
+      artifact: ${{ steps.upload-source.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1598,6 +1602,7 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               print(f"source={source}", file=output)
       - uses: actions/upload-artifact@v4
+        id: upload-source
         with:
           name: source-acceptance-${{ github.run_attempt }}
           path: ${{ runner.temp }}/source-acceptance.json

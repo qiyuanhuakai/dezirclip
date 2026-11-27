@@ -442,6 +442,31 @@ export function readDesktopCandidates({ tag, source, runId, attempt, directory }
   });
 }
 
+export function desktopArtifactIds({ source, runId, attempt }, transport = gh) {
+  if (!/^[a-f0-9]{40}$/.test(source) || !/^[1-9][0-9]*$/.test(runId) ||
+      !/^[1-9][0-9]*$/.test(attempt)) throw new Error("Invalid desktop artifact provenance");
+  const pages = JSON.parse(transport(['api', `repos/${repository}/actions/runs/${runId}/artifacts?per_page=100`,
+    '--paginate', '--slurp']));
+  if (!Array.isArray(pages) || !pages.length || pages.some(page => !Array.isArray(page.artifacts))) {
+    throw new Error("Incomplete desktop artifact listing");
+  }
+  const artifacts = pages.flatMap(page => page.artifacts);
+  const ids = desktopReleaseTargets.map(target => {
+    const requested = `release-desktop-${target}-${attempt}`;
+    const matches = artifacts.filter(artifact => artifact.name === requested);
+    const [artifact] = matches;
+    if (matches.length !== 1 || !Number.isSafeInteger(artifact.id) || artifact.id <= 0 || artifact.expired !== false ||
+        artifact.workflow_run?.id !== Number(runId) || artifact.workflow_run.head_sha !== source ||
+        artifact.workflow_run.head_repository_id !== artifact.workflow_run.repository_id ||
+        !/^sha256:[a-f0-9]{64}$/.test(artifact.digest ?? '')) {
+      throw new Error(`Desktop producer artifact is missing or does not identify the candidate: ${target}`);
+    }
+    return artifact.id;
+  });
+  if (new Set(ids).size !== desktopReleaseTargets.length) throw new Error("Desktop producer IDs are not unique");
+  return ids;
+}
+
 export function attachDesktopCandidates({ tag, source, runId, attempt, directory, releaseId }, transport = gh) {
   const assets = readDesktopCandidates({ tag, source, runId, attempt, directory });
   const client = githubClient(transport, true);
@@ -779,6 +804,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const assets = attachDesktopCandidates({ tag: version, source: acceptancePath, directory: runAttempt, releaseId: upgradePath,
       runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT });
     console.log(JSON.stringify({ release_id: upgradePath, source_revision: acceptancePath, assets }));
+  } else if (mode === 'desktop-artifact-ids') {
+    console.log(desktopArtifactIds({ source: acceptancePath, runId: process.env.GITHUB_RUN_ID,
+      attempt: process.env.GITHUB_RUN_ATTEMPT }).join(','));
   } else if (mode === 'publish-only') publishOnly(version, config);
   else if (Object.hasOwn(dualActions, mode) && acceptancePath && runAttempt && !upgradePath) {
     console.log(JSON.stringify(publishDual(mode, version, config, acceptancePath, runAttempt, console.error)));

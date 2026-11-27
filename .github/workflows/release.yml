@@ -444,6 +444,7 @@ jobs:
     needs: [create-release, publish-desktop]
     permissions:
       contents: write
+      actions: read
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -452,9 +453,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Resolve the four desktop producer artifact IDs
+        id: producers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ids="$(node scripts/updater-release.mjs desktop-artifact-ids "$GITHUB_REF_NAME" "$GITHUB_SHA")"
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
-          pattern: release-desktop-*-${{ github.run_attempt }}
+          artifact-ids: ${{ steps.producers.outputs.ids }}
           path: ${{ runner.temp }}/desktop-candidates
       - name: Attach staged desktop bytes and read back their asset IDs
         env:
@@ -514,7 +523,8 @@ jobs:
       - name: Download the source acceptance receipt from this attempt
         uses: actions/download-artifact@v4
         with:
-          name: source-acceptance-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.accept-source.outputs.accepted_artifact }}
+          merge-multiple: true
           path: ${{ runner.temp }}/candidate-source
       - name: Require the tested source to match the release candidate
         shell: python

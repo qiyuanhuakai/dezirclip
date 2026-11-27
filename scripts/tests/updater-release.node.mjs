@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, publishAndSync, publishDual, syncPublished, resumeVerifiedDraft, promote as promoteFile, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
-import { attachDesktopCandidates, desktopReleaseTargets, expectedDesktopCandidateFiles, stageDesktopCandidate } from '../updater-release.mjs';
+import { attachDesktopCandidates, desktopArtifactIds, desktopReleaseTargets, expectedDesktopCandidateFiles, stageDesktopCandidate } from '../updater-release.mjs';
 
 const gateNames = ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'];
 const gateReport = (receipt, kind) => ({ schema_version: 1, kind, status: 'passed',
@@ -390,6 +390,35 @@ test('Arch packages and AUR recipes must be present before a Release with Arch p
     else jobs[index].conclusion = conclusion;
     assert.throws(() => publish(candidate), /gates/);
     assert.deepEqual(candidate.state.mutations, []);
+  }
+});
+
+test('desktop download resolves only unique artifacts from the exact candidate attempt', () => {
+  const candidate = { source: 'a'.repeat(40), runId: '7001', attempt: '2' };
+  const artifacts = desktopReleaseTargets.map((target, index) => ({
+    id: 900 + index, name: `release-desktop-${target}-2`, expired: false,
+    workflow_run: { id: 7001, head_sha: candidate.source, repository_id: 9, head_repository_id: 9 },
+    digest: 'sha256:' + 'b'.repeat(64),
+  }));
+  const transport = entries => args => {
+    assert.deepEqual(args, ['api', `repos/${repository}/actions/runs/7001/artifacts?per_page=100`, '--paginate', '--slurp']);
+    return JSON.stringify([{ artifacts: entries.slice(0, 2) }, { artifacts: entries.slice(2) }]);
+  };
+  const [first, ...remaining] = artifacts;
+  const ids = desktopArtifactIds(candidate, transport([
+    { ...first, id: 42, name: first.name.replace(/-2$/, '-1') }, ...artifacts,
+  ]));
+  assert.deepEqual(ids, artifacts.map(artifact => artifact.id));
+  assert.throws(() => desktopArtifactIds(candidate, transport(remaining)), /missing/);
+  assert.throws(() => desktopArtifactIds(candidate, transport([...artifacts, first])), /does not identify/);
+  assert.throws(() => desktopArtifactIds(candidate, transport([{ ...first, id: remaining[0].id }, ...remaining])), /not unique/);
+  for (const other of [
+    { expired: true }, { digest: null },
+    { workflow_run: { ...first.workflow_run, head_sha: 'c'.repeat(40) } },
+    { workflow_run: { ...first.workflow_run, id: 7002 } },
+    { workflow_run: { ...first.workflow_run, head_repository_id: 11 } },
+  ]) {
+    assert.throws(() => desktopArtifactIds(candidate, transport([{ ...first, ...other }, ...remaining])), /does not identify/);
   }
 });
 

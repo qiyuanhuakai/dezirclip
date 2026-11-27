@@ -51,7 +51,7 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 
 ### 六个 NSIS 场景的实际来源
 
-入口是 [test-native-windows-upgrade.ps1](../scripts/test-native-windows-upgrade.ps1)。同一任务用当前源码各构建一次 alpha.1 和 alpha.2，保留 debug、无 updater 签名和 `createUpdaterArtifacts=false`。各场景下载对应产物，核对安装器、NSIS 输入及源码 SHA，再在独立 Windows runner 运行。源代码会由版本设置器临时修改，因此 fixture 的来源标为 `modified_checkout`。 [构建脚本](../scripts/build-native-windows-fixture.ps1)
+入口是 [test-native-windows-upgrade.ps1](../scripts/test-native-windows-upgrade.ps1)。同一任务用当前源码各构建一次 alpha.1 和 alpha.2，保留 debug、无 updater 签名和 `createUpdaterArtifacts=false`。各场景使用 producer 输出的 artifact ID 下载产物，核对安装器、NSIS 输入及源码 SHA，再在独立 Windows runner 运行。共享样件与固定历史安装器的六个场景已在 [GitHub Actions](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46011542518) 通过。源代码会由版本设置器临时修改，因此 fixture 的来源标为 `modified_checkout`。 [构建脚本](../scripts/build-native-windows-fixture.ps1)
 
 | 场景 | 当前输入与目的 |
 |---|---|
@@ -66,7 +66,7 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 
 ## 正常 tag 发布
 
-`release.yml` 并行创建 draft、构建产物与执行候选源码验收。standalone 上传等待其构建和 draft。桌面构建将签名后的文件与每个目标的哈希上传为 Actions 产物，上传任务复核四个目标的目录后绑定 draft ID，通过版本 tag 上传，并按远端 asset ID 读回桌面文件校验内容。最终发布任务还核对同一次运行的源码 SHA 和验收记录，再公开产品 release 并同步 stable/preview。 [发布脚本](../scripts/updater-release.mjs)
+`release.yml` 并行创建 draft、构建产物与执行候选源码验收。standalone 上传等待其构建和 draft。桌面构建将签名后的文件与每个目标的哈希上传为 Actions 产物，上传任务按当前运行的源码 SHA 和 attempt 解析四个生产 artifact ID，下载并复核各目标的目录后绑定 draft ID，通过版本 tag 上传，并按远端 asset ID 读回桌面文件校验内容。最终发布任务按源码验收任务返回的 artifact ID 下载记录并核对同一次运行的源码 SHA，再公开产品 release 并同步 stable/preview。 [发布脚本](../scripts/updater-release.mjs)
 
 每个目标用一次 Cargo 构建产出 Tauri、桌面配套 CLI 和 Service，随后 Tauri 打包阶段复用已暂存的二进制，MyGo 使用相同目录。独立 CLI 下载保持原 ABI 构建边界。本地以同一路径构建并解包 Windows x64 NSIS 和 Linux x64 deb，两个 helper 的 SHA-256 和实际 CLI/MCP 集成通过。Release 首次运行计时仍需候选实测。
 
@@ -118,7 +118,7 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 | Wayland 自动覆盖未接入 | 当前 Linux 产品 harness 是 X11；[Wayland 实验支持](./wayland-experimental.md) 的手工脚本不能算作本次 CI 已执行 |
 | 当前候选与发布闭环仍有缺口 | full 的历史/合成包和 tag 的部分 smoke 不能替代当前最终包验证；draft release ID 尚未贯穿全链、部分资产缺候选构建 hash 绑定、取消/频道中间状态恢复也未形成完整闭环 |
 
-后续 C1/C2 负责真实执行状态、CLI 来源、模式和汇总；C3 合并重复纯测试及 fixture 构建，同时保留平台/feature/历史行为覆盖。C5/C6 才接入同 run 的 source-only 源码准入、实际候选产物验证、固定身份/证据附件和有限状态恢复。**这些都是待实施事项**：当前没有 `source-acceptance` 模式，没有“36 + 1”资产 policy，也没有取消 publisher 后的完整恢复保证。提升 Windows ARM64 到原生准入须先有真实执行来源。
+源码准入和共享 NSIS 样件已接入。下一步是把独立最终包验收、候选封存和中断恢复接入同一条发布路径。当前含 Arch 的产品目录包含 40 项。Windows ARM64 产物按现有交叉构建级别验收。
 
 ## 名称消费者、产物命名与仓库外设置
 
