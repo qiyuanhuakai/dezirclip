@@ -625,7 +625,13 @@ jobs:
 
       - name: Install Schema 24 fixture dependencies
         if: matrix.can_test
-        run: python -m pip install --disable-pip-version-check Pillow==13.0.0 psutil==7.2.2
+        shell: python
+        run: |
+          import subprocess, sys
+          installer = ["uv", "pip", "install", "--python", sys.executable] if sys.platform == "linux" else [
+              sys.executable, "-m", "pip", "install", "--disable-pip-version-check"
+          ]
+          subprocess.run([*installer, "Pillow==13.0.0", "psutil==7.2.2"], check=True)
 
       - name: Verify the built CLI identity and Schema 24 writes
         if: matrix.can_test
