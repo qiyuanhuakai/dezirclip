@@ -137,3 +137,5 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **R5b 类型化 Profile 与事件入口**。应用通过明确的 profile 能力读取并打开数据目录，两种宿主适配器保留各自原有调用。MyGo 的事件和隐私状态中使用的 wire 类型由协议生成，现有运行时权限校验保留。Tauri 和 MyGo Web 生产构建、Tauri WebView 启动冒烟、Linux Go 桌面测试及三语更新文案生成检查通过。
 - **R6 自定义背景**。Tauri 查询背景改走共享 HistoryService，保留文件读取前后两次选择检查。Windows 和 Linux 测试用公开 Core 设置 API 写入实际 PNG 路径，核对读取字节，并验证切换选择后的旧资源请求会被拒绝。
 - **R2b 内置主题目录**。`design/themes.json` 登记原有六种主题的顺序、标签、配套 CSS 入口、默认主题及 Windows 原生材质。Core 与 MyGo 使用生成值，React 读取目录，构建校对固定 Deziro UI 的主题 ID、CSS 和三语标签。CSS、采样 presets 和许可证仍由原组件包提供。Windows/Linux 各通过八项 Core 主题测试，Windows 三项材质计划、Linux Go 模块及 React 主题包检查通过。
+- **R3 早期 GPU 探针**。启动时先尝试取得 SQLite 主文件现有锁，Core 仅查询已检查点的只读数据库，不初始化或恢复数据库。活跃写入、未清理的 journal/WAL/SHM 或不支持锁时保留 false fallback。Linux 取得排他锁需要可写描述符，探针本身没有写操作。Windows/Linux 各通过三项测试，覆盖缺库、无效库、旧库、正常关闭的 WAL、并发 writer 和原有布尔值。
+- **C4 WebView 验收测试**。Windows 原生升级验收调用独立的 CDP 页面查找函数。现有 fake clock 用例现在直接调用同一个函数，覆盖拒绝、超时、预算用尽、到期后响应和正常响应。移除 Python 读取源码并用 `node -e` 间接运行的入口，Windows 本地成功执行七项 Node 用例和八项其余 Python 检查。

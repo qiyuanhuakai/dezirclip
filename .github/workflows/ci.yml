@@ -189,7 +189,7 @@ jobs:
 
       - name: Test disposable native Surface fixture contracts
         run: |
-          node --test scripts/tests/native-windows-surface.node.mjs scripts/tests/native-windows-crash-events.node.mjs scripts/tests/native-windows-lifecycle.node.mjs scripts/tests/native-windows-service-paste.node.mjs
+          node --test scripts/tests/native-windows-surface.node.mjs scripts/tests/native-windows-crash-events.node.mjs scripts/tests/native-windows-lifecycle.node.mjs scripts/tests/native-windows-service-paste.node.mjs scripts/tests/native-ownership-discovery.node.mjs
           python -B -m unittest discover -s scripts/tests -p test_native_windows_click_plan.py
           python -B -m unittest discover -s scripts/tests -p test_native_windows_surface_target.py
           python -B -m unittest discover -s scripts/tests -p test_native_windows_supervisor.py
