@@ -503,16 +503,18 @@ function Test-MainHotkeys($Main, $Root, $Resident, [string]$Executable, $Editor,
     $original = Get-SavedMainHotkeys
     if (![MyGoInput]::MainTestShortcutAvailable()) { throw 'Test shortcut was occupied before editing' }
     Click-Control $Main (Get-ControlPoint $Root 'Clipboard')
-    Click-Control $Main (Get-ControlPoint $Root 'Global Hotkey' ([Windows.Automation.ControlType]::Button))
-    $name = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Global Hotkey')
+    $label = if ($NativeMain) { '+ Global Hotkey' } else { 'Global Hotkey' }
+    Click-Control $Main (Get-ControlPoint $Root $label ([Windows.Automation.ControlType]::Button) -RequireEnabled)
+    $name = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $label)
     $type = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Button)
     $condition = [Windows.Automation.AndCondition]::new($type, $name)
     $null = Wait-Until {
         $button = $Root.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
-        if (!$button) { return $false }
+        if (!$button -or !$button.Current.HasKeyboardFocus) { return $false }
+        if ($NativeMain) { return $button.Current.HelpText -eq 'Recording...' }
         $pattern = $null
         $button.TryGetCurrentPattern([Windows.Automation.TogglePattern]::Pattern, [ref]$pattern) -and
-            $pattern.Current.ToggleState -eq [Windows.Automation.ToggleState]::On -and $button.Current.HasKeyboardFocus
+            $pattern.Current.ToggleState -eq [Windows.Automation.ToggleState]::On
     } 'Main shortcut editor did not enter recording mode'
     [Windows.Forms.SendKeys]::SendWait('^+{F9}')
     $null = Get-ControlPoint $Root 'Delete Ctrl+Shift+F9'
@@ -541,7 +543,7 @@ function Test-MainHotkeys($Main, $Root, $Resident, [string]$Executable, $Editor,
     Click-Control $reopened (Get-ControlPoint $newRoot 'Delete Ctrl+Shift+F9')
     $null = Wait-Until { (Get-SavedMainHotkeys) -ceq $original } 'Removing the new shortcut did not preserve original bindings'
     if (![MyGoInput]::MainTestShortcutAvailable()) { throw 'Removed main shortcut was not released at the OS level' }
-    Write-Host 'Verified WebView2 shortcut editing, persistence, native registration, same-process hide/wake and removal'
+    Write-Host 'Verified shortcut editing, persistence, native registration, same-process hide/wake and removal'
     return $reopened
 }
 
