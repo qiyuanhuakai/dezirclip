@@ -12,7 +12,7 @@
 //! Output: silent on success. Errors propagate with the operation name
 //! prefix (`delete: ...`) so they show up in the user's terminal.
 
-use crate::api::HistoryService;
+use dzc_core::api::HistoryService;
 
 /// Args for the `delete` subcommand.
 pub struct DeleteArgs {

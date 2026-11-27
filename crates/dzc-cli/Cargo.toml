@@ -1,0 +1,45 @@
+[package]
+name = "dzc-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "DezirClip CLI, shell integrations, terminal UI and MCP adapter"
+default-run = "dzc"
+publish = false
+
+[features]
+native-screen = ["dzc-host/native-screen"]
+portable = ["dzc-core/portable", "dzc-platform/portable"]
+
+[[bin]]
+name = "dzc"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-winres = "0.3.6"
+
+[dependencies]
+dzc-core.workspace = true
+dzc-platform.workspace = true
+dzc-host.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+semver.workspace = true
+base64.workspace = true
+dirs.workspace = true
+ctrlc.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
+unicode-width.workspace = true
+unicode-segmentation.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "process", "io-util"] }
+aes-gcm.workspace = true
+image.workspace = true
+rusqlite.workspace = true
+tempfile = "3"
+uuid.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true

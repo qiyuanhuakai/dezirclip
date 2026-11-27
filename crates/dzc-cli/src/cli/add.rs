@@ -24,7 +24,7 @@ use std::io::Read;
 use std::path::Path;
 
 use dzc_core::api::ClipboardEntry;
-use crate::api::HistoryService;
+use dzc_core::api::HistoryService;
 
 /// Args for the `add` subcommand. The bin resolves the positional
 /// `content` token into one of `text` / `stdin` / `file`; this struct
@@ -55,7 +55,7 @@ pub fn run(args: &AddArgs, repo: &HistoryService) -> Result<i64, String> {
 
 /// Only an explicit terminal flag maps to the Core's manual-persistence intent.
 pub fn run_with_confirmation(args: &AddArgs, repo: &HistoryService, confirmed: bool) -> Result<i64, String> {
-    let permit=repo.privacy().authorize_read(crate::api::PrivacyAccessIntent::InteractiveRead,crate::api::SensitiveAccess::Denied,None,super::access::now()).map_err(|error|error.to_string())?;
+    let permit=repo.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::InteractiveRead,dzc_core::api::SensitiveAccess::Denied,None,super::access::now()).map_err(|error|error.to_string())?;
     let content = read_content(args)?;
     if content.is_empty() {
         return Err("add: empty content (refusing to insert)".to_string());
@@ -88,8 +88,8 @@ pub fn run_with_confirmation(args: &AddArgs, repo: &HistoryService, confirmed: b
         ocr_status: None,
     };
 
-    repo.save_manual_authorized(&entry, None, if confirmed {crate::api::ManualPersistenceIntent::ConfirmedDuringPrivacySession}
-        else {crate::api::ManualPersistenceIntent::Ordinary}, &permit,super::access::now())
+    repo.save_manual_authorized(&entry, None, if confirmed {dzc_core::api::ManualPersistenceIntent::ConfirmedDuringPrivacySession}
+        else {dzc_core::api::ManualPersistenceIntent::Ordinary}, &permit,super::access::now())
         .map_err(|e| format!("add: save failed: {e}"))
 }
 

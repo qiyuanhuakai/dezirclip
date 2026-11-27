@@ -22,8 +22,8 @@ use std::sync::Arc;
 
 use clap::{Args, Parser, Subcommand, ValueEnum, CommandFactory, FromArgMatches};
 
-use dezirclip::cli;
-use dezirclip::cli::search::SearchMode;
+use dzc_cli::cli;
+use dzc_cli::cli::search::SearchMode;
 use dzc_core::api::HistoryService;
 
 const APP_IDENTIFIER: &str = "io.github.qiyuanhuakai.dezirclip";
@@ -151,8 +151,8 @@ impl BrowseCliArgs {
             offset: self.offset,
             action: self.action,
             passthrough: match self.osc52_passthrough {
-                Osc52Passthrough::None => dezirclip::infrastructure::osc52::Passthrough::None,
-                Osc52Passthrough::Tmux => dezirclip::infrastructure::osc52::Passthrough::Tmux,
+                Osc52Passthrough::None => dzc_cli::osc52::Passthrough::None,
+                Osc52Passthrough::Tmux => dzc_cli::osc52::Passthrough::Tmux,
             },
         })
     }
@@ -482,8 +482,8 @@ enum Osc52Passthrough {
 fn osc52_passthrough(
     target: ClipboardTarget,
     passthrough: Osc52Passthrough,
-) -> Result<dezirclip::infrastructure::osc52::Passthrough, String> {
-    use dezirclip::infrastructure::osc52::Passthrough;
+) -> Result<dzc_cli::osc52::Passthrough, String> {
+    use dzc_cli::osc52::Passthrough;
     if target == ClipboardTarget::Native && passthrough != Osc52Passthrough::None {
         return Err("--osc52-passthrough tmux requires --target osc52".to_string());
     }
@@ -583,7 +583,7 @@ fn run_clipboard(args: ClipboardArgs) -> Result<(), String> {
                 let mut bytes = Vec::new();
                 if target == ClipboardTarget::Osc52 {
                     std::io::stdin()
-                        .take(dezirclip::infrastructure::osc52::MAX_TEXT_BYTES as u64 + 1)
+                        .take(dzc_cli::osc52::MAX_TEXT_BYTES as u64 + 1)
                         .read_to_end(&mut bytes)
                         .map_err(|e| e.to_string())?;
                 } else {
@@ -597,7 +597,7 @@ fn run_clipboard(args: ClipboardArgs) -> Result<(), String> {
                     let mut bytes = Vec::new();
                     std::fs::File::open(path)
                         .map_err(|e| e.to_string())?
-                        .take(dezirclip::infrastructure::osc52::MAX_TEXT_BYTES as u64 + 1)
+                        .take(dzc_cli::osc52::MAX_TEXT_BYTES as u64 + 1)
                         .read_to_end(&mut bytes)
                         .map_err(|e| e.to_string())?;
                     bytes
@@ -608,15 +608,15 @@ fn run_clipboard(args: ClipboardArgs) -> Result<(), String> {
                 content.into_bytes()
             };
             if target == ClipboardTarget::Osc52 {
-                if bytes.len() > dezirclip::infrastructure::osc52::MAX_TEXT_BYTES {
+                if bytes.len() > dzc_cli::osc52::MAX_TEXT_BYTES {
                     return Err(format!(
                         "OSC 52 text exceeds the {}-byte UTF-8 limit; nothing was sent",
-                        dezirclip::infrastructure::osc52::MAX_TEXT_BYTES
+                        dzc_cli::osc52::MAX_TEXT_BYTES
                     ));
                 }
                 let text = String::from_utf8(bytes)
                     .map_err(|e| format!("OSC 52 input is not UTF-8: {e}"))?;
-                return dezirclip::infrastructure::osc52::write_text(&text, passthrough);
+                return dzc_cli::osc52::write_text(&text, passthrough);
             }
             clipboard.write(native_payload(bytes, &mime)?).map_err(Into::into)
         }
@@ -857,7 +857,7 @@ fn run(args: Cli) -> Result<(), String> {
                         entry.id, entry.content_type
                     ));
                 }
-                return dezirclip::infrastructure::osc52::write_text(&entry.content, passthrough);
+                return dzc_cli::osc52::write_text(&entry.content, passthrough);
             }
             let payload = match entry.content_type.as_str() {
                 "image" => Payload::Image { bytes: cli::payload::image_bytes(&entry.content)?, mime: "image/png".to_owned() },

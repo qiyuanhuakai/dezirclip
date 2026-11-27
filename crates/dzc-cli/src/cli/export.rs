@@ -40,9 +40,9 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 
 #[cfg(test)]
 use dzc_core::api::ClipboardEntry;
-use crate::api::{BackupService, HistoryService};
+use dzc_core::api::{BackupService, HistoryService};
 #[cfg(test)]
-use crate::api::HistoryQuery;
+use dzc_core::api::HistoryQuery;
 
 /// Minimum acceptable passphrase length. Matches the
 /// `BackupDialog` validation in the frontend and the G32 hard
@@ -138,7 +138,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("backup.json");
         let history = HistoryService::open(Path::new(":memory:")).unwrap();
-        history.restore(&[entry], crate::api::ImportMode::Replace).unwrap();
+        history.restore(&[entry], dzc_core::api::ImportMode::Replace).unwrap();
         run(&ExportArgs {
             path: path.to_string_lossy().into_owned(),
             encrypted: false,
@@ -316,7 +316,7 @@ mod tests {
             let mut source = backup_entry(7, "rich_text", format!("{prefix} kernel notes\r\n"));
             source.preview = format!("{prefix} ordinary preview");
             source.html_content = Some(format!("{prefix}<p>ordinary HTML</p>"));
-            repo.restore(&[source.clone()], crate::api::ImportMode::Replace).unwrap();
+            repo.restore(&[source.clone()], dzc_core::api::ImportMode::Replace).unwrap();
             let path = directory.join("history.json");
             crate::cli::export::run(
                 &crate::cli::export::ExportArgs {

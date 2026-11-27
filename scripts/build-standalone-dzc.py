@@ -34,14 +34,13 @@ def build(platform, directory, package_only=False):
         environment = {**os.environ, "CARGO_ENCODED_RUSTFLAGS": "-C\x1ftarget-feature=+crt-static",
                        "CARGO_BUILD_JOBS": "4"}
         environment.pop("RUSTFLAGS", None)
-        command = ["cargo", "--manifest-path", str(ROOT / "src-tauri" / "Cargo.toml")]
         common = ["--locked", "--no-default-features", "--release", "--target", target, "--target-dir", str(directory)]
-        run([command[0], "build", *command[1:], "--bin", "dzc", *common], env=environment)
+        run(["cargo", "build", "-p", "dzc-cli", "--bin", "dzc", *common], env=environment)
         if not package_only:
             before = hashlib.sha256(binary.read_bytes()).hexdigest()
-            run([command[0], "check", *command[1:], "--lib", "--bin", "dzc", *common], env=environment)
+            run(["cargo", "check", "-p", "dzc-cli", "--lib", "--bin", "dzc", *common], env=environment)
             if platform == "windows-x86_64":
-                run([command[0], "test", *command[1:], "--lib", "--bin", "dzc", *common], env=environment)
+                run(["cargo", "test", "-p", "dzc-cli", "--lib", "--bin", "dzc", *common], env=environment)
                 run(["cargo", "test", "-p", "dzc-core", "-p", "dzc-platform", "-p", "dzc-protocol", "--lib", *common], env=environment)
             if hashlib.sha256(binary.read_bytes()).hexdigest() != before:
                 raise ValueError("cargo check replaced the standalone CLI artifact")
@@ -62,14 +61,14 @@ tar -C /source --exclude=target --exclude='crates/*/target' --exclude=src-tauri/
     --exclude=src-tauri/.env --exclude='src-tauri/.env.*' -cf - Cargo.toml Cargo.lock crates src-tauri skills/dzc-cli skills/dezirclip-theme \
     | tar -C /work/project -xf -
 cd /work/project
-cargo build --manifest-path src-tauri/Cargo.toml --release --bin dzc --locked --no-default-features --target "$DZC_BUILD_TARGET"
+cargo build -p dzc-cli --release --bin dzc --locked --no-default-features --target "$DZC_BUILD_TARGET"
 if [ "$DZC_CLI_PACKAGE_ONLY" = 1 ]; then
     exit 0
 fi
 binary="/target/$DZC_BUILD_TARGET/release/dzc"
 before="$(sha256sum "$binary")"
-cargo check --manifest-path src-tauri/Cargo.toml --release --lib --bin dzc --locked --no-default-features --target "$DZC_BUILD_TARGET"
-cargo test --manifest-path src-tauri/Cargo.toml --release --lib --bin dzc --locked --no-default-features --target "$DZC_BUILD_TARGET"
+cargo check -p dzc-cli --release --lib --bin dzc --locked --no-default-features --target "$DZC_BUILD_TARGET"
+cargo test -p dzc-cli --release --lib --bin dzc --locked --no-default-features --target "$DZC_BUILD_TARGET"
 cargo test -p dzc-core -p dzc-platform -p dzc-protocol --release --lib --locked --no-default-features --target "$DZC_BUILD_TARGET"
 test "$before" = "$(sha256sum "$binary")"
 '''

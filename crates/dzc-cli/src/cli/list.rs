@@ -4,8 +4,8 @@
 use serde::Serialize;
 
 use dzc_core::api::ClipboardEntry;
-use crate::api::HistoryQuery;
-use crate::api::HistoryService;
+use dzc_core::api::HistoryQuery;
+use dzc_core::api::HistoryService;
 
 /// CLI-shaped view of a `ClipboardEntry`. Only the fields surfaced via
 /// `dzc` are serialized; internal fields (`html_content`,

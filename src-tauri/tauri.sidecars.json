@@ -1,0 +1,10 @@
+{
+  "build": {
+    "beforeDevCommand": "pnpm run tauri:prepare-sidecars --debug --phase build && pnpm run dev",
+    "beforeBuildCommand": "pnpm run build && pnpm run tauri:prepare-sidecars --phase build",
+    "beforeBundleCommand": "pnpm run tauri:prepare-sidecars --phase bundle"
+  },
+  "bundle": {
+    "externalBin": ["binaries/dzc", "binaries/dzc-service"]
+  }
+}

@@ -1,6 +1,6 @@
 //! Fetch complete stored content; raw and MIME output never append a newline.
 use dzc_core::api::ClipboardEntry;
-use crate::api::{HistoryQuery, HistoryService};
+use dzc_core::api::{HistoryQuery, HistoryService};
 use std::io::Write;
 
 pub const LATEST_TOKEN: &str = "latest";

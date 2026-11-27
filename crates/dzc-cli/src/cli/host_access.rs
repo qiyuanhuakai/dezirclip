@@ -1,6 +1,6 @@
 //! Explicit MCP Host mode never reads private control credentials or starts a
 //! daemon. Ordinary bodies require a separately delegated, read-only MCP grant.
-use crate::api::{ClipboardEntry,HistoryQuery,HistorySearchMode};
+use dzc_core::api::{ClipboardEntry,HistoryQuery,HistorySearchMode};
 use dzc_host::{Client,wire::*};
 fn row(entry:EntrySummary,text:Option<String>)->ClipboardEntry {
     ClipboardEntry{id:entry.id,content_type:entry.kind,content:text.unwrap_or_default(),html_content:None,source_app:entry.source_app,source_app_path:None,

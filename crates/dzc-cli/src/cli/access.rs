@@ -1,5 +1,5 @@
 //! Terminal reads hold one Core-issued ordinary-data permit for the complete result.
-use crate::api::{ClipboardEntry, HistoryQuery, HistoryService, PrivacyAccessIntent, PrivacyReadPermit, SensitiveAccess};
+use dzc_core::api::{ClipboardEntry, HistoryQuery, HistoryService, PrivacyAccessIntent, PrivacyReadPermit, SensitiveAccess};
 
 pub(crate) fn now() -> i64 { chrono::Utc::now().timestamp_millis() }
 
@@ -41,7 +41,7 @@ mod tests {
         let directory = std::env::temp_dir().join(format!("dzc-terminal-permit-{}", uuid::Uuid::new_v4()));
         let history = HistoryService::open(&directory.join("synthetic.db")).unwrap();
         let original = permit(&history).unwrap();
-        history.privacy().set_session(crate::api::PrivacySessionCommand::On { duration_ms: None }, now()).unwrap();
+        history.privacy().set_session(dzc_core::api::PrivacySessionCommand::On { duration_ms: None }, now()).unwrap();
         assert_eq!(query_with_permit(&history, &HistoryQuery { limit: 0, ..Default::default() }, &original).unwrap_err(), "PrivacyEpochChanged");
         assert!(query(&history, &HistoryQuery { limit: 1001, ..Default::default() }).unwrap().is_empty());
         assert!(query(&history, &HistoryQuery { limit: 0, offset: -1, ..Default::default() }).is_err());

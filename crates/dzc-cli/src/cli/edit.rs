@@ -18,7 +18,7 @@
 //! Output: `Edited: id=<n>` unless `--quiet`.
 
 use crate::cli::add::{preview_of, read_content, AddArgs};
-use crate::api::HistoryService;
+use dzc_core::api::HistoryService;
 
 pub struct EditArgs {
     pub id: String,
@@ -40,8 +40,8 @@ pub fn run(args: &EditArgs, repo: &HistoryService) -> Result<i64, String> {
 }
 pub fn run_with_confirmation(args:&EditArgs,repo:&HistoryService,confirmed:bool)->Result<i64,String> {
     let id = parse_id(&args.id)?;
-    let permit=repo.privacy().authorize_read(crate::api::PrivacyAccessIntent::InteractiveRead,crate::api::SensitiveAccess::Denied,None,super::access::now()).map_err(|error|error.to_string())?;
-    let exists = super::access::query(repo, &crate::api::HistoryQuery {limit:1,id:Some(id),..Default::default()})?.pop().is_some();
+    let permit=repo.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::InteractiveRead,dzc_core::api::SensitiveAccess::Denied,None,super::access::now()).map_err(|error|error.to_string())?;
+    let exists = super::access::query(repo, &dzc_core::api::HistoryQuery {limit:1,id:Some(id),..Default::default()})?.pop().is_some();
     if !exists {
         return Err(format!("edit: no entry with id={id}"));
     }
@@ -51,7 +51,7 @@ pub fn run_with_confirmation(args:&EditArgs,repo:&HistoryService,confirmed:bool)
         return Err("edit: empty content (refusing to write)".to_string());
     }
 
-    repo.update_manual_authorized(id, &content, &preview_of(&content),if confirmed {crate::api::ManualPersistenceIntent::ConfirmedDuringPrivacySession}else{crate::api::ManualPersistenceIntent::Ordinary}, &permit, super::access::now())
+    repo.update_manual_authorized(id, &content, &preview_of(&content),if confirmed {dzc_core::api::ManualPersistenceIntent::ConfirmedDuringPrivacySession}else{dzc_core::api::ManualPersistenceIntent::Ordinary}, &permit, super::access::now())
         .map_err(|e| format!("edit: repo failed: {e}"))?;
     Ok(id)
 }

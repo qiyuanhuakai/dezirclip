@@ -25,7 +25,6 @@ native-screen = ["dzc-host/native-screen"]
 portable = ["dzc-core/portable", "dzc-platform/portable"]
 
 [build-dependencies]
-tauri-winres = "0.3.6"
 tauri-build = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
@@ -33,7 +32,6 @@ serde_json = { workspace = true, optional = true }
 dzc-core = { workspace = true, features = ["legacy-bridge"] }
 dzc-platform.workspace = true
 dzc-host.workspace = true
-dzc-service.workspace = true
 tauri = { workspace = true, optional = true }
 tauri-plugin-opener = { workspace = true, optional = true }
 tauri-plugin-updater = { workspace = true, optional = true }
@@ -43,13 +41,10 @@ semver.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
-cssparser = { workspace = true }
 base64 = { workspace = true }
 rusqlite = { workspace = true }
 
 arboard = { workspace = true }
-argon2 = { workspace = true }
-aes-gcm = { workspace = true }
 image = { workspace = true }
 tokio = { workspace = true, features = ["rt", "time", "sync", "macros", "process", "io-util"] }
 tauri-plugin-dialog = { workspace = true, optional = true }
@@ -57,10 +52,6 @@ tauri-plugin-global-shortcut = { workspace = true, optional = true }
 window-vibrancy = { workspace = true, optional = true }
 
 regex = { workspace = true }
-crossterm = { workspace = true }
-ratatui = { workspace = true }
-unicode-width = { workspace = true }
-unicode-segmentation = { workspace = true }
 tauri-plugin-single-instance = { workspace = true, optional = true }
 tauri-plugin-window-state = { workspace = true, optional = true }
 uuid = { workspace = true }
@@ -69,25 +60,12 @@ machine-uid = { workspace = true, optional = true }
 sha2 = { workspace = true }
 dotenvy = { workspace = true, optional = true }
 
-dirs = { workspace = true }
-tempfile = "3"
-rand = { workspace = true }
 zeroize = { workspace = true }
-clap = { workspace = true }
-ctrlc = { workspace = true }
-
-[[bin]]
-name = "dzc"
-path = "src/bin/dzc.rs"
 
 [[bin]]
 name = "dezirclip"
 path = "src/main.rs"
 required-features = ["desktop"]
-
-[[bin]]
-name = "dzc-service"
-path = "src/bin/dzc-service.rs"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true }
@@ -106,5 +84,4 @@ gtk = { version = "=0.18.2", optional = true }
 libc = { workspace = true }
 x11rb = { workspace = true }
 x11-clipboard = { workspace = true, optional = true }
-keyring = { workspace = true }
 ksni = { workspace = true, optional = true }

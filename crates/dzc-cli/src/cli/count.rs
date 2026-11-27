@@ -6,7 +6,7 @@
 //! Output: just the integer, so `if [ "$(dzc count)" -gt 500 ]; then ...` works
 //! without parsing. `--json` emits `{"count": <n>}` instead.
 
-use crate::api::HistoryService;
+use dzc_core::api::HistoryService;
 
 /// Run the `count` subcommand. Returns the entry total; rendering is the
 /// binary's job, since only it knows the `--json` flag.

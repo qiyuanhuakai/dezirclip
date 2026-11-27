@@ -35,19 +35,19 @@ export function prepareSidecars({ args = process.argv.slice(2), env = process.en
     if (!/^[a-zA-Z0-9_.-]+$/.test(triple) || !(triple.includes("linux") || triple.includes("windows"))) throw new Error("Unsupported sidecar target triple");
   }
   const extension = targetTriple.includes("windows") ? ".exe" : "";
-  const metadata = JSON.parse(run("cargo", ["metadata", "--manifest-path", "src-tauri/Cargo.toml", "--format-version", "1", "--no-deps"], { cwd: repoRoot, encoding: "utf8" }));
+  const metadata = JSON.parse(run("cargo", ["metadata", "--format-version", "1", "--no-deps", "--locked"], { cwd: repoRoot, encoding: "utf8" }));
   if (typeof metadata.target_directory !== "string" || !metadata.target_directory) throw new Error("Cargo target directory is unavailable");
   const targetDirectory = resolve(repoRoot, metadata.target_directory);
-  // An explicit target avoids CARGO_BUILD_TARGET/config changing the source
-  // namespace. Hook environment does not distinguish an explicit host target.
-  // Both desktop helpers can share the same non-WebView dependency graph.
-  // The separately distributed CLI keeps its own minimal build.
-  const cargoArgs = ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", "dzc", "--bin", "dzc-service",
-    "--locked", "--no-default-features", "--target", targetTriple, "--features", "native-screen"];
+  // Tauri may copy external binaries into its own Cargo output directory.
+  // Keep the original helpers in an isolated producer namespace.
+  const producer = join(targetDirectory, "sidecar-build");
+  const cargoArgs = ["build", "--locked", "-p", "dzc-cli", "-p", "dzc-service", "--bin", "dzc", "--bin", "dzc-service",
+    "--no-default-features", "--target", targetTriple, "--target-dir", producer,
+    "--features", "dzc-cli/native-screen,dzc-service/native-screen"];
   if (options.profile === "release") cargoArgs.push("--release");
-  if (options.portable) cargoArgs.push("--features", "portable");
+  if (options.portable) cargoArgs.push("--features", "dzc-cli/portable,dzc-service/portable");
   run("cargo", cargoArgs, { cwd: repoRoot, stdio: "inherit" });
-  const source = join(targetDirectory, targetTriple, options.profile, `dzc${extension}`);
+  const source = join(producer, targetTriple, options.profile, `dzc${extension}`);
   const sha256 = digest(source);
   const version = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).version;
   let buildInfo = null;
@@ -70,36 +70,40 @@ export function prepareSidecars({ args = process.argv.slice(2), env = process.en
     catch { declaredRevision = null; }
     if (declaredRevision && !/^[a-fA-F0-9]{40}$/.test(declaredRevision)) declaredRevision = null;
   }
-  const staged = join(repoRoot, "src-tauri", "binaries", `dzc-${targetTriple}${extension}`);
-  const paths = [{ role: "cargo-target", path: source }, { role: "external-bin", path: staged }];
-  if (targetTriple === hostTriple) paths.push({ role: "cargo-host-default", path: join(targetDirectory, options.profile, `dzc${extension}`) });
-  for (const item of paths) {
-    mkdirSync(dirname(item.path), { recursive: true });
-    if (resolve(item.path) !== resolve(source)) {
-      const temporary = item.path + `.sidecar-${randomUUID()}.tmp`;
+  function stage(name, source, sha256) {
+    const paths = [{ role: "cargo-target", path: source, sha256 }];
+    const copies = [{ role: "external-bin", path: join(repoRoot, "src-tauri", "binaries", name + "-" + targetTriple + extension) }];
+    if (options.phase === "portable") {
+      if (!options.portable || targetTriple !== hostTriple) throw new Error("Portable packaging requires native portable sidecars");
+      copies.push({ role: "portable-runtime", path: join(targetDirectory, options.profile, name + extension) });
+    }
+    for (const copy of copies) {
+      mkdirSync(dirname(copy.path), { recursive: true });
+      const temporary = copy.path + ".sidecar-" + randomUUID() + ".tmp";
       try {
         copyFileSync(source, temporary);
         if (digest(temporary) !== sha256) throw new Error("Sidecar copy changed before publication");
-        // Replace the directory entry rather than writing through Cargo's
-        // possible hardlink to a cached desktop-feature executable.
-        renameSync(temporary, item.path);
+        renameSync(temporary, copy.path);
       } finally {
         if (existsSync(temporary)) unlinkSync(temporary);
       }
+      if (digest(copy.path) !== sha256) throw new Error("Staged sidecar differs from the producer output");
+      paths.push({ ...copy, sha256 });
     }
-    item.sha256 = digest(item.path);
-    if (item.sha256 !== sha256) throw new Error(`Sidecar input differs from standalone build: ${item.role}`);
+    if (digest(source) !== sha256) throw new Error("Sidecar staging modified the producer output");
+    return paths;
   }
+
+  const paths = stage("dzc", source, sha256);
+  const staged = paths.find(item => item.role === "external-bin").path;
   const proof = {
-    schemaVersion: 1, kind: "dezirclip-standalone-sidecar", createdAt: new Date().toISOString(),
+    schemaVersion: 2, kind: "dezirclip-standalone-sidecar", createdAt: new Date().toISOString(),
     ...options, target: targetTriple, host: hostTriple, command: ["cargo", ...cargoArgs], source, sha256, binaryPaths: paths,
     buildInfo, buildInfoVerification: buildInfo ? "executed_native_cli" : "cross_target_not_executed",
     declaredBuildSet: { version, sourceRevision: declaredRevision, buildId: declaredRevision ? `${version}@${declaredRevision}` : null },
     helperSha256: digest(script), cargoLockSha256: digest(join(repoRoot, "Cargo.lock")),
   };
-  // Synchronize the service paths enumerated by the bundler, including its
-  // default-host namespace.
-  const serviceSource = join(targetDirectory, targetTriple, options.profile, `dzc-service${extension}`);
+  const serviceSource = join(producer, targetTriple, options.profile, `dzc-service${extension}`);
   const serviceSha256 = digest(serviceSource);
   let serviceInfo = null;
   if (targetTriple === hostTriple) {
@@ -110,18 +114,7 @@ export function prepareSidecars({ args = process.argv.slice(2), env = process.en
       || !serviceInfo.linked_components?.some((item) => item.component === "dzc-host" && item.version === version)
       || !serviceInfo.linked_components?.some((item) => item.component === "dzc-service" && item.version === version)) throw new Error("Service build identity differs from its package build");
   }
-  const servicePaths = [{ role: "cargo-target", path: serviceSource }, { role: "external-bin", path: join(repoRoot, "src-tauri", "binaries", `dzc-service-${targetTriple}${extension}`) }];
-  if (targetTriple === hostTriple) servicePaths.push({ role: "cargo-host-default", path: join(targetDirectory, options.profile, `dzc-service${extension}`) });
-  for (const item of servicePaths) {
-    mkdirSync(dirname(item.path), { recursive: true });
-    if (resolve(item.path) !== resolve(serviceSource)) {
-      const temporary = item.path + `.sidecar-${randomUUID()}.tmp`;
-      try { copyFileSync(serviceSource, temporary); if (digest(temporary) !== serviceSha256) throw new Error("Service copy changed before publication"); renameSync(temporary, item.path); }
-      finally { if (existsSync(temporary)) unlinkSync(temporary); }
-    }
-    item.sha256 = digest(item.path);
-    if (item.sha256 !== serviceSha256) throw new Error("Service input differs from standalone service build");
-  }
+  const servicePaths = stage("dzc-service", serviceSource, serviceSha256);
   proof.serviceHelper = { source: serviceSource, sha256: serviceSha256, binaryPaths: servicePaths, command: proof.command, buildInfo: serviceInfo,
     buildInfoVerification: serviceInfo ? "executed_native_service" : "cross_target_not_executed" };
   writeFileSync(staged + ".proof.json", JSON.stringify(proof, null, 2) + "\n");

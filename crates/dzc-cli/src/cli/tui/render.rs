@@ -1,7 +1,7 @@
 //! Widget rendering is separate from history mutations and terminal input.
 
 use super::{action_name, fit_columns, preview_lines, BrowseOptions, ClipboardEntry};
-use crate::infrastructure::terminal_ui::Terminal as InputTerminal;
+use crate::terminal_ui::Terminal as InputTerminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -686,7 +686,7 @@ mod tests {
             limit: 100,
             offset: 0,
             action: frontend::Action::Copy,
-            passthrough: crate::infrastructure::osc52::Passthrough::None,
+            passthrough: crate::osc52::Passthrough::None,
         }
     }
 

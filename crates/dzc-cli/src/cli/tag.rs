@@ -18,7 +18,7 @@
 //!   that's already present — this matches the GUI's behavior)
 //! * `remove` of a non-present tag is a no-op (still `Ok(())`)
 
-use crate::api::HistoryService;
+use dzc_core::api::HistoryService;
 
 
 /// Subcommand for the `tag` command. The bin parses this from clap's

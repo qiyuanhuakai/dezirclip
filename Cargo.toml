@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "crates/dzc-core", "crates/dzc-platform", "crates/dzc-protocol", "crates/dzc-host", "crates/dzc-service"]
+members = ["src-tauri", "crates/dzc-core", "crates/dzc-platform", "crates/dzc-protocol", "crates/dzc-host", "crates/dzc-service", "crates/dzc-cli"]
 default-members = ["src-tauri"]
 resolver = "2"
 

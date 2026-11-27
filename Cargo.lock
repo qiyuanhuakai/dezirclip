@@ -1246,33 +1246,22 @@ dependencies = [
 name = "dezirclip"
 version = "0.2.0"
 dependencies = [
- "aes-gcm",
  "arboard",
- "argon2",
  "base64 0.22.1",
  "chrono",
- "clap",
- "crossterm",
- "cssparser",
- "ctrlc",
- "dirs 5.0.1",
  "dotenvy",
  "dzc-core",
  "dzc-host",
  "dzc-platform",
- "dzc-service",
  "futures-util",
  "gtk",
  "http-body-util",
  "hyper",
  "hyper-util",
  "image",
- "keyring",
  "ksni",
  "libc",
  "machine-uid",
- "rand 0.8.6",
- "ratatui",
  "regex",
  "reqwest",
  "rusqlite",
@@ -1289,11 +1278,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
- "tauri-winres",
- "tempfile",
  "tokio",
- "unicode-segmentation",
- "unicode-width",
  "urlencoding",
  "uuid",
  "webview2-com",
@@ -1550,6 +1535,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
+name = "dzc-cli"
+version = "0.2.0"
+dependencies = [
+ "aes-gcm",
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "crossterm",
+ "ctrlc",
+ "dirs 5.0.1",
+ "dzc-core",
+ "dzc-host",
+ "dzc-platform",
+ "image",
+ "ratatui",
+ "rusqlite",
+ "semver",
+ "serde",
+ "serde_json",
+ "tauri-winres",
+ "tempfile",
+ "tokio",
+ "unicode-segmentation",
+ "unicode-width",
+ "uuid",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "dzc-core"
 version = "0.2.0"
 dependencies = [
@@ -1658,6 +1672,7 @@ dependencies = [
  "dzc-platform",
  "dzc-protocol",
  "serde_json",
+ "tauri-winres",
  "tokio",
 ]
 

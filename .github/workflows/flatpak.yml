@@ -27,9 +27,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check binary layout and verifier contracts
+      - name: Check Flatpak verifier contracts
         run: |
-          node scripts/check-tauri-bin-dir.mjs
           python3 -I -B -m unittest discover -s scripts/tests -p test_verify_flatpak.py -v
 
       - name: Install Linux system dependencies
@@ -67,6 +66,9 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Verify Cargo helper ownership and bundle configuration
+        run: node scripts/check-desktop-companions.mjs
+
       - name: Cache Rust artifacts
         uses: swatinem/rust-cache@v2
         with:
@@ -81,7 +83,7 @@ jobs:
           echo "FLATPAK_BUNDLE=DezirClip-${release_version}-${{ matrix.name }}.flatpak" >> "$GITHUB_ENV"
 
       - name: Build Debian bundle for Flatpak root
-        run: pnpm tauri build --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: pnpm tauri build --bundles deb --config src-tauri/tauri.sidecars.json --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Prepare Flatpak root
         run: pnpm run flatpak:prepare

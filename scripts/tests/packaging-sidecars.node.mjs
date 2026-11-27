@@ -70,9 +70,10 @@ function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = 
   assert.equal(dirname(resolve(directory)), temporaryRoot);
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const targetDirectory = join(directory, "custom cargo target");
+  const producer = join(targetDirectory, "sidecar-build");
   const extension = target.includes("windows") ? ".exe" : "";
-  const source = join(targetDirectory, target, profile, `dzc${extension}`);
-  const serviceSource = join(targetDirectory, target, profile, `dzc-service${extension}`);
+  const source = join(producer, target, profile, `dzc${extension}`);
+  const serviceSource = join(producer, target, profile, `dzc-service${extension}`);
   const hostDefault = join(targetDirectory, profile, `dzc${host.includes("windows") ? ".exe" : ""}`);
   const cache = join(targetDirectory, "cached-desktop.bin");
   mkdirSync(dirname(hostDefault), { recursive: true });
@@ -98,9 +99,9 @@ function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = 
     if (command === "git") return "a".repeat(40);
     assert.equal(command, "cargo");
     if (args[0] === "metadata") return JSON.stringify({ target_directory: targetDirectory });
-    assert.deepEqual(args, ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", "dzc", "--bin", "dzc-service",
-      "--locked", "--no-default-features", "--target", target, "--features", "native-screen",
-      ...(profile === "release" ? ["--release"] : []), ...(portable ? ["--features", "portable"] : [])]);
+    assert.deepEqual(args, ["build", "--locked", "-p", "dzc-cli", "-p", "dzc-service", "--bin", "dzc", "--bin", "dzc-service",
+      "--no-default-features", "--target", target, "--target-dir", producer, "--features", "dzc-cli/native-screen,dzc-service/native-screen",
+      ...(profile === "release" ? ["--release"] : []), ...(portable ? ["--features", "dzc-cli/portable,dzc-service/portable"] : [])]);
     if (!omitOutput) {
       mkdirSync(dirname(source), { recursive: true });
       writeFileSync(source, payload);
@@ -116,17 +117,18 @@ for (const parameters of [
   { host: "x86_64-unknown-linux-gnu", profile: "release" },
   { host: "x86_64-unknown-linux-gnu", profile: "debug" },
 ]) {
-  test(`shared bundle hook restores standalone inputs: ${parameters.host} ${parameters.profile}`, (t) => {
+  test(`shared bundle hook stages standalone companions: ${parameters.host} ${parameters.profile}`, (t) => {
     const f = fixture(t, parameters);
     const proof = prepareSidecars({ repoRoot: f.directory, run: f.run, args: ["--phase", "bundle"], env: { TAURI_ENV_DEBUG: String(parameters.profile === "debug"), TAURI_ENV_TARGET_TRIPLE: f.host } });
     assert.equal(proof.sha256, hash(f.payload));
     assert.equal(proof.phase, "bundle");
-    assert.equal(proof.binaryPaths.length, 3);
+    assert.equal(proof.binaryPaths.length, 2);
     for (const item of proof.binaryPaths) {
       assert.deepEqual(readFileSync(item.path), f.payload);
       assert.equal(item.sha256, proof.sha256);
     }
     assert.equal(readFileSync(f.cache, "utf8"), "desktop-feature-cached-artifact", "publishing must not mutate Cargo's cached hardlink");
+    assert.equal(readFileSync(f.hostDefault, "utf8"), "desktop-feature-cached-artifact");
     const staged = proof.binaryPaths.find((item) => item.role === "external-bin").path;
     assert.deepEqual(JSON.parse(readFileSync(staged + ".proof.json", "utf8")), proof);
     assert.equal(proof.cargoLockSha256, hash(readFileSync(join(f.directory, "Cargo.lock"))));
@@ -135,7 +137,7 @@ for (const parameters of [
     assert.equal(proof.buildInfoVerification, "executed_native_cli");
     assert.equal(proof.buildInfo.component, "cli");
     assert.equal(proof.serviceHelper.buildInfo.component, "service");
-    assert.equal(proof.serviceHelper.binaryPaths.length, 3);
+    assert.equal(proof.serviceHelper.binaryPaths.length, 2);
     for (const item of proof.serviceHelper.binaryPaths) {
       assert.equal(hash(readFileSync(item.path)), proof.serviceHelper.sha256);
       assert.deepEqual(readFileSync(item.path), Buffer.from("service:"+f.payload.toString()));
@@ -198,15 +200,18 @@ test("invalid hook settings fail closed before building", () => {
 
 test("packaging entry points use the shared hook and portable CLI feature", () => {
   const config = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"));
+  const sidecars = JSON.parse(readFileSync(join(root, "src-tauri/tauri.sidecars.json"), "utf8"));
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  assert.equal(config.build.beforeBuildCommand, "pnpm run build && pnpm run tauri:prepare-sidecars --phase build");
-  assert.equal(config.build.beforeBundleCommand, "pnpm run tauri:prepare-sidecars --phase bundle");
+  assert.equal(config.build.beforeBuildCommand, "pnpm run build");
+  assert.equal(sidecars.build.beforeBuildCommand, "pnpm run build && pnpm run tauri:prepare-sidecars --phase build");
+  assert.equal(sidecars.build.beforeBundleCommand, "pnpm run tauri:prepare-sidecars --phase bundle");
+  assert.deepEqual(sidecars.bundle.externalBin, ["binaries/dzc", "binaries/dzc-service"]);
   assert.match(pkg.scripts["build:portable"], /^tauri build --no-bundle --features portable && pnpm run tauri:prepare-sidecars --portable --release --phase portable && powershell /);
   const native = readFileSync(join(root, "scripts/build-native-windows-fixture.ps1"), "utf8");
-  assert.match(native, /pnpm exec tauri build --debug --bundles nsis --no-sign/);
+  assert.match(native, /'build', '--debug', '--bundles', 'nsis', '--no-sign'/);
   assert.doesNotMatch(native, /beforeBuildCommand\s*=|beforeBundleCommand\s*=/, "the native fixture must not replace the production hooks");
   assert.match(native, /sidecarProof\.phase -ne 'bundle'/);
-  assert.equal(pkg.scripts["tauri:build"], "tauri build", "forwarded build arguments must retain their original Tauri command");
+  assert.equal(pkg.scripts["tauri:build"], "tauri build --config src-tauri/tauri.sidecars.json");
   assert.equal(pkg.scripts["tauri:bundle:rpm"], "node scripts/bundle-rpm.mjs");
   assert.deepEqual(config.bundle.targets, ["nsis", "deb", "appimage"]);
   const workflow = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
@@ -315,7 +320,8 @@ test("RPM wrapper invokes only the bundle process and keeps source versions and 
     }
     assert.equal(command, "pnpm");
     assert.deepEqual(args.slice(0, 6), ["exec", "tauri", "bundle", "--bundles", "rpm", "--config"]);
-    assert.deepEqual(JSON.parse(args[6]), rpmBundleConfig("0.2.0-alpha.1"));
+    assert.deepEqual(args.slice(6, 8), ["src-tauri/tauri.sidecars.json", "--config"]);
+    assert.deepEqual(JSON.parse(args[8]), rpmBundleConfig("0.2.0-alpha.1"));
     assert.equal(options.stdio, "inherit");
     const directory = join(f.targetDirectory, "release/bundle/rpm");
     mkdirSync(directory, { recursive: true });
@@ -328,7 +334,7 @@ test("RPM wrapper invokes only the bundle process and keeps source versions and 
   assert.equal(result.sha256, hash(rpm));
   assert.equal(result.bytes, rpm.length);
   assert.deepEqual(protectedPaths.map((path) => hash(readFileSync(path))), before);
-  assert.deepEqual(readFileSync(f.hostDefault), f.payload);
+  assert.equal(readFileSync(f.hostDefault, "utf8"), "desktop-feature-cached-artifact");
 });
 
 test("RPM wrapper skips Windows before reading files or starting any command", () => {
@@ -352,7 +358,8 @@ test("release RPM reuses verified sidecars in the explicit target directory", (t
       if (command !== "pnpm") return f.run(command, args, invocation);
       bundles++;
       assert.deepEqual(args.slice(0, 8), ["exec", "tauri", "bundle", "--target", f.target, "--bundles", "rpm", "--config"]);
-      assert.equal(JSON.parse(args[8]).build.beforeBundleCommand, null);
+      assert.deepEqual(args.slice(8, 10), ["src-tauri/tauri.sidecars.json", "--config"]);
+      assert.equal(JSON.parse(args[10]).build.beforeBundleCommand, null);
       mkdirSync(dirname(expected), { recursive: true });
       writeFileSync(expected, "RPM test payload");
     } };
@@ -388,40 +395,24 @@ for (const parameters of [
   { host: "x86_64-unknown-linux-gnu" },
   { host: "x86_64-unknown-linux-gnu", target: "aarch64-unknown-linux-gnu" },
 ]) {
-  test(`Cargo bundle binaries contain one prepared CLI: ${parameters.target ?? parameters.host}`, (t) => {
-    const config = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"));
+  test("Bundles register each independently staged executable once: " + (parameters.target ?? parameters.host), (t) => {
+    const config = JSON.parse(readFileSync(join(root, "src-tauri/tauri.sidecars.json"), "utf8"));
     const manifest = readFileSync(join(root, "src-tauri/Cargo.toml"), "utf8");
-    const main = /^default-run\s*=\s*"([^"]+)"/m.exec(manifest)?.[1];
-    const binaries = manifest.split(/\r?\n\[\[bin\]\]\r?\n/).slice(1).map((section) => {
-      const name = /^name\s*=\s*"([^"]+)"/m.exec(section)?.[1];
-      const source = /^path\s*=\s*"([^"]+)"/m.exec(section)?.[1];
-      assert(name && source && existsSync(join(root, "src-tauri", source)));
-      return { name, main: name === main };
-    });
-    assert.deepEqual(binaries.filter((item) => item.main).map((item) => item.name), ["dezirclip"]);
-    assert.deepEqual(binaries.filter((item) => !item.main).map((item) => item.name), ["dzc", "dzc-service"]);
-    assert.deepEqual(readdirSync(join(root, "src-tauri/src/bin")).sort(), ["dzc-service.rs", "dzc.rs"]);
+    const desktopBinaries = manifest.split(/\r?\n\[\[bin\]\]\r?\n/).slice(1).map(section =>
+      /^name\s*=\s*"([^"]+)"/m.exec(section)?.[1]);
+    assert.deepEqual(desktopBinaries, ["dezirclip"]);
 
     const f = fixture(t, parameters);
     const proof = prepareSidecars({ repoRoot: f.directory, run: f.run, args: ["--phase", "bundle"], env: { TAURI_ENV_TARGET_TRIPLE: f.target } });
-    const out = f.target === f.host ? dirname(f.hostDefault) : dirname(f.source);
     const extension = f.target.includes("windows") ? ".exe" : "";
-    const mainPayload = Buffer.from("desktop-main-binary");
-    writeFileSync(join(out, `dezirclip${extension}`), mainPayload);
-    const cargoFiles = binaries.map((item) => ({ name: item.name + extension, path: join(out, item.name + extension) }));
-    const externalFiles = (config.bundle.externalBin ?? []).map((name) => name.split("/").at(-1) + extension);
-    const destinations = [...cargoFiles.map((item) => item.name), ...externalFiles];
-    assert.equal(new Set(destinations).size, destinations.length, "RPM adds Cargo and external files separately and rejects duplicate destinations");
-    assert.equal(destinations.filter((name) => name === `dzc${extension}`).length, 1);
-    assert.equal(new Set([...destinations, `dzc${extension}`]).size, destinations.length, "the old externalBin entry would repeat the Cargo CLI destination");
-    const bundledCli = cargoFiles.find((item) => item.name === `dzc${extension}`);
-    assert.deepEqual(readFileSync(bundledCli.path), f.payload, "the native/cross Cargo bundle input must use the prepared standalone bytes");
-    assert.equal(hash(readFileSync(bundledCli.path)), proof.sha256);
-    const bundledService = cargoFiles.find((item) => item.name === `dzc-service${extension}`);
-    assert.equal(destinations.filter((name) => name === bundledService.name).length, 1);
-    assert.equal(hash(readFileSync(bundledService.path)), proof.serviceHelper.sha256);
-    assert.deepEqual(readFileSync(cargoFiles.find((item) => item.name === `dezirclip${extension}`).path), mainPayload);
-    assert.deepEqual(readFileSync(proof.binaryPaths.find((item) => item.role === "external-bin").path), f.payload, "the diagnostic staging copy retains the same bytes without a second bundle registration");
+    const stage = (name) => join(f.directory, "src-tauri", name + "-" + f.target + extension);
+    const destinations = [...desktopBinaries, ...config.bundle.externalBin.map(name => name.split("/").at(-1))];
+    assert.deepEqual(destinations, ["dezirclip", "dzc", "dzc-service"]);
+    assert.equal(new Set(destinations).size, destinations.length);
+    assert.equal(hash(readFileSync(stage(config.bundle.externalBin[0]))), proof.sha256);
+    assert.equal(hash(readFileSync(stage(config.bundle.externalBin[1]))), proof.serviceHelper.sha256);
+    assert.deepEqual(readFileSync(f.source), f.payload);
+    assert.equal(readFileSync(f.hostDefault, "utf8"), "desktop-feature-cached-artifact");
   });
 }
 

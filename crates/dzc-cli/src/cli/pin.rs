@@ -14,7 +14,7 @@
 //!
 //! Output: `pin: id=<n>` / `unpin: id=<n>` unless `--quiet`.
 
-use crate::api::HistoryService;
+use dzc_core::api::HistoryService;
 
 /// Args shared by `pin` and `unpin`; `pinned` is what selects between them.
 pub struct PinArgs {

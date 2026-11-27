@@ -40,7 +40,7 @@
 
 use std::path::Path;
 
-use crate::api::{BackupService, HistoryService, ImportMode};
+use dzc_core::api::{BackupService, HistoryService, ImportMode};
 
 /// Args for the `import` subcommand.
 pub struct ImportArgs {

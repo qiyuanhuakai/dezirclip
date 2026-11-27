@@ -14,7 +14,7 @@
 //! Output: `Cleared <n> entries` unless `--quiet`, where n is the number
 //! actually removed — the total before minus the total after.
 
-use crate::api::HistoryService;
+use dzc_core::api::HistoryService;
 
 pub struct ClearArgs {
     /// When `false` (default), refuse to clear.

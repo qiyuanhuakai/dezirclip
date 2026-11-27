@@ -70,24 +70,24 @@ function Assert-CurrentBuildInfo($Info, [string]$Role, [string]$Version, [string
     }
 }
 function Assert-NsisCompilerInputManifest($Manifest) {
-    if ($Manifest.schemaVersion -ne 4 -or $Manifest.nsisInputLayout -ne 'cargo-cli-and-service-v1') { throw 'Candidate NSIS input layout is invalid.' }
+    if ($Manifest.schemaVersion -ne 5 -or $Manifest.nsisInputLayout -ne 'external-cli-and-service-v2') { throw 'Candidate NSIS input layout is invalid.' }
     $inputs = @($Manifest.nsisInputs)
-    if ($inputs.Count -ne 1) { throw 'Candidate must retain exactly one Cargo CLI compiler input.' }
-    $cargo = @($Manifest.sidecarPreparation.binaryPaths | Where-Object { $_.role -eq 'cargo-host-default' })
-    if ($cargo.Count -ne 1 -or $cargo[0].sha256 -ne $Manifest.sidecarSha256 -or $Manifest.sidecarSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Candidate lacks a unique proven Cargo host CLI.' }
+    if ($inputs.Count -ne 1) { throw 'Candidate must retain exactly one external CLI compiler input.' }
+    $cargo = @($Manifest.sidecarPreparation.binaryPaths | Where-Object { $_.role -eq 'external-bin' })
+    if ($cargo.Count -ne 1 -or $cargo[0].sha256 -ne $Manifest.sidecarSha256 -or $Manifest.sidecarSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Candidate lacks a unique proven staged CLI.' }
     $input = $inputs[0]
-    if ($input.role -ne 'cargo-binary' -or $input.destination -ne 'dzc.exe' -or $input.sha256 -ne $Manifest.sidecarSha256 -or [System.IO.Path]::GetFullPath($input.source) -ine [System.IO.Path]::GetFullPath($cargo[0].path)) { throw 'Candidate compiler input differs from the exact proven Cargo CLI.' }
-    $service = @($Manifest.sidecarPreparation.serviceHelper.binaryPaths | Where-Object { $_.role -eq 'cargo-host-default' })
+    if ($input.role -ne 'external-bin' -or $input.destination -ne 'dzc.exe' -or $input.sha256 -ne $Manifest.sidecarSha256 -or [System.IO.Path]::GetFullPath($input.source) -ine [System.IO.Path]::GetFullPath($cargo[0].path)) { throw 'Candidate compiler input differs from the exact proven external CLI.' }
+    $service = @($Manifest.sidecarPreparation.serviceHelper.binaryPaths | Where-Object { $_.role -eq 'external-bin' })
     $serviceInputs = @($Manifest.serviceInputs)
-    if ($service.Count -ne 1 -or $serviceInputs.Count -ne 1 -or $Manifest.serviceSha256 -notmatch '^[a-fA-F0-9]{64}$' -or $service[0].sha256 -ne $Manifest.serviceSha256) { throw 'Candidate lacks a unique proven Cargo service.' }
+    if ($service.Count -ne 1 -or $serviceInputs.Count -ne 1 -or $Manifest.serviceSha256 -notmatch '^[a-fA-F0-9]{64}$' -or $service[0].sha256 -ne $Manifest.serviceSha256) { throw 'Candidate lacks a unique proven staged Service.' }
     $input = $serviceInputs[0]
-    if ($input.role -ne 'cargo-binary' -or $input.destination -ne 'dzc-service.exe' -or $input.sha256 -ne $Manifest.serviceSha256 -or [System.IO.Path]::GetFullPath($input.source) -ine [System.IO.Path]::GetFullPath($service[0].path)) { throw 'Service compiler input differs from its standalone helper.' }
+    if ($input.role -ne 'external-bin' -or $input.destination -ne 'dzc-service.exe' -or $input.sha256 -ne $Manifest.serviceSha256 -or [System.IO.Path]::GetFullPath($input.source) -ine [System.IO.Path]::GetFullPath($service[0].path)) { throw 'Service compiler input differs from its standalone helper.' }
 }
 function Read-CandidateManifest([string]$Installer) {
     $Installer = Resolve-RunnerFixturePath $Installer -RequireFile
     $manifestPath = Resolve-RunnerFixturePath ($Installer + '.manifest.json') -RequireFile
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    if ($manifest.schemaVersion -ne 4 -or $manifest.kind -ne 'dezirclip-native-nsis-fixture' -or $manifest.version -notin @('0.2.0-alpha.1', '0.2.0-alpha.2')) { throw 'Candidate manifest is invalid.' }
+    if ($manifest.schemaVersion -ne 5 -or $manifest.kind -ne 'dezirclip-native-nsis-fixture' -or $manifest.version -notin @('0.2.0-alpha.1', '0.2.0-alpha.2')) { throw 'Candidate manifest is invalid.' }
     if ($manifest.target -ne 'x86_64-pc-windows-msvc' -or $manifest.profile -ne 'debug' -or $manifest.updaterArtifacts -ne $false -or $manifest.sourceCommit -notmatch '^[a-fA-F0-9]{40}$') { throw 'Candidate build provenance is invalid.' }
     if ($manifest.sidecarVersion -notmatch ('(?:^|\s)' + [regex]::Escape($manifest.version) + '(?:\s|$)')) { throw 'Candidate manifest CLI version is invalid.' }
     if ($manifest.buildInfo.component_version -ne $manifest.version -or $manifest.buildInfo.source_revision -ne $manifest.sourceCommit -or $manifest.buildInfo.build_id -ne ($manifest.version + '@' + $manifest.sourceCommit)) { throw 'Candidate build identity differs from its source/version set.' }
@@ -96,9 +96,9 @@ function Read-CandidateManifest([string]$Installer) {
     Assert-CurrentBuildInfo $manifest.buildInfo 'cli' $manifest.version $manifest.sourceCommit
     Assert-CurrentBuildInfo $manifest.serviceBuildInfo 'service' $manifest.version $manifest.sourceCommit
     if ($manifest.applicationPatch -ne 'tauri-nsis-bundle-token-v1' -or $manifest.applicationPatchOffset -lt 64 -or $manifest.sidecarSource -ne 'standalone-no-default-features' -or $manifest.packaging -ne 'shared-before-build-and-before-bundle') { throw 'Candidate packaging provenance is invalid.' }
-    if ($manifest.sidecarPreparation.phase -ne 'bundle' -or $manifest.sidecarPreparation.sha256 -ne $manifest.sidecarSha256 -or $manifest.sidecarPreparation.portable -ne $false -or $manifest.sidecarPreparation.profile -ne 'debug') { throw 'Candidate lacks shared beforeBundle sidecar evidence.' }
+    if ($manifest.sidecarPreparation.schemaVersion -ne 2 -or $manifest.sidecarPreparation.phase -ne 'bundle' -or $manifest.sidecarPreparation.sha256 -ne $manifest.sidecarSha256 -or $manifest.sidecarPreparation.portable -ne $false -or $manifest.sidecarPreparation.profile -ne 'debug') { throw 'Candidate lacks shared beforeBundle sidecar evidence.' }
     if ($manifest.applicationPatchOffset -isnot [int] -and $manifest.applicationPatchOffset -isnot [long]) { throw 'Candidate patch offset must be an integer.' }
-    foreach ($digest in @($manifest.installerSha256, $manifest.applicationSha256, $manifest.applicationRawSha256, $manifest.sidecarSha256, $manifest.cargoLockSha256, $manifest.configurationSha256, $manifest.installerHookSha256, $manifest.nsisScriptSha256, $manifest.overrideConfigurationSha256)) {
+    foreach ($digest in @($manifest.installerSha256, $manifest.applicationSha256, $manifest.applicationRawSha256, $manifest.sidecarSha256, $manifest.cargoLockSha256, $manifest.configurationSha256, $manifest.sidecarConfigurationSha256, $manifest.installerHookSha256, $manifest.nsisScriptSha256, $manifest.overrideConfigurationSha256)) {
         if ($digest -notmatch '^[A-Fa-f0-9]{64}$') { throw 'Candidate manifest digest is invalid.' }
     }
     if ((Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash -ne $manifest.installerSha256) { throw 'Candidate installer differs from its build manifest.' }

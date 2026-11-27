@@ -24,9 +24,9 @@ The signed updater is the permitted networking exception. Future macOS/Swift wor
 | `crates/dzc-platform` | OS clipboard/input, permissions, local IPC, process identity and key providers |
 | `crates/dzc-protocol` / `protocol/schema` | Shared wire contracts; schema author source and generated Rust/Go representations |
 | `crates/dzc-host` | Embedded/Service coordination, grants, sessions, capture ownership, events and snapshots |
-| `crates/dzc-service` | Service implementation; its executable is still declared by the Tauri package until R4 |
+| `crates/dzc-service` | Service implementation and the `dzc-service` executable |
+| `crates/dzc-cli` | CLI, TUI, MCP and shell integrations, including the `dzc` executable |
 | `src-tauri` | Tauri commands, window/tray/hotkey wiring, desktop lifecycle and transitional legacy adapters |
-| `src-tauri/src/bin` / `src-tauri/src/cli` | Current CLI/Service executable ownership and CLI/TUI/MCP/shell implementation; R4 will move these |
 | `src` | React product features, hooks, desktop adapters, locales and visual styles |
 | `clients/go` / `frontends/dzc-surface` | Host client SDK and MyGo desktop, including React WebView fallback |
 | `packages/ui-react` and versioned Deziro UI dependencies | Local React integration plus shared React/Native components and generated presets from Deziro UI. Retain license boundaries |
@@ -34,7 +34,7 @@ The signed updater is the permitted networking exception. Future macOS/Swift wor
 | `.github/workflows` | Six current CI/release workflows; actual triggers and evidence are documented in `docs/ci.md` |
 | `docs/specs` | Current behavior contracts and the staged architecture cleanup specification |
 
-Generated files, inline tests and historical evidence are counted separately from handwritten product behavior. Do not use total physical lines as a deletion target. `crates/dzc-cli` and Swift packages are targets in the spec, not existing packages at this stage.
+Generated files, inline tests and historical evidence are counted separately from handwritten product behavior. Do not use total physical lines as a deletion target. The Swift packages are future targets in the spec.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |

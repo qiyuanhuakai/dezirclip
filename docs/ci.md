@@ -36,7 +36,7 @@ PR 更新和新的 master push 会取消同组旧 CI。手动 full 不适用该�
 | 类别 | 当前主入口与对象 | 结果含义 |
 |---|---|---|
 | 前端、生成一致性和工具纯逻辑 | `frontend`：i18n、版本、Surface tokens、协议生成、CSS、Node/Python fixture 与发布逻辑检查；`pnpm run test:unit`、前端 build | Vitest 发现 `src` 下的测试；fixture/mock 通过不等于真实窗口或发布通过 |
-| Rust 业务与客户端 | `rust-development`：Linux/Windows 各跑 `core-tests` 和 `desktop-check` | 前者是 workspace/all-targets、no-default-features + `dezirclip/native-screen` 测试；后者是 `cargo check`，不执行桌面 |
+| Rust 业务与客户端 | `rust-development`：Linux/Windows 各跑 `core-tests` 和 `desktop-check` | 前者使用 workspace/all-targets 和 CLI/Service 的 `native-screen` feature，后者执行桌面 `cargo check` |
 | Go 客户端和 UI 逻辑 | `go-development`：Linux/Windows 分别在 `clients/go` 和 `frontends/dzc-surface` 跑 `go test ./...` | Deziro UI Native 和 presets 使用独立仓库的固定版本。PNG 是渲染诊断 |
 | 真实 CLI / TUI | 日常 Windows `core-tests` 先构建本次 CLI，再运行 ConPTY 用例。full 的 standalone integrations 使用隔离 ABI 产物 | ConPTY 零用例或跳过会失败；Windows ARM64 按 static-only 验证 |
 | 真实 Host 客户端 | `tauri` 可执行目标在本次 CLI/Service 构建后运行 `test-local-host.py`、`test-local-clients.py` 和 CLI BuildInfo 契约 | 单独保存 CLI/MCP 报告，覆盖授权、撤销、显式持久化确认和 Host 停止后拒绝回退 |

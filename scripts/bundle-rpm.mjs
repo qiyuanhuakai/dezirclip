@@ -42,12 +42,15 @@ export function bundleRpm({ repoRoot = root, platform = process.platform, env = 
       throw new Error("Previous Tauri bundle did not prepare the current release sidecars");
     }
     for (const [name, sha256] of [["dzc", proof.sha256], ["dzc-service", proof.serviceHelper?.sha256]]) {
-      const path = join(releaseDir, name);
-      if (createHash("sha256").update(readFileSync(path)).digest("hex") !== sha256) throw new Error(`RPM sidecar differs: ${name}`);
+      const paths = [join(repoRoot, "src-tauri/binaries", `${name}-${target}`),
+        join(metadata.target_directory, "sidecar-build", target, "release", name)];
+      if (!paths.every(path => createHash("sha256").update(readFileSync(path)).digest("hex") === sha256)) {
+        throw new Error(`RPM sidecar differs: ${name}`);
+      }
     }
     override.build = { beforeBundleCommand: null };
   }
-  run("pnpm", ["exec", "tauri", "bundle", ...targetArgs, "--bundles", "rpm", "--config", JSON.stringify(override)], { cwd: repoRoot, env, stdio: "inherit" });
+  run("pnpm", ["exec", "tauri", "bundle", ...targetArgs, "--bundles", "rpm", "--config", "src-tauri/tauri.sidecars.json", "--config", JSON.stringify(override)], { cwd: repoRoot, env, stdio: "inherit" });
   const directory = join(releaseDir, "bundle/rpm");
   const release = override.bundle.linux.rpm.release;
   const prefix = `${config.productName}-${override.version}-${release}.`;

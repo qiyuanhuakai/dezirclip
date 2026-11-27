@@ -241,9 +241,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check src-tauri/src/bin layout
-        run: node scripts/check-tauri-bin-dir.mjs
-
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         shell: bash
@@ -270,6 +267,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Verify Cargo helper ownership and bundle configuration
+        run: node scripts/check-desktop-companions.mjs
 
       - name: Setup MSVC ARM64 toolchain
         if: matrix.msvc_arch != ''
@@ -326,6 +326,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $buildRoot = Join-Path $metadata.target_directory $env:TARGET_TRIPLE
           "directory=$(Join-Path $buildRoot 'release')" >> $env:GITHUB_OUTPUT
+          "sidecars=$(Join-Path $metadata.target_directory "sidecar-build/$env:TARGET_TRIPLE/release")" >> $env:GITHUB_OUTPUT
 
       - name: Bundle and sign Tauri using the standalone sidecars
         shell: pwsh
@@ -335,7 +336,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           $bundle = @('exec', 'tauri', 'bundle', '--ci', '--target', $env:TARGET_TRIPLE,
-                      '--features', 'tauri/custom-protocol', '--bundles')
+                      '--features', 'tauri/custom-protocol', '--config', 'src-tauri/tauri.sidecars.json', '--bundles')
           if ($IsWindows) {
             $override = Join-Path $env:RUNNER_TEMP 'release-nsis.json'
             Set-Content -LiteralPath $override -Value '{"bundle":{"windows":{"nsis":{"compression":"zlib"}}}}' -Encoding utf8
@@ -354,7 +355,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           MYGO_TARGET: ${{ matrix.target }}
           MYGO_PLATFORM: ${{ matrix.name }}
-          SIDECARS: ${{ steps.desktop.outputs.directory }}
+          SIDECARS: ${{ steps.desktop.outputs.sidecars }}
         run: |
           set -euo pipefail
           if [[ "$RUNNER_OS" == Linux ]]; then

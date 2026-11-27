@@ -70,9 +70,9 @@ def check(desktop, helpers, *, native_main=False):
         return next((node for node, name, _, text in helpers['mygo_nodes'](Atspi, desktop)
                      if label in (name, text) and (role is None or node.get_role() == role)), None)
 
-    def click(label):
+    def click(label, role=None):
         def ready():
-            node = find(label)
+            node = find(label, role)
             if node and (not native_main or node.get_state_set().contains(Atspi.StateType.SENSITIVE)):
                 return node
 
@@ -188,14 +188,23 @@ def check(desktop, helpers, *, native_main=False):
             keys(shortcut)
             wait(lambda: setting(key) == value, f'{label} was not saved')
             wait(lambda: find(value + unit), f'{label} did not show the saved value')
-        for label, key, reset in [('Interface font', 'app.font_main', 'Reset interface font'),
-                                  ('Monospace font', 'app.font_mono', 'Reset monospace font')]:
-            field = wait(lambda: find(label, Atspi.Role.COMBO_BOX), f'{label} picker missing')
-            assert Atspi.Component.grab_focus(field)
-            keys(Gdk.KEY_Down)
-            keys(Gdk.KEY_Return)
+        default_font = 'Default (Theme)'
+        for label, key in [('Interface font', 'app.font_main'), ('Monospace font', 'app.font_mono')]:
+            def open_font_picker():
+                field = wait(lambda: find(label, Atspi.Role.COMBO_BOX), f'{label} picker missing')
+                assert Atspi.Component.grab_focus(field)
+                keys(Gdk.KEY_Return)
+                wait(lambda: find(default_font, Atspi.Role.LIST_ITEM), f'{label} options did not open')
+
+            open_font_picker()
+            family = wait(lambda: next((name for node, name, _, _ in helpers['mygo_nodes'](Atspi, desktop)
+                                       if name and name != default_font and node.get_role() == Atspi.Role.LIST_ITEM
+                                       and node.get_state_set().contains(Atspi.StateType.SENSITIVE)), None),
+                          f'{label} had no installed font options')
+            click(family, Atspi.Role.LIST_ITEM)
             wait(lambda: setting(key), f'{label} was not saved')
-            click(reset)
+            open_font_picker()
+            click(default_font, Atspi.Role.LIST_ITEM)
             wait(lambda: setting(key) == '', f'{label} did not reset to its theme default')
         print('Verified native appearance saves typography and independent surface and preview opacity', flush=True)
 

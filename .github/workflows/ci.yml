@@ -263,7 +263,7 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm run desktop:mygo:build
-          cargo build --locked --no-default-features --features native-screen --bin dzc --bin dzc-service
+          cargo build --locked -p dzc-cli -p dzc-service --no-default-features --features dzc-cli/native-screen,dzc-service/native-screen --bin dzc --bin dzc-service
       - name: Ensure the synthetic Windows video encoder is available
         if: runner.os == 'Windows'
         shell: pwsh
@@ -353,9 +353,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Check src-tauri/src/bin layout
-        run: node scripts/check-tauri-bin-dir.mjs
 
       - name: Verify the active Explorer prerequisite for final release upgrades
         if: matrix.name == 'windows-x86_64'
@@ -456,6 +453,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_target }}
+
+      - name: Verify Cargo helper ownership and bundle configuration
+        run: node scripts/check-desktop-companions.mjs
 
       - name: Setup MSVC ARM64 toolchain
         if: matrix.msvc_arch != ''
@@ -615,7 +615,9 @@ jobs:
           import os
           from pathlib import Path
           import subprocess
-          subprocess.run(["cargo", "build", "--locked", "--no-default-features", "--features", "native-screen", "--bin", "dzc", "--bin", "dzc-service"], check=True)
+          subprocess.run(["cargo", "build", "--locked", "-p", "dzc-cli", "-p", "dzc-service",
+                          "--no-default-features", "--features", "dzc-cli/native-screen,dzc-service/native-screen",
+                          "--bin", "dzc", "--bin", "dzc-service"], check=True)
           binary = Path("target/debug") / ("dzc.exe" if os.name == "nt" else "dzc")
           fixture = binary.with_name("dzc-desktop-fixture" + binary.suffix).resolve()
           subprocess.run(["go", "build", "-o", str(fixture), "./cmd/host-fixture"], cwd="clients/go", check=True)
@@ -650,6 +652,22 @@ jobs:
           result = unittest.TextTestRunner(verbosity=2).run(tests)
           if result.testsRun < 3 or result.skipped or not result.wasSuccessful():
               raise SystemExit(1)
+
+      - name: Exercise the built Service without a WebView
+        if: matrix.can_test
+        shell: python
+        run: |
+          import os, subprocess
+          from pathlib import Path
+          binary = Path("target/debug") / ("dzc-service.exe" if os.name == "nt" else "dzc-service")
+          os.environ["DZC_TEST_SERVICE"] = str(binary.resolve(strict=True))
+          name = "desktop_protocol_tests::installed_service_serves_desktop_tools_without_a_webview"
+          result = subprocess.run(["cargo", "test", "--locked", "-p", "dzc-service", "--features", "native-screen",
+                                   "--lib", name, "--", "--ignored", "--exact"], text=True, stdout=subprocess.PIPE)
+          print(result.stdout)
+          result.check_returncode()
+          if f"test {name} ... ok" not in result.stdout:
+              raise SystemExit("The Service fixture was selected but did not pass")
 
       - name: Retain real CLI and MCP host acceptance
         if: always() && (steps.local-service.outcome == 'success' || steps.local-service.outcome == 'failure')
@@ -686,7 +704,7 @@ jobs:
 
       - name: Verify Windows executable icons
         if: runner.os == 'Windows' && matrix.can_test
-        run: python scripts/tests/windows-executable-icons.py target/debug/dzc-service.exe artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe
+        run: python scripts/tests/windows-executable-icons.py target/debug/dzc.exe target/debug/dzc-service.exe artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe
 
       - name: Ensure Windows media fixture encoder
         if: runner.os == 'Windows' && matrix.can_test
@@ -922,7 +940,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           pnpm run desktop:mygo:build --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo build --locked --release --no-default-features --features native-screen --bin dzc --bin dzc-service
+          cargo build --locked --release -p dzc-cli -p dzc-service --no-default-features --features dzc-cli/native-screen,dzc-service/native-screen --bin dzc --bin dzc-service
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/stage-mygo-windows.py --revision "$env:GITHUB_SHA" --output "$env:RUNNER_TEMP/mygo-test-package"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -1413,12 +1431,12 @@ jobs:
           cache-workspace-crates: true
       - name: Test shared core, protocol, Host, Service and CLI
         if: matrix.mode == 'core-tests'
-        run: cargo test --locked --workspace --all-targets --no-default-features --features dezirclip/native-screen
+        run: cargo test --locked --workspace --all-targets --no-default-features --features dzc-cli/native-screen,dzc-service/native-screen
       - name: Verify the bare CLI in a real Windows pseudoterminal
         if: matrix.mode == 'core-tests' && runner.os == 'Windows'
         shell: pwsh
         run: |
-          cargo build --locked --no-default-features --features native-screen --bin dzc
+          cargo build --locked -p dzc-cli --no-default-features --features native-screen --bin dzc
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m pip install --disable-pip-version-check pywinpty==3.1.0 pyte==0.8.2
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

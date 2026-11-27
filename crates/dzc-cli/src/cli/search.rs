@@ -1,8 +1,8 @@
 //! Search full payloads with mode-specific matching before pagination.
 //! JSON, metadata, ID and TSV output share the list command contract.
 
-use crate::api::HistoryQuery;
-use crate::api::HistoryService;
+use dzc_core::api::HistoryQuery;
+use dzc_core::api::HistoryService;
 
 /// Search mode selected by `--mode`. Mirrors the standalone clap
 /// `ValueEnum`. `Contains` is the default and matches what the existing
@@ -45,10 +45,10 @@ impl SearchArgs {
 pub fn run(args: &SearchArgs, repo: &HistoryService) -> Result<(), String> {
     let limit = super::list::checked_limit(args.limit)?;
     let mode = match args.mode {
-        SearchMode::Contains => crate::api::HistorySearchMode::Contains,
-        SearchMode::Fuzzy => crate::api::HistorySearchMode::Fuzzy,
-        SearchMode::Regex => crate::api::HistorySearchMode::Regex,
-        SearchMode::Fts5 => crate::api::HistorySearchMode::Fts5,
+        SearchMode::Contains => dzc_core::api::HistorySearchMode::Contains,
+        SearchMode::Fuzzy => dzc_core::api::HistorySearchMode::Fuzzy,
+        SearchMode::Regex => dzc_core::api::HistorySearchMode::Regex,
+        SearchMode::Fts5 => dzc_core::api::HistorySearchMode::Fts5,
     };
     let entries = if args.query.trim().is_empty() {
         Vec::new()

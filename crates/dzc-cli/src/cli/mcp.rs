@@ -1,7 +1,7 @@
 //! Bounded, read-only MCP over stdio with a fresh Core ordinary-data permit per query.
 
 use dzc_core::api::ClipboardEntry;
-use crate::api::{HistoryQuery, HistoryService};
+use dzc_core::api::{HistoryQuery, HistoryService};
 use serde_json::{json, Map, Value};
 use std::io::{BufRead, Read, Write};
 use std::sync::Arc;
@@ -279,7 +279,7 @@ where
                 .and_then(Value::as_str)
                 .filter(|query| !query.trim().is_empty() && query.chars().count() <= 1024)
                 .ok_or_else(|| "query must contain 1 to 1024 characters".to_string())?;
-            Some((value, crate::api::HistorySearchMode::Contains))
+            Some((value, dzc_core::api::HistorySearchMode::Contains))
         } else {
             None
         };

@@ -26,7 +26,7 @@ env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u DBUS_SESSION_BUS_ADDRESS 
   cargo test -p dzc-platform --lib --locked --message-format=json > /tmp/dezirclip-platform.jsonl
 env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u DBUS_SESSION_BUS_ADDRESS \
   XDG_SESSION_TYPE=x11 CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/tmp/dezirclip-wayland-target \
-  cargo build -p dezirclip --no-default-features --bin dzc --locked --message-format=json > /tmp/dezirclip-cli.jsonl
+  cargo build -p dzc-cli --no-default-features --bin dzc --locked --message-format=json > /tmp/dezirclip-cli.jsonl
 ```
 
 Extract the `compiler-artifact.executable` for target names `dzc_platform` and `dzc` from these JSON streams; do not guess a cached target path. Supply the resulting absolute files:

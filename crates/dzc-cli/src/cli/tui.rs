@@ -2,9 +2,9 @@
 
 use super::frontend::{self, BrowseOptions};
 use dzc_core::api::ClipboardEntry;
-use crate::api::HistoryService;
+use dzc_core::api::HistoryService;
 
-use crate::infrastructure::terminal_ui::Terminal;
+use crate::terminal_ui::Terminal;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;

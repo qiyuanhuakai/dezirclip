@@ -15,7 +15,7 @@
 docs/evidence/phase6-linux-process-only-v2/verify-linux-process-only-v2.py text eol=lf
 scripts/compat/almalinux8-repositories.sh text eol=lf
 integrations/** text eol=lf
-src-tauri/src/cli/shell/** text eol=lf
+crates/dzc-cli/src/cli/shell/** text eol=lf
 scripts/benchmark-windows.py export-ignore
 scripts/drive-webview-performance.py export-ignore
 scripts/observe-webview-response.py export-ignore

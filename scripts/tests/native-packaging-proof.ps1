@@ -82,71 +82,70 @@ try {
     [System.IO.File]::WriteAllText($cargo, 'standalone fixture')
     $sidecarDigest = (Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash
     $script = Join-Path $OutputDirectory 'installer.nsi'
-    $validScript = "!define MAINBINARYSRCPATH `"$rawPath`"`nFile /a `"/oname=dzc.exe`" `"$cargo`"`n"
+    $validScript = "!define MAINBINARYSRCPATH `"$rawPath`"`nFile /a `"/oname=dzc.exe`" `"$staged`"`n"
     [System.IO.File]::WriteAllText($script, $validScript)
-    Check 'the sole NSIS destination input must be the exact Cargo CLI and standalone bytes' {
-        $inputs = @(Get-NsisCompilerInputs $script $rawPath $cargo $sidecarDigest)
+    Check 'the sole NSIS destination input must be the exact staged CLI and standalone bytes' {
+        $inputs = @(Get-NsisCompilerInputs $script $rawPath $staged $sidecarDigest)
         Assert-Equal $inputs.Count 1
-        Assert-Equal $inputs[0].source ([System.IO.Path]::GetFullPath($cargo))
+        Assert-Equal $inputs[0].source ([System.IO.Path]::GetFullPath($staged))
         Assert-Equal $inputs[0].sha256 $sidecarDigest
-        Assert-Equal $inputs[0].role 'cargo-binary'
+        Assert-Equal $inputs[0].role 'external-bin'
         Assert-Equal $inputs[0].destination 'dzc.exe'
     }
-    Check 'overwriting Cargo sidecar and unexpected main executable are rejected' {
-        [System.IO.File]::WriteAllText($cargo, 'desktop-feature wrong bytes')
-        Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $cargo $sidecarDigest }
-        [System.IO.File]::WriteAllText($cargo, 'standalone fixture')
-        Assert-Rejected { Get-NsisCompilerInputs $script $packagedPath $cargo $sidecarDigest }
+    Check 'overwriting the staged sidecar and unexpected main executable are rejected' {
+        [System.IO.File]::WriteAllText($staged, 'desktop-feature wrong bytes')
+        Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $staged $sidecarDigest }
+        [System.IO.File]::WriteAllText($staged, 'standalone fixture')
+        Assert-Rejected { Get-NsisCompilerInputs $script $packagedPath $staged $sidecarDigest }
     }
-    Check 'duplicate Cargo or legacy staged-plus-Cargo compiler entries are rejected' {
-        foreach ($extra in @($cargo, $staged)) {
+    Check 'duplicate staged or staged-plus-producer compiler entries are rejected' {
+        foreach ($extra in @($staged, $cargo)) {
             [System.IO.File]::WriteAllText($script, $validScript + "File /a `"/oname=dzc.exe`" `"$extra`"`n")
-            Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $cargo $sidecarDigest }
+            Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $staged $sidecarDigest }
         }
         [System.IO.File]::WriteAllText($script, $validScript)
     }
-    Check 'staged or unknown source is rejected even with identical standalone bytes' {
+    Check 'producer or unknown source is rejected even with identical standalone bytes' {
         $unknown = Join-Path $OutputDirectory 'unknown-same-bytes.bin'
         [System.IO.File]::WriteAllText($unknown, 'standalone fixture')
-        foreach ($other in @($staged, $unknown)) {
-            [System.IO.File]::WriteAllText($script, $validScript.Replace($cargo, $other))
-            Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $cargo $sidecarDigest }
+        foreach ($other in @($cargo, $unknown)) {
+            [System.IO.File]::WriteAllText($script, $validScript.Replace($staged, $other))
+            Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $staged $sidecarDigest }
         }
         [System.IO.File]::WriteAllText($script, $validScript)
     }
     Check 'missing CLI or duplicate GUI declaration and invalid complete hash are rejected' {
         [System.IO.File]::WriteAllText($script, "!define MAINBINARYSRCPATH `"$rawPath`"`n")
-        Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $cargo $sidecarDigest }
+        Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $staged $sidecarDigest }
         [System.IO.File]::WriteAllText($script, $validScript + "!define MAINBINARYSRCPATH `"$rawPath`"`n")
-        Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $cargo $sidecarDigest }
+        Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $staged $sidecarDigest }
         [System.IO.File]::WriteAllText($script, $validScript)
-        Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $cargo 'abcd' }
-        Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $cargo ('0' * 64) }
+        Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $staged 'abcd' }
+        Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $staged ('0' * 64) }
     }
     $compilerManifest = [pscustomobject]@{
-        schemaVersion = 4; nsisInputLayout = 'cargo-cli-and-service-v1'; sidecarSha256 = $sidecarDigest
+        schemaVersion = 5; nsisInputLayout = 'external-cli-and-service-v2'; sidecarSha256 = $sidecarDigest
         serviceSha256 = $sidecarDigest
-        serviceInputs = @([pscustomobject]@{source=$cargo;destination='dzc-service.exe';sha256=$sidecarDigest;role='cargo-binary'})
-        nsisInputs = @(Get-NsisCompilerInputs $script $rawPath $cargo $sidecarDigest)
+        serviceInputs = @([pscustomobject]@{source=$staged;destination='dzc-service.exe';sha256=$sidecarDigest;role='external-bin'})
+        nsisInputs = @(Get-NsisCompilerInputs $script $rawPath $staged $sidecarDigest)
         sidecarPreparation = [pscustomobject]@{ binaryPaths = @(
             [pscustomobject]@{ role = 'cargo-target'; path = (Join-Path $OutputDirectory 'explicit-target.bin'); sha256 = $sidecarDigest },
-            [pscustomobject]@{ role = 'external-bin'; path = $staged; sha256 = $sidecarDigest },
-            [pscustomobject]@{ role = 'cargo-host-default'; path = $cargo; sha256 = $sidecarDigest }
-        ); serviceHelper = [pscustomobject]@{binaryPaths=@([pscustomobject]@{role='cargo-host-default';path=$cargo;sha256=$sidecarDigest})} }
+            [pscustomobject]@{ role = 'external-bin'; path = $staged; sha256 = $sidecarDigest }
+        ); serviceHelper = [pscustomobject]@{binaryPaths=@([pscustomobject]@{role='external-bin';path=$staged;sha256=$sidecarDigest})} }
     }
-    Check 'schema4 consumer accepts only unique proven CLI and service compiler inputs' {
+    Check 'schema5 consumer accepts only unique proven CLI and service compiler inputs' {
         Assert-NsisCompilerInputManifest $compilerManifest
     }
     Check 'consumer rejects old schema and duplicate or mismatched compiler records' {
         $original = $compilerManifest | ConvertTo-Json -Depth 8
-        foreach ($change in @('old-schema', 'two-inputs', 'staged-source', 'wrong-sha', 'wrong-role', 'duplicate-cargo-proof', 'missing-service', 'duplicate-service', 'wrong-service-sha')) {
+        foreach ($change in @('old-schema', 'two-inputs', 'producer-source', 'wrong-sha', 'wrong-role', 'duplicate-cargo-proof', 'missing-service', 'duplicate-service', 'wrong-service-sha')) {
             $changed = $original | ConvertFrom-Json
             switch ($change) {
                 'old-schema' { $changed.schemaVersion = 2 }
                 'two-inputs' { $changed.nsisInputs = @($changed.nsisInputs[0], $changed.nsisInputs[0]) }
-                'staged-source' { $changed.nsisInputs[0].source = $staged }
+                'producer-source' { $changed.nsisInputs[0].source = $cargo }
                 'wrong-sha' { $changed.nsisInputs[0].sha256 = '0' * 64 }
-                'wrong-role' { $changed.nsisInputs[0].role = 'external-bin' }
+                'wrong-role' { $changed.nsisInputs[0].role = 'cargo-target' }
                 'duplicate-cargo-proof' { $changed.sidecarPreparation.binaryPaths += $changed.sidecarPreparation.binaryPaths[-1] }
                 'missing-service' { $changed.serviceInputs = @() }
                 'duplicate-service' { $changed.serviceInputs = @($changed.serviceInputs[0],$changed.serviceInputs[0]) }

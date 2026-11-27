@@ -37,7 +37,7 @@
 use std::collections::BTreeMap;
 
 use dzc_core::api::ClipboardEntry;
-use crate::api::HistoryService;
+use dzc_core::api::HistoryService;
 
 /// Default `top` count when `--top` is omitted.
 pub const DEFAULT_TOP: i32 = 5;

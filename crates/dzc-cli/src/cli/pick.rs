@@ -2,7 +2,7 @@
 
 use super::frontend::{self, BrowseOptions};
 use dzc_core::api::ClipboardEntry;
-use crate::api::HistoryService;
+use dzc_core::api::HistoryService;
 use clap::ValueEnum;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
