@@ -121,7 +121,8 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 
 接手以正式版 `ba0ad71f7b9d8caddac45d0bc5588254a8273482` 为产品基线，保留随后独立验证的 X11 更新检查、快速粘贴布局和 Arch 打包改动。规范继续说明原始设计与冻结基线，本节记录当前迁移和证据。
 
-- **R1 主题边界**。迁移 Core 事务结果和 Tauri 的发布顺序保护，兼容原 CLI/Host 接口。Windows Rust 1.99.1 下 Core 单元测试 483 项通过。Windows 和 Linux Rust 1.99.1 下 `desktop` debug 二进制的两项发布顺序测试分别通过。独立的原生窗口主题端到端验收仍待记录。
+- **R1 主题边界**。迁移 Core 事务结果和 Tauri 的发布顺序保护，兼容原 CLI/Host 接口。Windows Rust 1.99.1 下 Core 单元测试 483 项通过。Windows 和 Linux Rust 1.99.1 下 `desktop` debug 二进制的两项发布顺序测试分别通过。
+- **R1 原生窗口验收**。Windows 11 WebView2 和 Linux X11 WebKitGTK 使用 `ff90ce4b` 的本地 debug 桌面、生产 React bundle 和临时 profile，通过实际 Tauri bridge 运行同一场景。两次并发有效导入发布按提交顺序排列的完整主题列表。非法与重复导入被拒绝，库和当前选择保持。导出 JSON 使用预期 ID 和原 CSS。删除非活动主题后活动选择保持；删除活动主题时依序观察到主题库事件、`theme-changed` 与 `settings-changed`，并确认原生窗口内 React 的 `theme-custom` 切回 `theme-mica`、数据库保存 Mica。Windows 使用隔离的可执行文件旁数据目录和 WebView2 配置。
 - **R3 路径闭包**。早期 WebView 探针和 CLI 共用 Core 的重定向和 profile 选择算法，保留空 portable 目录、当前重定向与旧身份目录并存、普通文件目标三处差异。CLI 直接使用公开路径 API。仍需验证只读 GPU 探针的 SQLite/WAL 行为，并迁出其余 CLI 跨入口依赖。
 - **C0/C1**。CI 文档已按 v0.2.0 和 Arch 发布分支校准。Windows ConPTY 入口明确构建当前 CLI，零测试和 skip 会失败。可运行的桌面矩阵使用同一份实际 CLI/Service 执行 Host 客户端、BuildInfo 和 Schema 24 实际写入与种子数据测试。后面三项在 Windows 和 Linux 本地各通过一次。Linux Tauri 套件在 Xvfb 中运行，修复截图边界测试缺少显示器的问题，本地为 270 通过、3 项明确 ignored。其余原生 opt-in 和发布源准入继续按规范推进。
 - **C2 桌面专项矩阵**。按请求选择完整矩阵、Linux x64、Windows x64 或两者的并集。仅请求 Windows 性能比较时会选择其 Windows x64 前置验收。独立诊断入口沿用既有规则，完整的场景计划与结果汇总仍待接入。
