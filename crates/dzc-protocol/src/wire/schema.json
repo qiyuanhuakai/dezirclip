@@ -6164,8 +6164,6 @@
             "app.rich_text_snapshot_cache_limit",
             "app.arrow_key_selection",
             "app.preview_keyboard_enabled",
-            "app.update_auto_check",
-            "app.update_channel",
             "app.silent_start",
             "app.hide_tray_icon",
             "app.edge_docking",
@@ -6191,7 +6189,9 @@
             "app.emoji_panel_tab",
             "app.emoji_favorites",
             "app.custom_background",
-            "app.custom_background_opacity"
+            "app.custom_background_opacity",
+            "app.update_auto_check",
+            "app.update_channel"
           ]
         },
         "value": {

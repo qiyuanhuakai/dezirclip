@@ -1,5 +1,6 @@
 use super::clipboard_repo::SqliteClipboardRepository;
 use crate::{api::{CoreError, CoreResult}, capture::CaptureSettings};
+use dzc_protocol::settings::{UPDATE_AUTO_CHECK, UPDATE_CHANNEL};
 use std::collections::HashMap;
 
 #[cfg(test)]
@@ -56,9 +57,9 @@ impl SqliteClipboardRepository {
             'app.search_regex_enabled','app.sequential_hotkey','app.sequential_mode','app.show_app_border',
             'app.show_scroll_top_button','app.show_search_box','app.silent_start','app.sound_enabled',
             'app.sound_paste_enabled','app.sound_volume','app.surface_opacity','app.tag_manager_enabled',
-            'app.tag_manager_size','app.theme','app.update_auto_check','app.update_channel','app.use_win_v_shortcut',
+            'app.tag_manager_size','app.theme',?1,?2,'app.use_win_v_shortcut',
             'app.window_width','app.window_height','app.window_pinned')").map_err(|error| CoreError::from(error.to_string()))?;
-        let rows = query.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        let rows = query.query_map([UPDATE_AUTO_CHECK.key, UPDATE_CHANNEL.key], |row| Ok((row.get(0)?, row.get(1)?)))
             .map_err(|error| CoreError::from(error.to_string()))?;
         rows.collect::<rusqlite::Result<_>>().map_err(|error| CoreError::from(error.to_string()))
     }

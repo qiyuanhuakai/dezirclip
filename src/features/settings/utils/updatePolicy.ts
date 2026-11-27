@@ -1,10 +1,11 @@
 import { defaultUpdateChannel } from './defaultUpdateChannel';
+import { updateAutoCheckSetting, updateChannelSetting } from '../../../shared/protocol/settings';
 
-export type UpdateChannel = "stable" | "preview";
+export type UpdateChannel = (typeof updateChannelSetting.values)[number];
 
 export const readUpdatePreferences = (settings: Record<string, string>, version = '') => ({
-    autoCheck: settings["app.update_auto_check"] === "true",
-    channel: defaultUpdateChannel(version, settings["app.update_channel"]),
+    autoCheck: settings[updateAutoCheckSetting.key] === "true",
+    channel: defaultUpdateChannel(version, settings[updateChannelSetting.key]),
 });
 
 export const updateErrorKey = (error: unknown): string => {

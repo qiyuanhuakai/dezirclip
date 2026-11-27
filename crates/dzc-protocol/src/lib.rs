@@ -1,6 +1,7 @@
 //! Stable value types and the optional, schema-validated local wire protocol.
 pub mod build_info;
 pub mod history;
+pub mod settings;
 #[cfg(feature = "wire")]
 pub mod wire;
 #[cfg(feature = "wire")]

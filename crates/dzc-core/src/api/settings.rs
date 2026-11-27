@@ -1,5 +1,6 @@
 use super::{CoreResult, HistoryService};
 use crate::capture::CaptureSettings;
+use dzc_protocol::settings::{UPDATE_AUTO_CHECK, UPDATE_CHANNEL};
 
 impl HistoryService {
     pub fn reset_application_preferences(&self, epoch: u64) -> CoreResult<()> {
@@ -78,13 +79,18 @@ impl HistoryService {
     }
 
     pub fn is_view_setting(key: &str) -> bool {
-        matches!(key, "app.use_win_v_shortcut" | "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
-            | "app.show_scroll_top_button" | "app.show_search_box" | "app.tag_manager_enabled" | "app.rich_text_snapshot_preview" | "app.rich_text_snapshot_cache_limit" | "app.arrow_key_selection" | "app.preview_keyboard_enabled" | "app.update_auto_check" | "app.update_channel" | "app.silent_start" | "app.hide_tray_icon" | "app.edge_docking" | "app.follow_mouse" | "app.disable_webview_gpu"
+        Self::is_update_preference(key)
+        || matches!(key, "app.use_win_v_shortcut" | "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
+            | "app.show_scroll_top_button" | "app.show_search_box" | "app.tag_manager_enabled" | "app.rich_text_snapshot_preview" | "app.rich_text_snapshot_cache_limit" | "app.arrow_key_selection" | "app.preview_keyboard_enabled" | "app.silent_start" | "app.hide_tray_icon" | "app.edge_docking" | "app.follow_mouse" | "app.disable_webview_gpu"
             | "app.idle_destroy_enabled" | "app.idle_destroy_seconds"
             | "app.quick_paste_enabled" | "app.quick_paste_layout" | "app.quick_paste_full_sectors" | "app.quick_paste_half_sectors" | "app.screenshot_enabled"
             | "app.sound_enabled" | "app.sound_paste_enabled" | "app.sound_volume"
             | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.preview_opacity" | "app.font_main" | "app.font_mono"
             | "app.custom_background" | "app.custom_background_opacity" | "app.emoji_panel_enabled" | "app.emoji_panel_tab" | "app.emoji_favorites")
+    }
+
+    pub fn is_update_preference(key: &str) -> bool {
+        key == UPDATE_AUTO_CHECK.key || key == UPDATE_CHANNEL.key
     }
 
     pub fn update_view_setting(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
@@ -102,7 +108,7 @@ impl HistoryService {
                 .is_ok_and(|paths| paths.len() <= 4096 && paths.iter().all(|path| !path.is_empty() && !path.contains('\0'))),
             "app.idle_destroy_seconds" => value.bytes().all(|b| b.is_ascii_digit())
                 && value.parse::<u16>().is_ok_and(|seconds| (5..=3600).contains(&seconds)),
-            "app.update_channel" => matches!(value, "stable" | "preview"),
+            key if key == UPDATE_CHANNEL.key => UPDATE_CHANNEL.values.contains(&value),
             "app.emoji_panel_tab" => matches!(value, "emoji" | "symbols" | "favorites"),
             "app.language" => matches!(value, "zh" | "tw" | "en"),
             "app.clipboard_item_font_size" => value.parse::<u8>().is_ok_and(|v| (11..=18).contains(&v)),
@@ -162,6 +168,29 @@ impl HistoryService {
 #[cfg(test)]
 mod tests {
     use super::HistoryService;
+
+    #[test]
+    fn update_preferences_are_explicit_and_follow_view_mutation_rules() {
+        use super::{UPDATE_AUTO_CHECK, UPDATE_CHANNEL};
+        let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
+        let epoch = history.runtime_snapshot(0).unwrap().privacy_epoch;
+        for (setting, valid, invalid) in [
+            (UPDATE_AUTO_CHECK, "true", "1"),
+            (UPDATE_CHANNEL, "preview", "custom"),
+        ] {
+            assert!(!history.desktop_preferences().unwrap().contains_key(setting.key));
+            assert!(history.update_capture_setting(setting.key, valid, epoch).is_err());
+            assert!(history.update_view_setting(setting.key, invalid, epoch).is_err());
+            assert!(history.update_view_setting(setting.key, valid, epoch + 1).is_err());
+            assert!(!history.desktop_preferences().unwrap().contains_key(setting.key));
+            history.update_view_setting(setting.key, valid, epoch).unwrap();
+            assert_eq!(
+                history.desktop_preferences().unwrap().get(setting.key).map(String::as_str),
+                Some(valid)
+            );
+        }
+    }
+
     #[test]
     fn native_panel_switches_validate_values_and_epoch() {
         let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();

@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { readUpdatePreferences, updateErrorKey } from "./updatePolicy";
 import type { UpdateChannel } from "./updatePolicy";
+import { updateAutoCheckSetting, updateChannelSetting } from "../../../shared/protocol/settings";
 
 interface UpdateSupport {
     installation: "nsis" | "app_image" | "app_image_read_only" | "package_manager" | "portable" | "unpackaged";
@@ -115,7 +116,7 @@ export const saveUpdatePreference = async (key: "autoCheck" | "channel", value: 
     if (snapshot.saving || checking || installing) return;
     updateSnapshot({ saving: true, errorKey: null });
     try {
-        await invoke("save_setting", { key: key === "autoCheck" ? "app.update_auto_check" : "app.update_channel", value: String(value) });
+        await invoke("save_setting", { key: key === "autoCheck" ? updateAutoCheckSetting.key : updateChannelSetting.key, value: String(value) });
         if (key === "autoCheck" && typeof value === "boolean") updateSnapshot({ autoCheck: value });
         if (key === "channel" && (value === "stable" || value === "preview")) {
             latestCompletion = 0;

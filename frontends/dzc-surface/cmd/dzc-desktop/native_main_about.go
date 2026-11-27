@@ -84,7 +84,7 @@ var (
 )
 
 func nativeUpdateChannel(version, saved string) string {
-	if saved == "stable" || saved == "preview" {
+	if slices.Contains(protocol.UpdateChannelSetting().Values, saved) {
 		return saved
 	}
 	if preReleaseVersion.MatchString(version) {
@@ -332,21 +332,25 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	}
 	kit.SettingsFieldLabel(c, title, n.settingsHelpLabel(title), support)
 	auto := u.automatic
-	autoLabel := n.text("updater_auto_check")
+	autoLabel := n.text(protocol.SettingUpdateAutoCheckLabel)
 	if kit.SettingsToggleField(c, &auto, autoLabel, n.settingsHelpLabel(autoLabel), n.text("updater_auto_hint"), disabled) {
-		n.saveSetting("app.update_auto_check", strconv.FormatBool(auto))
+		n.saveSetting(protocol.SettingUpdateAutoCheck, strconv.FormatBool(auto))
 	}
-	channelLabel := n.text("updater_channel")
+	channelLabel := n.text(protocol.SettingUpdateChannelLabel)
 	channelHint := n.text("updater_stable_hint")
 	if u.channel == "preview" {
 		channelHint = n.text("updater_preview_hint")
 	}
 	kit.SettingsField(c, uikit.SettingsFieldOptions{}).Children(func() {
 		kit.SettingsInlineLabel(c, channelLabel, n.settingsHelpLabel(channelLabel), channelHint)
-		kit.SettingsChoices(c, channelLabel, u.channel, []uikit.SelectOption{
-			{Value: "stable", Label: n.text("updater_channel_stable_name")},
-			{Value: "preview", Label: n.text("updater_channel_preview_name")},
-		}, true, disabled, func(channel string) { n.saveSetting("app.update_channel", channel) })
+		values := protocol.UpdateChannelSetting().Values
+		options := make([]uikit.SelectOption, 0, len(values))
+		for _, channel := range values {
+			options = append(options, uikit.SelectOption{Value: channel, Label: n.text("updater_channel_" + channel + "_name")})
+		}
+		kit.SettingsChoices(c, channelLabel, u.channel, options, true, disabled, func(channel string) {
+			n.saveSetting(protocol.SettingUpdateChannel, channel)
+		})
 	})
 	current := buildinfo.Version
 	if u.result.CurrentVersion != "" {

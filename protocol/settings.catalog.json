@@ -1,0 +1,17 @@
+{
+  "updatePreferences": [
+    {
+      "key": "app.update_auto_check",
+      "kind": "boolean",
+      "labelKey": "updater_auto_check",
+      "requiresRestart": false
+    },
+    {
+      "key": "app.update_channel",
+      "kind": "enum",
+      "values": ["stable", "preview"],
+      "labelKey": "updater_channel",
+      "requiresRestart": false
+    }
+  ]
+}

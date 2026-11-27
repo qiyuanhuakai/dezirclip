@@ -6,6 +6,7 @@ import { SettingHelp, SettingsLabel } from "../SettingHelp";
 import SettingsDisclosure from "../SettingsDisclosure";
 import { UpdateAction, UpdateActions, UpdateProgress, UpdateVersionRow } from "@deziro/ui-react/components/SettingsUpdate";
 import { checkForUpdate, getUpdaterSnapshot, installAvailableUpdate, openUpdateRelease, saveUpdatePreference, subscribeUpdater } from "../../utils/updaterClient";
+import { updateAutoCheckSetting, updateChannelSetting } from "../../../../shared/protocol/settings";
 
 const supportKey = (reason: string | undefined): string => {
     switch (reason) {
@@ -44,14 +45,14 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
                     {state.phase === "idle" && <><br />{t("updater_not_checked")}</>}
                 </SettingHelp>
             </h4>
-            <SettingsToggleField label={t("updater_auto_check")} helpLabel={t("settings_help")}
+            <SettingsToggleField label={t(updateAutoCheckSetting.labelKey)} helpLabel={t("settings_help")}
                 description={t("updater_auto_hint")} checked={state.autoCheck} disabled={disabled}
                 onChange={event => void saveUpdatePreference("autoCheck", event.target.checked)} />
             <SettingsField className="update-channel-row">
-                <SettingsLabel label={t("updater_channel")} hintKey="updater_channel"
+                <SettingsLabel label={t(updateChannelSetting.labelKey)} hintKey={updateChannelSetting.labelKey}
                     hint={t(state.channel === "stable" ? "updater_stable_hint" : "updater_preview_hint")} />
-                <SettingsChoices segmented label={t("updater_channel")} value={state.channel} disabled={disabled}
-                    options={[{ value: "stable", label: t("updater_channel_stable_name") }, { value: "preview", label: t("updater_channel_preview_name") }]}
+                <SettingsChoices segmented label={t(updateChannelSetting.labelKey)} value={state.channel} disabled={disabled}
+                    options={updateChannelSetting.values.map(value => ({ value, label: t(`updater_channel_${value}_name`) }))}
                     onChange={channel => { setConfirmationId(null); void saveUpdatePreference("channel", channel); }} />
             </SettingsField>
             <UpdateVersionRow label={t("updater_current_version")} version={state.currentVersion} />

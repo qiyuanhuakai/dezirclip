@@ -1,4 +1,5 @@
 use dzc_host::update::{automatic_check_due, expected_asset_name, summarize_channel_versions, validate_signature_metadata, AvailableUpdate, UpdateChannel, UpdateCheck, UpdateSupport, RELEASES_URL};
+use dzc_core::protocol::settings::{UPDATE_AUTO_CHECK, UPDATE_CHANNEL};
 use crate::infrastructure::update_support::installation_support;
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use semver::Version;
@@ -60,10 +61,10 @@ pub fn start_automatic_checks(app: AppHandle) {
             delay = AUTOMATIC_POLL_INTERVAL;
             let database = app.state::<crate::database::DbState>();
             let settings = &database.settings_repo;
-            if settings.get("app.update_auto_check").ok().flatten().as_deref() != Some("true") {
+            if settings.get(UPDATE_AUTO_CHECK.key).ok().flatten().as_deref() != Some("true") {
                 continue;
             }
-            let saved = settings.get("app.update_channel").ok().flatten();
+            let saved = settings.get(UPDATE_CHANNEL.key).ok().flatten();
             let channel = UpdateChannel::from_preference(saved.as_deref(), &app.package_info().version);
             if let Ok(Some(check)) = run_check(&app, &state, channel, true).await {
                 let _ = app.emit_to("main", "update-check-completed", check);

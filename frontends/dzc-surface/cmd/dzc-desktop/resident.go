@@ -16,6 +16,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
+	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/quickpaste"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/screenshot"
@@ -234,8 +235,8 @@ func runResident(owner *client.Client, minimized bool, activation string, update
 		}
 		configureAutomaticUpdate := func(settings map[string]string) {
 			channel := ""
-			if settings["app.update_auto_check"] == "true" {
-				channel = nativeUpdateChannel(buildinfo.Version, settings["app.update_channel"])
+			if settings[protocol.SettingUpdateAutoCheck] == "true" {
+				channel = nativeUpdateChannel(buildinfo.Version, settings[protocol.SettingUpdateChannel])
 			}
 			if channel == automaticChannel {
 				return

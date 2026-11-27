@@ -300,7 +300,7 @@ pub async fn save_setting(
         persist_setting_with_legacy(&db_state, &key, &value)?;
     }
     apply_setting_state_update(&app_handle, &settings_state, &key, &value);
-    if matches!(key.as_str(), "app.update_auto_check" | "app.update_channel") {
+    if dzc_core::api::HistoryService::is_update_preference(&key) {
         app_handle.state::<crate::app::updater::UpdaterState>().preferences_changed();
     }
     if key == "app.quick_paste_renderer" && value == "mygo" {

@@ -1,5 +1,23 @@
 [
   {
+    "name": "view-setting-automatic-updates",
+    "schema": "ViewSettingParams",
+    "valid": true,
+    "value": {"service_instance_id": "service", "expected_epoch": 0, "key": "app.update_auto_check", "value": "true"}
+  },
+  {
+    "name": "view-setting-update-channel",
+    "schema": "ViewSettingParams",
+    "valid": true,
+    "value": {"service_instance_id": "service", "expected_epoch": 0, "key": "app.update_channel", "value": "preview"}
+  },
+  {
+    "name": "view-setting-update-channel-is-still-a-string",
+    "schema": "ViewSettingParams",
+    "valid": false,
+    "value": {"service_instance_id": "service", "expected_epoch": 0, "key": "app.update_channel", "value": true}
+  },
+  {
     "name": "surface-hello",
     "schema": "Request",
     "value": {
