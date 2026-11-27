@@ -2,7 +2,7 @@
 
 本页沿用 DZC-ARCH-001 的 C0 验收结构，记录以 `ba0ad71f7b9d8caddac45d0bc5588254a8273482`（`v0.2.0`）为基线的当前工作流。后续修改 workflow 时应同时更新本页。
 
-**当前正常 tag 发布不调用完整源码 CI，也不构建或发布 Flatpak。** 手动 full、日常开发检查和 tag 发布是不同路径；一个路径通过不能替代另一路径的验收。以下“执行”描述配置选中的步骤，不代表本次已经取得对应 Actions 成功运行。
+**正常 tag 发布调用候选源码验收，不构建或发布 Flatpak。** 手动 full、日常开发检查和 tag 发布是不同路径。以下“执行”描述配置选中的步骤。
 
 ## 触发与任务范围
 
@@ -13,8 +13,8 @@
 | `master` push / 任意 PR | `frontend` 1、`rust-development` 4、`go-development` 2，共 7 个基础实例；特定路径变更再加 `mygo-installer` | 没有 full 的四目标桌面、standalone、六场景 NSIS 和 Flatpak |
 | 手动 CI，`full_validation=false`，其它开关关闭 | 上述 7 个基础实例，加历史 `mygo-installer`，共 8 个 | 手动触发没有 diff 基线，历史 installer 的 scope 默认要求执行 |
 | 手动 CI，默认 `full_validation=true`，其它开关关闭 | 基础 7 + 历史 installer 1 + 矩阵选择 1 + Tauri 4 + standalone 4 + NSIS 6 + Flatpak 2，共 25 个 | Windows ARM64 是交叉构建；历史/合成 installer 与当前发布包各有验收入口 |
-| 复用 `ci.yml` | `workflow_call` 的 `full_validation` 默认 true | 当前 `release.yml` 没有调用它；不能据此声称 tag 等待 full |
-| 候选源码验收 `source_acceptance=true` | 前端、Rust 与 Go 开发测试，Linux/Windows x64 真实客户端和桌面验收，汇总绑定被测 SHA | 该入口可单独运行，尚待正常 Release 接入；与全量安装和升级验收互补 |
+| 复用 `ci.yml` | `workflow_call` 的 `full_validation` 默认 true。Release 显式调用候选源码模式 | 不运行完整的打包测试矩阵 |
+| 候选源码验收 `source_acceptance=true` | 前端、Rust 与 Go 开发测试，Linux/Windows x64 真实客户端和桌面验收，汇总绑定被测 SHA | 可单独运行，与全量安装和升级验收互补 |
 | `v*` tag push | draft、四目标 standalone、四目标双桌面构建/上传、`publish-dual` | 以本页“正常 tag 发布”部分的实际门槛为准 |
 
 日常 `mygo-installer` 检查的是**固定 alpha.9 已发布 payload + 当前 checkout 的安装器源码**。scope 比较 CI/Release workflow、MyGo installer/packaging/harness、进程 receipt 和图标等路径；没有有效 diff 基线或比较失败时也要求执行。它不是当前 beta.4 payload 的安装验收。实际来源见 [历史 payload 准备器](../scripts/package-published-mygo.py)。
@@ -66,11 +66,11 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 
 ## 正常 tag 发布
 
-`release.yml` 的正常 push 路径并行创建 draft 和构建产物，standalone 上传等待 draft 与 standalone 构建，desktop 上传自行等待 draft 可用。最终 `verify-publish-and-promote` 依赖 `create-release`、`publish-desktop`、`publish-standalone-cli`，调用 [updater-release.mjs](../scripts/updater-release.mjs) 的 `publish-dual`：验证后先公开产品 release，再同步 stable/preview 频道。
+`release.yml` 的正常 push 路径并行创建 draft、构建产物与执行候选源码验收。standalone 上传等待 draft 与 standalone 构建，desktop 上传自行等待 draft 可用。最终发布任务还要求候选源码验收成功，检查同一次运行的 SHA 和验收记录，再调用 `publish-dual` 公开产品 release 并同步 stable/preview。 [发布脚本](../scripts/updater-release.mjs)
 
 每个目标用一次 Cargo 构建产出 Tauri、桌面配套 CLI 和 Service，随后 Tauri 打包阶段复用已暂存的二进制，MyGo 使用相同目录。独立 CLI 下载保持原 ABI 构建边界。本地以同一路径构建并解包 Windows x64 NSIS 和 Linux x64 deb，两个 helper 的 SHA-256 和实际 CLI/MCP 集成通过。Release 首次运行计时仍需候选实测。
 
-当前门槛保留仓库/tag/SHA/run/attempt、必需 job、资产目录及时间、签名/版本/文件名、updater 下载读回和防降级检查。`dualReleaseJobs` 不包含完整源码 CI；旧 identity/upgrade 门槛也被 dual 分支排除。创建 draft 时的少量发布脚本单测不等于完整源码准入。
+当前门槛保留仓库/tag/SHA/run/attempt、必需 job、资产目录及时间、签名/版本/文件名、updater 下载读回和防降级检查。恢复含 Arch 资产的候选时也核对原 Release run 的源码验收工作。最终包的独立验证与候选封存仍待接入。
 
 ### 当前发布分支的精确资产集合：40 项
 

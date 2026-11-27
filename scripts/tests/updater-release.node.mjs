@@ -184,6 +184,15 @@ function publisherFixture(options = {}) {
   if (options.arch) {
     const job = state.jobs.find(job => job.name === 'Dual desktop release (linux-x86_64)');
     job.steps = [{ name: 'Build Arch Linux packages and AUR recipes', status: 'completed', conclusion: 'success' }];
+    for (const name of [
+      'Frontend', 'Select desktop acceptance targets', 'Bind candidate source',
+      'Tauri backend (linux-x86_64)', 'Tauri backend (windows-x86_64)',
+      'Go development (ubuntu-24.04)', 'Go development (windows-latest)',
+      'Rust development (ubuntu-24.04, core-tests)', 'Rust development (ubuntu-24.04, desktop-check)',
+      'Rust development (windows-latest, core-tests)', 'Rust development (windows-latest, desktop-check)',
+    ]) {
+      state.jobs.push({ ...state.jobs[0], id: 8_000 + state.jobs.length, name: `Source acceptance / ${name}` });
+    }
     for (const name of ['dezirclip-bin', 'dezirclip-mygo-bin']) {
       state.product.assets.push(asset(`${name}-0.2.0beta4-1-x86_64.pkg.tar.zst`, Buffer.from('arch package')),
         asset(`${name}-0.2.0beta4-1.src.tar.gz`, Buffer.from('aur recipe')));
@@ -352,7 +361,9 @@ test('Arch packages and AUR recipes must be present before a Release with Arch p
   const build = () => publisherFixture({ version, sync: true, dual: true, running: true, arch: true });
   const publish = ({ config, transport }) => publishDual('publish-dual', version, config, 7001, 1, () => {}, transport);
   const released = build();
-  assert.equal(publish(released).workflow.arch_packages, true);
+  const { workflow } = publish(released);
+  assert.equal(workflow.arch_packages, true);
+  assert.equal(workflow.source_acceptance, true);
   assert.equal(released.state.product.assets.length, 40);
 
   const missingRecipe = build();
@@ -364,6 +375,20 @@ test('Arch packages and AUR recipes must be present before a Release with Arch p
   failedStep.state.jobs.find(job => job.steps).steps[0].conclusion = 'failure';
   assert.throws(() => publish(failedStep), /Arch Linux package verification/);
   assert.deepEqual(failedStep.state.mutations, []);
+  const skippedArch = build();
+  skippedArch.state.jobs.find(job => job.steps).steps = [];
+  assert.throws(() => publish(skippedArch), /Arch Linux package verification/);
+  assert.deepEqual(skippedArch.state.mutations, []);
+
+  for (const conclusion of ['skipped', 'failure', 'cancelled', 'missing']) {
+    const candidate = build();
+    const jobs = candidate.state.jobs;
+    const index = jobs.findIndex(job => job.name === 'Source acceptance / Bind candidate source');
+    if (conclusion === 'missing') jobs.splice(index, 1);
+    else jobs[index].conclusion = conclusion;
+    assert.throws(() => publish(candidate), /gates/);
+    assert.deepEqual(candidate.state.mutations, []);
+  }
 });
 
 function withSynchronization(options, body) {

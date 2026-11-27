@@ -262,6 +262,13 @@ const dualDesktopJobs = Object.keys(expectedPlatforms).map(platform => `Dual des
 const dualReleaseJobs = ['Create GitHub release', 'Publish verified standalone archives',
   ...dualDesktopJobs, ...Object.keys(expectedPlatforms).map(platform => `Build compatible standalone CLI / Standalone (${platform})`)];
 const archPackagingStep = 'Build Arch Linux packages and AUR recipes';
+const candidateSourceJobs = [
+  'Frontend', 'Select desktop acceptance targets', 'Bind candidate source',
+  ...['linux-x86_64', 'windows-x86_64'].map(name => `Tauri backend (${name})`),
+  ...['ubuntu-24.04', 'windows-latest'].flatMap(os => [
+    `Go development (${os})`, `Rust development (${os}, core-tests)`, `Rust development (${os}, desktop-check)`,
+  ]),
+].map(name => `Source acceptance / ${name}`);
 const optionalReleaseJobs = [
   'Synchronize an already published update channel', 'Supplement published MyGo installer',
   'Resume verified publication or synchronize update channel', 'Publish the fixed historical recovery',
@@ -269,6 +276,9 @@ const optionalReleaseJobs = [
   'Collect actual final package identities', 'Verify actual signed Windows upgrades',
   'Full source acceptance / Published Windows memory comparison', 'Full source acceptance / native-file-drag',
   'Full source acceptance / Optional Windows Surface comparison or crash diagnostics',
+  ...['Published Windows memory comparison', 'native-file-drag', 'Compatible standalone CLI',
+    'Native NSIS (${{ matrix.scenario }})', 'Verified Flatpak', 'MyGo installer acceptance',
+    'Optional Windows Surface comparison or crash diagnostics'].map(name => `Source acceptance / ${name}`),
 ];
 
 function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = false, dual = false) {
@@ -306,6 +316,16 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
         || job.head_sha !== commit)) {
     throw new Error('Release attempt jobs have missing or conflicting identities');
   }
+  const archSteps = dual ? (jobs.find(job => job.name === 'Dual desktop release (linux-x86_64)')?.steps ?? [])
+    .filter(step => step.name === archPackagingStep) : [];
+  if (archSteps.length > 1 || archSteps.some(step => step.status !== 'completed' || step.conclusion !== 'success')) {
+    throw new Error('Arch Linux package verification did not succeed');
+  }
+  const currentContract = dual && (archSteps.length === 1 || jobs.some(job => candidateSourceJobs.includes(job.name)));
+  if (currentContract && archSteps.length === 0) throw new Error('Arch Linux package verification did not execute');
+  const requiredJobs = dual
+    ? (currentContract ? [...dualReleaseJobs, ...candidateSourceJobs] : dualReleaseJobs)
+    : [...releaseGateJobs, ...nativeReleaseJobs];
   const publishers = jobs.filter(job => publisherJobs.includes(job.name));
   if (publishers.length !== 1 || (!dual && requiresMyGo(tag) && jobs.filter(job => job.name === mygoJob).length !== 1)
       || (!dual && requiresFullSourceAcceptance(tag) && fullSourceJobs.some(name => !jobs.some(job => job.name === name && job.conclusion === 'success')))
@@ -317,24 +337,18 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
       || (run.status === 'completed' && publishers[0].status !== 'completed')
       || (run.conclusion === 'failure' && publishers[0].conclusion !== 'failure')
       || (run.conclusion === 'success' && publishers[0].conclusion !== 'success')
-      || (dual ? dualReleaseJobs : [...releaseGateJobs, ...nativeReleaseJobs])
-        .some(name => !jobs.some(job => job.name === name && job.status === 'completed' && job.conclusion === 'success'))) {
+      || requiredJobs.some(name => !jobs.some(job => job.name === name && job.status === 'completed' && job.conclusion === 'success'))) {
     throw new Error('Release native identity/upgrade gates or another job have not succeeded');
   }
   const identities = dual ? jobs.filter(job => dualReleaseJobs.includes(job.name)) : Object.keys(expectedPlatforms)
     .map(platform => jobs.find(job => job.name === `Collect actual final package identities / Release identities (${platform})`));
-  const archSteps = dual ? (jobs.find(job => job.name === 'Dual desktop release (linux-x86_64)').steps ?? [])
-    .filter(step => step.name === archPackagingStep) : [];
-  if (archSteps.length > 1 || archSteps.some(step => step.status !== 'completed' || step.conclusion !== 'success')) {
-    throw new Error('Arch Linux package verification did not succeed');
-  }
   const times = identities.map(job => Date.parse(dual ? job.completed_at : job.started_at));
   if (times.some(time => !Number.isFinite(time))) {
     throw new Error('Native release identity times are missing');
   }
   return { run_id: Number(runId), run_attempt: Number(runAttempt), workflow_id: workflow.id,
     status: run.status, conclusion: run.conclusion, asset_cutoff: dual ? Math.max(...times) : Math.min(...times),
-    ...(dual ? { run_started_at: run.run_started_at, arch_packages: archSteps.length === 1 } : {}),
+    ...(dual ? { run_started_at: run.run_started_at, arch_packages: archSteps.length === 1, source_acceptance: currentContract } : {}),
     jobs: jobs.map(job => ({ id: job.id, name: job.name, status: job.status, conclusion: job.conclusion,
       started_at: job.started_at })).sort((a, b) => a.id - b.id) };
 }

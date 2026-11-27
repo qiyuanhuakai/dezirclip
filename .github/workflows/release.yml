@@ -178,6 +178,16 @@ jobs:
       version: ${{ github.ref_name }}
       package-only: true
 
+  accept-source:
+    name: Source acceptance
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      full_validation: false
+      source_acceptance: true
+
   publish-standalone-cli:
     name: Publish verified standalone archives
     if: github.event_name == 'push'
@@ -461,7 +471,7 @@ jobs:
   verify-publish-and-promote:
     name: Verify signed artifacts, publish and synchronize update channel
     if: github.event_name == 'push'
-    needs: [create-release, publish-desktop, publish-standalone-cli]
+    needs: [create-release, publish-desktop, publish-standalone-cli, accept-source]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -473,6 +483,28 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Download the source acceptance receipt from this attempt
+        uses: actions/download-artifact@v4
+        with:
+          name: source-acceptance-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate-source
+      - name: Require the tested source to match the release candidate
+        shell: python
+        env:
+          ACCEPTED_SOURCE: ${{ needs.accept-source.outputs.accepted_source }}
+          RELEASE_SOURCE: ${{ needs.create-release.outputs.source }}
+        run: |
+          import json, os
+          from pathlib import Path
+          receipt = json.loads((Path(os.environ["RUNNER_TEMP"]) / "candidate-source/source-acceptance.json").read_text(encoding="utf-8"))
+          source = os.environ["GITHUB_SHA"]
+          if (source != os.environ["ACCEPTED_SOURCE"] or source != os.environ["RELEASE_SOURCE"]
+                  or receipt["source_revision"] != source or receipt["mode"] != "source-acceptance"
+                  or receipt["schema_version"] != 1 or receipt["run_id"] != int(os.environ["GITHUB_RUN_ID"])
+                  or receipt["run_attempt"] != int(os.environ["GITHUB_RUN_ATTEMPT"])
+                  or receipt["desktop_targets"] != ["linux-x86_64", "windows-x86_64"]
+                  or receipt["jobs"] != {name: "success" for name in ("frontend", "rust-development", "go-development", "ci-desktop-plan", "tauri")}):
+              raise SystemExit("Source acceptance receipt does not attest the candidate")
       - name: Verify both desktops and activate the update channel
         env:
           GH_TOKEN: ${{ github.token }}

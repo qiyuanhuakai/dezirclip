@@ -248,9 +248,10 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(desktop, /\$source -cne \$env:GITHUB_SHA/);
   assert.match(desktop, /gh release upload "\$env:GITHUB_REF_NAME" @files --clobber/);
   assert.match(releaseJob(workflow, 'build-standalone-cli'), /package-only: true/);
-  assert.match(promotion, /needs: \[create-release, publish-desktop, publish-standalone-cli\]/);
+  assert.match(releaseJob(workflow, 'accept-source'), /uses: \.\/\.github\/workflows\/ci\.yml/);
+  assert.match(promotion, /needs: \[create-release, publish-desktop, publish-standalone-cli, accept-source\]/);
   assert.match(promotion, /updater-release\.mjs publish-dual/);
-  assert.doesNotMatch(workflow, /publish-flatpak|uses: \.\/\.github\/workflows\/ci\.yml/);
+  assert.doesNotMatch(workflow, /publish-flatpak/);
 });
 
 test("release source routing rejects loss of the tag fallback, fixed recovery identity or independent tooling", () => {
