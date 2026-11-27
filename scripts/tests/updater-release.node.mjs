@@ -181,6 +181,14 @@ function publisherFixture(options = {}) {
       started_at: '2026-10-21T00:00:00Z', completed_at: '2026-10-21T01:00:00Z' }));
   }
   if (options.tampered) bytes.get(state.product.assets[0].id)[0] ^= 1;
+  if (options.arch) {
+    const job = state.jobs.find(job => job.name === 'Dual desktop release (linux-x86_64)');
+    job.steps = [{ name: 'Build Arch Linux packages and AUR recipes', status: 'completed', conclusion: 'success' }];
+    for (const name of ['dezirclip-bin', 'dezirclip-mygo-bin']) {
+      state.product.assets.push(asset(`${name}-0.2.0beta4-1-x86_64.pkg.tar.zst`, Buffer.from('arch package')),
+        asset(`${name}-0.2.0beta4-1.src.tar.gz`, Buffer.from('aur recipe')));
+    }
+  }
   if (options.channel) {
     state.channel = { id: 20, tag_name: 'updater-channels', draft: options.channel === 'draft',
       prerelease: true, assets: [
@@ -337,6 +345,25 @@ test('missing MyGo targets, wrong signatures and incomplete desktop jobs block r
     assert.throws(() => publishDual('publish-dual', version, config, 7001, 1, () => {}, transport));
     assert.deepEqual(state.mutations, []);
   }
+});
+
+test('Arch packages and AUR recipes must be present before a Release with Arch packaging is promoted', () => {
+  const version = '0.2.0-beta.4';
+  const build = () => publisherFixture({ version, sync: true, dual: true, running: true, arch: true });
+  const publish = ({ config, transport }) => publishDual('publish-dual', version, config, 7001, 1, () => {}, transport);
+  const released = build();
+  assert.equal(publish(released).workflow.arch_packages, true);
+  assert.equal(released.state.product.assets.length, 40);
+
+  const missingRecipe = build();
+  missingRecipe.state.product.assets.pop();
+  assert.throws(() => publish(missingRecipe), /All 40 release assets/);
+  assert.deepEqual(missingRecipe.state.mutations, []);
+
+  const failedStep = build();
+  failedStep.state.jobs.find(job => job.steps).steps[0].conclusion = 'failure';
+  assert.throws(() => publish(failedStep), /Arch Linux package verification/);
+  assert.deepEqual(failedStep.state.mutations, []);
 });
 
 function withSynchronization(options, body) {

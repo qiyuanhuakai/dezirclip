@@ -285,6 +285,7 @@ const nativeReleaseJobs = [
 const dualDesktopJobs = Object.keys(expectedPlatforms).map(platform => `Dual desktop release (${platform})`);
 const dualReleaseJobs = ['Create GitHub release', 'Publish verified standalone archives',
   ...dualDesktopJobs, ...Object.keys(expectedPlatforms).map(platform => `Build compatible standalone CLI / Standalone (${platform})`)];
+const archPackagingStep = 'Build Arch Linux packages and AUR recipes';
 const optionalReleaseJobs = [
   'Synchronize an already published update channel', 'Supplement published MyGo installer',
   'Resume verified publication or synchronize update channel', 'Publish the fixed historical recovery',
@@ -346,18 +347,23 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
   }
   const identities = dual ? jobs.filter(job => dualReleaseJobs.includes(job.name)) : Object.keys(expectedPlatforms)
     .map(platform => jobs.find(job => job.name === `Collect actual final package identities / Release identities (${platform})`));
+  const archSteps = dual ? (jobs.find(job => job.name === 'Dual desktop release (linux-x86_64)').steps ?? [])
+    .filter(step => step.name === archPackagingStep) : [];
+  if (archSteps.length > 1 || archSteps.some(step => step.status !== 'completed' || step.conclusion !== 'success')) {
+    throw new Error('Arch Linux package verification did not succeed');
+  }
   const times = identities.map(job => Date.parse(dual ? job.completed_at : job.started_at));
   if (times.some(time => !Number.isFinite(time))) {
     throw new Error('Native release identity times are missing');
   }
   return { run_id: Number(runId), run_attempt: Number(runAttempt), workflow_id: workflow.id,
     status: run.status, conclusion: run.conclusion, asset_cutoff: dual ? Math.max(...times) : Math.min(...times),
-    ...(dual ? { run_started_at: run.run_started_at } : {}),
+    ...(dual ? { run_started_at: run.run_started_at, arch_packages: archSteps.length === 1 } : {}),
     jobs: jobs.map(job => ({ id: job.id, name: job.name, status: job.status, conclusion: job.conclusion,
       started_at: job.started_at })).sort((a, b) => a.id - b.id) };
 }
 
-function verifiedReleaseAssets(release, version, cutoff, dual = false) {
+function verifiedReleaseAssets(release, version, cutoff, dual = false, archPackages = false) {
   const parsed = parseVersion(version), value = parsed.value;
   const rpm = rpmBundleConfig(value);
   const rpmVersion = rpm.version, rpmRelease = rpm.bundle.linux.rpm.release;
@@ -372,6 +378,13 @@ function verifiedReleaseAssets(release, version, cutoff, dual = false) {
       ...['amd64', 'arm64'].map(arch => `DezirClip-MyGo_${value}_${arch}.deb`)];
     names.push(...signedMyGo.flatMap(name => [name, `${name}.sig`]),
       ...['x86_64', 'aarch64'].map(arch => `DezirClip-MyGo-${rpmVersion}-${rpmRelease}.${arch}.rpm`));
+    if (archPackages) {
+      const match = /^([0-9]+\.[0-9]+\.[0-9]+)(?:-([a-z]+)\.?([0-9]+))?$/.exec(value);
+      if (!match) throw new Error('Invalid Arch Linux package version');
+      const pkgver = match.slice(1).join('');
+      names.push(...['dezirclip-bin', 'dezirclip-mygo-bin'].flatMap(name =>
+        [`${name}-${pkgver}-1-x86_64.pkg.tar.zst`, `${name}-${pkgver}-1.src.tar.gz`]));
+    }
   } else {
     names.push(...['x86_64', 'aarch64'].map(arch => `DezirClip-${value}-linux-${arch}.flatpak`));
     if (requiresMyGo(value)) names.push(`DezirClip-v${value}-windows-x64-MyGo${value === '0.2.0-alpha.9' ? '.zip' : '-setup.exe'}`);
@@ -452,7 +465,7 @@ function publication(mode, version, config, log, transport, bundle) {
   const synchronize = mode === 'publish-and-sync' || mode === 'sync-published' || resumeDraft;
   const repair = mode === 'sync-published' || resumeDraft;
   const run = synchronize ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, repair, dual) : null;
-  const releaseAssets = synchronize ? verifiedReleaseAssets(release, parsed.value, run.asset_cutoff, dual) : null;
+  const releaseAssets = synchronize ? verifiedReleaseAssets(release, parsed.value, run.asset_cutoff, dual, run.arch_packages) : null;
   if (synchronize && typeof release.draft !== 'boolean') throw new Error('Release draft state is missing');
   if (mode === 'sync-published' && (release.draft !== false || run.status !== 'completed')) {
     throw new Error('Published-channel synchronization requires a public release and completed eligible original run');
@@ -518,7 +531,7 @@ function publication(mode, version, config, log, transport, bundle) {
   }
   if (synchronize) {
     if (latest.tag_name !== tag || latest.prerelease !== release.prerelease || latest.body !== release.body
-        || verifiedReleaseAssets(latest, parsed.value, run.asset_cutoff, dual) !== releaseAssets
+        || verifiedReleaseAssets(latest, parsed.value, run.asset_cutoff, dual, run.arch_packages) !== releaseAssets
         || JSON.stringify(currentRun) !== JSON.stringify(run)) {
       throw new Error('Release workflow gates or asset identities changed before publication');
     }
@@ -538,7 +551,7 @@ function publication(mode, version, config, log, transport, bundle) {
   if (published.draft) throw new Error('Release has not been published');
   if (synchronize && (published.draft !== false || published.id !== release.id || published.tag_name !== tag
       || published.prerelease !== release.prerelease || published.body !== release.body
-      || client.releaseCommit(tag) !== commit || verifiedReleaseAssets(published, parsed.value, run.asset_cutoff, dual) !== releaseAssets)) {
+      || client.releaseCommit(tag) !== commit || verifiedReleaseAssets(published, parsed.value, run.asset_cutoff, dual, run.arch_packages) !== releaseAssets)) {
     throw new Error('Published release readback differs from the verified release');
   }
   if (mode === 'publish-only') {

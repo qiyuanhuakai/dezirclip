@@ -4,7 +4,7 @@ Windows 和 Linux X11 上的本地剪贴板工作台：保存、搜索、恢复�
 
 本项目派生自 [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard)。剪贴板监听、历史存储和隐私授权由本地 Rust 服务负责。Tauri 使用系统 WebView，MyGo Native 使用 Go 绘制桌面界面。两个桌面版本与 `dzc` 可在同一用户环境下访问同一份历史。
 
-桌面发行同时提供 Tauri 和 MyGo Native。Windows x64 / ARM64 提供 NSIS 安装包，Linux x64 / ARM64 提供 AppImage、deb 和 rpm。MyGo 下载文件名含 `MyGo`。Stable 和 Preview 通道均按当前桌面版本、架构和安装格式获取更新。
+桌面发行同时提供 Tauri 和 MyGo Native。Windows x64 / ARM64 提供 NSIS 安装包，Linux x64 / ARM64 提供 AppImage、deb 和 rpm。Arch Linux x86_64 可下载 `dezirclip-bin`（Tauri）或 `dezirclip-mygo-bin`（MyGo Native）的 `.pkg.tar.zst`，使用 `sudo pacman -U <文件名>` 安装。同一发行还附有包含 `PKGBUILD` 和 `.SRCINFO` 的配方归档。Stable 和 Preview 支持 Windows NSIS 和 Linux AppImage 应用内更新，系统软件包沿用原安装方式更新。
 
 [下载发布版本](https://github.com/qiyuanhuakai/dezirclip/releases) · [CLI 文档](./docs/cli.md) · [终端与 MCP 集成](./integrations/README.md) · [Linux 安装指南](./docs/LINUX_INSTALL.md) · [English](#english)
 
@@ -200,7 +200,7 @@ Desktop and standalone packages include `skills/dzc-cli/` and `skills/dezirclip-
 
 DezirClip is a local clipboard workspace for Windows and Linux X11, forked from [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard). Tauri runs in the system WebView. MyGo Native renders its desktop UI in Go. Both editions and the `dzc` CLI share the local Rust history service and storage. A pinned preview can play a local video using the system's available codecs. Full Wayland desktop support remains deferred.
 
-Download Tauri or MyGo Native for Windows x64 / ARM64 (NSIS) and Linux x64 / ARM64 (AppImage, deb or rpm) from [Releases](https://github.com/qiyuanhuakai/dezirclip/releases). MyGo packages have `MyGo` in their filenames. The Stable and Preview update channels preserve the installed desktop edition, architecture and package format.
+Download Tauri or MyGo Native for Windows x64 / ARM64 (NSIS) and Linux x64 / ARM64 (AppImage, deb or rpm) from [Releases](https://github.com/qiyuanhuakai/dezirclip/releases). Arch Linux x86_64 has `dezirclip-bin` (Tauri) and `dezirclip-mygo-bin` (MyGo Native) `.pkg.tar.zst` packages for `pacman -U` and matching source recipe archives. Windows NSIS and Linux AppImage receive in-app updates through Stable and Preview. System packages use the original install method.
 
 Standalone archives are named `dzc-VERSION-{windows,linux}-{x86_64,aarch64}` with `.zip` on Windows or `.tar.gz` on Linux. Each includes the CLI, license, matching `integrations/`, and Agent Skill. Check the accompanying `.sha256` and binary-bound `COMPATIBILITY.json`. Since `v0.1.21-beta.1`, x86_64 and aarch64 Linux standalone builds compile and link natively in AlmaLinux 8 for glibc 2.28+, with actual archives verified in AlmaLinux 8, Ubuntu 22.04 and Debian 12. System D-Bus/GCC runtime libraries are still required. Published `v0.1.20` / `v0.1.20-alpha.3` Linux CLI assets retain their glibc 2.35+ requirement. Alpha.1/alpha.2 retain glibc 2.39+. Keep CLI and adapters on matching versions.
 

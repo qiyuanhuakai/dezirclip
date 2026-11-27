@@ -375,6 +375,24 @@ jobs:
             echo "rpm=$rpm_path" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Build Arch Linux packages and AUR recipes
+        if: matrix.name == 'linux-x86_64'
+        shell: bash
+        env:
+          BUNDLE_ROOT: ${{ steps.desktop.outputs.directory }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          install -d "$RUNNER_TEMP/arch-release"
+          docker run --rm --network none --user "$(id -u):$(id -g)" \
+            --volume "$GITHUB_WORKSPACE/scripts/bundle-archlinux.sh:/bundle.sh:ro" \
+            --volume "$BUNDLE_ROOT/bundle/deb:/tauri:ro" \
+            --volume "$RUNNER_TEMP/mygo-release:/mygo:ro" \
+            --volume "$RUNNER_TEMP/arch-release:/output" \
+            archlinux:base-devel@sha256:949ecb1661609ab7e8f6854ba03efd62792e7a796313738e94b040c095c20d91 \
+            bash /bundle.sh "$GITHUB_REF_NAME" "/tauri/DezirClip_${version}_amd64.deb" \
+            "/mygo/DezirClip-MyGo_${version}_amd64.deb" /output
+
       - name: Attach both desktop variants to the original draft
         shell: pwsh
         env:
@@ -403,6 +421,10 @@ jobs:
           if ($env:TAURI_RPM) { $files += $env:TAURI_RPM }
           $files += @(Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'mygo-release') -File |
             Select-Object -ExpandProperty FullName)
+          $archPackages = Join-Path $env:RUNNER_TEMP 'arch-release'
+          if (Test-Path -LiteralPath $archPackages) {
+            $files += @(Get-ChildItem -LiteralPath $archPackages -File | Select-Object -ExpandProperty FullName)
+          }
           gh release upload "$env:GITHUB_REF_NAME" @files --clobber
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
