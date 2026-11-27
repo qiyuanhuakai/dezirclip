@@ -1,4 +1,5 @@
-"""Extract final packages and execute their metadata on matching disposable runners."""
+"""Inspect final desktop packages and run historical checks on matching disposable runners."""
+import argparse
 import importlib.util
 import json
 import os
@@ -7,7 +8,9 @@ import shutil
 import sqlite3
 import struct
 import sys
-from release_identities import ROOT, expected_assets, find_members, inspect_machine, json_output, require, run, safe_member, sha, validate_info
+import tempfile
+from release_identities import ROOT, ROLES, TARGETS, expected_assets, find_members, inspect_machine, json_output, require, run, safe_member, sha, validate_info
+from release_version import rpm_parts
 
 def standalone(archive, root):
     spec=importlib.util.spec_from_file_location('release_archive',ROOT/'scripts/verify-dzc-package.py')
@@ -43,14 +46,14 @@ def unpack(archive,root,logs,target):
         for block in listing[1].split('\n\n'):
             fields=dict(line.split(' = ',1) for line in block.splitlines() if ' = ' in line)
             if 'Path' in fields:
-                safe_member(fields['Path'].replace('\\','/'))
+                safe_member(fields['Path'].replace('\\','/').removeprefix('./'))
                 require('Symbolic Link' not in fields and 'Hard Link' not in fields,'NSIS links unsupported')
         run(['7z','x','-y','-sccUTF-8','-o'+str(root),archive],logs,'extract')
     elif archive.name.endswith('.AppImage'):
         run(['unsquashfs','-no-progress','-no-xattrs','-offset',str(squashfs_offset(archive)),'-dest',root,archive],logs,'extract')
     elif archive.name.endswith('.deb'):
         run(['dpkg-deb','--extract',archive,root],logs,'extract')
-    elif archive.name.endswith('.rpm'):
+    elif archive.name.endswith(('.rpm', '.pkg.tar.zst', '.src.tar.gz')):
         listing=run(['bsdtar','-tf',archive],logs,'list')
         for name in listing.splitlines():safe_member(name.removeprefix('./').rstrip('/'))
         run(['bsdtar','--no-same-owner','--no-same-permissions','-xf',archive,'-C',root],logs,'extract')
@@ -66,6 +69,96 @@ def unpack(archive,root,logs,target):
         run(['ostree','--repo='+str(repository),'checkout','--user-mode',refs[0],root],logs,'flatpak-checkout')
     else:raise ValueError('Unsupported final package')
     check_tree(root)
+
+def package_fields(text, separator):
+    fields = {}
+    for line in text.splitlines():
+        key, delimiter, value = line.partition(separator)
+        if delimiter:
+            fields[key.strip()] = value.strip()
+    return fields
+
+
+def desktop_package_files(root, target, mygo):
+    roles = {**ROLES, 'desktop': 'dzc-desktop'} if mygo else ROLES
+    members = find_members(root, target, roles)
+    if target.startswith('windows-'):
+        directory, extension = root, '.exe'
+    else:
+        directory = root / ('usr/lib/DezirClip-MyGo' if mygo else 'usr/bin')
+        extension = ''
+        launcher = root / ('usr/bin/dezirclip-mygo' if mygo else 'usr/bin/dezirclip')
+        desktop_file = root / 'usr/share/applications' / ('DezirClip-MyGo.desktop' if mygo else 'DezirClip.desktop')
+        require(launcher.is_file() and os.access(launcher, os.X_OK) and desktop_file.is_file(), 'Missing Linux desktop launcher')
+    result = {}
+    for role, path in members.items():
+        require(path == directory / (roles[role] + extension), 'Unexpected installed path for ' + role)
+        require(extension or os.access(path, os.X_OK), 'Missing executable permission for ' + role)
+        result[role] = {'path': path.relative_to(root).as_posix(), 'sha256': sha(path)}
+    return result
+
+
+def verify_arch_recipe(root, name, version, deb, digest):
+    paths = [path.relative_to(root).as_posix() for path in root.rglob('*') if not path.is_dir()]
+    require(sorted(paths) == [name+'/.SRCINFO', name+'/PKGBUILD'], 'Unexpected AUR recipe contents')
+    recipe, srcinfo = (root / name / file for file in ('PKGBUILD', '.SRCINFO'))
+    require(all(path.is_file() and not path.is_symlink() and path.stat().st_size < 16*1024
+                for path in (recipe, srcinfo)), 'Invalid AUR recipe files')
+    source = f'https://github.com/qiyuanhuakai/dezirclip/releases/download/v{version}/{deb}'
+    fields = package_fields(srcinfo.read_text(encoding='utf-8'), '=')
+    require(fields.get('source') == source and fields.get('sha256sums') == digest
+            and fields.get('pkgname') == name and fields.get('arch') == 'x86_64', 'AUR metadata differs from the staged Debian package')
+    fields = package_fields(recipe.read_text(encoding='utf-8'), '=')
+    require(fields.get('source') == f"('{source}')" and fields.get('sha256sums') == f"('{digest}')",
+            'AUR build recipe refers to different source bytes')
+
+
+def verify_candidate_packages(version, assets):
+    rpm_version, rpm_release = rpm_parts(version)
+    debs = {}
+    verified = []
+    # Verify Debian first, since the Arch package and recipe derive from those files.
+    for asset in sorted(assets, key=lambda entry: not entry['name'].endswith('.deb')):
+        name, target, archive = asset['name'], asset['target'], Path(asset['path'])
+        require(target in TARGETS and name == archive.name and archive.is_file() and not archive.is_symlink()
+                and sha(archive) == asset['sha256'], 'Candidate archive differs: ' + name)
+        mygo = name.startswith(('DezirClip-MyGo', 'dezirclip-mygo-bin-')) or name.endswith('-MyGo-setup.exe')
+        deb_name = 'dezir-clip-my-go' if mygo else 'dezir-clip'
+        arch_name = 'dezirclip-mygo-bin' if mygo else 'dezirclip-bin'
+        with tempfile.TemporaryDirectory(prefix='dezirclip-package-check-') as directory:
+            logs = Path(directory)
+            root = logs / 'root'
+            try:
+                unpack(archive, root, logs, target)
+                members = {}
+                if name.endswith('.src.tar.gz'):
+                    deb = debs[(target, mygo)]
+                    verify_arch_recipe(root, arch_name, version, deb['name'], deb['sha256'])
+                else:
+                    members = desktop_package_files(root, target, mygo)
+                if name.endswith('.AppImage'):
+                    inspect_machine(archive, target)
+                elif name.endswith('.deb'):
+                    fields = package_fields(run(['dpkg-deb', '-f', archive, 'Package', 'Version', 'Architecture'],
+                                                logs, 'package-metadata'), ':')
+                    require(fields == {'Package': deb_name, 'Version': version,
+                                       'Architecture': 'arm64' if target.endswith('aarch64') else 'amd64'},
+                            'Debian package metadata differs')
+                    debs[(target, mygo)] = {**asset, 'members': members}
+                elif name.endswith('.rpm'):
+                    metadata = run(['rpm', '-qp', '--qf', '%{NAME} %{VERSION} %{RELEASE} %{ARCH}', archive],
+                                   logs, 'package-metadata').split()
+                    require(metadata == [deb_name, rpm_version, rpm_release, target.split('-', 1)[1]], 'RPM package metadata differs')
+                elif name.endswith('.pkg.tar.zst'):
+                    fields = package_fields((root / '.PKGINFO').read_text(encoding='utf-8'), '=')
+                    require(fields.get('pkgname') == arch_name and fields.get('arch') == 'x86_64'
+                            and name == f"{arch_name}-{fields.get('pkgver')}-x86_64.pkg.tar.zst", 'Arch package metadata differs')
+                    require(members == debs[(target, mygo)]['members'], 'Arch executable payload differs from Debian')
+            except (OSError, ValueError, KeyError) as error:
+                raise ValueError(f'{name}: {error}') from error
+        verified.append({'name': name, 'target': target, 'sha256': asset['sha256'], 'members': members})
+    return verified
+
 
 def windows_environment(logs):
     allowed={'SYSTEMROOT','WINDIR','COMSPEC','PATH','PATHEXT','PROGRAMFILES','PROGRAMFILES(X86)','PROGRAMW6432','PROCESSOR_ARCHITECTURE','NUMBER_OF_PROCESSORS'}
@@ -132,3 +225,10 @@ def collect(args,report):
         remove_owned_tree(root,args.out)
         if (logs/'ostree').exists():remove_owned_tree(logs/'ostree',args.out)
         (args.out/'partial-report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--candidate-version', required=True)
+    args = parser.parse_args()
+    print(json.dumps(verify_candidate_packages(args.candidate_version, json.load(sys.stdin))))

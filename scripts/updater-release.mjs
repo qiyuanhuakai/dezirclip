@@ -437,7 +437,7 @@ export function readDesktopCandidates({ tag, source, runId, attempt, directory }
       const path = join(root, asset.name);
       const actual = localReleaseAsset(path);
       if (actual.size !== asset.size || actual.sha256 !== asset.sha256) throw new Error(`Desktop asset digest differs: ${asset.name}`);
-      return { ...actual, path };
+      return { ...actual, path, target };
     });
   });
 }
@@ -496,8 +496,47 @@ export function readStandaloneCandidates(tag, directory) {
   });
 }
 
-export function attachDesktopCandidates(candidate, transport = gh) {
-  return attachReleaseFiles(candidate, readDesktopCandidates(candidate), transport);
+export function attachDesktopCandidates(candidate, transport = gh, examine) {
+  const assets = readDesktopCandidates(candidate);
+  examine?.(assets);
+  return attachReleaseFiles(candidate, assets, transport);
+}
+
+function examineDesktopArchives(tag, assets, publicKey) {
+  const { value } = parseVersion(tag);
+  const byName = new Map(assets.map(asset => [asset.name, asset]));
+  for (const { name, path } of assets) {
+    if (name.endsWith('.sig')) {
+      const signedName = name.slice(0, -4);
+      verifyTauriSignature(readFileSync(byName.get(signedName).path), readFileSync(path, 'utf8'), publicKey, value, signedName);
+    }
+  }
+  const archives = assets.filter(asset => !asset.name.endsWith('.sig'));
+  const inspection = JSON.parse(execFileSync('python3',
+    ['scripts/release_identity_packages.py', '--candidate-version', value],
+    { input: JSON.stringify(archives), encoding: 'utf8', timeout: 120_000 }));
+  const targets = new Map(archives.map(asset => [asset.name, asset.target]));
+  requireArchiveReadback(inspection, targets, byName);
+  return inspection;
+}
+
+function requireArchiveReadback(inspection, targets, assets) {
+  if (!Array.isArray(inspection)) throw new Error('Missing desktop package inspection');
+  requireExactNames(inspection.map(archive => archive?.name), [...targets.keys()], 'desktop package inspection');
+  for (const archive of inspection) {
+    const roles = archive.name.endsWith('.src.tar.gz') ? [] : ['desktop', 'cli', 'service'];
+    const asset = assets.get(archive.name);
+    if (!asset || archive.target !== targets.get(archive.name) || archive.sha256 !== asset.sha256 ||
+        !archive.members || typeof archive.members !== 'object' || Array.isArray(archive.members)) {
+      throw new Error(`Package inspection differs: ${archive.name}`);
+    }
+    requireExactNames(Object.keys(archive.members), roles, archive.name);
+    for (const member of Object.values(archive.members)) {
+      if (typeof member?.path !== 'string' || !/^[a-f0-9]{64}$/.test(member.sha256 ?? '')) {
+        throw new Error(`Invalid packaged executable identity: ${archive.name}`);
+      }
+    }
+  }
 }
 
 function attachReleaseFiles({ tag, source, releaseId }, assets, transport) {
@@ -621,6 +660,8 @@ function verifyUploadReadbacks(release, tag, source, run, readbacks) {
   if (String(release.id) !== readbacks.releaseId) {
     throw new Error('Upload readbacks identify a different draft release');
   }
+  const archives = new Map(desktopReleaseTargets.flatMap(target =>
+    expectedDesktopCandidateFiles(tag, target, run.arch_packages).filter(name => !name.endsWith('.sig')).map(name => [name, target])));
   const remote = new Map(release.assets.map(asset => [asset.name, asset]));
   for (const [kind, names] of Object.entries(expected)) {
     const report = readbacks[kind];
@@ -635,6 +676,9 @@ function verifyUploadReadbacks(release, tag, source, run, readbacks) {
       if (!asset || asset.id !== entry.id || asset.size !== entry.size || asset.digest !== `sha256:${entry.sha256}`) {
         throw new Error(`Upload readback no longer matches ${entry.name}`);
       }
+    }
+    if (kind === 'desktop') {
+      requireArchiveReadback(report.archives, archives, new Map(report.assets.map(asset => [asset.name, asset])));
     }
   }
 }
@@ -869,9 +913,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     stageDesktopCandidate({ tag: version, source: acceptancePath, target: runAttempt, destination: upgradePath,
       runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT, files: remaining });
   } else if (mode === 'attach-desktop') {
+    let archives;
     const assets = attachDesktopCandidates({ tag: version, source: acceptancePath, directory: runAttempt, releaseId: upgradePath,
-      runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT });
-    console.log(JSON.stringify(uploadReceipt('desktop', version, acceptancePath, upgradePath, assets)));
+      runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT }, gh,
+    files => { archives = examineDesktopArchives(version, files, config.plugins.updater.pubkey); });
+    console.log(JSON.stringify({ ...uploadReceipt('desktop', version, acceptancePath, upgradePath, assets), archives }));
   } else if (mode === 'attach-standalone') {
     const assets = attachReleaseFiles({ tag: version, source: acceptancePath, releaseId: upgradePath },
       readStandaloneCandidates(version, runAttempt), gh);

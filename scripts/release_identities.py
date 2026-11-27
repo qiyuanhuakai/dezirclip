@@ -122,10 +122,10 @@ def run(command, directory, label, env=None, timeout=180):
     require(child.returncode==0,label+' failed; retained original logs')
     return (directory / (label + '.stdout.log')).read_text(encoding='utf-8-sig')
 
-def find_members(directory, target):
+def find_members(directory, target, roles=ROLES):
     extension = '.exe' if target.startswith('windows-') else ''
     result = {}
-    for role, name in ROLES.items():
+    for role, name in roles.items():
         paths = [p for p in directory.rglob('*') if p.name.lower() == name + extension and p.is_file()]
         require(len(paths) == 1, f'Expected exactly one final packaged {role}')
         path = paths[0]

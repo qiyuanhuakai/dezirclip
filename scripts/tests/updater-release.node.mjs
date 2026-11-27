@@ -405,6 +405,12 @@ test('a current workflow publishes only the asset identities read back from its 
         run_id: 7001, run_attempt: 1, assets: names.map(asset => ({ id: asset.id, size: asset.size,
           name: asset.name, sha256: asset.digest.slice(7) })) };
     }
+    readbacks.desktop.archives = desktopReleaseTargets.flatMap(target =>
+      expectedDesktopCandidateFiles(tag, target).filter(name => !name.endsWith('.sig')).map(name => ({
+        name, target, sha256: readbacks.desktop.assets.find(asset => asset.name === name).sha256,
+        members: name.endsWith('.src.tar.gz') ? {} : Object.fromEntries(['desktop', 'cli', 'service'].map(role =>
+          [role, { path: role, sha256: 'c'.repeat(64) }])),
+      })));
     return { ...fixture, readbacks };
   };
   const publish = fixture => publishDual('publish-dual', version, fixture.config, 7001, 1, () => {},
@@ -422,6 +428,17 @@ test('a current workflow publishes only the asset identities read back from its 
     const fixture = make();
     change(fixture);
     assert.throws(() => publish(fixture), /readback/i);
+    assert.deepEqual(fixture.state.mutations, []);
+  }
+  for (const change of [
+    inspection => inspection.pop(),
+    inspection => { inspection[0].target = 'windows-aarch64'; },
+    inspection => { inspection[0].sha256 = 'd'.repeat(64); },
+    inspection => { delete inspection[0].members.service; },
+  ]) {
+    const fixture = make();
+    change(fixture.readbacks.desktop.archives);
+    assert.throws(() => publish(fixture), /package inspection|packaged executable|inventory differs/i);
     assert.deepEqual(fixture.state.mutations, []);
   }
 });
@@ -520,6 +537,9 @@ test('the desktop consumer attaches verified producer bytes to the fixed draft a
     return '';
   };
   assert.throws(() => attachDesktopCandidates({ ...candidate, releaseId: '11' }, fakeTransport), /original draft/);
+  assert.throws(() => attachDesktopCandidates(candidate,
+    () => assert.fail('package inspection must precede remote calls'),
+    () => { throw new Error('package inspection failed'); }), /package inspection failed/);
   assert.equal(uploads, 0);
   const uploaded = attachDesktopCandidates(candidate, fakeTransport);
   assert.equal(uploaded.length, 32);

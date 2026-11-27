@@ -472,7 +472,19 @@ jobs:
         with:
           artifact-ids: ${{ steps.producers.outputs.ids }}
           path: ${{ runner.temp }}/desktop-candidates
-      - name: Attach staged desktop bytes and read back their asset IDs
+      - name: Prepare desktop archive readers
+        run: |
+          set -euo pipefail
+          packages=()
+          command -v 7z >/dev/null || packages+=(p7zip-full)
+          command -v bsdtar >/dev/null || packages+=(libarchive-tools)
+          command -v rpm >/dev/null || packages+=(rpm)
+          command -v unsquashfs >/dev/null || packages+=(squashfs-tools)
+          if (( ${#packages[@]} )); then
+            sudo -n apt-get update -qq
+            sudo -n apt-get install -y --no-install-recommends "${packages[@]}"
+          fi
+      - name: Verify desktop archives, attach bytes and read back asset IDs
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
