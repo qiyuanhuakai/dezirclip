@@ -66,7 +66,7 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 
 ## 正常 tag 发布
 
-`release.yml` 的正常 push 路径并行创建 draft、构建产物与执行候选源码验收。standalone 上传等待 draft 与 standalone 构建，desktop 上传自行等待 draft 可用。最终发布任务还要求候选源码验收成功，检查同一次运行的 SHA 和验收记录，再调用 `publish-dual` 公开产品 release 并同步 stable/preview。 [发布脚本](../scripts/updater-release.mjs)
+`release.yml` 并行创建 draft、构建产物与执行候选源码验收。standalone 上传等待其构建和 draft。桌面构建将签名后的文件与每个目标的哈希上传为 Actions 产物，上传任务复核四个目标的目录后绑定 draft ID，通过版本 tag 上传，并按远端 asset ID 读回桌面文件校验内容。最终发布任务还核对同一次运行的源码 SHA 和验收记录，再公开产品 release 并同步 stable/preview。 [发布脚本](../scripts/updater-release.mjs)
 
 每个目标用一次 Cargo 构建产出 Tauri、桌面配套 CLI 和 Service，随后 Tauri 打包阶段复用已暂存的二进制，MyGo 使用相同目录。独立 CLI 下载保持原 ABI 构建边界。本地以同一路径构建并解包 Windows x64 NSIS 和 Linux x64 deb，两个 helper 的 SHA-256 和实际 CLI/MCP 集成通过。Release 首次运行计时仍需候选实测。
 

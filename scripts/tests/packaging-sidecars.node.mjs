@@ -243,13 +243,12 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(desktop, /prepare-tauri-sidecars\.mjs --with-desktop --release --phase bundle/);
   assert.match(desktop, /'tauri', 'bundle'/);
   assert.doesNotMatch(desktop, /needs:.*create-release/);
-  assert.match(desktop, /gh release view "\$env:GITHUB_REF_NAME" --json isDraft,tagName/);
-  assert.match(desktop, /-not \$draft\.isDraft -or \$draft\.tagName -cne \$env:GITHUB_REF_NAME/);
-  assert.match(desktop, /\$source -cne \$env:GITHUB_SHA/);
-  assert.match(desktop, /gh release upload "\$env:GITHUB_REF_NAME" @files --clobber/);
+  assert.match(desktop, /updater-release\.mjs stage-desktop/);
+  assert.doesNotMatch(desktop, /gh release upload/);
+  assert.match(releaseJob(workflow, 'upload-desktop'), /updater-release\.mjs attach-desktop/);
   assert.match(releaseJob(workflow, 'build-standalone-cli'), /package-only: true/);
   assert.match(releaseJob(workflow, 'accept-source'), /uses: \.\/\.github\/workflows\/ci\.yml/);
-  assert.match(promotion, /needs: \[create-release, publish-desktop, publish-standalone-cli, accept-source\]/);
+  assert.match(promotion, /needs: \[create-release, upload-desktop, publish-standalone-cli, accept-source\]/);
   assert.match(promotion, /updater-release\.mjs publish-dual/);
   assert.doesNotMatch(workflow, /publish-flatpak/);
 });

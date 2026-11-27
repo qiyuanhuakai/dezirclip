@@ -1,7 +1,7 @@
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, lstatSync, realpathSync,
-  openSync, closeSync, fstatSync, readSync, constants } from 'node:fs';
+  openSync, closeSync, fstatSync, readSync, constants, copyFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -269,6 +269,7 @@ const candidateSourceJobs = [
     `Go development (${os})`, `Rust development (${os}, core-tests)`, `Rust development (${os}, desktop-check)`,
   ]),
 ].map(name => `Source acceptance / ${name}`);
+const desktopUploadJob = 'Upload verified desktop assets';
 const optionalReleaseJobs = [
   'Synchronize an already published update channel', 'Supplement published MyGo installer',
   'Resume verified publication or synchronize update channel', 'Publish the fixed historical recovery',
@@ -324,7 +325,7 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
   const currentContract = dual && (archSteps.length === 1 || jobs.some(job => candidateSourceJobs.includes(job.name)));
   if (currentContract && archSteps.length === 0) throw new Error('Arch Linux package verification did not execute');
   const requiredJobs = dual
-    ? (currentContract ? [...dualReleaseJobs, ...candidateSourceJobs] : dualReleaseJobs)
+    ? (currentContract ? [...dualReleaseJobs, desktopUploadJob, ...candidateSourceJobs] : dualReleaseJobs)
     : [...releaseGateJobs, ...nativeReleaseJobs];
   const publishers = jobs.filter(job => publisherJobs.includes(job.name));
   if (publishers.length !== 1 || (!dual && requiresMyGo(tag) && jobs.filter(job => job.name === mygoJob).length !== 1)
@@ -340,7 +341,7 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
       || requiredJobs.some(name => !jobs.some(job => job.name === name && job.status === 'completed' && job.conclusion === 'success'))) {
     throw new Error('Release native identity/upgrade gates or another job have not succeeded');
   }
-  const identities = dual ? jobs.filter(job => dualReleaseJobs.includes(job.name)) : Object.keys(expectedPlatforms)
+  const identities = dual ? jobs.filter(job => dualReleaseJobs.includes(job.name) || job.name === desktopUploadJob) : Object.keys(expectedPlatforms)
     .map(platform => jobs.find(job => job.name === `Collect actual final package identities / Release identities (${platform})`));
   const times = identities.map(job => Date.parse(dual ? job.completed_at : job.started_at));
   if (times.some(time => !Number.isFinite(time))) {
@@ -353,29 +354,140 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
       started_at: job.started_at })).sort((a, b) => a.id - b.id) };
 }
 
-function verifiedReleaseAssets(release, version, cutoff, dual = false, archPackages = false) {
-  const parsed = parseVersion(version), value = parsed.value;
-  const rpm = rpmBundleConfig(value);
-  const rpmVersion = rpm.version, rpmRelease = rpm.bundle.linux.rpm.release;
-  const updater = Object.values(expectedPlatforms).map(suffix => `DezirClip_${value}_${suffix}`);
-  const cli = Object.keys(expectedPlatforms).map(platform => `dzc-${value}-${platform}.${platform.startsWith('windows-') ? 'zip' : 'tar.gz'}`);
-  const deb = ['amd64', 'arm64'].map(arch => `DezirClip_${value}_${arch}.deb`);
-  const names = [...updater.flatMap(name => [name, `${name}.sig`]), ...cli.flatMap(name => [name, `${name}.sha256`]),
-    ...deb.flatMap(name => [name, `${name}.sig`]),
-    ...['x86_64', 'aarch64'].map(arch => `DezirClip-${rpmVersion}-${rpmRelease}.${arch}.rpm`)];
-  if (dual) {
-    const signedMyGo = [...Object.keys(expectedPlatforms).map(platform => mygoAsset(value, platform)),
-      ...['amd64', 'arm64'].map(arch => `DezirClip-MyGo_${value}_${arch}.deb`)];
-    names.push(...signedMyGo.flatMap(name => [name, `${name}.sig`]),
-      ...['x86_64', 'aarch64'].map(arch => `DezirClip-MyGo-${rpmVersion}-${rpmRelease}.${arch}.rpm`));
-    if (archPackages) {
+export const desktopReleaseTargets = Object.freeze(Object.keys(expectedPlatforms));
+
+export function expectedDesktopCandidateFiles(version, target, archPackages = true) {
+  const { value } = parseVersion(version);
+  if (!desktopReleaseTargets.includes(target)) throw new Error("Invalid desktop release target");
+  const signed = [`DezirClip_${value}_${expectedPlatforms[target]}`, mygoAsset(value, target)];
+  const names = [];
+  if (target.startsWith('linux-')) {
+    const amd64 = target === 'linux-x86_64';
+    const debArch = amd64 ? 'amd64' : 'arm64';
+    const rpmArch = amd64 ? 'x86_64' : 'aarch64';
+    signed.push(`DezirClip_${value}_${debArch}.deb`, `DezirClip-MyGo_${value}_${debArch}.deb`);
+    const rpm = rpmBundleConfig(value);
+    const rpmSuffix = `${rpm.version}-${rpm.bundle.linux.rpm.release}.${rpmArch}.rpm`;
+    names.push(`DezirClip-${rpmSuffix}`, `DezirClip-MyGo-${rpmSuffix}`);
+    if (amd64 && archPackages) {
       const match = /^([0-9]+\.[0-9]+\.[0-9]+)(?:-([a-z]+)\.?([0-9]+))?$/.exec(value);
       if (!match) throw new Error('Invalid Arch Linux package version');
       const pkgver = match.slice(1).join('');
       names.push(...['dezirclip-bin', 'dezirclip-mygo-bin'].flatMap(name =>
         [`${name}-${pkgver}-1-x86_64.pkg.tar.zst`, `${name}-${pkgver}-1.src.tar.gz`]));
     }
+  }
+  return [...names, ...signed.flatMap(name => [name, `${name}.sig`])];
+}
+
+const desktopBuildReceipt = 'desktop-build.json';
+const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+
+function localDesktopAsset(path) {
+  const stat = lstatSync(path);
+  if (!stat.isFile() || !stat.size) throw new Error(`Invalid desktop asset: ${basename(path)}`);
+  const bytes = readFileSync(path);
+  if (bytes.length !== stat.size) throw new Error(`Desktop asset changed while reading: ${basename(path)}`);
+  return { name: basename(path), size: bytes.length, sha256: digest(bytes) };
+}
+
+function requireExactNames(actual, expected, context) {
+  if (actual.length !== expected.length || new Set(actual).size !== expected.length ||
+      expected.some(name => !actual.includes(name))) {
+    throw new Error(`Desktop asset inventory differs: ${context}`);
+  }
+}
+
+export function stageDesktopCandidate({ tag, source, target, runId, attempt, destination, files }) {
+  if (!/^v[0-9]/.test(tag) || !/^[a-f0-9]{40}$/.test(source) ||
+      !/^[1-9][0-9]*$/.test(runId) || !/^[1-9][0-9]*$/.test(attempt)) {
+    throw new Error("Invalid desktop build provenance");
+  }
+  const expected = expectedDesktopCandidateFiles(tag, target);
+  requireExactNames(files.map(file => basename(file)), expected, target);
+  const inputs = files.map(file => ({ file, ...localDesktopAsset(file) }));
+  mkdirSync(destination);
+  const assets = inputs.map(({ file, name, size, sha256 }) => {
+    const staged = join(destination, name);
+    copyFileSync(file, staged, constants.COPYFILE_EXCL);
+    const asset = localDesktopAsset(staged);
+    if (asset.size !== size || asset.sha256 !== sha256) throw new Error(`Desktop staging changed ${name}`);
+    return asset;
+  });
+  writeFileSync(join(destination, desktopBuildReceipt), JSON.stringify({
+    schema_version: 1, tag, source_revision: source, target, run_id: runId, run_attempt: attempt, assets,
+  }, null, 2) + '\n', { flag: 'wx' });
+}
+
+export function readDesktopCandidates({ tag, source, runId, attempt, directory }) {
+  const names = desktopReleaseTargets.map(target => `release-desktop-${target}-${attempt}`);
+  requireExactNames(readdirSync(directory), names, 'producer artifacts');
+  return desktopReleaseTargets.flatMap((target, index) => {
+    const root = join(directory, names[index]);
+    if (!lstatSync(root).isDirectory()) throw new Error(`Invalid desktop producer directory: ${target}`);
+    const expected = expectedDesktopCandidateFiles(tag, target);
+    requireExactNames(readdirSync(root), [...expected, desktopBuildReceipt], target);
+    const { value: receipt } = readEvidenceJson(join(root, desktopBuildReceipt));
+    if (receipt.schema_version !== 1 || receipt.tag !== tag || receipt.source_revision !== source ||
+        receipt.target !== target || receipt.run_id !== runId || receipt.run_attempt !== attempt || !Array.isArray(receipt.assets)) {
+      throw new Error(`Desktop receipt has the wrong provenance: ${target}`);
+    }
+    requireExactNames(receipt.assets.map(asset => asset.name), expected, target);
+    return receipt.assets.map(asset => {
+      const path = join(root, asset.name);
+      const actual = localDesktopAsset(path);
+      if (actual.size !== asset.size || actual.sha256 !== asset.sha256) throw new Error(`Desktop asset digest differs: ${asset.name}`);
+      return { ...actual, path };
+    });
+  });
+}
+
+export function attachDesktopCandidates({ tag, source, runId, attempt, directory, releaseId }, transport = gh) {
+  const assets = readDesktopCandidates({ tag, source, runId, attempt, directory });
+  const client = githubClient(transport, true);
+  const assertDraft = () => {
+    const release = client.releaseByTag(tag);
+    if (String(release.id) !== releaseId || release.draft !== true || client.releaseCommit(tag) !== source) {
+      throw new Error("The original desktop draft no longer identifies this candidate");
+    }
+    return release;
+  };
+  const matching = (release, expected) => {
+    const matches = release.assets.filter(asset => asset.name === expected.name);
+    if (!matches.length) return null;
+    const [asset] = matches;
+    if (matches.length !== 1 || asset.state !== 'uploaded' || asset.size !== expected.size ||
+        asset.digest !== `sha256:${expected.sha256}` || !Number.isSafeInteger(asset.id) || asset.id <= 0) {
+      throw new Error(`Desktop draft conflicts with the candidate: ${expected.name}`);
+    }
+    return asset;
+  };
+  const draft = assertDraft();
+  const missing = assets.filter(asset => !matching(draft, asset)).map(asset => asset.path);
+  if (missing.length) transport(['release', 'upload', tag, '--repo', repository, ...missing]);
+  const uploaded = assertDraft();
+  return assets.map(asset => {
+    const remote = matching(uploaded, asset);
+    if (!remote || digest(client.downloadAsset(remote)) !== asset.sha256) {
+      throw new Error(`Uploaded desktop bytes differ: ${asset.name}`);
+    }
+    return { id: remote.id, name: asset.name, size: asset.size, sha256: asset.sha256 };
+  });
+}
+
+function verifiedReleaseAssets(release, version, cutoff, dual = false, archPackages = false) {
+  const { value } = parseVersion(version);
+  const rpm = rpmBundleConfig(value);
+  const rpmVersion = rpm.version, rpmRelease = rpm.bundle.linux.rpm.release;
+  const updater = Object.values(expectedPlatforms).map(suffix => `DezirClip_${value}_${suffix}`);
+  const cli = Object.keys(expectedPlatforms).map(platform => `dzc-${value}-${platform}.${platform.startsWith('windows-') ? 'zip' : 'tar.gz'}`);
+  const deb = ['amd64', 'arm64'].map(arch => `DezirClip_${value}_${arch}.deb`);
+  const names = cli.flatMap(name => [name, `${name}.sha256`]);
+  if (dual) {
+    names.push(...desktopReleaseTargets.flatMap(target => expectedDesktopCandidateFiles(value, target, archPackages)));
   } else {
+    names.push(...updater.flatMap(name => [name, `${name}.sig`]), ...deb.flatMap(name => [name, `${name}.sig`]),
+      ...['x86_64', 'aarch64'].map(arch => `DezirClip-${rpmVersion}-${rpmRelease}.${arch}.rpm`));
     names.push(...['x86_64', 'aarch64'].map(arch => `DezirClip-${value}-linux-${arch}.flatpak`));
     if (requiresMyGo(value)) names.push(`DezirClip-v${value}-windows-x64-MyGo${value === '0.2.0-alpha.9' ? '.zip' : '-setup.exe'}`);
   }
@@ -655,11 +767,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const config = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'));
   const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
   preflight(config, pkg);
-  const [mode, version, acceptancePath, runAttempt, upgradePath] = process.argv.slice(2);
+  const [mode, version, acceptancePath, runAttempt, upgradePath, ...remaining] = process.argv.slice(2);
   if (mode === 'preflight') {
     parseVersion(version);
     if (!process.env.TAURI_SIGNING_PRIVATE_KEY) throw new Error('Release signing secret is not configured');
     console.log('Updater signing configuration is ready.');
+  } else if (mode === 'stage-desktop') {
+    stageDesktopCandidate({ tag: version, source: acceptancePath, target: runAttempt, destination: upgradePath,
+      runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT, files: remaining });
+  } else if (mode === 'attach-desktop') {
+    const assets = attachDesktopCandidates({ tag: version, source: acceptancePath, directory: runAttempt, releaseId: upgradePath,
+      runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT });
+    console.log(JSON.stringify({ release_id: upgradePath, source_revision: acceptancePath, assets }));
   } else if (mode === 'publish-only') publishOnly(version, config);
   else if (Object.hasOwn(dualActions, mode) && acceptancePath && runAttempt && !upgradePath) {
     console.log(JSON.stringify(publishDual(mode, version, config, acceptancePath, runAttempt, console.error)));

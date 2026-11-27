@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, publishAndSync, publishDual, syncPublished, resumeVerifiedDraft, promote as promoteFile, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
+import { attachDesktopCandidates, desktopReleaseTargets, expectedDesktopCandidateFiles, stageDesktopCandidate } from '../updater-release.mjs';
 
 const gateNames = ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'];
 const gateReport = (receipt, kind) => ({ schema_version: 1, kind, status: 'passed',
@@ -193,6 +194,7 @@ function publisherFixture(options = {}) {
     ]) {
       state.jobs.push({ ...state.jobs[0], id: 8_000 + state.jobs.length, name: `Source acceptance / ${name}` });
     }
+    state.jobs.push({ ...state.jobs[0], id: 8_000 + state.jobs.length, name: 'Upload verified desktop assets' });
     for (const name of ['dezirclip-bin', 'dezirclip-mygo-bin']) {
       state.product.assets.push(asset(`${name}-0.2.0beta4-1-x86_64.pkg.tar.zst`, Buffer.from('arch package')),
         asset(`${name}-0.2.0beta4-1.src.tar.gz`, Buffer.from('aur recipe')));
@@ -389,6 +391,64 @@ test('Arch packages and AUR recipes must be present before a Release with Arch p
     assert.throws(() => publish(candidate), /gates/);
     assert.deepEqual(candidate.state.mutations, []);
   }
+});
+
+test('the desktop consumer attaches verified producer bytes to the fixed draft and resumes matching bytes', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'dezirclip-desktop-assets-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const directory = join(root, 'artifacts');
+  mkdirSync(directory);
+  const candidate = { tag: 'v0.2.0-beta.4', source: 'a'.repeat(40), runId: '7001', attempt: '1', directory, releaseId: '10' };
+  for (const target of desktopReleaseTargets) {
+    const files = expectedDesktopCandidateFiles(candidate.tag, target).map(name => {
+      const file = join(root, name);
+      writeFileSync(file, `synthetic release byte stream for ${name}`);
+      return file;
+    });
+    stageDesktopCandidate({ ...candidate, target, files, destination: join(directory, `release-desktop-${target}-1`) });
+  }
+  const assets = [];
+  const bodies = new Map();
+  let uploads = 0;
+  const draft = { id: 10, tag_name: candidate.tag, draft: true };
+  const fakeTransport = args => {
+    const endpoint = args[1].replace(`repos/${repository}/`, '');
+    if (args[0] === 'api') {
+      if (endpoint === 'releases?per_page=100') return JSON.stringify([[draft]]);
+      if (endpoint === 'releases/10') return JSON.stringify(draft);
+      if (endpoint === 'releases/10/assets?per_page=100') return JSON.stringify([assets]);
+      if (endpoint === `git/ref/tags/${candidate.tag}`) return JSON.stringify({ object: { type: 'commit', sha: candidate.source } });
+      const match = /^releases\/assets\/(\d+)$/.exec(endpoint);
+      assert(match, `Unexpected fixture endpoint: ${endpoint}`);
+      return bodies.get(Number(match[1]));
+    }
+    assert.deepEqual(args.slice(0, 5), ['release', 'upload', candidate.tag, '--repo', repository]);
+    uploads++;
+    for (const file of args.slice(5)) {
+      const body = readFileSync(file);
+      const id = assets.length + 1;
+      assets.push({ id, name: basename(file), state: 'uploaded', size: body.length,
+        digest: 'sha256:' + createHash('sha256').update(body).digest('hex') });
+      bodies.set(id, body);
+    }
+    return '';
+  };
+  assert.throws(() => attachDesktopCandidates({ ...candidate, releaseId: '11' }, fakeTransport), /original desktop draft/);
+  assert.equal(uploads, 0);
+  const uploaded = attachDesktopCandidates(candidate, fakeTransport);
+  assert.equal(uploaded.length, 32);
+  assert.equal(uploads, 1);
+  assert.deepEqual(attachDesktopCandidates(candidate, fakeTransport), uploaded);
+  assert.equal(uploads, 1);
+  const original = bodies.get(1);
+  bodies.set(1, Buffer.from('different bytes despite stale metadata'));
+  assert.throws(() => attachDesktopCandidates(candidate, fakeTransport), /Uploaded desktop bytes differ/);
+  bodies.set(1, original);
+  const windows = 'windows-x86_64';
+  const path = join(directory, `release-desktop-${windows}-1`, expectedDesktopCandidateFiles(candidate.tag, windows)[0]);
+  writeFileSync(path, 'altered bytes');
+  assert.throws(() => attachDesktopCandidates(candidate, () => assert.fail('local digest mismatch must precede remote calls')), /digest differs/);
+  assert.equal(uploads, 1);
 });
 
 function withSynchronization(options, body) {
