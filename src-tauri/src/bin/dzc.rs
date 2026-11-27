@@ -684,12 +684,12 @@ fn run_desktop_tool(action: DesktopTool) -> Result<(), String> {
     };
     let response = match action {
         DesktopTool::UpdateSupport => {
-            use dezirclip::domain::update::{UpdateSupport, UpdateInstallation};
+            use dzc_host::update::{UpdateSupport, UpdateInstallation};
             serde_json::to_value(UpdateSupport::new(UpdateInstallation::Portable))
         }
         DesktopTool::EvaluateUpdate => {
             use std::io::Read;
-            use dezirclip::domain::update::check_manual_indexes;
+            use dzc_host::update::check_manual_indexes;
             let mut bytes = Vec::new();
             const LIMIT: u64 = 2 * 256 * 1024 + 1024;
             std::io::stdin().take(LIMIT + 1).read_to_end(&mut bytes).map_err(|_| "update_invalid_manifest")?;

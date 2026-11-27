@@ -1,4 +1,4 @@
-use crate::domain::update::{UpdateInstallation, UpdateSupport};
+use dzc_host::update::{UpdateInstallation, UpdateSupport};
 use std::path::Path;
 use tauri::utils::{config::BundleType, platform::bundle_type};
 

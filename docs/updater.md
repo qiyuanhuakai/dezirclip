@@ -126,7 +126,8 @@ GitHub Release 资产重命名不提供事务：替换活动索引时可能短�
 
 ```powershell
 node --test scripts/tests/updater-release.node.mjs
-cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib domain::update --locked
+cargo test --locked -p dzc-host --lib update::
+cargo test --locked -p dezirclip --no-default-features --lib domain::update_host
 cargo check --manifest-path src-tauri/Cargo.toml --bin dezirclip --locked
 ```
 

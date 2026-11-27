@@ -1,4 +1,4 @@
-use crate::domain::update::{expected_asset_name, summarize_channel_versions, validate_signature_metadata, AvailableUpdate, UpdateChannel, UpdateCheck, UpdateSupport, RELEASES_URL};
+use dzc_host::update::{automatic_check_due, expected_asset_name, summarize_channel_versions, validate_signature_metadata, AvailableUpdate, UpdateChannel, UpdateCheck, UpdateSupport, RELEASES_URL};
 use crate::infrastructure::update_support::installation_support;
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use semver::Version;
@@ -113,7 +113,7 @@ async fn run_check(app: &AppHandle, state: &UpdaterState, channel: UpdateChannel
     let now = chrono::Utc::now().timestamp_millis();
     if automatic {
         let previous = settings.get(key).map_err(|_| "update_attempt_storage_failed")?;
-        if !crate::domain::update::automatic_check_due(previous.as_deref(), now) {
+        if !automatic_check_due(previous.as_deref(), now) {
             return Ok(None);
         }
     }

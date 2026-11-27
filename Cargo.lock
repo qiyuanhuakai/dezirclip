@@ -1585,10 +1585,12 @@ dependencies = [
  "dzc-platform",
  "dzc-protocol",
  "rand 0.8.6",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
  "tokio",
+ "urlencoding",
  "uuid",
  "zeroize",
 ]

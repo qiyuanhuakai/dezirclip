@@ -26,6 +26,7 @@ mod surface;
 #[cfg(feature = "native-screen")]
 mod screen;
 mod history_version;
+pub mod update;
 pub use surface::same_surface_state;
 pub use ocr::{engine_info, prepare_manual_ocr, schedule_capture_ocr, OCR_ENGINE_DISPLAY_NAME};
 pub mod data;

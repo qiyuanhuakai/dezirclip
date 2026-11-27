@@ -1,3 +1,5 @@
+//! Offline update index, version and artifact policy shared by desktop clients.
+
 use base64::Engine;
 use semver::Version;
 use serde::{Deserialize, Serialize};

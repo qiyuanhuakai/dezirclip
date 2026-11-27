@@ -125,3 +125,4 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **R3 路径闭包**。早期 WebView 探针和 CLI 共用 Core 的重定向和 profile 选择算法，保留空 portable 目录、当前重定向与旧身份目录并存、普通文件目标三处差异。CLI 直接使用公开路径 API。仍需验证只读 GPU 探针的 SQLite/WAL 行为，并迁出其余 CLI 跨入口依赖。
 - **C0/C1**。CI 文档已按 v0.2.0 和 Arch 发布分支校准。Windows ConPTY 入口明确构建当前 CLI，零测试和 skip 会失败。可运行的完整桌面矩阵使用同一份实际 CLI/Service 执行 Host 客户端和 BuildInfo 验收，两项已使用当前 Windows 本地构建的二进制跑通。Schema 24、原生 opt-in 和发布源准入继续按规范推进。
 - **C2 桌面专项矩阵**。按请求选择完整矩阵、Linux x64、Windows x64 或两者的并集。仅请求 Windows 性能比较时会选择其 Windows x64 前置验收。独立诊断入口沿用既有规则，完整的场景计划与结果汇总仍待接入。
+- **R3 更新策略归属**。Host 的离线模块为 Tauri 更新和 MyGo 通过 CLI 的索引检查提供同一份版本、平台、文件名和签名元数据规则。网络、安装和退出协调仍由对应桌面入口处理。
