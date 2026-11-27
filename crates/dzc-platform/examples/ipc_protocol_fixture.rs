@@ -52,6 +52,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     state: RuntimeState { service_instance_id: "synthetic-instance".into(), history_revision: 3, privacy_epoch: 2, event_sequence: 0 },
                     max_frame_bytes: wire::MAX_FRAME_BYTES as u32,
                 })?,
+                #[cfg(target_os = "macos")]
+                (1, Method::Health) if expected_parent.is_some() => {
+                    let marker = format!("darwin-pasteboard-{}", uuid::Uuid::new_v4());
+                    let mut clipboard = dzc_platform::darwin_clipboard::MainThreadClipboard::open()?;
+                    clipboard.write_text(&marker)?;
+                    if clipboard.read_text()? != marker { return Err("native clipboard readback differs".into()); }
+                    serde_json::json!({"clipboard_text": marker})
+                }
                 (1, Method::Health) => serde_json::json!({}),
                 (2, Method::SurfaceHistoryList) => serde_json::json!({"entries":[]}),
                 _ => return Err("unexpected fixture method".into()),

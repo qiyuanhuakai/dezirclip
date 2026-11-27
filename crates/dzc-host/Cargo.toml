@@ -26,5 +26,5 @@ urlencoding.workspace = true
 sha2.workspace = true
 dunce = "1"
 
-[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+[target.'cfg(target_os = "windows")'.dependencies]
 dzc-platform = { workspace = true, features = ["native-fonts"] }

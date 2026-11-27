@@ -105,7 +105,7 @@ jobs:
         run: |
           cargo test --locked -p dzc-core --lib infrastructure::local_file::tests
           cargo test --locked -p dzc-platform --features ipc --lib ipc::
-          cargo check --locked -p dzc-host
+          cargo test --locked -p dzc-platform --features ipc --lib darwin_clipboard::
       - name: Bind the Swift client to its signed Rust fixture over the local socket
         run: |
           cargo build --locked -p dzc-platform --features ipc --example ipc_protocol_fixture

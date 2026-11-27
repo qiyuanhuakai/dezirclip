@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 import Security
@@ -78,7 +79,7 @@ func requireChild(_ fd: Int32, pid: Int32, executable: URL) throws {
     try require(SecStaticCodeCheckValidity(installed, [], nil) == errSecSuccess, "invalid expected helper signature")
     func codeHash(_ code: SecStaticCode) throws -> Data {
         var information: CFDictionary?
-        try require(SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess,
+        try require(SecCodeCopySigningInformation(code, SecCSFlags(rawValue: UInt32(kSecCSSigningInformation)), &information) == errSecSuccess,
                     "missing signing information")
         guard let hash = (information as? [String: Any])?[kSecCodeInfoUnique as String] as? Data, !hash.isEmpty else {
             throw ProbeFailure("missing code directory hash")
@@ -162,11 +163,18 @@ func request(_ fd: Int32, id: String, method: String, params: [String: Any]) thr
         ])
         let state = hello["state"] as? [String: Any]
         try require(state?["service_instance_id"] as? String == "synthetic-instance", "wrong fixture instance")
-        _ = try request(fd, id: "swift-health", method: "health", params: [:])
+        let clipboard = NSPasteboard.general
+        let before = clipboard.changeCount
+        let health = try request(fd, id: "swift-health", method: "health", params: [:])
+        guard let marker = health["clipboard_text"] as? String, marker.hasPrefix("darwin-pasteboard-") else {
+            throw ProbeFailure("missing native clipboard receipt")
+        }
+        try require(clipboard.changeCount != before && clipboard.string(forType: .string) == marker,
+                    "system pasteboard did not receive the helper's text")
         let list = try request(fd, id: "swift-list", method: "surface.history.list", params: ["limit": 20, "offset": 0])
         try require((list["entries"] as? [Any])?.isEmpty == true, "invalid fixture page")
         child.waitUntilExit()
         try require(child.terminationStatus == 0, "helper exited unsuccessfully")
-        print("Verified the Darwin UID, live signed helper, framed Rust wire responses and owned child exit")
+        print("Verified the Darwin UID, live signed helper, framed Rust wire responses, system pasteboard and owned child exit")
     }
 }
