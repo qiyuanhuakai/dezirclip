@@ -298,39 +298,55 @@ jobs:
             DEZIRCLIP_RUN_SCREENSHOT_SMOKE_TESTS=1 XDG_SESSION_TYPE=x11 xvfb-run -a -s "-screen 0 640x480x${depth}" cargo test --locked -p dzc-platform --features native-screen native_x11_capture_matches_root_pixels -- --nocapture
           done
 
+  ci-desktop-plan:
+    name: Select desktop acceptance targets
+    if: inputs.full_validation || inputs.windows_x64_mygo_test_package || inputs.windows_service_crash_stacks || inputs.linux_release_inputs || inputs.windows_surface_performance
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+    steps:
+      - name: Select desktop targets for the request
+        id: targets
+        shell: python
+        env:
+          FULL_VALIDATION: ${{ inputs.full_validation }}
+          LINUX_RELEASE_INPUTS: ${{ inputs.linux_release_inputs }}
+          WINDOWS_X64: ${{ inputs.windows_x64_mygo_test_package || inputs.windows_service_crash_stacks || inputs.windows_surface_performance }}
+        run: |
+          import json, os
+          def target(name, platform, rust_target="", msvc_arch="", can_test=True):
+              return {
+                  "name": name, "platform": platform, "rust_target": rust_target, "msvc_arch": msvc_arch,
+                  "can_test": can_test, "cargo_args": "--target " + rust_target if rust_target else "",
+              }
+          targets = [
+              target("linux-x86_64", "ubuntu-24.04"),
+              target("linux-aarch64", "ubuntu-24.04-arm"),
+              target("windows-x86_64", "windows-latest"),
+              target("windows-aarch64", "windows-latest", "aarch64-pc-windows-msvc", "amd64_arm64", False),
+          ]
+          if os.environ["FULL_VALIDATION"] != "true":
+              requested = set()
+              if os.environ["LINUX_RELEASE_INPUTS"] == "true":
+                  requested.add("linux-x86_64")
+              if os.environ["WINDOWS_X64"] == "true":
+                  requested.add("windows-x86_64")
+              targets = [row for row in targets if row["name"] in requested]
+          if not targets:
+              raise RuntimeError("Desktop acceptance was requested without a target")
+          print("Selected desktop targets:", ", ".join(row["name"] for row in targets))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print("matrix=" + json.dumps({"include": targets}, separators=(",", ":")), file=output)
+
   tauri:
-    if: inputs.full_validation || inputs.windows_x64_mygo_test_package || inputs.windows_service_crash_stacks || inputs.linux_release_inputs
+    needs: ci-desktop-plan
+    if: needs.ci-desktop-plan.result == 'success'
     # GitHub displays this template literally when the job is skipped before matrix expansion.
     name: Tauri backend (${{ matrix.name }})
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: linux-x86_64
-            platform: ubuntu-24.04
-            cargo_args: ''
-            rust_target: ''
-            msvc_arch: ''
-            can_test: true
-          - name: linux-aarch64
-            platform: ubuntu-24.04-arm
-            cargo_args: ''
-            rust_target: ''
-            msvc_arch: ''
-            can_test: true
-          - name: windows-x86_64
-            platform: windows-latest
-            cargo_args: ''
-            rust_target: ''
-            msvc_arch: ''
-            can_test: true
-          - name: windows-aarch64
-            platform: windows-latest
-            cargo_args: --target aarch64-pc-windows-msvc
-            rust_target: aarch64-pc-windows-msvc
-            msvc_arch: amd64_arm64
-            can_test: false
+      matrix: ${{ fromJSON(needs.ci-desktop-plan.outputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -580,6 +596,7 @@ jobs:
         run: cargo build ${{ matrix.cargo_args }}
 
       - name: Verify optional local service without native capture
+        id: local-service
         if: matrix.can_test
         shell: python
         run: |
@@ -591,6 +608,19 @@ jobs:
           fixture = binary.with_name("dzc-desktop-fixture" + binary.suffix).resolve()
           subprocess.run(["go", "build", "-o", str(fixture), "./cmd/host-fixture"], cwd="clients/go", check=True)
           subprocess.run(["python", "scripts/test-local-host.py", "--cli", str(binary), "--desktop-fixture", str(fixture)], check=True)
+          report = Path(os.environ["RUNNER_TEMP"]) / "local-clients.json"
+          subprocess.run(["python", "scripts/test-local-clients.py", "--cli", str(binary), "--report", str(report)], check=True)
+          subprocess.run(["python", "-m", "unittest", "-v",
+                          "scripts.tests.test_build_info.CliBuildInfoTests"], check=True,
+                         env={**os.environ, "DZC_TEST_BIN": str(binary.resolve(strict=True))})
+
+      - name: Retain real CLI and MCP host acceptance
+        if: always() && (steps.local-service.outcome == 'success' || steps.local-service.outcome == 'failure')
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-clients-${{ matrix.name }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/local-clients.json
+          if-no-files-found: error
 
       - name: Verify MyGo React library operations against the Rust Service
         id: mygo_library
@@ -1351,10 +1381,18 @@ jobs:
         if: matrix.mode == 'core-tests' && runner.os == 'Windows'
         shell: pwsh
         run: |
+          cargo build --locked --no-default-features --features native-screen --bin dzc
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m pip install --disable-pip-version-check pywinpty==3.1.0 pyte==0.8.2
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $env:DZC_TEST_BIN = (Resolve-Path target/debug/dzc.exe).Path
-          python -m unittest discover -s integrations/tests -p test_native_tui.py -v
+          @'
+          import unittest
+          from integrations.tests.test_native_tui import NativeTuiPasteTests
+          suite = unittest.defaultTestLoader.loadTestsFromTestCase(NativeTuiPasteTests)
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          raise SystemExit(not (result.wasSuccessful() and result.testsRun and not result.skipped))
+          '@ | python -
       - name: Check all desktop targets without linking another application
         if: matrix.mode == 'desktop-check'
         run: cargo check --locked --workspace --all-targets

@@ -10,9 +10,6 @@ pub mod desktop_tools;
 #[path = "infrastructure/encryption.rs"]
 pub mod encryption;
 
-#[path = "infrastructure/data_paths.rs"]
-pub mod data_paths;
-
 #[path = "infrastructure/attachments.rs"]
 pub mod attachments;
 

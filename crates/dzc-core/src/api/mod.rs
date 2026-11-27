@@ -23,6 +23,7 @@ pub use privacy_session::{NativeReadLease,CaptureTicket, PrivacyError, PrivacyRe
 /// Storage compatibility version maintained by the authoritative migration code.
 pub const DATABASE_SCHEMA_VERSION: i32 = crate::infrastructure::repository::migrations::SUPPORTED_SCHEMA_VERSION;
 pub use crate::infrastructure::data_paths::cli_database_path as resolve_database_path;
+pub use crate::infrastructure::data_paths::startup_database_path as resolve_startup_database_path;
 
 pub use crate::infrastructure::repository::{
     sensitive_tags::SensitiveTagDeletion as TagDeletionReport, tag_batch::TagEntrySelection,
@@ -34,6 +35,7 @@ pub use crate::capture::{CaptureEngine, CaptureStore, EventSink};
 mod capture_store;
 mod settings;
 mod themes;
+pub use themes::{ThemeImportOutcome, ThemeRemovalOutcome};
 mod queue;
 pub use queue::PreparedQueueEntry;
 mod privacy_policy;

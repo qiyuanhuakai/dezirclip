@@ -39,52 +39,13 @@ fn resolve_default_app_data_dir_for(identifier: &str) -> Option<std::path::PathB
     }
 }
 
-fn resolve_default_app_data_dir() -> Option<std::path::PathBuf> {
-    resolve_default_app_data_dir_for(APP_IDENTIFIER)
-}
-
 fn resolve_startup_db_path() -> Option<std::path::PathBuf> {
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let portable_db = exe_dir.join("data").join("clipboard.db");
-            if portable_db.exists() {
-                return Some(portable_db);
-            }
-        }
-    }
-    let default_dir = resolve_default_app_data_dir()?;
-    if !default_dir.join("clipboard.db").exists() {
-        if let Some(legacy_dir) = resolve_default_app_data_dir_for(LEGACY_APP_IDENTIFIER) {
-            if legacy_dir.join("clipboard.db").exists() || legacy_dir.join("datapath.txt").exists() {
-                return resolve_db_path_from_app_dir(legacy_dir);
-            }
-        }
-    }
-    resolve_db_path_from_app_dir(default_dir)
-}
-
-fn resolve_db_path_from_app_dir(default_dir: std::path::PathBuf) -> Option<std::path::PathBuf> {
-    let redirect_file = default_dir.join("datapath.txt");
-    let app_dir = if redirect_file.exists() {
-        if let Ok(content) = std::fs::read_to_string(&redirect_file) {
-            let custom = content.trim();
-            if !custom.is_empty() {
-                let custom_path = std::path::PathBuf::from(custom);
-                if custom_path.exists() {
-                    custom_path
-                } else {
-                    default_dir.clone()
-                }
-            } else {
-                default_dir.clone()
-            }
-        } else {
-            default_dir.clone()
-        }
-    } else {
-        default_dir
-    };
-    Some(app_dir.join("clipboard.db"))
+    let executable = std::env::current_exe().ok();
+    dzc_core::api::resolve_startup_database_path(
+        resolve_default_app_data_dir_for(APP_IDENTIFIER).as_deref(),
+        resolve_default_app_data_dir_for(LEGACY_APP_IDENTIFIER).as_deref(),
+        executable.as_deref().and_then(std::path::Path::parent),
+    )
 }
 
 fn read_disable_webview_gpu_setting() -> bool {

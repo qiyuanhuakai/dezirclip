@@ -1076,7 +1076,7 @@ fn database_path_from_override(path: Option<PathBuf>) -> Result<PathBuf, String>
         return Ok(path);
     }
     let executable = std::env::current_exe().ok();
-    Ok(dezirclip::infrastructure::data_paths::cli_database_path(
+    Ok(dezirclip::api::resolve_database_path(
         &data_dir()?,
         &legacy_data_dir()?,
         executable.as_deref().and_then(std::path::Path::parent),
