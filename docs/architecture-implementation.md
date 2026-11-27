@@ -123,7 +123,7 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 
 - **R1 主题边界**。迁移 Core 事务结果和 Tauri 的发布顺序保护，兼容原 CLI/Host 接口。Windows Rust 1.99.1 下 Core 单元测试 483 项通过。Windows 和 Linux Rust 1.99.1 下 `desktop` debug 二进制的两项发布顺序测试分别通过。独立的原生窗口主题端到端验收仍待记录。
 - **R3 路径闭包**。早期 WebView 探针和 CLI 共用 Core 的重定向和 profile 选择算法，保留空 portable 目录、当前重定向与旧身份目录并存、普通文件目标三处差异。CLI 直接使用公开路径 API。仍需验证只读 GPU 探针的 SQLite/WAL 行为，并迁出其余 CLI 跨入口依赖。
-- **C0/C1**。CI 文档已按 v0.2.0 和 Arch 发布分支校准。Windows ConPTY 入口明确构建当前 CLI，零测试和 skip 会失败。可运行的完整桌面矩阵使用同一份实际 CLI/Service 执行 Host 客户端和 BuildInfo 验收，两项已使用当前 Windows 本地构建的二进制跑通。Schema 24、原生 opt-in 和发布源准入继续按规范推进。
+- **C0/C1**。CI 文档已按 v0.2.0 和 Arch 发布分支校准。Windows ConPTY 入口明确构建当前 CLI，零测试和 skip 会失败。可运行的桌面矩阵使用同一份实际 CLI/Service 执行 Host 客户端、BuildInfo 和 Schema 24 实际写入与种子数据测试。后面三项在 Windows 和 Linux 本地各通过一次。Linux Tauri 套件在 Xvfb 中运行，修复截图边界测试缺少显示器的问题，本地为 270 通过、3 项明确 ignored。其余原生 opt-in 和发布源准入继续按规范推进。
 - **C2 桌面专项矩阵**。按请求选择完整矩阵、Linux x64、Windows x64 或两者的并集。仅请求 Windows 性能比较时会选择其 Windows x64 前置验收。独立诊断入口沿用既有规则，完整的场景计划与结果汇总仍待接入。
 - **R3 更新策略归属**。Host 的离线模块为 Tauri 更新和 MyGo 通过 CLI 的索引检查提供同一份版本、平台、文件名和签名元数据规则。网络、安装和退出协调仍由对应桌面入口处理。
 - **R3 CLI 依赖**。启动项、CLI PATH、技能和目录定位实现归入已有 Platform crate，CLI 和 Tauri 直接使用。CLI 的主题、历史 DTO、受保护标签、密文格式识别和有界读取直接走 Core 的窄入口。仍有备份/附件、测试数据库、日志入口和 CLI 专属 terminal/OSC52 模块需迁移。Windows 与 Linux PATH 测试分别通过 6 和 7 项，Windows 登录项测试和桌面类型检查通过。

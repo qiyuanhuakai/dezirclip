@@ -372,7 +372,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/setup-python@v6
         with:
-          python-version: '3.13'
+          python-version: '3.13.15'
 
       - name: Setup standalone Python for Linux SQLite fixtures
         if: runner.os == 'Linux'
@@ -588,11 +588,20 @@ jobs:
       - name: Test Tauri crate
         if: matrix.can_test
         working-directory: src-tauri
+        shell: python
         # --all-targets so `examples/` is covered too. `cargo test` only builds
         # examples, it does not run their tests, and backup-inspect moved out of
         # src/bin (to keep it out of the installers) into examples/ — without
         # this flag its 15 tests silently stop running.
-        run: cargo test --workspace --all-targets
+        run: |
+          import os, subprocess, sys
+          command = ["cargo", "test", "--locked", "--workspace", "--all-targets"]
+          if sys.platform == "linux":
+              command = ["xvfb-run", "-a", *command]
+              os.environ["XDG_SESSION_TYPE"] = "x11"
+              os.environ.pop("WAYLAND_DISPLAY", None)
+              os.environ.pop("WAYLAND_SOCKET", None)
+          subprocess.run(command, check=True)
 
       - name: Build Tauri crate
         working-directory: src-tauri
@@ -613,9 +622,27 @@ jobs:
           subprocess.run(["python", "scripts/test-local-host.py", "--cli", str(binary), "--desktop-fixture", str(fixture)], check=True)
           report = Path(os.environ["RUNNER_TEMP"]) / "local-clients.json"
           subprocess.run(["python", "scripts/test-local-clients.py", "--cli", str(binary), "--report", str(report)], check=True)
-          subprocess.run(["python", "-m", "unittest", "-v",
-                          "scripts.tests.test_build_info.CliBuildInfoTests"], check=True,
-                         env={**os.environ, "DZC_TEST_BIN": str(binary.resolve(strict=True))})
+
+      - name: Install Schema 24 fixture dependencies
+        if: matrix.can_test
+        run: python -m pip install --disable-pip-version-check Pillow==13.0.0 psutil==7.2.2
+
+      - name: Verify the built CLI identity and Schema 24 writes
+        if: matrix.can_test
+        shell: python
+        run: |
+          import os, unittest
+          from pathlib import Path
+          binary = Path("target/debug") / ("dzc.exe" if os.name == "nt" else "dzc")
+          os.environ["DZC_TEST_BIN"] = str(binary.resolve(strict=True))
+          tests = unittest.defaultTestLoader.loadTestsFromNames([
+              "scripts.tests.test_build_info.CliBuildInfoTests",
+              "scripts.tests.test_sqlite_history_fixture.SchemaTwentyFourWriterTests",
+              "scripts.tests.test_sqlite_history_fixture.SyntheticSeederTests.test_direct_sqlite_fixture_stays_deterministic_for_legacy_and_schema24",
+          ])
+          result = unittest.TextTestRunner(verbosity=2).run(tests)
+          if result.testsRun < 3 or result.skipped or not result.wasSuccessful():
+              raise SystemExit(1)
 
       - name: Retain real CLI and MCP host acceptance
         if: always() && (steps.local-service.outcome == 'success' || steps.local-service.outcome == 'failure')
