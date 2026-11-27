@@ -59,6 +59,9 @@ func (client *Client) Call(ctx context.Context, method protocol.Method, params a
         limitDuration = 15 * time.Second
     case protocol.MethodDesktopSystemExplorerRestart, protocol.MethodDesktopApplicationsSelect, protocol.MethodDesktopHistoryOpen:
         limitDuration = 15 * time.Second
+    case protocol.MethodDesktopSettingsFonts:
+        // A cold system font scan can outlast the ordinary request cap on Windows.
+        limitDuration = 12 * time.Second
     case protocol.MethodDesktopQueueNext, protocol.MethodDesktopOcrRecognize, protocol.MethodDesktopBackupImport, protocol.MethodDesktopBackupExport, protocol.MethodDesktopBackupPreview, protocol.MethodDesktopBackupInspect, protocol.MethodDesktopProfileMove:
         limitDuration = 10 * time.Minute
     }
