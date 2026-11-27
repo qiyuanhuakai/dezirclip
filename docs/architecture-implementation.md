@@ -146,3 +146,5 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - Tauri 通过 Core 的桌面启动接口装配原有数据库、仓库与缓存，并通过类型化设置读取窗口尺寸、置顶和启动偏好。Windows 和 Linux 的实际 SQLite 测试验证原有 WAL、默认值、旧配置、保存窗口大小及游戏模式回退。尚有其它命令使用 legacy bridge。
 - 两端 React Web 构建共用隐私状态。MyGo 兼容桥直接读取会话状态，避免桥接与会话生命周期之间的循环依赖。TypeScript 和 18 项隐私测试通过。
 - 四个独立 CLI 归档和桌面包按 artifact ID 下载，绑定固定 draft 并按远端 asset ID 读回。共享 NSIS 样件的六个 Windows 场景已通过 GitHub Actions，其中 LegacyUninstall 继续使用固定的历史公开安装器。完整出货包验收、发布封存与中断恢复仍待完成。
+- 快贴布局的键、可选值和标签进入共享设置目录，Core、MyGo 和 React 使用相同的列表。Host 实际写入/读回、Go 测试与 React 类型检查通过。
+- MyGo Native 将设置保存与显示会话分开。更新通道、开关、窗口置顶和卡片固定可就地更新，表情页签保留导航并为内容区添加过渡。Linux X11 以实际程序和隔离 profile 验证了这四类操作，Windows/Linux 的 Go 套件通过。

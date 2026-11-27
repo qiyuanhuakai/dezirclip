@@ -376,6 +376,8 @@ func (n *nativeMain) settingsHelpLabel(label string) string {
 	return n.text("settings_help") + ": " + label
 }
 
+var nativeQuickPasteLayout = protocol.QuickPasteLayoutSetting()
+
 func (n *nativeMain) toolsSettings(c *ui.Context, kit uikit.Kit) {
 	kit.CaptureSettingsHeading(c, n.text("capture_settings"))
 	enabled := n.settingEnabled("app.screenshot_enabled", true)
@@ -394,11 +396,12 @@ func (n *nativeMain) toolsSettings(c *ui.Context, kit uikit.Kit) {
 	n.panelCheckbox(c.Key("quick-paste-enabled"), kit, "quick-paste", n.text("quick_paste_enabled"), n.text("quick_paste_enabled_hint"), quick)
 	if quick {
 		n.shortcutSetting(c, "app.quick_paste_hotkey", n.text("quick_paste_hotkey_label"), "Ctrl+Shift+V")
-		n.settingChoices(c, kit, "app.quick_paste_layout", n.text("quick_paste_layout"), "list", []uikit.SelectOption{
-			{Value: "list", Label: n.text("quick_paste_layout_list")},
-			{Value: "ring", Label: n.text("quick_paste_layout_ring")},
-		})
-		if n.preferences["app.quick_paste_layout"] == "ring" {
+		layoutChoices := make([]uikit.SelectOption, 0, len(nativeQuickPasteLayout.Values))
+		for _, value := range nativeQuickPasteLayout.Values {
+			layoutChoices = append(layoutChoices, uikit.SelectOption{Value: value, Label: n.text(nativeQuickPasteLayout.OptionLabelKeys[value])})
+		}
+		n.settingChoices(c, kit, nativeQuickPasteLayout.Key, n.text(nativeQuickPasteLayout.LabelKey), "list", layoutChoices)
+		if n.preferences[nativeQuickPasteLayout.Key] == "ring" {
 			options := make([]uikit.SelectOption, 0, 10)
 			for count := 3; count <= 12; count++ {
 				value := strconv.Itoa(count)

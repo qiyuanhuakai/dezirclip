@@ -4,6 +4,7 @@ import { CaptureEngineStatus, CaptureSettingsActions, CaptureSettingsHeading } f
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
+import { quickPasteLayoutSetting } from "../../../../shared/protocol/settings";
 import HotkeyRecorder from "../HotkeyRecorder";
 import QuickPasteRendererSetting from "./QuickPasteRendererSetting";
 
@@ -162,10 +163,10 @@ const ToolsCaptureSection = ({
             {hotkeyError && <p role="alert" className="hotkey-recording-error">{hotkeyError}</p>}
             {quickPasteEnabled && <QuickPasteRendererSetting t={t} renderer={quickPasteRenderer} />}
             {quickPasteEnabled && <div className="setting-item">
-                <span className="item-label">{t("quick_paste_layout")}</span>
-                <SettingsChoices label={t("quick_paste_layout")} value={quickPasteLayout}
-                    options={[{ value: "list", label: t("quick_paste_layout_list") }, { value: "ring", label: t("quick_paste_layout_ring") }]}
-                    onChange={value => { void saveAppSetting("quick_paste_layout", value); }} />
+                <span className="item-label">{t(quickPasteLayoutSetting.labelKey)}</span>
+                <SettingsChoices label={t(quickPasteLayoutSetting.labelKey)} value={quickPasteLayout}
+                    options={quickPasteLayoutSetting.values.map(value => ({ value, label: t(quickPasteLayoutSetting.optionLabelKeys[value]) }))}
+                    onChange={value => { void saveAppSetting(quickPasteLayoutSetting.key.slice("app.".length), value); }} />
             </div>}
             {quickPasteEnabled && quickPasteLayout === "ring" &&
                 [{ key: "quick_paste_full_sectors", max: 12, fallback: 8 },

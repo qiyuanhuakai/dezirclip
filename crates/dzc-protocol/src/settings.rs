@@ -32,3 +32,14 @@ pub const UPDATE_CHANNEL: Setting = Setting {
     requires_restart: false,
     seed_default: None,
 };
+
+pub const QUICK_PASTE_LAYOUT: Setting = Setting {
+    key: "app.quick_paste_layout",
+    group: "quickPastePresentation",
+    kind: "enum",
+    values: &["list", "ring"],
+    option_label_keys: &[("list", "quick_paste_layout_list"), ("ring", "quick_paste_layout_ring")],
+    label_key: "quick_paste_layout",
+    requires_restart: false,
+    seed_default: None,
+};

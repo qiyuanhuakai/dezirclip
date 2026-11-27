@@ -1,7 +1,7 @@
 use super::clipboard_repo::SqliteClipboardRepository;
 use crate::{api::{AutomaticUpdatePreference, CoreError, CoreResult, QuickPastePresentation, UpdateAttemptChannel}, capture::CaptureSettings};
 use super::settings_repo::SqliteSettingsRepository;
-use dzc_protocol::settings::{UPDATE_AUTO_CHECK, UPDATE_CHANNEL};
+use dzc_protocol::settings::{QUICK_PASTE_LAYOUT, UPDATE_AUTO_CHECK, UPDATE_CHANNEL};
 use std::collections::HashMap;
 
 #[cfg(test)]
@@ -52,7 +52,7 @@ impl SqliteClipboardRepository {
             'app.ocr_enabled','app.paste_method','app.persistent','app.persistent_limit','app.persistent_limit_enabled',
             'app.preview_keyboard_enabled','app.preview_opacity','app.privacy_protection',
             'app.privacy_protection_custom_rules','app.privacy_protection_kinds','app.privacy_session_hotkey',
-            'app.quick_paste_enabled','app.quick_paste_hotkey','app.quick_paste_renderer','app.quick_paste_layout','app.quick_paste_full_sectors','app.quick_paste_half_sectors','app.rich_paste_hotkey',
+            'app.quick_paste_enabled','app.quick_paste_hotkey','app.quick_paste_renderer',?3,'app.quick_paste_full_sectors','app.quick_paste_half_sectors','app.rich_paste_hotkey',
             'app.rich_text_snapshot_cache_limit','app.rich_text_snapshot_preview','app.screenshot_enabled',
             'app.screenshot_full_hotkey','app.screenshot_hotkey','app.search_fuzzy_enabled','app.search_hotkey',
             'app.search_regex_enabled','app.sequential_hotkey','app.sequential_mode','app.show_app_border',
@@ -60,7 +60,7 @@ impl SqliteClipboardRepository {
             'app.sound_paste_enabled','app.sound_volume','app.surface_opacity','app.tag_manager_enabled',
             'app.tag_manager_size','app.theme',?1,?2,'app.use_win_v_shortcut',
             'app.window_width','app.window_height','app.window_pinned')").map_err(|error| CoreError::from(error.to_string()))?;
-        let rows = query.query_map([UPDATE_AUTO_CHECK.key, UPDATE_CHANNEL.key], |row| Ok((row.get(0)?, row.get(1)?)))
+        let rows = query.query_map([UPDATE_AUTO_CHECK.key, UPDATE_CHANNEL.key, QUICK_PASTE_LAYOUT.key], |row| Ok((row.get(0)?, row.get(1)?)))
             .map_err(|error| CoreError::from(error.to_string()))?;
         rows.collect::<rusqlite::Result<_>>().map_err(|error| CoreError::from(error.to_string()))
     }
@@ -96,9 +96,9 @@ impl SqliteClipboardRepository {
         let conn = self.conn.lock().map_err(|_| CoreError::from("SettingsUnavailable".to_owned()))?;
         conn.query_row("SELECT COALESCE((SELECT value FROM settings WHERE key='app.quick_paste_enabled'),'true'),
             COALESCE((SELECT value FROM settings WHERE key='app.quick_paste_hotkey'),'Ctrl+Shift+V'),
-            COALESCE((SELECT value FROM settings WHERE key='app.quick_paste_layout'),'list'),
+            COALESCE((SELECT value FROM settings WHERE key=?1),'list'),
             (SELECT value FROM settings WHERE key='app.quick_paste_full_sectors'),
-            (SELECT value FROM settings WHERE key='app.quick_paste_half_sectors')", [],
+            (SELECT value FROM settings WHERE key='app.quick_paste_half_sectors')", [QUICK_PASTE_LAYOUT.key],
             |row| {
                 let full: Option<String> = row.get(3)?;
                 let half: Option<String> = row.get(4)?;
@@ -111,9 +111,9 @@ impl SqliteClipboardRepository {
     }
     pub(crate) fn quick_paste_presentation(&self) -> CoreResult<QuickPastePresentation> {
         let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
-        conn.query_row("SELECT (SELECT value FROM settings WHERE key='app.quick_paste_layout'),
+        conn.query_row("SELECT (SELECT value FROM settings WHERE key=?1),
             (SELECT value FROM settings WHERE key='app.quick_paste_full_sectors'),
-            (SELECT value FROM settings WHERE key='app.quick_paste_half_sectors')", [], |row| {
+            (SELECT value FROM settings WHERE key='app.quick_paste_half_sectors')", [QUICK_PASTE_LAYOUT.key], |row| {
             let value = |column| row.get::<_, Option<String>>(column).ok().flatten();
             Ok(QuickPastePresentation::from_settings(value(0).as_deref(), value(1).as_deref(), value(2).as_deref()))
         }).map_err(|error| CoreError::from(error.to_string()))

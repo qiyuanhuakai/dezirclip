@@ -6172,7 +6172,6 @@
             "app.idle_destroy_enabled",
             "app.idle_destroy_seconds",
             "app.quick_paste_enabled",
-            "app.quick_paste_layout",
             "app.quick_paste_full_sectors",
             "app.quick_paste_half_sectors",
             "app.screenshot_enabled",
@@ -6191,7 +6190,8 @@
             "app.custom_background",
             "app.custom_background_opacity",
             "app.update_auto_check",
-            "app.update_channel"
+            "app.update_channel",
+            "app.quick_paste_layout"
           ]
         },
         "value": {

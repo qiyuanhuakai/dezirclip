@@ -21,3 +21,18 @@ export const updateChannelSetting = {
     "requiresRestart": false,
     "group": "updatePreferences"
 } as const;
+export const quickPasteLayoutSetting = {
+    "key": "app.quick_paste_layout",
+    "kind": "enum",
+    "values": [
+        "list",
+        "ring"
+    ],
+    "optionLabelKeys": {
+        "list": "quick_paste_layout_list",
+        "ring": "quick_paste_layout_ring"
+    },
+    "labelKey": "quick_paste_layout",
+    "requiresRestart": false,
+    "group": "quickPastePresentation"
+} as const;

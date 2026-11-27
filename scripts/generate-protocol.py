@@ -193,7 +193,10 @@ def outputs():
                     if "enum" not in value:
                         raise ValueError("settings catalog requires a schema enum")
                 elif key == "enum" and "x-settings-catalog-keys" in value:
-                    registered = [entry["key"] for entry in settings[value["x-settings-catalog-keys"]]]
+                    groups = value["x-settings-catalog-keys"]
+                    if not isinstance(groups, list) or not groups or len(set(groups)) != len(groups):
+                        raise ValueError("settings schema requires unique catalog groups")
+                    registered = [entry["key"] for group in groups for entry in settings[group]]
                     if set(registered).intersection(child):
                         raise ValueError("catalog setting is also registered directly in the schema")
                     result[key] = child + registered

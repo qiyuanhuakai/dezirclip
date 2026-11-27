@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import { quickPasteLayoutSetting } from "../../../shared/protocol/settings";
 import GeneralSettingsGroup from "./groups/GeneralSettingsGroup";
 import PrivacySettingsGroup from "./groups/PrivacySettingsGroup";
 import ClipboardSettingsGroup from "./groups/ClipboardSettingsGroup";
@@ -278,7 +279,7 @@ const SettingsGroups = ({
                     setQuickPasteEnabled={setQuickPasteEnabled}
                     quickPasteHotkey={settings.appSettings?.["app.quick_paste_hotkey"] || "Ctrl+Shift+V"}
                     quickPasteRenderer={settings.appSettings?.["app.quick_paste_renderer"] || "tauri"}
-                    quickPasteLayout={settings.appSettings?.["app.quick_paste_layout"] || "list"}
+                    quickPasteLayout={settings.appSettings?.[quickPasteLayoutSetting.key] || "list"}
                     appSettings={settings.appSettings}
                     ocrEnabled={ocrEnabled}
                     setOcrEnabled={setOcrEnabled}

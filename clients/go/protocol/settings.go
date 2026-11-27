@@ -43,3 +43,19 @@ func UpdateChannelSetting() Setting {
 		SeedDefault:     nil,
 	}
 }
+
+const SettingQuickPasteLayout = "app.quick_paste_layout"
+const SettingQuickPasteLayoutLabel = "quick_paste_layout"
+
+func QuickPasteLayoutSetting() Setting {
+	return Setting{
+		Key:             SettingQuickPasteLayout,
+		Group:           "quickPastePresentation",
+		Kind:            "enum",
+		Values:          []string{"list", "ring"},
+		OptionLabelKeys: map[string]string{"list": "quick_paste_layout_list", "ring": "quick_paste_layout_ring"},
+		LabelKey:        SettingQuickPasteLayoutLabel,
+		RequiresRestart: false,
+		SeedDefault:     nil,
+	}
+}
