@@ -307,13 +307,6 @@ function Test-EdgeDocking($Main, $Root) {
     Write-Output 'Verified WebView2 edge docking from Settings, right-edge retraction, bounded reveal and disabling'
 }
 
-function Get-WebViewBrowser($main) {
-    Wait-Until {
-        Get-CimInstance Win32_Process -Filter ("ParentProcessId={0} AND Name='msedgewebview2.exe'" -f $main.Id) |
-            Where-Object { $_.CommandLine -and $_.CommandLine -notmatch '(?:^|\s)--type=' } | Select-Object -First 1
-    } 'No live WebView2 browser for the current MyGo main window'
-}
-
 function Test-SymbolPaste($main, $root, $edit, $form, $cli, [string]$serviceInstance, [switch]$Native) {
     if ($Native) {
         $renderer = 'MyGo Native'
@@ -902,8 +895,6 @@ $startedService = $null
 $startedServiceProcess = $null
 $serviceCrashReceipt = $null
 $quitVerified = $false
-$previousRenderer = $env:DZC_MYGO_NATIVE_MAIN
-$env:DZC_MYGO_NATIVE_MAIN = if ($NativeMain) { $null } else { '0' }
 try {
     & $cli add $marker | Out-Null
     if ($LASTEXITCODE) { throw 'Could not seed isolated clipboard history' }
@@ -1098,12 +1089,10 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     $cursorY = $workArea.Top + 16
     if (![MyGoInput]::SetCursorPos($workArea.Right - 14, $cursorY)) { throw 'Could not set the fixture pointer' }
     $launchPath = $env:Path
-    $launchBrowserArguments = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
     $launchTiming = $env:DZC_DESKTOP_TIMING
     try {
         if ($WakeTiming -or $Capture) { $env:DZC_DESKTOP_TIMING = '1' }
         if ($Capture) {
-            $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "$launchBrowserArguments --dzc-ci-inherited-marker".Trim()
             $env:Path = (($launchPath -split ';') | Where-Object {
                 $_ -and !(Test-Path -LiteralPath (Join-Path $_ 'dzc.exe') -PathType Leaf)
             }) -join ';'
@@ -1113,7 +1102,6 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         $resident = Start-Process -FilePath $exe @launchOptions -RedirectStandardError (Join-Path $dir.FullName 'desktop.log') -PassThru
     } finally {
         $env:Path = $launchPath
-        $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $launchBrowserArguments
         $env:DZC_DESKTOP_TIMING = $launchTiming
     }
     $main = Wait-Until {
@@ -1137,7 +1125,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             [Math]::Abs($clientRect.right - 670) -le 1 -and [Math]::Abs($clientRect.bottom - 608) -le 1
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
-    if ($NativeMain -and $Emoji) {
+    if ($Emoji) {
         Test-SymbolPaste $main $root $edit $form $cli $startedService.state.service_instance_id -Native
         return
     }
@@ -1470,9 +1458,14 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         }
         return
     }
-    $webProcesses = @(Wait-Until {
-        Get-DesktopProcesses @($main.Id) | Where-Object { $_.Name -eq 'msedgewebview2.exe' }
-    } 'No WebView2 descendants found for the shared main window')
+    $mainLifecycleLog = Join-Path $dir.FullName 'desktop-lifecycle-main.log'
+    $null = Wait-Until {
+        (Test-Path -LiteralPath $mainLifecycleLog) -and
+        (Select-String -LiteralPath $mainLifecycleLog -Pattern '"event":"native-content-ready"' -Quiet)
+    } 'MyGo did not render the native main window'
+    if (Get-DesktopProcesses @($main.Id) | Where-Object Name -eq 'msedgewebview2.exe') {
+        throw 'The MyGo main window started a WebView2 process'
+    }
     $build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuildNumber
     if ($build -ge 22621) {
         $observed = @{}
@@ -1633,42 +1626,6 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Write-Output 'Verified custom background is present at the initial visible-window check and after WebView recreation'
         $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
         Click-Control $main (Get-ControlPoint $root 'Settings')
-        $softwareFlag = '(?:^|\s)--disable-gpu(?:\s|$)'
-        $inheritedGpu = (Get-WebViewBrowser $main).CommandLine -match $softwareFlag
-        $originalHost = (& $cli service status --json | ConvertFrom-Json).state.service_instance_id
-        if ($LASTEXITCODE -or !$originalHost) { throw 'Cannot identify Service before GPU change' }
-        foreach ($disabled in @($true, $false)) {
-            if (!(Get-SettingsCheckbox $root)) { Click-Control $main (Get-ControlPoint $root 'General Settings') }
-            $box = Wait-Until {
-                $candidate = Get-SettingsCheckbox $root
-                if (!$candidate) { return $null }
-                $state = $candidate.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Current.ToggleState
-                if (($state -eq [Windows.Automation.ToggleState]::On) -ne $disabled) { return $candidate }
-                return $null
-            } 'GPU setting did not hydrate its previously committed value'
-            $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
-            $toggle.Toggle()
-            $null = Wait-Until { $main.HasExited } 'GPU change did not close the previous WebView'
-            $main = Wait-Until {
-                if ($resident.HasExited) { throw 'GPU change terminated the native resident' }
-                Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
-                    $_.Id -ne $resident.Id -and $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip'
-                } | Select-Object -First 1
-            } 'GPU change did not create a replacement main window'
-            $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
-            $browser = Get-WebViewBrowser $main
-            $actual = $browser.CommandLine -match $softwareFlag
-            $integrity = [MyGoInput]::IntegrityLevel($main.Handle)
-            $markerSeen = $browser.CommandLine -match '(?:^|\s)--dzc-ci-inherited-marker(?:\s|$)'
-            Write-Output "GPU setting=$disabled actual=$actual integrity=$integrity externalMarker=$markerSeen main=$($main.Id) browser=$($browser.ProcessId)"
-            if ($integrity -ge 12288 -and $markerSeen) { throw 'Elevated WebView2 accepted the inherited override' }
-            if ($actual -ne ($disabled -or $inheritedGpu)) {
-                throw "WebView2 GPU argument mismatch: setting=$disabled inherited=$inheritedGpu actual=$actual main=$($main.Id)"
-            }
-            $currentHost = (& $cli service status --json | ConvertFrom-Json).state.service_instance_id
-            if ($LASTEXITCODE -or $currentHost -cne $originalHost) { throw 'GPU change replaced the Rust Service' }
-        }
-        Write-Output 'Verified both GPU changes on replacement WebView2 browsers with the same native resident and Rust Service'
         Test-EdgeDocking $main $root
         $main = Test-MainHotkeys $main $root $resident $exe $edit $form
         $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
@@ -1691,11 +1648,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         $panel = Get-ResidentPanel $resident ([regex]::Unescape('DezirClip \u622a\u56fe'))
         [Windows.Forms.SendKeys]::SendWait('{ESC}')
         $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } 'Region Capture did not dismiss'
-        Write-Output 'Verified WebView2 buttons copy the full display and present the native resident region selector'
-        return
-    }
-    if ($Emoji) {
-        Test-SymbolPaste $main $root $edit $form $cli $startedService.state.service_instance_id
+        Write-Output 'Verified native buttons copy the full display and present the resident region selector'
         return
     }
     Click-Control $main (Get-ControlPoint $root $marker)
@@ -1721,7 +1674,7 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot locate the isolated Rust Service' }
     $service = Get-Process -Id $endpoint.pid
     if ($service.Path -ne (Join-Path (Split-Path $exe) 'dzc-service.exe')) { throw 'Unexpected Service process' }
-    $roots = @($resident.Id, $main.Id, $service.Id) + @($webProcesses | ForEach-Object { [int]$_.ProcessId })
+    $roots = @($resident.Id, $main.Id, $service.Id)
     $null = Wait-Until {
         !(Get-DesktopProcesses $roots | Where-Object { $_.Name -eq 'msedgewebview2.exe' })
     } 'WebView2 children remained after closing the main window and both native panels'
@@ -1826,7 +1779,6 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
     }
     throw $failure
 } finally {
-    $env:DZC_MYGO_NATIVE_MAIN = $previousRenderer
     if ($WakeTiming -or $Capture) {
         $timingLog = Join-Path $dir.FullName 'desktop.log'
         if (Test-Path -LiteralPath $timingLog) { Get-Content -LiteralPath $timingLog | Write-Host }
