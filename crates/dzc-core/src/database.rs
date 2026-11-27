@@ -45,6 +45,16 @@ pub fn ensure_writable(conn: &Connection) -> std::result::Result<(), String> {
 
 #[cfg(feature = "legacy-bridge")]
 impl DbState {
+    pub fn open_desktop(path: &std::path::Path) -> Result<Self> {
+        let conn = Arc::new(Mutex::new(init_db(&path.to_string_lossy())?));
+        Ok(Self {
+            repo: SqliteClipboardRepository::new(conn.clone()),
+            settings_repo: SqliteSettingsRepository::new(conn.clone()),
+            tag_repo: SqliteTagRepository::new(conn.clone()),
+            conn,
+        })
+    }
+
     /// Migration adapter: share the existing cache budgets and connection through the business facade.
     pub fn history_service(&self) -> crate::api::HistoryService {
         crate::api::HistoryService::from_legacy_parts(

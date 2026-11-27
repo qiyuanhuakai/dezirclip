@@ -30,8 +30,7 @@ impl SqliteSettingsRepository {
     }
 
     #[cfg(feature = "legacy-bridge")]
-    pub fn window_size(&self) -> Result<Option<(u32, u32)>> {
-        let connection = self.conn.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
+    pub(crate) fn read_window_size(connection: &Connection) -> Result<Option<(u32, u32)>> {
         connection.query_row("SELECT (SELECT value FROM settings WHERE key='app.window_width'),
             (SELECT value FROM settings WHERE key='app.window_height')", [], |row| {
             let dimension = |index| -> Result<Option<u32>> {

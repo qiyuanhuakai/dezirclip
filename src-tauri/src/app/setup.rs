@@ -6,14 +6,11 @@ use crate::app::window_manager::{release_win_keys, restore_last_focus, toggle_wi
 use crate::app_state::{
     AppDataDir, SearchHistory, SessionHistory, SettingsState,
 };
-use crate::database::{self, DbState};
+use crate::database::DbState;
 use crate::global_state::*;
 use crate::info;
-use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
-use crate::infrastructure::repository::settings_repo::{
-    SettingsRepository, SqliteSettingsRepository,
-};
-use crate::infrastructure::repository::tag_repo::SqliteTagRepository;
+use crate::infrastructure::repository::settings_repo::SettingsRepository;
+use dzc_core::api::DesktopStartupPreferences;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_ext::WindowExt;
 use crate::services::sensitive_align::spawn_sensitive_alignment;
@@ -80,8 +77,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Database Initialization
     let db_path = app_dir.join("clipboard.db");
-    let db_path_str = db_path.to_string_lossy();
-    let conn = database::init_db(&db_path_str).map_err(|e| {
+    let database = DbState::open_desktop(&db_path).map_err(|e| {
         let err_msg = format!("数据库初始化失败: {}", e);
         #[cfg(target_os = "windows")]
         {
@@ -94,16 +90,14 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
         e
     })?;
-    let conn_arc = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let settings_repo = SqliteSettingsRepository::new(conn_arc.clone());
-
-    // 4. Initial Settings & Reset Safety
-    apply_startup_resets(&settings_repo);
-
-    let settings = load_settings(&settings_repo);
+    let history = database.history_service();
+    if history.reset_unelevated_game_mode(crate::app::commands::system_cmd::check_is_admin) {
+        info!(">>> [STARTUP] Game Mode active without Admin privileges. Resetting to default.");
+    }
+    let settings = history.desktop_startup_preferences();
 
     // 5. App State Management
-    setup_state(app, conn_arc.clone(), &settings, app_dir.clone());
+    setup_state(app, database, &settings, app_dir);
     spawn_sensitive_alignment(app_handle.clone());
 
     // 6. Window Initialization (Pinned/Focus)
@@ -238,213 +232,13 @@ fn legacy_identifier_app_data_dir() -> Option<std::path::PathBuf> {
     }
 }
 
-fn apply_startup_resets(repo: &impl SettingsRepository) {
-    let paste_method = repo
-        .get("app.paste_method")
-        .unwrap_or(Some("shift_insert".to_string()))
-        .unwrap_or("shift_insert".to_string());
-    if paste_method == "game_mode" && !crate::app::commands::system_cmd::check_is_admin() {
-        info!(">>> [STARTUP] Game Mode active without Admin privileges. Resetting to default.");
-        let _ = repo.set("app.paste_method", "shift_insert");
-    }
-}
-
-pub struct StartupSettings {
-    pub theme: String,
-    pub persistent: bool,
-    pub capture_files: bool,
-    pub capture_rich_text: bool,
-    pub deduplicate: bool,
-    pub silent_start: bool,
-    pub delete_after_paste: bool,
-    pub privacy_protection: bool,
-    pub privacy_kinds: String,
-    pub privacy_custom: String,
-    pub excluded_source_apps: String,
-    pub sequential_mode: bool,
-    pub sequential_hotkey: String,
-    pub rich_paste_hotkey: String,
-    pub search_hotkey: String,
-    pub screenshot_enabled: bool,
-    pub screenshot_hotkey: String,
-    pub screenshot_full_hotkey: String,
-    pub quick_paste_enabled: bool,
-    pub quick_paste_hotkey: String,
-    pub ocr_enabled: bool,
-    pub sound_enabled: bool,
-    pub hide_tray_icon: bool,
-    pub edge_docking: bool,
-    pub follow_mouse: bool,
-    pub window_pinned: bool,
-    pub window_size: Option<(u32, u32)>,
-    pub main_hotkey: String,
-    pub arrow_key_selection: bool,
-    pub idle_destroy_enabled: bool,
-    pub idle_destroy_seconds: u64,
-}
-
-fn load_settings(repo: &SqliteSettingsRepository) -> StartupSettings {
-    StartupSettings {
-        theme: repo
-            .get("app.theme")
-            .unwrap_or(Some("retro".to_string()))
-            .unwrap_or("retro".to_string()),
-        persistent: repo
-            .get("app.persistent")
-            .unwrap_or(Some("true".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(true),
-        capture_files: repo
-            .get("app.capture_files")
-            .unwrap_or(Some("true".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(true),
-        capture_rich_text: repo
-            .get("app.capture_rich_text")
-            .unwrap_or(Some("false".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(false),
-        deduplicate: repo
-            .get("app.deduplicate")
-            .unwrap_or(Some("true".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(true),
-        silent_start: repo
-            .get("app.silent_start")
-            .unwrap_or(Some("true".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(true),
-        delete_after_paste: repo
-            .get("app.delete_after_paste")
-            .unwrap_or(Some("false".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(false),
-        privacy_protection: repo
-            .get("app.privacy_protection")
-            .unwrap_or(Some("true".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(true),
-        privacy_kinds: repo
-            .get("app.privacy_protection_kinds")
-            .unwrap_or(Some("phone,idcard,email,secret,password".to_string()))
-            .unwrap_or("phone,idcard,email,secret,password".to_string()),
-        privacy_custom: repo
-            .get("app.privacy_protection_custom_rules")
-            .unwrap_or(Some("".to_string()))
-            .unwrap_or("".to_string()),
-        excluded_source_apps: repo
-            .get("app.excluded_source_apps")
-            .unwrap_or_default()
-            .unwrap_or_default(),
-        sequential_mode: repo
-            .get("app.sequential_mode")
-            .unwrap_or(Some("false".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(false),
-        sequential_hotkey: repo
-            .get("app.sequential_hotkey")
-            .unwrap_or(Some("Alt+V".to_string()))
-            .unwrap_or("Alt+V".to_string()),
-        rich_paste_hotkey: repo
-            .get("app.rich_paste_hotkey")
-            .unwrap_or(Some("Ctrl+Shift+Z".to_string()))
-            .unwrap_or("Ctrl+Shift+Z".to_string()),
-        search_hotkey: repo
-            .get("app.search_hotkey")
-            .unwrap_or(Some("Alt+F".to_string()))
-            .unwrap_or("Alt+F".to_string()),
-        screenshot_enabled: repo
-            .get("app.screenshot_enabled")
-            .unwrap_or(Some("true".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(true),
-        screenshot_hotkey: repo
-            .get("app.screenshot_hotkey")
-            .unwrap_or(Some("Ctrl+Shift+A".to_string()))
-            .unwrap_or("Ctrl+Shift+A".to_string()),
-        screenshot_full_hotkey: repo
-            .get("app.screenshot_full_hotkey")
-            .unwrap_or(Some("Ctrl+Shift+F".to_string()))
-            .unwrap_or("Ctrl+Shift+F".to_string()),
-        quick_paste_enabled: repo
-            .get("app.quick_paste_enabled")
-            .unwrap_or(Some("true".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(true),
-        quick_paste_hotkey: repo
-            .get("app.quick_paste_hotkey")
-            .unwrap_or(Some("Ctrl+Shift+V".to_string()))
-            .unwrap_or("Ctrl+Shift+V".to_string()),
-        ocr_enabled: repo
-            .get("app.ocr_enabled")
-            .unwrap_or(Some("true".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(true),
-        sound_enabled: repo
-            .get("app.sound_enabled")
-            .unwrap_or(Some("false".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(false),
-        hide_tray_icon: repo
-            .get("app.hide_tray_icon")
-            .unwrap_or(Some("false".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(false),
-        edge_docking: repo
-            .get("app.edge_docking")
-            .unwrap_or(Some("false".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(false),
-        follow_mouse: repo
-            .get("app.follow_mouse")
-            .unwrap_or(Some("true".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(true),
-        window_pinned: repo
-            .get("app.window_pinned")
-            .unwrap_or(Some("false".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(false),
-        window_size: repo.window_size().ok().flatten(),
-        main_hotkey: repo
-            .get("app.hotkey")
-            .unwrap_or(Some("Win+V".to_string()))
-            .unwrap_or("Win+V".to_string()),
-        arrow_key_selection: repo
-            .get("app.arrow_key_selection")
-            .unwrap_or(Some("false".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(false),
-        idle_destroy_enabled: repo
-            .get("app.idle_destroy_enabled")
-            .unwrap_or(Some("false".to_string()))
-            .map(|v| v == "true")
-            .unwrap_or(false),
-        idle_destroy_seconds: repo
-            .get("app.idle_destroy_seconds")
-            .ok()
-            .flatten()
-            .and_then(|v| v.parse::<u64>().ok())
-            .map(crate::app::idle_destroyer::clamp_idle_seconds)
-            .unwrap_or(crate::app::idle_destroyer::DEFAULT_IDLE_DESTROY_SECONDS),
-    }
-}
-
 fn setup_state(
     app: &App,
-    conn_arc: std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>,
-    s: &StartupSettings,
+    database: DbState,
+    s: &DesktopStartupPreferences,
     app_dir: std::path::PathBuf,
 ) {
-    let repo = SqliteClipboardRepository::new(conn_arc.clone());
-    let settings_repo = SqliteSettingsRepository::new(conn_arc.clone());
-    let tag_repo = SqliteTagRepository::new(conn_arc.clone());
-    app.manage(DbState {
-        conn: conn_arc,
-        repo,
-        settings_repo,
-        tag_repo,
-    });
+    app.manage(database);
 
     app.manage(SettingsState {
         deduplicate: AtomicBool::new(s.deduplicate),
@@ -488,7 +282,11 @@ fn setup_state(
         main_hotkey: std::sync::Mutex::new(s.main_hotkey.clone()),
         monitors: std::sync::Mutex::new(Vec::new()),
         idle_destroy_enabled: AtomicBool::new(s.idle_destroy_enabled),
-        idle_destroy_seconds: AtomicU64::new(s.idle_destroy_seconds),
+        idle_destroy_seconds: AtomicU64::new(
+            s.idle_destroy_seconds
+                .map(crate::app::idle_destroyer::clamp_idle_seconds)
+                .unwrap_or(crate::app::idle_destroyer::DEFAULT_IDLE_DESTROY_SECONDS),
+        ),
     });
 
     app.manage(SessionHistory(dzc_core::api::SessionHistoryStore::new(
@@ -507,11 +305,11 @@ fn apply_saved_size(window: &tauri::WebviewWindow, size: Option<(u32, u32)>) {
 
 pub(super) fn restore_recreated_appearance(app: &AppHandle, window: &tauri::WebviewWindow) {
     let db = app.state::<DbState>();
-    apply_saved_size(window, db.settings_repo.window_size().ok().flatten());
+    apply_saved_size(window, db.history_service().saved_window_size().ok().flatten());
     apply_initial_theme(app);
 }
 
-fn setup_main_window(app: &App, s: &StartupSettings) {
+fn setup_main_window(app: &App, s: &DesktopStartupPreferences) {
     let effective_pinned = s.window_pinned && !dzc_platform::runtime::is_native_wayland();
     WINDOW_PINNED.store(effective_pinned, Ordering::Relaxed);
 
@@ -584,7 +382,7 @@ fn start_core_background_services(app_handle: &AppHandle) {
     start_edge_docking_monitor(app_handle.clone());
 }
 
-fn start_services(app: &App, _s: &StartupSettings, app_handle: AppHandle) {
+fn start_services(app: &App, _s: &DesktopStartupPreferences, app_handle: AppHandle) {
     start_core_background_services(&app_handle);
 
     #[cfg(not(target_os = "windows"))]
@@ -862,8 +660,8 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                     // Restore pinned state based on user setting when undocked
                     let mut user_pinned = WINDOW_PINNED.load(Ordering::Relaxed);
                     if let Some(db_state) = app_handle.try_state::<DbState>() {
-                        if let Ok(val) = db_state.settings_repo.get("app.window_pinned") {
-                            user_pinned = val.as_deref() == Some("true");
+                        if let Ok(pinned) = db_state.history_service().window_pinned() {
+                            user_pinned = pinned;
                         }
                     }
 
@@ -1119,8 +917,8 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
 
                     let mut user_pinned = WINDOW_PINNED.load(Ordering::Relaxed);
                     if let Some(db_state) = app_handle.try_state::<DbState>() {
-                        if let Ok(val) = db_state.settings_repo.get("app.window_pinned") {
-                            user_pinned = val.as_deref() == Some("true");
+                        if let Ok(pinned) = db_state.history_service().window_pinned() {
+                            user_pinned = pinned;
                         }
                     }
 
