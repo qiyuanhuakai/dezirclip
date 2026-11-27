@@ -259,6 +259,35 @@ func TestNativeEmojiAutomaticallyReachesFinalChoices(t *testing.T) {
 	t.Fatalf("scrolling alone did not reach the last emoji %q", symbol)
 }
 
+func TestNativeEmojiSwitchKeepsPanelAndHistory(t *testing.T) {
+	n := nativeMain{showEmoji: true, preferences: map[string]string{
+		"app.language": "en", "app.emoji_panel_enabled": "true",
+	}}
+	n.history = nativeHistory{generation: 2, rows: []protocol.DesktopEntry{{Id: 11}}, selected: 0}
+	panel := n.emojiPanel()
+	panel.ready = true
+	view := ui.NewTester(n.view, 430, 420)
+	if panel.tab != "emoji" || len(panel.matches) == 0 {
+		t.Fatal("emoji did not populate its initial pane")
+	}
+	n.applySavedSetting(nativeEmojiTabSetting, "symbols")
+	view.Frame()
+	if panel.tab != "symbols" || len(panel.matches) == 0 {
+		t.Fatal("symbols did not appear after changing tabs")
+	}
+	n.applySavedSetting(nativeEmojiTabSetting, "favorites")
+	view.Frame()
+	if !view.HasText(n.text("emoji_add_files")) {
+		t.Fatalf("favorites control missing: %v", view.Texts())
+	}
+	n.applySavedSetting(nativeEmojiTabSetting, "emoji")
+	view.Frame()
+	if n.emoji != panel || !panel.ready || panel.tab != "emoji" || !n.showEmoji || n.history.generation != 2 ||
+		n.history.selectedID() != 11 {
+		t.Fatal("changing tabs recreated the saved panel or history")
+	}
+}
+
 func TestNativeWideTagLibraryKeepsNavigationBesideHistory(t *testing.T) {
 	n := nativeMain{tagLibrary: &nativeTagLibrary{sort: "time"}, preferences: map[string]string{"app.language": "en"}}
 	n.tagCatalog.names, n.tagCatalog.counts, n.tagCatalog.fresh = []string{"Work"}, map[string]uint64{"Work": 3}, true

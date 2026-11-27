@@ -22,6 +22,14 @@ func (n *nativeMain) mainKit() uikit.Kit {
 		WithSurfaceOpacity(n.currentSurfaceOpacity())
 }
 
+const nativeAppearanceMotion = 160 * time.Millisecond
+
+var nativePanelEnter = ui.ElementTransition{
+	Duration: 140 * time.Millisecond,
+	Position: true,
+	Enter:    &ui.Motion{Y: 4},
+}
+
 func (n *nativeMain) view(c *ui.Context) {
 	if n.shortcut != nil {
 		n.shortcut.rendered, n.shortcut.focusInRow = false, false
@@ -72,8 +80,13 @@ func (n *nativeMain) view(c *ui.Context) {
 				background = preset.WindowBackground(*surfaceOpacity)
 			}
 		}
+		motion := time.Duration(-1)
+		if n.surfaceOpacityDraft == nil && time.Now().Before(n.appearanceMotionUntil) {
+			motion = nativeAppearanceMotion
+		}
 		main := ui.Column(c).Absolute().Top(0).Right(0).Bottom(0).Left(0).
-			Gap(6).Background(background).Radius(cornerRadius)
+			Gap(6).Background(background).Radius(cornerRadius).
+			Transition(ui.ElementTransition{Colors: true, Duration: motion})
 		if n.preferences["app.show_app_border"] != "false" {
 			main.Border(1, c.Theme().Border)
 		}

@@ -57,7 +57,7 @@ func (n *nativeMain) enableGameMode(previous string) {
 		n.update(session, func() {
 			n.mutating = false
 			if changed {
-				n.prepare(n.resume)
+				n.refreshViewSettings()
 			}
 			if err != nil {
 				n.notice = n.text("native_setting_save_failed")

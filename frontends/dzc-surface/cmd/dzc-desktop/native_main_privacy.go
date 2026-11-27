@@ -200,7 +200,7 @@ func (n *nativeMain) savePrivacyText(draft *nativePrivacyTextDraft, key, instanc
 			if write.err == nil {
 				draft.dirty = draft.value != write.value
 				if current := n.history.state.ServiceInstanceId; current == "" || current == instance {
-					n.preferences[key] = write.value
+					n.applySavedSetting(key, write.value)
 				}
 			} else if draft.value == write.value {
 				draft.failed = true

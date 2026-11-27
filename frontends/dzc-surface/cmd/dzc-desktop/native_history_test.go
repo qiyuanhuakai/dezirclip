@@ -265,20 +265,72 @@ func TestNativeHistoryRangeDoesNotMixRevisions(t *testing.T) {
 func TestNativePreviewOpacityPreservesLivePresentation(t *testing.T) {
 	current := map[string]string{"app.theme": "macos", "app.preview_opacity": "65"}
 	next := map[string]string{"app.theme": "macos", "app.preview_opacity": "24"}
-	if !sameSettingsExceptPreviewOpacity(current, next) ||
-		sameSettingsExceptPreviewOpacity(current, map[string]string{"app.theme": "mica", "app.preview_opacity": "24"}) {
-		t.Fatal("view settings comparison did not isolate preview opacity")
-	}
 	session := context.Background()
 	control := &previewOpacityControl{value: 65, committed: 65, slider: 65}
 	n := nativeMain{session: session, preferences: current, preview: &Preview{entryID: 7, opacity: control}}
 	n.history.rows = []protocol.DesktopEntry{{Id: 7, Preview: "Still visible"}}
 	n.history.generation = 2
-	n.applyPreviewViewSettings(next)
+	n.applyViewSettings(next)
 	if n.session != session || n.history.generation != 2 || len(n.history.rows) != 1 || n.preview.entryID != 7 {
 		t.Fatal("preview opacity restarted the live presentation")
 	}
 	if control.value != 24 || control.committed != 24 || current["app.preview_opacity"] != "65" {
 		t.Fatal("preview opacity did not apply in place, or rewrote an existing preference snapshot")
+	}
+}
+
+func TestNativePinUpdatesVisibleRowsWithoutDiscardingTheLoadedRange(t *testing.T) {
+	state := protocol.RuntimeState{ServiceInstanceId: "host", PrivacyEpoch: 1, HistoryRevision: 20}
+	h := nativeHistory{state: state, selected: 1, rows: []protocol.DesktopEntry{
+		{Id: 7, Preview: "Unchanged"}, {Id: 8, Preview: "Selected"},
+	}}
+	id := int64(8)
+	for _, status := range []string{"pin_set", "pin_cleared"} {
+		next := h.state
+		next.HistoryRevision++
+		events := protocol.EventsResult{State: next, Events: []protocol.Event{{
+			Event: protocol.EventKindEntryUpdated, State: next, Data: protocol.EventData{EntryId: &id, Status: &status},
+		}}}
+		affected, ok := historyRefreshEntries(h.state, events)
+		if !ok || len(affected) != 0 {
+			t.Fatalf("pin invalidated the visible row: %v", affected)
+		}
+		h.applyPinEvents(events.Events)
+		h.reflow(next, affected)
+		if len(h.rows) != 2 || h.selectedID() != 8 || h.rows[1].Preview != "Selected" ||
+			h.rows[1].IsPinned != (status == "pin_set") {
+			t.Fatalf("view lost its rows, selection or pin state: %+v", h)
+		}
+	}
+}
+
+func TestNativeSettingsApplyInPlaceAcrossChannelAndToggles(t *testing.T) {
+	session := context.Background()
+	initial := map[string]string{"app.theme": "macos", "app.language": "en",
+		protocol.SettingUpdateChannel: "stable", "app.emoji_panel_enabled": "true"}
+	n := nativeMain{session: session, showSettings: true, settingsSection: "about"}
+	n.configured(initial)
+	n.history = nativeHistory{
+		generation: 9, selected: 0,
+		rows: []protocol.DesktopEntry{{Id: 8, Preview: "Loaded once"}},
+	}
+	n.historyScroll.Y, n.settingsScroll.Y, n.settingsStackScroll.Y = 48, 120, 86
+	panel := n.emojiPanel()
+	panel.query = "heart"
+	n.applySavedSetting(protocol.SettingUpdateChannel, "preview")
+	n.applySavedSetting(protocol.SettingUpdateAutoCheck, "true")
+	n.applySavedSetting("app.sound_enabled", "true")
+	n.applySavedSetting("app.window_pinned", "true")
+	if n.updater.channel != "preview" || !n.updater.automatic || !n.pinned || !n.settingEnabled("app.sound_enabled", false) {
+		t.Fatalf("saved choices did not reach the live controls: %+v", n.preferences)
+	}
+	n.applySavedSetting("app.window_pinned", "false")
+	if n.session != session || n.history.generation != 9 || n.history.selectedID() != 8 || n.pinned ||
+		n.settingsSection != "about" || !n.showSettings || n.settingsScroll.Y != 120 ||
+		n.settingsStackScroll.Y != 86 || n.historyScroll.Y != 48 || n.emoji != panel || n.emoji.query != "heart" {
+		t.Fatal("a saved setting discarded the current presentation")
+	}
+	if initial[protocol.SettingUpdateChannel] != "stable" || initial["app.sound_enabled"] != "" {
+		t.Fatal("settings write modified a previous snapshot")
 	}
 }

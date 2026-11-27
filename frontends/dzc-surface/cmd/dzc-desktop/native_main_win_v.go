@@ -100,7 +100,7 @@ func (n *nativeMain) confirmWinV() {
 			}
 			n.mutating = false
 			if n.session != nil {
-				n.prepare(n.resume)
+				n.refreshViewSettings()
 			}
 			if err != nil {
 				log.Printf("Win+V change failed: %v", err)

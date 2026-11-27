@@ -40,11 +40,19 @@ func (n *nativeMain) closeEmoji() {
 	}
 }
 
-func (n *nativeMain) emojiView(c *ui.Context) {
-	tab := n.preferences["app.emoji_panel_tab"]
-	if tab != "favorites" && tab != "symbols" {
-		tab = "emoji"
+const nativeEmojiTabSetting = "app.emoji_panel_tab"
+
+func (n *nativeMain) emojiTab() string {
+	switch tab := n.preferences[nativeEmojiTabSetting]; tab {
+	case "favorites", "symbols":
+		return tab
+	default:
+		return "emoji"
 	}
+}
+
+func (n *nativeMain) emojiView(c *ui.Context) {
+	tab := n.emojiTab()
 	kit := n.mainKit()
 	width, _ := c.Size()
 	kit.CharacterPanel(c, width, func(contentWidth float32) {
@@ -53,13 +61,17 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 			{ID: "symbols", Label: n.text("emoji_symbols_tab")},
 			{ID: "favorites", Label: n.text("emoji_favorites")},
 		}, tab, n.mutating, func(selection string) {
-			n.saveSetting("app.emoji_panel_tab", selection)
+			n.saveSetting(nativeEmojiTabSetting, selection)
 		})
-		if tab == "favorites" {
-			n.emojiFavoritesView(c, contentWidth)
-			return
-		}
-		n.drawEmojiResults(c, kit, tab, contentWidth)
+		ui.Column(c.Key("character-tab-content")).FillWidth().Grow(1).Shrink(1).MinHeight(0).Clip().Children(func() {
+			ui.Column(c.Key(tab)).Fill().Shrink(1).MinHeight(0).Transition(nativePanelEnter).Children(func() {
+				if tab == "favorites" {
+					n.emojiFavoritesView(c, contentWidth)
+				} else {
+					n.drawEmojiResults(c, kit, tab, contentWidth)
+				}
+			})
+		})
 	})
 }
 
@@ -134,7 +146,7 @@ func (n *nativeMain) refreshEmojiResults(panel *nativeEmojiPanel, tab string) {
 		matches := find()
 		n.update(session, func() {
 			panel.searching = false
-			if n.emoji == panel && panel.query == query {
+			if n.emoji == panel && panel.query == query && n.emojiTab() == tab {
 				apply(matches)
 			}
 		})

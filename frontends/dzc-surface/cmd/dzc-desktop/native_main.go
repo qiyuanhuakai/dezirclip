@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"maps"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -55,6 +54,7 @@ type nativeMain struct {
 	importedTheme         *nativeTheme
 	appearanceBusy        bool
 	appearanceSync        bool
+	appearanceMotionUntil time.Time
 	background            nativeBackground
 	systemDark            bool
 	windows11             bool
@@ -255,26 +255,40 @@ func (n *nativeMain) configured(settings map[string]string) {
 		themeName = model.DefaultBuiltinTheme
 	}
 	mode := n.colorMode(settings)
+	previous := n.preferences
 	oldBase := n.themeBase()
-	n.configureThemes(themeName, settings["app.custom_themes"])
+	if previous == nil || themeName != n.theme || settings["app.custom_themes"] != previous["app.custom_themes"] {
+		n.configureThemes(themeName, settings["app.custom_themes"])
+	}
 	appearanceChanged := themeName != n.theme || mode != n.mode ||
 		(settings["app.show_app_border"] == "false") != (n.preferences["app.show_app_border"] == "false")
 	language := mainLanguage(settings["app.language"])
 	languageChanged := n.preferences == nil || n.language() != language
 	n.preferences, n.theme, n.mode = settings, themeName, mode
 	n.configureUpdater(settings[protocol.SettingUpdateChannel], settings[protocol.SettingUpdateAutoCheck] == "true")
-	if languageChanged {
+	if n.window != nil && languageChanged {
 		mygo.App.SetLocale(model.NativeLocale(string(language)))
 	}
-	if appearanceChanged || oldBase != n.themeBase() {
+	if n.window != nil && (appearanceChanged || oldBase != n.themeBase()) {
 		n.applyAppearance()
 	}
 	if settings["app.emoji_panel_enabled"] != "true" {
 		n.showEmoji = false
 	}
-	n.shell.dock.configure(settings["app.edge_docking"] == "true")
-	n.pinned = settings["app.window_pinned"] == "true" || n.shell.dock.autoPinned
-	n.window.SetAlwaysOnTop(n.pinned)
+	if n.shell != nil && n.window != nil && (previous == nil || settings["app.edge_docking"] != previous["app.edge_docking"]) {
+		n.shell.dock.configure(settings["app.edge_docking"] == "true")
+	}
+	n.syncWindowPin()
+}
+
+func (n *nativeMain) syncWindowPin() {
+	pinned := n.preferences["app.window_pinned"] == "true" || n.shell != nil && n.shell.dock.autoPinned
+	if n.pinned != pinned {
+		n.pinned = pinned
+		if n.window != nil {
+			n.window.SetAlwaysOnTop(pinned)
+		}
+	}
 }
 
 func (n *nativeMain) systemAppearanceChanged() {
@@ -428,7 +442,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 		if event.Event == protocol.EventKindServiceStateChanged && event.Data.Status != nil {
 			n.queueCount.observe(*event.Data.Status)
 			switch *event.Data.Status {
-			case "view_settings_changed", "custom_themes_changed", "PrivacyHotkeyChanged":
+			case "view_settings_changed", "capture_settings_changed", "custom_themes_changed", "PrivacyHotkeyChanged":
 				if n.winV.changing {
 					continue
 				}
@@ -436,15 +450,11 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 					n.appearanceSync = true
 					continue
 				}
-				if *event.Data.Status == "view_settings_changed" {
-					n.refreshViewSettings()
-					continue
-				}
-				n.prepare(n.resume)
-				return
+				n.refreshViewSettings()
 			case "application_settings_reset":
-				n.prepare(n.resume)
-				return
+				n.mutating, n.resetOpen = false, false
+				n.resetOpacityPreviews()
+				n.refreshViewSettings()
 			}
 		}
 	}
@@ -464,6 +474,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) {
 		}
 		if canReflow {
 			generation := n.history.generation
+			n.history.applyPinEvents(events.Events)
 			n.history.reflow(next, affected)
 			if deletionOnly {
 				n.retainTagViewAfterDeletion(generation, affected)
@@ -566,75 +577,4 @@ func (n *nativeMain) resetPreviewInteraction() {
 	n.previewSelection = 0
 	n.hover.reset()
 	n.closePreview()
-}
-
-func (n *nativeMain) saveSetting(key, value string) {
-	write := func(ctx context.Context, epoch uint64) error {
-		return n.library.SetSetting(ctx, key, value, epoch)
-	}
-	if key == nativePreviewOpacity.key {
-		initial := n.preferences[key]
-		n.performSettingWrite(4*time.Second, write, func(err error) {
-			if err != nil {
-				return
-			}
-			if n.preferences[key] == initial {
-				settings := make(map[string]string, len(n.preferences)+1)
-				maps.Copy(settings, n.preferences)
-				settings[key] = value
-				n.applyPreviewViewSettings(settings)
-			}
-			n.refreshViewSettings()
-		})
-		return
-	}
-	n.writeSetting(write)
-}
-
-func (n *nativeMain) togglePin() {
-	pinned := !n.pinned
-	n.writeSettingWithEffect(func(ctx context.Context, epoch uint64) error {
-		return n.library.SetWindowPinned(ctx, pinned, epoch)
-	}, func() { n.shell.dock.autoPinned = false })
-}
-
-func (n *nativeMain) writeSetting(write func(context.Context, uint64) error) {
-	n.writeSettingWithEffect(write, nil)
-}
-
-func (n *nativeMain) writeSettingWithEffect(write func(context.Context, uint64) error, onSaved func()) {
-	n.writeSettingWithResult(4*time.Second, write, func(err error) {
-		if err == nil && onSaved != nil {
-			onSaved()
-		}
-	})
-}
-
-func (n *nativeMain) writeSettingWithResult(timeout time.Duration, write func(context.Context, uint64) error, onFinished func(error)) {
-	n.performSettingWrite(timeout, write, func(err error) {
-		onFinished(err)
-		if err == nil {
-			n.prepare(n.resume)
-		}
-	})
-}
-
-func (n *nativeMain) performSettingWrite(timeout time.Duration, write func(context.Context, uint64) error, onFinished func(error)) {
-	if n.session == nil || n.mutating || n.history.state.ServiceInstanceId == "" {
-		return
-	}
-	n.mutating, n.notice = true, ""
-	session, state := n.session, n.history.state
-	go func() {
-		ctx, cancel := context.WithTimeout(session, timeout)
-		defer cancel()
-		err := write(ctx, state.PrivacyEpoch)
-		n.update(session, func() {
-			n.mutating = false
-			onFinished(err)
-			if err != nil {
-				n.notice = n.text("native_setting_save_failed")
-			}
-		})
-	}()
 }

@@ -35,6 +35,7 @@ type nativeBackground struct {
 	gif          *nativeBackgroundGIF
 	timer        *time.Timer
 	loading      bool
+	enterUntil   time.Time
 }
 
 func (b *nativeBackground) pause() {
@@ -87,6 +88,9 @@ func (n *nativeMain) loadBackground() {
 				return
 			}
 			n.background.bitmap, n.background.gif, n.background.loading = bitmap, animation, false
+			if bitmap != nil {
+				n.background.enterUntil = time.Now().Add(nativeAppearanceMotion)
+			}
 			if bitmap == nil && n.notice == "" {
 				n.notice = n.text("custom_background_load_failed")
 			}
@@ -141,8 +145,11 @@ func (n *nativeMain) drawBackground(c *ui.Context, radius int) bool {
 		return false
 	}
 	if opacity := n.currentBackgroundOpacity(); opacity != 0 {
-		ui.Image(c, b.bitmap).Absolute().Top(0).Right(0).Bottom(0).Left(0).
+		picture := ui.Image(c.Key(b.key.path), b.bitmap).Absolute().Top(0).Right(0).Bottom(0).Left(0).
 			Fit(ui.Cover).Radius(float32(radius)).Opacity(float32(opacity) / 100).PassThrough()
+		if time.Now().Before(b.enterUntil) {
+			picture.Transition(ui.ElementTransition{Duration: nativeAppearanceMotion, Colors: true, Enter: &ui.Motion{}})
+		}
 	}
 	return true
 }
@@ -229,7 +236,7 @@ func (n *nativeMain) chooseBackground(label string) {
 			Filters: []mygo.FileFilter{{Name: language.text("native_background_file_filter"), Extensions: []string{"png", "jpg", "jpeg", "webp", "gif"}}},
 		})
 		var notice string
-		saved := false
+		var savedPath string
 		if err != nil {
 			notice = language.text("custom_background_save_failed")
 		} else if len(paths) != 0 && session.Err() == nil {
@@ -247,7 +254,7 @@ func (n *nativeMain) chooseBackground(label string) {
 				if err != nil {
 					notice = language.text("custom_background_save_failed")
 				} else {
-					saved = true
+					savedPath = path
 				}
 			}
 		}
@@ -267,11 +274,17 @@ func (n *nativeMain) chooseBackground(label string) {
 					window.Focus()
 				}
 			}
-			if saved {
-				n.clearBackground()
+			if savedPath != "" {
+				if savedPath == n.preferences[backgroundSetting] {
+					n.clearBackground()
+					n.loadBackground()
+				} else {
+					n.applySavedSetting(backgroundSetting, savedPath)
+				}
 			}
-			if saved || n.appearanceSync {
-				n.prepare(n.resume)
+			if savedPath != "" || n.appearanceSync {
+				n.appearanceSync = false
+				n.refreshViewSettings()
 			}
 			n.notice = notice
 		})

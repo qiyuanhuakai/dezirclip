@@ -378,6 +378,11 @@ impl Host {
             return Ok(DesktopMutationResult{id:request.id,performed:true});
         }
         let intent=if request.confirm_persistence.unwrap_or(false){dzc_core::api::ManualPersistenceIntent::ConfirmedDuringPrivacySession}else{dzc_core::api::ManualPersistenceIntent::Ordinary};
+        let status = if request.action == "pin" {
+            request.pinned.map(|pinned| if pinned { "pin_set" } else { "pin_cleared" }.into())
+        } else {
+            None
+        };
         if request.id<0 {
             let mut rows=self.session.lock().map_err(|_|WireErrorCode::Unavailable)?;
             let index=rows.iter().position(|row|row.id==request.id).ok_or(WireErrorCode::NotFound)?;
@@ -402,7 +407,7 @@ impl Host {
             }
             drop(rows);
             if result_id!=request.id {self.publish(EventKind::EntryDeleted,EventData{entry_id:Some(request.id),status:None})?;}
-            self.publish(EventKind::EntryUpdated,EventData{entry_id:Some(result_id),status:None})?;
+            self.publish(EventKind::EntryUpdated, EventData { entry_id: Some(result_id), status })?;
             return Ok(DesktopMutationResult{id:result_id,performed:true});
         }
         match request.action.as_str() {
@@ -412,7 +417,7 @@ impl Host {
                 self.history.update_manual_checked(request.id,&content,&preview,intent,&permit,now,request.expected_entry_sha256.as_deref()).map_err(denied)?;}
             _=>return Err(WireErrorCode::InvalidRequest),
         }
-        self.publish(EventKind::EntryUpdated,EventData{entry_id:Some(request.id),status:None})?;
+        self.publish(EventKind::EntryUpdated, EventData { entry_id: Some(request.id), status })?;
         Ok(DesktopMutationResult{id:request.id,performed:true})
     }
 }

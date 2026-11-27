@@ -88,7 +88,8 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 		})
 		for _, pane := range panes {
 			if pane.ID == n.settingsSection {
-				ui.Scroll(c).Grow(1).MinWidth(0).FillHeight().MinHeight(0).TrackScroll(&n.settingsScroll).Children(func() {
+				ui.Scroll(c.Key(pane.ID)).Grow(1).MinWidth(0).FillHeight().MinHeight(0).
+					TrackScroll(&n.settingsScroll).Transition(nativePanelEnter).Children(func() {
 					if pane.ID == "data" || pane.ID == "about" {
 						kit.SettingsSectionCard(c, pane.Label, nil, pane.draw)
 						return
@@ -180,12 +181,7 @@ func (n *nativeMain) booleanSettings(c *ui.Context, settings ...nativeBooleanSet
 func (n *nativeMain) booleanSettingWithHelp(c *ui.Context, key, label, hint string, initial bool) {
 	enabled := n.settingEnabled(key, initial)
 	if n.mainKit().SettingsToggleField(c.Key(key), &enabled, label, n.settingsHelpLabel(label), hint, n.mutating) {
-		value := strconv.FormatBool(enabled)
-		n.writeSettingWithEffect(func(ctx context.Context, epoch uint64) error {
-			return n.library.SetSetting(ctx, key, value, epoch)
-		}, func() {
-			n.preferences[key] = value
-		})
+		n.saveSetting(key, strconv.FormatBool(enabled))
 	}
 }
 
@@ -202,9 +198,9 @@ func (n *nativeMain) generalSettings(c *ui.Context) {
 	const trayKey = "app.hide_tray_icon"
 	hideTray := n.settingEnabled(trayKey, false)
 	if kit.SettingsToggleField(c.Key(trayKey), &hideTray, n.text("hide_tray_icon"), "", "", n.mutating) {
-		n.writeSetting(func(ctx context.Context, epoch uint64) error {
+		n.writeSettingWithEffect(func(ctx context.Context, epoch uint64) error {
 			return n.shell.SetTrayVisible(ctx, !hideTray, epoch)
-		})
+		}, func() { n.applySavedSetting(trayKey, strconv.FormatBool(hideTray)) })
 	}
 	const edge = "app.edge_docking"
 	dock, dockLabel := n.settingEnabled(edge, false), n.text("edge_docking")
@@ -421,9 +417,13 @@ func (n *nativeMain) toolsSettings(c *ui.Context, kit uikit.Kit) {
 func (n *nativeMain) panelCheckbox(c *ui.Context, kit uikit.Kit, id, label, hint string, enabled bool) {
 	disabled := n.session == nil || n.history.state.ServiceInstanceId == "" || n.mutating || n.capturing
 	if kit.SettingsToggleField(c, &enabled, label, n.settingsHelpLabel(label), hint, disabled) {
-		n.writeSetting(func(ctx context.Context, epoch uint64) error {
+		key := "app.screenshot_enabled"
+		if id == "quick-paste" {
+			key = "app.quick_paste_enabled"
+		}
+		n.writeSettingWithEffect(func(ctx context.Context, epoch uint64) error {
 			return n.shell.SetNativePanelEnabled(ctx, id, enabled, epoch)
-		})
+		}, func() { n.applySavedSetting(key, strconv.FormatBool(enabled)) })
 	}
 }
 

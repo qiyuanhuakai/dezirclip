@@ -86,7 +86,7 @@ func (n *nativeMain) applicationSetting(c *ui.Context, kind, label string) {
 				return n.library.SetSetting(ctx, key, selected, epoch)
 			}, func(err error) {
 				if err == nil {
-					n.preferences[key] = selected
+					n.applySavedSetting(key, selected)
 				}
 			})
 		}

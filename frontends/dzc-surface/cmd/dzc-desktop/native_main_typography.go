@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 	"time"
 
@@ -113,11 +112,7 @@ func (n *nativeMain) fontSetting(c *ui.Context, key, label, hint string, choices
 }
 
 func (n *nativeMain) saveFont(key, selected string) {
-	n.writeSettingWithEffect(func(ctx context.Context, epoch uint64) error {
-		return n.library.SetSetting(ctx, key, selected, epoch)
-	}, func() {
-		n.preferences[key] = selected
-	})
+	n.saveSetting(key, selected)
 }
 
 func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, label, hint string, saved int) int {
@@ -158,75 +153,13 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 	return int(edit.value)
 }
 
-// Read view settings before retiring the presentation. Preview opacity can
-// be applied in place without rereading clipboard contents or rebuilding cards.
-func (n *nativeMain) refreshViewSettings() {
-	if n.session == nil || n.history.state.ServiceInstanceId == "" {
-		return
-	}
-	n.viewSettingsRevision++
-	if n.readingViewSettings {
-		return
-	}
-	n.readingViewSettings = true
-	session, state, revision := n.session, n.history.state, n.viewSettingsRevision
-	go func() {
-		ctx, cancel := context.WithTimeout(session, 4*time.Second)
-		defer cancel()
-		raw, err := n.library.preferences(ctx, state)
-		var settings map[string]string
-		if err == nil {
-			err = json.Unmarshal(raw, &settings)
-		}
-		n.update(session, func() {
-			n.readingViewSettings = false
-			if revision != n.viewSettingsRevision {
-				n.refreshViewSettings()
-				return
-			}
-			if err != nil || settings == nil || !sameSettingsExceptPreviewOpacity(n.preferences, settings) {
-				n.prepare(n.resume)
-				return
-			}
-			n.applyPreviewViewSettings(settings)
-		})
-	}()
-}
-
-func sameSettingsExceptPreviewOpacity(current, next map[string]string) bool {
-	for key, value := range current {
-		if key != nativePreviewOpacity.key && next[key] != value {
-			return false
-		}
-	}
-	for key, value := range next {
-		if key != nativePreviewOpacity.key && current[key] != value {
-			return false
-		}
-	}
-	return true
-}
-
-func (n *nativeMain) applyPreviewViewSettings(settings map[string]string) {
-	key := nativePreviewOpacity.key
-	changed := n.preferences[key] != settings[key]
-	n.preferences = settings
-	if changed && n.preview != nil && n.preview.opacity != nil {
-		control := n.preview.opacity
-		control.applyPreference(opacityPreference(settings[key], settings["app.surface_opacity"]))
-		if control.window != nil {
-			control.window.Invalidate()
-		}
-	}
-}
-
 func (n *nativeMain) saveOpacity(preference string, value int, draft **int) {
 	saved := strconv.Itoa(value)
 	n.writeSettingWithResult(4*time.Second, func(ctx context.Context, epoch uint64) error {
 		return n.library.SetSetting(ctx, preference, saved, epoch)
 	}, func(err error) {
 		if err == nil {
-			n.preferences[preference] = saved
+			n.applySavedSetting(preference, saved)
 		}
 		*draft = nil
 	})

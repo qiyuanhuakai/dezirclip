@@ -416,7 +416,8 @@ func (n *nativeMain) saveNativeShortcut(key, value string) {
 				n.reportShortcutError(key, n.shortcutError(err))
 				return
 			}
-			n.prepare(n.resume)
+			n.cancelShortcut()
+			n.refreshViewSettings()
 		})
 	}()
 }

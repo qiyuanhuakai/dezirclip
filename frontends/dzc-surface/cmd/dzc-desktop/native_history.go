@@ -129,9 +129,13 @@ func historyRefreshEntries(current protocol.RuntimeState, result protocol.Events
 				return nil, false
 			}
 			coveredRevision = max(coveredRevision, event.State.HistoryRevision)
-			if event.Event != protocol.EventKindEntryUpdated || event.Data.Status == nil || *event.Data.Status != "usage_changed" {
-				affected[*event.Data.EntryId] = struct{}{}
+			if event.Event == protocol.EventKindEntryUpdated && event.Data.Status != nil {
+				switch *event.Data.Status {
+				case "usage_changed", "pin_set", "pin_cleared":
+					continue
+				}
 			}
+			affected[*event.Data.EntryId] = struct{}{}
 		}
 	}
 	if coveredRevision != next.HistoryRevision {
@@ -162,6 +166,23 @@ func historyDeletionEntries(previous uint64, events []protocol.Event) map[int64]
 		}
 	}
 	return removed
+}
+
+func (h *nativeHistory) applyPinEvents(events []protocol.Event) {
+	for _, event := range events {
+		if event.Event != protocol.EventKindEntryUpdated || event.State.HistoryRevision <= h.state.HistoryRevision ||
+			event.Data.EntryId == nil || event.Data.Status == nil {
+			continue
+		}
+		status := *event.Data.Status
+		if status != "pin_set" && status != "pin_cleared" {
+			continue
+		}
+		index := slices.IndexFunc(h.rows, func(row protocol.DesktopEntry) bool { return row.Id == *event.Data.EntryId })
+		if index >= 0 {
+			h.rows[index].IsPinned = status == "pin_set"
+		}
+	}
 }
 
 func (h *nativeHistory) reflow(state protocol.RuntimeState, affected map[int64]struct{}) {
