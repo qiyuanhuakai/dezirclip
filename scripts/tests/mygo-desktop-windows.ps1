@@ -1346,18 +1346,31 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Click-Control $main (Get-ControlPoint $root 'Settings')
         Click-Control $main (Get-ControlPoint $root 'Tools')
         foreach ($enabled in @($true, $false, $true)) {
-            foreach ($panel in @(@('Quick Paste', $quickTitle), @('Screenshot', $screenTitle))) {
+            foreach ($panel in @(@('Quick Paste', $quickTitle, '^+v'), @('Screenshot', $screenTitle, '^+a'))) {
                 $box = Wait-Until { Get-SettingsCheckbox $root $panel[0] } 'Native panel setting unavailable'
                 $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
                 $toggle.Toggle()
+                $expected = if ($enabled) { [Windows.Automation.ToggleState]::On } else { [Windows.Automation.ToggleState]::Off }
                 $null = Wait-Until {
-                    if ($resident.HasExited) { throw 'Disabling the last native panel exited the resident' }
-                    $exists = [MyGoInput]::WindowWithTitle($panel[1]) -ne [IntPtr]::Zero
-                    $exists -eq $enabled
-                } ("Native panel window lifetime differs from its setting: {0}, enabled={1}" -f $panel[0], $enabled)
+                    if ($resident.HasExited) { throw 'Native panel preference exited the resident' }
+                    $box = Get-SettingsCheckbox $root $panel[0]
+                    if ($box) {
+                        $current = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+                        $current.Current.ToggleState -eq $expected
+                    }
+                } ("Native panel toggle did not save: {0}, enabled={1}" -f $panel[0], $enabled)
+                if ($enabled) {
+                    Test-ResidentPanel $resident $panel[2] $panel[1] $edit $form
+                    $null = [MyGoInput]::SetForegroundWindow($main.MainWindowHandle)
+                    $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $main.MainWindowHandle } 'Native settings window did not regain foreground'
+                } else {
+                    $null = Wait-Until {
+                        [MyGoInput]::WindowWithTitle($panel[1]) -eq [IntPtr]::Zero
+                    } ("Disabled native panel retained its window: {0}" -f $panel[0])
+                }
             }
         }
-        Write-Output 'Verified predisabled startup, destroying both panels and recreating both panels'
+        Write-Output 'Verified predisabled startup, opening both panels with their hotkeys, and releasing both windows when disabled'
         return
     }
     if ($RichPaste) {

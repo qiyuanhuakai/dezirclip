@@ -319,6 +319,7 @@ func run() error {
 		dock.configure(settings.EdgeDocking == "true")
 		win.OnBlur(func() {
 			preview.clear()
+			native.hover.reset()
 			native.menu.Close()
 			concealed := native.clearProtectedRows()
 			if native.editor != nil && native.editor.protected {

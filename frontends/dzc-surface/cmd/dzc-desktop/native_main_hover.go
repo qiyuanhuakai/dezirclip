@@ -66,7 +66,10 @@ func (n *nativeMain) hoverPreview(row protocol.DesktopEntry, generation uint64, 
 	h.timer = time.AfterFunc(300*time.Millisecond, func() {
 		n.update(session, func() {
 			if h.ticket != ticket || n.mutating || n.preview.entryID != 0 ||
-				!mainWindowFocused(n.window) || n.history.generation != generation {
+				!n.window.IsVisible() || n.history.generation != generation {
+				return
+			}
+			if !mainWindowFocused(n.window) && (!n.pinned || nativeConcealed(row)) {
 				return
 			}
 			n.showPreview(row, generation, bounds)
