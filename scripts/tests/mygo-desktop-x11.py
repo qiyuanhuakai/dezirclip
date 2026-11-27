@@ -1510,21 +1510,32 @@ def check(desktop, pinned, audio, pin_preview=False):
     check_storage_limit(cli)
 
 
+def send_x11_shortcut(Atspi, Gdk, keys):
+    keymap = Gdk.Keymap.get_for_display(Gdk.Display.get_default())
+    for pressed in (True, False):
+        for sym in keys if pressed else reversed(keys):
+            mapped, entries = keymap.get_entries_for_keyval(sym)
+            assert mapped and entries
+            assert Atspi.generate_keyboard_event(entries[0].keycode, None,
+                Atspi.KeySynthType.PRESS if pressed else Atspi.KeySynthType.RELEASE)
+
+
 def check_reset_settings(desktop, *, native_main=False):
     import gi
     gi.require_version('Atspi', '2.0')
-    from gi.repository import Atspi
+    gi.require_version('Gdk', '3.0')
+    from gi.repository import Atspi, Gdk
     cli = desktop.with_name('dzc')
     marker = 'reset-preserves-history-' + secrets.token_hex(6)
     subprocess.run([cli, 'add', marker], check=True, stdout=subprocess.DEVNULL)
     with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', [
             ('app.language', 'en'), ('app.theme', 'retro'), ('app.hotkey', 'Ctrl+Shift+F8'),
+            ('app.search_hotkey', 'Alt+C'),
             ('app.silent_start', 'false'), ('app.hide_tray_icon', 'true'),
             ('app.window_width', '720'), ('app.window_height', '610')])
     subprocess.run([cli, 'service', 'start', '--no-capture', '--json'], check=True, stdout=subprocess.DEVNULL)
     resident = subprocess.Popen([desktop, '--show'], stdout=subprocess.DEVNULL)
-    replacement = None
     def wait(check, message):
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
@@ -1543,35 +1554,33 @@ def check_reset_settings(desktop, *, native_main=False):
         bounds = Atspi.Component.get_extents(node, Atspi.CoordType.SCREEN)
         assert Atspi.generate_mouse_event(bounds.x + bounds.width//2, bounds.y + bounds.height//2, 'b1c')
     try:
+        original = wait(lambda: visible_main_window(resident.pid, desktop), 'Main window did not open')
         click(wait(lambda: control('Settings'), 'Settings did not open'))
         click(wait(lambda: control('Reset to Defaults'), 'Reset control unavailable'))
         assert Atspi.Action.do_action(wait(lambda: control('Confirm'), 'Reset confirmation unavailable'), 0)
-        wait(lambda: resident.poll() is not None, 'Reset did not replace the native resident')
-        node = wait(lambda: next((node for node, _, _, text in mygo_nodes(Atspi, desktop) if text == marker), None),
-                    'Reset did not reopen history in the replacement main window')
-        parent = int(Path(f'/proc/{node.get_process_id()}/stat').read_text().rsplit(')', 1)[1].split()[1])
-        if b'--main-window' in Path(f'/proc/{parent}/cmdline').read_bytes().split(b'\0'):
-            parent = int(Path(f'/proc/{parent}/stat').read_text().rsplit(')', 1)[1].split()[1])
-        assert parent != resident.pid and Path(f'/proc/{parent}/exe').resolve() == desktop
-        replacement = parent
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
-            settings = dict(db.execute('SELECT key,value FROM settings'))
-            assert settings['app.theme'] == 'mica' and settings['app.hotkey'] == 'Alt+C'
-            assert settings['app.hide_tray_icon'] == 'false'
+            def defaults_saved():
+                settings = dict(db.execute('SELECT key,value FROM settings'))
+                return (settings.get('app.theme') == 'mica' and settings.get('app.hotkey') == 'Alt+C'
+                        and settings.get('app.search_hotkey') != 'Alt+C' and settings.get('app.hide_tray_icon') == 'false')
+            wait(defaults_saved, 'Default preferences did not persist')
             assert db.execute('SELECT count(*) FROM clipboard_history WHERE content=?', (marker,)).fetchone() == (1,)
-        wait(lambda: tray_item(replacement, '退出', activate=False), 'Reset did not restore the native tray')
-        print('Verified settings confirmation, default preferences, resident replacement, restored tray and preserved history', flush=True)
+        wait(lambda: tray_item(resident.pid, '退出', activate=False), 'Reset did not restore the native tray')
+        assert resident.poll() is None and visible_main_window(resident.pid, desktop) == original
+        click(wait(lambda: control('关闭') or control('Close'), 'Settings did not stay open after reset'))
+        wait(lambda: any(text == marker for _, _, _, text in mygo_nodes(Atspi, desktop)), 'Reset did not preserve visible history')
+        click(wait(lambda: control('隐藏') or control('Hide'), 'Hide action unavailable'))
+        wait(lambda: not visible_main_window(resident.pid, desktop), 'Window did not hide')
+        send_x11_shortcut(Atspi, Gdk, (Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F8))
+        time.sleep(.25)
+        assert not visible_main_window(resident.pid, desktop), 'Reset left the old shortcut registered'
+        send_x11_shortcut(Atspi, Gdk, (Gdk.KEY_Alt_L, Gdk.KEY_c))
+        assert wait(lambda: visible_main_window(resident.pid, desktop), 'Default shortcut did not open history') == original
+        print('Verified in-place reset, restored tray, default shortcut and preserved history', flush=True)
     finally:
         with observed_service_cleanup(cli):
             if resident.poll() is None: resident.terminate()
             resident.wait(timeout=20)
-            if replacement is not None:
-                process_exit = os.pidfd_open(replacement)
-                try:
-                    os.kill(replacement, 15)
-                    assert select.select([process_exit], [], [], 20)[0], 'Replacement resident did not exit'
-                finally:
-                    os.close(process_exit)
 
 
 def check_paste_hotkeys(desktop, middle=False):
@@ -1604,13 +1613,7 @@ def check_paste_hotkeys(desktop, middle=False):
             time.sleep(.04)
         raise AssertionError(message)
     def shortcut(keys):
-        keymap = Gdk.Keymap.get_for_display(Gdk.Display.get_default())
-        for pressed in (True, False):
-            for sym in keys if pressed else reversed(keys):
-                mapped, entries = keymap.get_entries_for_keyval(sym)
-                assert mapped and entries
-                assert Atspi.generate_keyboard_event(entries[0].keycode, None,
-                    Atspi.KeySynthType.PRESS if pressed else Atspi.KeySynthType.RELEASE)
+        send_x11_shortcut(Atspi, Gdk, keys)
     try:
         wait(lambda: tray_item(resident.pid, '退出', activate=False), 'Resident shortcut registration did not finish')
         wait(window.is_active, 'Editor did not acquire focus')
