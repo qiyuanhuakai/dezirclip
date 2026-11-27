@@ -637,8 +637,9 @@ jobs:
         if: matrix.can_test
         shell: python
         run: |
-          import os, unittest
+          import os, sys, unittest
           from pathlib import Path
+          sys.path.insert(0, str(Path.cwd()))
           binary = Path("target/debug") / ("dzc.exe" if os.name == "nt" else "dzc")
           os.environ["DZC_TEST_BIN"] = str(binary.resolve(strict=True))
           tests = unittest.defaultTestLoader.loadTestsFromNames([
