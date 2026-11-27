@@ -307,24 +307,23 @@ def check(desktop, helpers, *, native_main=False):
                 return db.execute("SELECT value FROM settings WHERE key='app.language'").fetchone()[0]
 
         def switch(label, option, code, changed_label):
-            def selector():
-                node = find(label, Atspi.Role.COMBO_BOX)
+            def choice():
+                node = find(option, Atspi.Role.PUSH_BUTTON)
                 if node and node.get_state_set().contains(Atspi.StateType.SENSITIVE):
                     return node
 
-            control = wait(selector, f'{label} was not an available language picker')
-            assert Atspi.Component.grab_focus(control)
-            keys(Gdk.KEY_space)
-            click(option)
+            wait(lambda: find(label), f'{label} setting did not render')
+            wait(choice, f'{option} was not an available language choice')
+            click(option, Atspi.Role.PUSH_BUTTON)
             wait(lambda: saved_language() == code, f'{code} was not stored')
-            wait(lambda: find(changed_label, Atspi.Role.COMBO_BOX), 'The saved language did not repaint the window')
+            wait(lambda: find(changed_label), 'The saved language did not repaint the window')
 
-        click('General')
-        switch('Language', '繁體中文', 'tw', '語言')
+        click('Appearance')
+        switch('Language', '繁體', 'tw', '語言')
         wait(lambda: find('顯示搜尋欄'), 'Traditional Chinese settings did not render')
         main = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
         click('關閉')
-        wait(lambda: find('隱藏') and not find('語言', Atspi.Role.COMBO_BOX),
+        wait(lambda: find('隱藏') and not find('語言'),
              'Closing Settings did not return to the native history')
         click('隱藏')
         wait(lambda: 'IsViewable' not in subprocess.check_output(['xwininfo', '-id', main], text=True),
@@ -333,16 +332,15 @@ def check(desktop, helpers, *, native_main=False):
         wait(lambda: subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1] == main
              and find('隱藏'), 'Traditional Chinese did not survive summoning the native history')
         click('設定')
-        wait(lambda: find('語言', Atspi.Role.COMBO_BOX), 'Traditional Chinese settings did not reopen')
-
         click('隱私設定')
         wait(lambda: find('隱私保護'), 'The privacy settings did not use Traditional Chinese')
-        click('常規設定')
-        switch('語言', '简体中文', 'zh', '语言')
+        click('界面設定')
+        switch('語言', '简体', 'zh', '语言')
         wait(lambda: find('显示搜索栏'), 'Simplified Chinese settings did not render')
         click('返回')
         wait(lambda: find('搜索剪切板...'), 'Simplified Chinese search label did not render')
         click('设置')
+        click('界面设置')
         switch('语言', 'English', 'en', 'Language')
         print('Verified live language changes and persistence when summoning the native main window again', flush=True)
 

@@ -360,7 +360,7 @@ class SyntheticSeederTests(unittest.TestCase):
         seed = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(seed)
         with tempfile.TemporaryDirectory(prefix="dzc-synthetic-seed-") as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve(strict=True)
             seed.WORKSPACE_ROOT = root
             seed.CASES_ROOT = root / "cases"
             seed.CASES_ROOT.mkdir()
