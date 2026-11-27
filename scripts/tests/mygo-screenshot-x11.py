@@ -320,7 +320,7 @@ def check(desktop, helpers, *, native_main=False):
 
         click('Appearance')
         switch('Language', '繁體', 'tw', '語言')
-        wait(lambda: find('顯示搜尋欄'), 'Traditional Chinese settings did not render')
+        wait(lambda: find('預覽透明度', Atspi.Role.SLIDER), 'Traditional Chinese appearance did not render')
         main = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
         click('關閉')
         wait(lambda: find('隱藏') and not find('語言'),
@@ -336,7 +336,7 @@ def check(desktop, helpers, *, native_main=False):
         wait(lambda: find('隱私保護'), 'The privacy settings did not use Traditional Chinese')
         click('界面設定')
         switch('語言', '简体', 'zh', '语言')
-        wait(lambda: find('显示搜索栏'), 'Simplified Chinese settings did not render')
+        wait(lambda: find('预览透明度', Atspi.Role.SLIDER), 'Simplified Chinese appearance did not render')
         click('返回')
         wait(lambda: find('搜索剪切板...'), 'Simplified Chinese search label did not render')
         click('设置')
