@@ -84,14 +84,34 @@ public static class MyGoInput {
     public struct Rect { public int left, top, right, bottom; }
     [StructLayout(LayoutKind.Sequential)]
     struct CursorInfo { public uint size, flags; public IntPtr handle; public Point position; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct GuiThreadInfo { public uint size, flags; public IntPtr active, focus, capture, menuOwner, moveSize, caret; public Rect caretRect; }
     [DllImport("user32.dll", SetLastError=true)] static extern bool GetCursorInfo(ref CursorInfo cursor);
+    [DllImport("user32.dll", SetLastError=true)] static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo state);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr LoadCursor(IntPtr instance, IntPtr name);
-    public static bool HasMoveCursor() {
+    static CursorInfo ReadCursor() {
         var cursor = new CursorInfo();
         cursor.size = (uint)Marshal.SizeOf(cursor);
         if (!GetCursorInfo(ref cursor)) throw new System.ComponentModel.Win32Exception();
+        return cursor;
+    }
+    public static bool IsCursorSuppressed() {
+        const uint CURSOR_SUPPRESSED = 2;
+        var cursor = ReadCursor();
+        return (cursor.flags & CURSOR_SUPPRESSED) != 0 && cursor.handle == IntPtr.Zero;
+    }
+    public static bool HasMoveCursor() {
+        var cursor = ReadCursor();
         var move = LoadCursor(IntPtr.Zero, new IntPtr(32646)); // IDC_SIZEALL
         return move != IntPtr.Zero && cursor.handle == move;
+    }
+    public static bool IsMovingWindow(IntPtr window) {
+        var state = new GuiThreadInfo();
+        state.size = (uint)Marshal.SizeOf(state);
+        uint process;
+        var thread = GetWindowThreadProcessId(window, out process);
+        if (thread == 0 || !GetGUIThreadInfo(thread, ref state)) throw new System.ComponentModel.Win32Exception();
+        return state.moveSize == window;
     }
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hwnd, out Rect rect);
@@ -1160,22 +1180,32 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             throw 'The native title is obscured at the drag start point'
         }
         if (![MyGoInput]::SetCursorPos($dragX, $dragY)) { throw 'Cannot reach native title bar' }
+        $cursorWasSuppressed = [MyGoInput]::IsCursorSuppressed()
+        $verifyCursorRestoration = $false
         [MyGoInput]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
         try {
             Start-Sleep -Milliseconds 100
-            $null = [MyGoInput]::SetCursorPos(($dragX - 50), ($dragY + 42))
+            if (![MyGoInput]::SetCursorPos(($dragX - 18), ($dragY + 14))) { throw 'Cannot start the title-bar gesture' }
+            $null = Wait-Until { [MyGoInput]::IsMovingWindow($main.MainWindowHandle) } 'Windows did not start a native move operation' 2
+            if (![MyGoInput]::SetCursorPos(($dragX - 50), ($dragY + 42))) { throw 'Cannot move the pointer during the native drag' }
             if (!$LegacyCloseAfterPaste) {
-                $null = Wait-Until { [MyGoInput]::HasMoveCursor() } 'Dragging the native title bar did not show the move cursor' 2
+                if ($cursorWasSuppressed -and [MyGoInput]::IsCursorSuppressed()) {
+                    Write-Host 'Windows reports a suppressed cursor before and during the drag; verifying native movement'
+                } else {
+                    $null = Wait-Until { [MyGoInput]::HasMoveCursor() } 'Dragging the native title bar did not show the move cursor' 2
+                    $verifyCursorRestoration = $true
+                }
             }
         } finally {
             [MyGoInput]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
         }
         $null = Wait-Until {
             $afterDrag = [MyGoInput+Rect]::new()
-            [MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$afterDrag) -and
+            ![MyGoInput]::IsMovingWindow($main.MainWindowHandle) -and
+                [MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$afterDrag) -and
                 [Math]::Abs($afterDrag.top - $beforeDrag.top) -ge 20
         } 'Dragging the native title bar did not move the window' 5
-        if (!$LegacyCloseAfterPaste) {
+        if ($verifyCursorRestoration) {
             $null = Wait-Until { ![MyGoInput]::HasMoveCursor() } 'The move cursor remained after the drag ended' 2
             Write-Host 'Verified cursor restoration when dragging the native title bar'
         }
