@@ -2,9 +2,16 @@ use base64::Engine;
 
 pub const ENCRYPT_PREFIX: &str = "dpapi:";
 pub const LINUX_ENCRYPT_PREFIX: &str = "linux:";
+pub const KEYCHAIN_ENCRYPT_PREFIX: &str = "keychain:v1:";
 
 pub fn is_encrypted_value(value: &str) -> bool {
-    value.starts_with(ENCRYPT_PREFIX) || value.starts_with(LINUX_ENCRYPT_PREFIX)
+    has_encrypted_prefix(value.as_bytes())
+}
+
+pub(super) fn has_encrypted_prefix(value: &[u8]) -> bool {
+    [ENCRYPT_PREFIX, LINUX_ENCRYPT_PREFIX, KEYCHAIN_ENCRYPT_PREFIX]
+        .iter()
+        .any(|prefix| value.starts_with(prefix.as_bytes()))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,7 +126,8 @@ fn decode_stored_text_with(
 }
 
 pub fn has_ciphertext_envelope(value: &str) -> bool {
-    let (linux, payload) = if let Some(payload) = value.strip_prefix(LINUX_ENCRYPT_PREFIX) {
+    let (aes, payload) = if let Some(payload) = value.strip_prefix(LINUX_ENCRYPT_PREFIX)
+        .or_else(|| value.strip_prefix(KEYCHAIN_ENCRYPT_PREFIX)) {
         (true, payload)
     } else if let Some(payload) = value.strip_prefix(ENCRYPT_PREFIX) {
         (false, payload)
@@ -129,7 +137,7 @@ pub fn has_ciphertext_envelope(value: &str) -> bool {
     let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) else {
         return false;
     };
-    if linux {
+    if aes {
         // AES-GCM stores a 12-byte nonce followed by ciphertext and a 16-byte tag.
         bytes.len() >= 12 + 16
     } else {
@@ -321,21 +329,66 @@ pub fn encrypt_with_key(
     key: impl FnOnce() -> Result<[u8; 32], EncryptionError>,
     fill_nonce: impl FnOnce(&mut [u8]) -> Result<(), EncryptionError>,
 ) -> Result<String, EncryptionError> {
-    use aes_gcm::{
-        aead::{Aead, KeyInit},
-        Aes256Gcm, Nonce,
-    };
-    let key = key()?;
-    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| EncryptionError::EncryptionFailed)?;
-    let mut nonce_bytes = [0u8; 12];
-    fill_nonce(&mut nonce_bytes)?;
-    let ciphertext = cipher
-        .encrypt(Nonce::from_slice(&nonce_bytes), plain.as_bytes())
-        .map_err(|_| EncryptionError::EncryptionFailed)?;
-    let mut sealed = nonce_bytes.to_vec();
-    sealed.extend_from_slice(&ciphertext);
-    let encoded = base64::engine::general_purpose::STANDARD.encode(&sealed);
-    Ok(format!("{}{}", LINUX_ENCRYPT_PREFIX, encoded))
+    let key = zeroize::Zeroizing::new(key()?);
+    let mut nonce = [0; 12];
+    fill_nonce(&mut nonce)?;
+    AesTextFormat::Linux.seal(plain, &key, nonce)
+}
+
+#[derive(Clone, Copy)]
+pub enum AesTextFormat {
+    Linux,
+    KeychainV1,
+}
+
+impl AesTextFormat {
+    fn prefix(self) -> &'static str {
+        match self {
+            Self::Linux => LINUX_ENCRYPT_PREFIX,
+            Self::KeychainV1 => KEYCHAIN_ENCRYPT_PREFIX,
+        }
+    }
+
+    fn associated_data(self) -> &'static [u8] {
+        match self {
+            // The established Linux envelope has no associated data.
+            Self::Linux => &[],
+            Self::KeychainV1 => KEYCHAIN_ENCRYPT_PREFIX.as_bytes(),
+        }
+    }
+
+    pub fn seal(
+        self, plain: &str, key: &[u8; 32], nonce: [u8; 12],
+    ) -> Result<String, EncryptionError> {
+        use aes_gcm::{aead::{Aead, KeyInit, Payload}, Aes256Gcm, Nonce};
+        let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| EncryptionError::EncryptionFailed)?;
+        let ciphertext = cipher.encrypt(Nonce::from_slice(&nonce), Payload {
+            msg: plain.as_bytes(), aad: self.associated_data(),
+        }).map_err(|_| EncryptionError::EncryptionFailed)?;
+        let mut sealed = nonce.to_vec();
+        sealed.extend_from_slice(&ciphertext);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&sealed);
+        Ok(format!("{}{}", self.prefix(), encoded))
+    }
+
+    pub fn open(
+        self,
+        sealed: &str,
+        read_key: impl FnOnce() -> Option<zeroize::Zeroizing<[u8; 32]>>,
+    ) -> Option<String> {
+        use aes_gcm::{aead::{Aead, KeyInit, Payload}, Aes256Gcm, Nonce};
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(sealed.strip_prefix(self.prefix())?).ok()?;
+        let (nonce, ciphertext) = bytes.split_at_checked(12)?;
+        if ciphertext.len() < 16 {
+            return None;
+        }
+        let key = read_key()?;
+        let cipher = Aes256Gcm::new_from_slice(key.as_ref()).ok()?;
+        String::from_utf8(cipher.decrypt(Nonce::from_slice(nonce), Payload {
+            msg: ciphertext, aad: self.associated_data(),
+        }).ok()?).ok()
+    }
 }
 
 #[cfg(test)]
@@ -512,22 +565,7 @@ impl KeyProvider for TestKeyProvider {
         )
     }
     fn open_text(&self, cipher: &str) -> Option<String> {
-        use aes_gcm::{
-            aead::{Aead, KeyInit},
-            Aes256Gcm, Nonce,
-        };
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(cipher.strip_prefix(LINUX_ENCRYPT_PREFIX)?)
-            .ok()?;
-        if bytes.len() < 12 {
-            return None;
-        }
-        let key = Aes256Gcm::new_from_slice(&[37; 32]).ok()?;
-        String::from_utf8(
-            key.decrypt(Nonce::from_slice(&bytes[..12]), &bytes[12..])
-                .ok()?,
-        )
-        .ok()
+        AesTextFormat::Linux.open(cipher, || Some(zeroize::Zeroizing::new([37; 32])))
     }
 }
 
@@ -553,6 +591,7 @@ mod key_provider_tests {
             "private probe",
             "dpapi:private probe",
             "linux:private probe",
+            "keychain:v1:private probe",
         ] {
             assert_eq!(
                 seal_with_provider("private probe", &InvalidProvider(value)),
@@ -564,5 +603,27 @@ mod key_provider_tests {
             TEST_PROVIDER.open_text(&sealed).as_deref(),
             Some("private probe")
         );
+    }
+
+    #[test]
+    fn versioned_keychain_ciphertext_cannot_be_relabelled_or_treated_as_plaintext() {
+        let key = [41; 32];
+        let sealed = AesTextFormat::KeychainV1.seal("synthetic body", &key, [1; 12]).unwrap();
+        assert!(has_ciphertext_envelope(&sealed));
+        let read_key = || Some(zeroize::Zeroizing::new(key));
+        assert_eq!(AesTextFormat::KeychainV1.open(&sealed, read_key).as_deref(), Some("synthetic body"));
+        assert!(matches!(decode_stored_text_with(&sealed, |_| None), StoredText::Failed));
+        assert!(AesTextFormat::Linux.open(&sealed.replacen(KEYCHAIN_ENCRYPT_PREFIX, LINUX_ENCRYPT_PREFIX, 1), read_key).is_none());
+        assert!(AesTextFormat::KeychainV1.open("keychain:v1: ordinary text", || panic!("literal text must not open the keychain")).is_none());
+        assert!(matches!(decode_stored_text_with("keychain:v1: ordinary text", |_| None),
+            StoredText::Plain("keychain:v1: ordinary text")));
+    }
+
+    #[test]
+    fn existing_linux_aes_gcm_envelope_keeps_its_original_bytes() {
+        let expected = "linux:AAAAAAAAAAAAAAAAUw+K+8dFNrmpY7TxxMtziw==";
+        let key = [0; 32];
+        assert_eq!(AesTextFormat::Linux.seal("", &key, [0; 12]).unwrap(), expected);
+        assert_eq!(AesTextFormat::Linux.open(expected, || Some(zeroize::Zeroizing::new(key))).as_deref(), Some(""));
     }
 }

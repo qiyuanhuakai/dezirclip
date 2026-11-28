@@ -51,12 +51,11 @@ extern "system" {
 }
 
 #[cfg(target_os = "linux")]
-use dzc_core::crypto::encrypt_with_key;
+use dzc_core::crypto::{AesTextFormat, encrypt_with_key};
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 use dzc_core::crypto::EncryptionError;
 #[cfg(windows)]
 use dzc_core::crypto::ENCRYPT_PREFIX;
-#[cfg(target_os = "linux")]
-use dzc_core::crypto::LINUX_ENCRYPT_PREFIX;
 
 static DIAGNOSTIC_SINK: std::sync::OnceLock<fn(&str)> = std::sync::OnceLock::new();
 pub fn set_diagnostic_sink(sink: fn(&str)) {
@@ -144,12 +143,6 @@ pub fn decrypt_value(cipher: &str) -> Option<String> {
         None
     }
 }
-
-#[cfg(target_os = "linux")]
-use aes_gcm::{
-    aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce,
-};
 
 #[cfg(target_os = "linux")]
 const MASTER_KEY_SERVICE: &str = "dezirclip";
@@ -646,32 +639,7 @@ pub(crate) fn encrypt_platform(plain: &str) -> Result<String, EncryptionError> {
 
 #[cfg(target_os = "linux")]
 pub fn decrypt_value(cipher: &str) -> Option<String> {
-    let payload = cipher.strip_prefix(LINUX_ENCRYPT_PREFIX)?;
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(payload)
-        .ok()?;
-
-    if decoded.len() < 12 {
-        return None;
-    }
-
-    let key = existing_master_key()?;
-    let cipher = Aes256Gcm::new_from_slice(&key).ok()?;
-
-    let nonce = Nonce::from_slice(&decoded[..12]);
-    let plaintext = cipher.decrypt(nonce, &decoded[12..]).ok()?;
-
-    String::from_utf8(plaintext).ok()
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn encrypt_platform(_: &str) -> Result<String, EncryptionError> {
-    Err(EncryptionError::EncryptionFailed)
-}
-
-#[cfg(target_os = "macos")]
-pub fn decrypt_value(_: &str) -> Option<String> {
-    None
+    AesTextFormat::Linux.open(cipher, || existing_master_key().map(zeroize::Zeroizing::new))
 }
 
 #[cfg(test)]
@@ -1309,23 +1277,14 @@ mod tests {
 
         /// A sealed message in the module's own wire format, so "old records
         /// still open" is shown rather than asserted in prose.
-        fn seal_under(key: [u8; 32], plain: &str) -> Vec<u8> {
-            let cipher = Aes256Gcm::new_from_slice(&key).expect("aes256");
-            let mut nonce_bytes = [0u8; 12];
-            rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut nonce_bytes);
-            let body = cipher
-                .encrypt(Nonce::from_slice(&nonce_bytes), plain.as_bytes())
-                .expect("seal");
-            let mut sealed = nonce_bytes.to_vec();
-            sealed.extend_from_slice(&body);
-            sealed
+        fn seal_under(key: [u8; 32], plain: &str) -> String {
+            let mut nonce = [0u8; 12];
+            rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut nonce);
+            AesTextFormat::Linux.seal(plain, &key, nonce).expect("seal")
         }
 
-        fn opens_with(key: [u8; 32], sealed: &[u8]) -> Option<String> {
-            let cipher = Aes256Gcm::new_from_slice(&key).ok()?;
-            let (nonce, body) = sealed.split_at(12);
-            let plain = cipher.decrypt(Nonce::from_slice(nonce), body).ok()?;
-            String::from_utf8(plain).ok()
+        fn opens_with(key: [u8; 32], sealed: &str) -> Option<String> {
+            AesTextFormat::Linux.open(sealed, || Some(zeroize::Zeroizing::new(key)))
         }
 
         #[test]

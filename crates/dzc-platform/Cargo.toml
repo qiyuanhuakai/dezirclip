@@ -12,8 +12,8 @@ required-features = ["ipc"]
 
 [features]
 portable = ["dzc-core/portable"]
-ipc = ["dep:tokio", "dzc-protocol/wire", "dep:sha2", "dep:security-framework"]
-native-screen = ["dep:xcap", "dep:zeroize", "x11rb/image"]
+ipc = ["dep:tokio", "dzc-protocol/wire", "dep:sha2"]
+native-screen = ["dep:xcap", "x11rb/image"]
 native-fonts = ["dep:font-kit", "dzc-protocol/wire"]
 native-ocr = ["dep:windows-core", "windows/Win32_System_WinRT"]
 
@@ -23,7 +23,7 @@ dirs.workspace = true
 dunce = "1"
 font-kit = { workspace = true, optional = true }
 xcap = { workspace = true, optional = true }
-zeroize = { workspace = true, optional = true }
+zeroize.workspace = true
 dzc-protocol.workspace = true
 dzc-core.workspace = true
 uuid.workspace = true
@@ -36,13 +36,12 @@ image.workspace = true
 urlencoding.workspace = true
 url = "2"
 rand.workspace = true
-aes-gcm.workspace = true
 sha2 = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["net", "io-util", "rt", "sync", "time", "macros"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc.workspace = true
-security-framework = { version = "3.7", optional = true }
+security-framework = "3.7"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libloading = "0.8"

@@ -82,7 +82,7 @@ impl SqliteTagRepository {
             ch.source_app,ch.timestamp,
             CASE WHEN NOT dc_search_visible(ch.tags,ch.content,ch.preview,ch.html_content,ch.ocr_text) THEN ''
                  WHEN {MISSING_HISTORY_TEXT_PREVIEW} THEN dc_text_preview(ch.content)
-                 WHEN ch.preview LIKE 'dpapi:%' OR ch.preview LIKE 'linux:%' THEN CASE WHEN length(ch.preview)<=131072 THEN ch.preview ELSE '' END
+                 WHEN dc_cipher_prefix(ch.preview) THEN CASE WHEN length(ch.preview)<=131072 THEN ch.preview ELSE '' END
                  ELSE substr(ch.preview,1,800) END,
             ch.is_pinned,ch.tags,ch.use_count,ch.is_external,ch.pinned_order,ch.source_app_path,ch.content_kinds,ch.ocr_status
             {filter} ORDER BY {order} LIMIT ?4 OFFSET ?5");

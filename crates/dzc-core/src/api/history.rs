@@ -53,7 +53,7 @@ pub struct HistoryQuery<'a> {
     pub latest: bool,
 }
 impl<'a> HistoryQuery<'a> {
-    fn repository_query(&self) -> CliQuery<'a> {
+    pub(super) fn repository_query(&self) -> CliQuery<'a> {
         CliQuery {
             limit: self.limit,
             offset: self.offset,

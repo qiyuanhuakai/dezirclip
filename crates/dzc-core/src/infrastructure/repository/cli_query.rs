@@ -17,6 +17,13 @@ pub struct CliQuery<'a> {
     pub latest: bool,
 }
 
+#[derive(Clone, Copy)]
+enum TextRead {
+    Legacy,
+    AuthorizedBody,
+    Export,
+}
+
 impl SqliteClipboardRepository {
     pub fn ensure_export_destination(&self, target: &std::path::Path) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|error| error.to_string())?;
@@ -98,7 +105,14 @@ impl SqliteClipboardRepository {
     }
 
     pub fn query_cli(&self, query: &CliQuery<'_>) -> Result<Vec<ClipboardEntry>, String> {
-        self.query_cli_with_decoding(query, false)
+        self.query_cli_with_decoding(query, TextRead::Legacy)
+    }
+
+    pub(crate) fn query_authorized_body(
+        &self,
+        query: &CliQuery<'_>,
+    ) -> Result<Vec<ClipboardEntry>, String> {
+        self.query_cli_with_decoding(query, TextRead::AuthorizedBody)
     }
 
     pub fn query_cli_for_export(
@@ -108,13 +122,13 @@ impl SqliteClipboardRepository {
         if query.metadata {
             return Err("export requires complete payloads".to_string());
         }
-        self.query_cli_with_decoding(query, true)
+        self.query_cli_with_decoding(query, TextRead::Export)
     }
 
     fn query_cli_with_decoding(
         &self,
         query: &CliQuery<'_>,
-        strict_decryption: bool,
+        decoding: TextRead,
     ) -> Result<Vec<ClipboardEntry>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let search = query.search.map(|(q, m)| (q.to_owned(), m.to_owned()));
@@ -139,7 +153,7 @@ impl SqliteClipboardRepository {
             format!("id, content_type, '', CASE WHEN html_content IS NOT NULL THEN '' END, source_app, timestamp, \
                 CASE WHEN {MISSING_HISTORY_TEXT_PREVIEW} AND dc_search_visible(tags,content,preview,html_content,ocr_text) \
                 THEN dc_text_preview(content) \
-                WHEN preview LIKE 'dpapi:%' OR preview LIKE 'linux:%' THEN preview ELSE substr(preview,1,500) END, \
+                WHEN dc_cipher_prefix(preview) THEN preview ELSE substr(preview,1,500) END, \
                 is_pinned, tags, use_count, is_external, pinned_order, source_app_path, NULL, ocr_status, content_kinds")
         } else {
             "id, content_type, content, html_content, source_app, timestamp, preview, is_pinned, tags, use_count, is_external, pinned_order, source_app_path, ocr_text, ocr_status, content_kinds".to_owned()
@@ -189,13 +203,16 @@ impl SqliteClipboardRepository {
         while let Some(row) = rows.next().map_err(|e| e.to_string())? {
             let id: i64 = row.get(0).map_err(|e| e.to_string())?;
             let decode_value = |value: String| -> Result<String, String> {
-                if !strict_decryption {
+                if matches!(decoding, TextRead::Legacy) {
                     return Ok(self.maybe_decrypt_text(&value));
                 }
                 match crate::infrastructure::encryption::decode_stored_text(&value) {
                     crate::infrastructure::encryption::StoredText::Plain(value) => Ok(value.to_owned()),
                     crate::infrastructure::encryption::StoredText::Decrypted(value) => Ok(value),
-                    crate::infrastructure::encryption::StoredText::Failed => Err(format!("export: entry id={id} could not be decrypted; restore access to its encryption key before backing up")),
+                    crate::infrastructure::encryption::StoredText::Failed => match decoding {
+                        TextRead::Export => Err(format!("export: entry id={id} could not be decrypted; restore access to its encryption key before backing up")),
+                        _ => Err("ProtectedRecordUnavailable".into()),
+                    },
                 }
             };
             let decode = |index| -> Result<String, String> {

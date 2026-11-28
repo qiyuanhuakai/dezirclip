@@ -1613,7 +1613,6 @@ dependencies = [
 name = "dzc-platform"
 version = "0.2.0"
 dependencies = [
- "aes-gcm",
  "arboard",
  "base64 0.22.1",
  "clipboard-win",

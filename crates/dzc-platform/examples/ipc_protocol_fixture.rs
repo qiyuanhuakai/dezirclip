@@ -1,4 +1,4 @@
-//! Synthetic cross-language transport fixture: no database, clipboard or GUI.
+//! Cross-language framing fixture with native desktop checks on Darwin.
 use dzc_platform::ipc::{read_frame, write_frame, Endpoint};
 use dzc_protocol::wire::{self, HelloResult, Method, Permission, ProtocolVersion, Request, Response, RuntimeState};
 use std::{io::{self, Write}, path::Path, time::Duration};
@@ -106,30 +106,73 @@ fn watch_parent_lifetime() -> io::Result<tokio::sync::oneshot::Receiver<()>> {
 
 #[cfg(target_os = "macos")]
 fn verify_darwin_keychain() -> Result<(), Box<dyn std::error::Error>> {
+    use dzc_core::api::{ClipboardEntry, HistoryService, PrivacyAccessIntent, PrivacyError, SensitiveAccess};
+    use dzc_core::crypto::{EncryptionError, KeyProvider, KEYCHAIN_ENCRYPT_PREFIX};
+    use dzc_platform::darwin_keychain::DarwinKeyProvider;
     use security_framework::os::macos::keychain::{CreateOptions, SecKeychain};
 
-    // This signed process owns the isolated keychain. No system login
-    // keychain, search list, or release encryption configuration is changed.
-    let _no_prompt = SecKeychain::disable_user_interaction()?;
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("probe.keychain-db");
     let password = uuid::Uuid::new_v4().simple().to_string();
-    let secret = *uuid::Uuid::new_v4().as_bytes();
-    const SERVICE: &str = "org.dezirclip.fixture";
-    const ACCOUNT: &str = "darwin-helper";
+    let profile_id = uuid::Uuid::new_v4();
+    let marker = format!("keychain{}", uuid::Uuid::new_v4().simple());
     let keychain = CreateOptions::new().password(&password).prompt_user(false).create(&path)?;
-    keychain.add_generic_password(SERVICE, ACCOUNT, &secret)?;
-    drop(keychain);
+    let provider = DarwinKeyProvider::for_profile(keychain, profile_id)?;
+    if provider.seal_text(&marker) != Err(EncryptionError::KeyUnavailable) {
+        return Err("a missing key was silently initialized while sealing".into());
+    }
+    provider.provision_new_profile()?;
+    let first_cipher = provider.seal_text(&marker)?;
+    provider.provision_new_profile()?;
+    if !first_cipher.starts_with(KEYCHAIN_ENCRYPT_PREFIX)
+        || provider.open_text(&first_cipher).as_deref() != Some(marker.as_str()) {
+        return Err("Darwin keychain replaced an existing key during provisioning".into());
+    }
+    drop(provider);
 
     let mut keychain = SecKeychain::open(&path)?;
     keychain.unlock(Some(&password))?;
-    let (stored, item) = keychain.find_generic_password(SERVICE, ACCOUNT)?;
-    if stored.as_ref() != secret.as_slice() { return Err("Darwin keychain changed the fixture credential".into()); }
-    drop(stored);
-    item.delete();
-    const ITEM_NOT_FOUND: i32 = -25_300;
-    if !keychain.find_generic_password(SERVICE, ACCOUNT).is_err_and(|error| error.code() == ITEM_NOT_FOUND) {
-        return Err("Darwin keychain did not remove the fixture credential".into());
+    let provider = DarwinKeyProvider::for_profile(keychain, profile_id)?;
+    if provider.open_text(&first_cipher).as_deref() != Some(marker.as_str()) {
+        return Err("reopening Darwin keychain lost the original credential".into());
+    }
+    let provider = Box::leak(Box::new(provider));
+    dzc_core::crypto::install_key_provider(provider)?;
+    let database = directory.path().join("history.sqlite3");
+    let history = HistoryService::open(&database)?;
+    let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({
+        "id": 0, "content_type": "text", "content": marker, "preview": marker,
+        "source_app": "signed fixture", "timestamp": 1, "is_pinned": false, "tags": ["sensitive"],
+    }))?;
+    let id = history.save(&entry, None)?;
+    let reader = rusqlite::Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let stored: String = reader.query_row("SELECT content FROM clipboard_history WHERE id=?1", [id], |row| row.get(0))?;
+    if !stored.starts_with(KEYCHAIN_ENCRYPT_PREFIX) || stored.contains(&marker) {
+        return Err("Core persisted the private record outside the Keychain envelope".into());
+    }
+    let denied = history.privacy().authorize_read(
+        PrivacyAccessIntent::InteractiveRead, SensitiveAccess::Denied, None, 2)?;
+    if history.get_entry_authorized(id, &denied, 2)?.is_some() {
+        return Err("Core revealed the protected record without explicit authorization".into());
+    }
+    let revealed = history.privacy().authorize_read(
+        PrivacyAccessIntent::InteractiveRead, SensitiveAccess::ExplicitUserAction, None, 2)?;
+    if history.get_entry_authorized(id, &revealed, 2)?.as_ref().map(|item| item.content.as_str()) != Some(marker.as_str()) {
+        return Err("authorized Core read did not recover the protected record".into());
+    }
+    let locked = std::process::Command::new("/usr/bin/security").arg("lock-keychain").arg(&path).status()?;
+    if !locked.success() || provider.open_text(&stored).is_some()
+        || provider.seal_text(&marker) != Err(EncryptionError::KeyUnavailable)
+        || provider.provision_new_profile().is_ok() {
+        return Err("a locked Darwin keychain did not fail closed".into());
+    }
+    if !matches!(history.get_entry_authorized(id, &revealed, 2), Err(PrivacyError::ProtectedRecordUnavailable)) {
+        return Err("Core did not report a protected record as unavailable after keychain lock".into());
+    }
+    let count = history.get_count()?;
+    let pending = ClipboardEntry { content: "different fixture payload".into(), ..entry };
+    if history.save(&pending, None).is_ok() || history.get_count()? != count {
+        return Err("Core persisted a sensitive mutation without the keychain".into());
     }
     Ok(())
 }

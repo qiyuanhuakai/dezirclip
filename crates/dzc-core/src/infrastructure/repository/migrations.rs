@@ -38,6 +38,16 @@ fn register_history_functions(conn: &Connection) -> Result<()> {
     use rusqlite::functions::FunctionFlags;
     register_privacy_functions(conn)?;
     conn.create_scalar_function(
+        "dc_cipher_prefix",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| {
+            use rusqlite::types::ValueRef;
+            Ok(matches!(context.get_raw(0), ValueRef::Text(bytes)
+                if super::super::encryption::has_encrypted_prefix(bytes)))
+        },
+    )?;
+    conn.create_scalar_function(
         "dc_text_preview",
         1,
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,

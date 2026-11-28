@@ -50,8 +50,10 @@ pub mod ocr;
 #[cfg(target_os = "linux")]
 pub mod wayland;
 
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 pub struct NativeKeyProvider;
 
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 impl dzc_core::crypto::KeyProvider for NativeKeyProvider {
     fn seal_text(
         &self,
@@ -64,6 +66,7 @@ impl dzc_core::crypto::KeyProvider for NativeKeyProvider {
     }
 }
 
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 pub fn install_default_key_provider() {
     static PROVIDER: NativeKeyProvider = NativeKeyProvider;
     let _ = dzc_core::crypto::install_key_provider(&PROVIDER);
@@ -90,3 +93,5 @@ pub mod image_png;
 
 #[cfg(target_os = "macos")]
 pub mod darwin_clipboard;
+#[cfg(target_os = "macos")]
+pub mod darwin_keychain;

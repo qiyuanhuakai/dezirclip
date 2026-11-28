@@ -101,6 +101,7 @@ pub(crate) fn privacy_error(error:impl ToString) -> WireErrorCode {
         "PrivacySessionActive"=>WireErrorCode::PrivacySessionActive,"SensitiveAccessDenied"=>WireErrorCode::SensitiveAccessDenied,
         "ManualPersistenceConfirmationRequired"=>WireErrorCode::ManualPersistenceConfirmationRequired,"PrivacyDurationInvalid"=>WireErrorCode::PrivacyDurationInvalid,
         "HistoryRevisionChanged"=>WireErrorCode::HistoryRevisionChanged,
+        "ProtectedRecordUnavailable"=>WireErrorCode::Unavailable,
         _=>WireErrorCode::PrivacyBlocked,
     }
 }

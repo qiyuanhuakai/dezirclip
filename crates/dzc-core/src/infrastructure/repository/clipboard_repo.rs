@@ -32,8 +32,8 @@ const CONTENT_CACHE_MAX_BYTES: usize = 8 * 1024 * 1024;
 pub(super) const MISSING_HISTORY_TEXT_PREVIEW: &str = "content_type IN ('text','code','url','rich_text') \
     AND trim(preview,char(9,10,12,13,32))=''";
 const HISTORY_LIST_SELECT_COLUMNS: &str = "id, content_type, \
-    CASE WHEN content LIKE 'linux:%' OR content LIKE 'dpapi:%' THEN content ELSE substr(content, 1, 2004) END, \
-    CASE WHEN html_content LIKE 'linux:%' OR html_content LIKE 'dpapi:%' THEN html_content ELSE substr(html_content, 1, 5004) END, \
+    CASE WHEN dc_cipher_prefix(content) THEN content ELSE substr(content, 1, 2004) END, \
+    CASE WHEN dc_cipher_prefix(html_content) THEN html_content ELSE substr(html_content, 1, 5004) END, \
     source_app, timestamp";
 
 fn truncate_chars_with_suffix(input: &str, limit: usize, suffix: &str) -> String {
@@ -1966,7 +1966,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
         let columns = format!("{HISTORY_LIST_SELECT_COLUMNS}, \
             CASE WHEN {MISSING_HISTORY_TEXT_PREVIEW} AND dc_search_visible(tags,content,preview,html_content,ocr_text) \
             THEN dc_text_preview(content) \
-            WHEN preview LIKE 'linux:%' OR preview LIKE 'dpapi:%' THEN preview ELSE substr(preview, 1, 504) END, \
+            WHEN dc_cipher_prefix(preview) THEN preview ELSE substr(preview, 1, 504) END, \
             is_pinned, tags, use_count, is_external, pinned_order, source_app_path, ocr_text, ocr_status");
         let mut mapped_rows = Vec::new();
         if let Some(ct) = content_type {
@@ -2159,7 +2159,6 @@ impl ClipboardRepository for SqliteClipboardRepository {
                 let mut cursor_ts = i64::MAX;
                 let mut cursor_id = i64::MAX;
                 let batch_size = 500;
-                let enc_like = format!("{}%", encryption::ENCRYPT_PREFIX);
                 let sql_sensitive = format!(
                     "SELECT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path, ch.content_kinds, ch.ocr_text, ch.ocr_status
 	                     FROM clipboard_history ch
@@ -2169,22 +2168,19 @@ impl ClipboardRepository for SqliteClipboardRepository {
                              WHERE se.entry_id = ch.id 
                                AND se.tag COLLATE NOCASE IN {}
                          )
-                         OR ch.content LIKE ?1 
-                         OR ch.preview LIKE ?1 
-	                         OR ch.html_content LIKE ?1
-	                         OR ch.ocr_text LIKE ?1
-                         OR ch.content LIKE 'linux:%' OR ch.preview LIKE 'linux:%' OR ch.html_content LIKE 'linux:%' OR ch.ocr_text LIKE 'linux:%'
+                         OR dc_cipher_prefix(ch.content) OR dc_cipher_prefix(ch.preview)
+                         OR dc_cipher_prefix(ch.html_content) OR dc_cipher_prefix(ch.ocr_text)
                      )
-                       AND ((ch.timestamp < ?2) OR (ch.timestamp = ?2 AND ch.id < ?3))
+                       AND ((ch.timestamp < ?1) OR (ch.timestamp = ?1 AND ch.id < ?2))
                      ORDER BY ch.timestamp DESC, ch.id DESC
-                     LIMIT ?4",
+                     LIMIT ?3",
                     sensitive_tags_sql
                 );
 
                 loop {
                     let mut stmt = conn.prepare(&sql_sensitive).map_err(|e| e.to_string())?;
                     let rows = stmt
-                        .query_map(params![enc_like, cursor_ts, cursor_id, batch_size], |row| {
+                        .query_map(params![cursor_ts, cursor_id, batch_size], |row| {
                             let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
                             Ok(ClipboardEntry {
                                 id: row.get(0)?,

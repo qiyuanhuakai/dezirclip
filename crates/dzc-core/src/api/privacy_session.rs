@@ -18,6 +18,7 @@ pub enum PrivacyError {
     SensitiveAccessDenied,
     ManualPersistenceConfirmationRequired,
     PrivacyDurationInvalid,
+    ProtectedRecordUnavailable,
 }
 impl PrivacyError {
     pub fn code(self) -> &'static str {
@@ -28,6 +29,7 @@ impl PrivacyError {
             Self::SensitiveAccessDenied => "SensitiveAccessDenied",
             Self::ManualPersistenceConfirmationRequired => "ManualPersistenceConfirmationRequired",
             Self::PrivacyDurationInvalid => "PrivacyDurationInvalid",
+            Self::ProtectedRecordUnavailable => "ProtectedRecordUnavailable",
         }
     }
 }
@@ -872,14 +874,18 @@ impl HistoryService {
         let privacy = self.privacy();
         privacy.check_read(permit, now_ms)?;
         let entries = self
-            .query(&HistoryQuery {
+            .repository.query_authorized_body(&HistoryQuery {
                 id: Some(id),
                 limit: 1,
                 exclude_sensitive: !permit.includes_sensitive(),
                 ..Default::default()
-            })
-            .map_err(unavailable)?;
+            }.repository_query());
         privacy.check_read(permit, now_ms)?;
+        let entries = entries
+            .map_err(|error| match error.as_str() {
+                "ProtectedRecordUnavailable" => PrivacyError::ProtectedRecordUnavailable,
+                _ => PrivacyError::PrivacyStateUnavailable,
+            })?;
         Ok(entries.into_iter().next())
     }
 
