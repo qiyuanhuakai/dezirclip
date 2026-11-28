@@ -571,12 +571,14 @@ jobs:
           name: windows-candidate-diagnostics-${{ matrix.variant }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/windows-candidate-inputs/**/*.log
 
-  replay-linux-runtime:
-    name: Verify published Linux desktop runtime (${{ matrix.target }})
-    if: inputs.mode == 'replay-linux-runtime'
+  verify-linux-runtime:
+    name: Verify final Linux desktop runtime (${{ matrix.target }})
+    if: ${{ !cancelled() && ((github.event_name == 'push' && needs.publish-desktop.result == 'success') || inputs.mode == 'replay-linux-runtime') }}
+    needs: publish-desktop
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     permissions:
+      actions: read
       contents: read
     strategy:
       fail-fast: false
@@ -603,20 +605,54 @@ jobs:
             sudo -n sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
           bwrap --unshare-user --unshare-pid --unshare-net --ro-bind / / --proc /proc /usr/bin/true
-      - name: Authenticate exact published Linux assets
+      - name: Resolve the exact Linux producer artifact
+        if: github.event_name == 'push'
+        id: producer
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET: ${{ matrix.target }}
-        run: node scripts/updater-release.mjs replay-linux-runtime "$TARGET" "$RUNNER_TEMP/linux-runtime-inputs"
+        run: |
+          set -euo pipefail
+          artifact_id="$(node scripts/updater-release.mjs linux-runtime-producer-id "$GITHUB_REF_NAME" "$GITHUB_SHA" "$TARGET")"
+          echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          artifact-ids: ${{ steps.producer.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/linux-producer
+      - name: Authenticate exact Linux assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ matrix.target }}
+          PRODUCER_ID: ${{ steps.producer.outputs.artifact_id }}
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/linux-runtime-inputs"
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            node scripts/updater-release.mjs stage-linux-runtime "$GITHUB_REF_NAME" "$GITHUB_SHA" "$TARGET" \
+              "$RUNNER_TEMP/linux-producer" "$fixture" "$PRODUCER_ID"
+          else
+            node scripts/updater-release.mjs replay-linux-runtime "$TARGET" "$fixture"
+          fi
       - name: Run both shipped desktops and their helpers in private sessions
         id: exercise
-        run: /usr/bin/python3 scripts/release_linux_runtime.py "$RUNNER_TEMP/linux-runtime-inputs" "$RUNNER_TEMP/linux-runtime-evidence"
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 scripts/release_linux_runtime.py "$RUNNER_TEMP/linux-runtime-inputs" "$RUNNER_TEMP/linux-runtime-evidence"
+          cp "$RUNNER_TEMP/linux-runtime-evidence/linux-runtime.json" "$RUNNER_TEMP/linux-runtime-$TARGET.json"
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() && (steps.exercise.outcome == 'success' || steps.exercise.outcome == 'failure') }}
         with:
           name: linux-runtime-${{ matrix.target }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/linux-runtime-evidence/
+          path: ${{ runner.temp }}/linux-runtime-${{ matrix.target }}.json
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure() && steps.exercise.outcome == 'failure'
+        with:
+          name: linux-runtime-diagnostics-${{ matrix.target }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/linux-runtime-evidence/
 
   collect-release-identities:
     name: Collect actual final package identities
@@ -648,7 +684,7 @@ jobs:
   verify-publish-and-promote:
     name: Verify signed artifacts, publish and synchronize update channel
     if: github.event_name == 'push'
-    needs: [create-release, upload-desktop, publish-standalone-cli, accept-source, verify-windows-candidate]
+    needs: [create-release, upload-desktop, publish-standalone-cli, accept-source, verify-windows-candidate, verify-linux-runtime]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -692,10 +728,19 @@ jobs:
           set -euo pipefail
           ids="$(node scripts/updater-release.mjs windows-report-ids "$GITHUB_REF_NAME" "$GITHUB_SHA")"
           echo "ids=$ids" >> "$GITHUB_OUTPUT"
-      - name: Download the upload readbacks and native Windows reports
+      - name: Resolve both Linux runtime report IDs
+        id: linux-reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ids="$(node scripts/updater-release.mjs linux-runtime-report-ids "$GITHUB_REF_NAME" "$GITHUB_SHA")"
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
+      - name: Download the upload readbacks and native desktop reports
         uses: actions/download-artifact@v4
         with:
-          artifact-ids: ${{ needs.upload-desktop.outputs.readback }},${{ needs.publish-standalone-cli.outputs.readback }},${{ steps.windows-reports.outputs.ids }}
+          artifact-ids: ${{ needs.upload-desktop.outputs.readback }},${{ needs.publish-standalone-cli.outputs.readback }},${{ steps.windows-reports.outputs.ids }},${{ steps.linux-reports.outputs.ids }}
           merge-multiple: true
           path: ${{ runner.temp }}/candidate-readbacks
       - name: Verify both desktops and activate the update channel

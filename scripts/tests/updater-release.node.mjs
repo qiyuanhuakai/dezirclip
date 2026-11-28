@@ -229,6 +229,10 @@ function publisherFixture(options = {}) {
         if (path.endsWith('/attempts/1') && ++state.runReads === options.changeRunAt) state.run.head_sha = 'b'.repeat(40);
         return json(state.run);
       }
+      if (path === 'actions/runs/7001/artifacts?per_page=100') {
+        assert.deepEqual(args.slice(2), ['--paginate', '--slurp']);
+        return json([{ artifacts: state.artifacts }]);
+      }
       if (path === 'actions/runs/7001/attempts/1/jobs?per_page=100') {
         assert.deepEqual(args.slice(2), ['--paginate', '--slurp']);
         const jobs = options.incompleteJobs ? state.jobs.slice(1) : state.jobs;
@@ -394,7 +398,7 @@ test('Arch packages and AUR recipes must be present before a Release with Arch p
 test('a current workflow publishes only the asset identities read back from its original draft', () => {
   const version = '0.2.1-beta.1';
   const tag = `v${version}`;
-  const make = (native = false) => {
+  const make = (native = false, linux = false) => {
     const fixture = publisherFixture({ version, sync: true, dual: true, running: true, arch: true });
     const readbacks = { releaseId: String(fixture.state.product.id) };
     for (const kind of ['desktop', 'standalone']) {
@@ -427,12 +431,48 @@ test('a current workflow publishes only the asset identities read back from its 
           members: structuredClone(archive.members) };
       });
     }
+    if (linux) {
+      const targets = ['linux-x86_64', 'linux-aarch64'];
+      fixture.state.artifacts = targets.map((target, index) => ({
+        id: 950 + index, name: `release-desktop-${target}-1`, digest: 'sha256:' + 'd'.repeat(64),
+        expired: false, workflow_run: { id: 7001, head_sha: 'a'.repeat(40), repository_id: 90, head_repository_id: 90 },
+      }));
+      readbacks.linux = targets.map((target, index) => {
+        const jobs = fixture.state.jobs;
+        jobs.push({ ...jobs[0], id: 8_000 + jobs.length, name: `Verify final Linux desktop runtime (${target})` });
+        return { schema_version: 1, origin: 'release-producer', status: 'passed', tag, target,
+          source_revision: 'a'.repeat(40), run_id: 7001, run_attempt: 1,
+          producer_artifact_id: String(fixture.state.artifacts[index].id),
+          packages: readbacks.desktop.archives.filter(archive => archive.target === target && !archive.name.endsWith('.src.tar.gz'))
+            .map(({ name, sha256, members }) => ({ name, sha256, members: structuredClone(members),
+              size: readbacks.desktop.assets.find(asset => asset.name === name).size,
+              runtime: name.endsWith('.AppImage') ? 'appimage' : 'extracted-native-launcher',
+              history_rendered: true, service_verified: true })),
+        };
+      });
+    }
     return { ...fixture, readbacks };
   };
   const publish = fixture => publishDual('publish-dual', version, fixture.config, 7001, 1, () => {},
     fixture.transport, fixture.readbacks);
   assert.equal(publish(make()).status, 'synchronized');
   assert.equal(publish(make(true)).status, 'synchronized');
+  assert.equal(publish(make(true, true)).status, 'synchronized');
+  for (const change of [
+    fixture => { delete fixture.readbacks.linux; },
+    fixture => { fixture.readbacks.linux[1].origin = 'published-replay'; },
+    fixture => { fixture.readbacks.linux[1].producer_artifact_id = '950'; },
+    fixture => { fixture.readbacks.linux[0].packages.pop(); },
+    fixture => { fixture.readbacks.linux[0].packages[0].history_rendered = false; },
+    fixture => { fixture.readbacks.linux[1].packages[0].size += 1; },
+    fixture => { fixture.readbacks.linux[1].packages[0].members.cli.sha256 = 'f'.repeat(64); },
+    fixture => { fixture.state.jobs.at(-1).conclusion = 'failure'; },
+  ]) {
+    const fixture = make(true, true);
+    change(fixture);
+    assert.throws(() => publish(fixture), /Linux|gates|inventory differs/);
+    assert.deepEqual(fixture.state.mutations, []);
+  }
   for (const change of [
     fixture => { delete fixture.readbacks.desktop; },
     fixture => { fixture.readbacks.releaseId = '11'; },

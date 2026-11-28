@@ -326,9 +326,11 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
   if (currentContract && archSteps.length === 0) throw new Error('Arch Linux package verification did not execute');
   const windowsJobs = windowsVariants.map(windowsCandidateJob);
   const windowsCandidateGate = dual && jobs.some(job => windowsJobs.includes(job.name));
+  const linuxJobs = linuxTargets.map(linuxRuntimeJob);
+  const linuxRuntimeGate = dual && jobs.some(job => linuxJobs.includes(job.name));
   const requiredJobs = dual
     ? [...(currentContract ? [...dualReleaseJobs, desktopUploadJob, ...candidateSourceJobs] : dualReleaseJobs),
-      ...(windowsCandidateGate ? windowsJobs : [])]
+      ...(windowsCandidateGate ? windowsJobs : []), ...(linuxRuntimeGate ? linuxJobs : [])]
     : [...releaseGateJobs, ...nativeReleaseJobs];
   const publishers = jobs.filter(job => publisherJobs.includes(job.name));
   if (publishers.length !== 1 || (!dual && requiresMyGo(tag) && jobs.filter(job => job.name === mygoJob).length !== 1)
@@ -353,7 +355,7 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
   return { run_id: Number(runId), run_attempt: Number(runAttempt), workflow_id: workflow.id,
     status: run.status, conclusion: run.conclusion, asset_cutoff: dual ? Math.max(...times) : Math.min(...times),
     ...(dual ? { run_started_at: run.run_started_at, arch_packages: archSteps.length === 1, source_acceptance: currentContract,
-      windows_candidate_gate: windowsCandidateGate } : {}),
+      windows_candidate_gate: windowsCandidateGate, linux_runtime_gate: linuxRuntimeGate } : {}),
     jobs: jobs.map(job => ({ id: job.id, name: job.name, status: job.status, conclusion: job.conclusion,
       started_at: job.started_at })).sort((a, b) => a.id - b.id) };
 }
@@ -475,7 +477,7 @@ function candidateArtifactIds({ source, runId, attempt }, nameForTarget, transpo
 }
 
 export function desktopArtifactIds(candidate, transport = gh) {
-  return candidateArtifactIds(candidate, (target, attempt) => `release-desktop-${target}-${attempt}`, transport);
+  return candidateArtifactIds(candidate, desktopProducerArtifact, transport);
 }
 
 export function standaloneArtifactIds(candidate, transport = gh) {
@@ -580,6 +582,11 @@ function verifyWindowsCandidateReports(reports, desktop, tag, source, run) {
 }
 
 const linuxTargets = desktopReleaseTargets.filter(target => target.startsWith('linux-'));
+const linuxRuntimeJob = target => `Verify final Linux desktop runtime (${target})`;
+const linuxRuntimeArtifact = (target, attempt) => `linux-runtime-${target}-${attempt}`;
+const desktopProducerArtifact = (target, attempt) => `release-desktop-${target}-${attempt}`;
+const linuxRuntimeFiles = (tag, target, archPackages) => expectedDesktopCandidateFiles(tag, target, archPackages)
+  .filter(name => !name.endsWith('.sig') && !name.endsWith('.src.tar.gz'));
 const linuxReplayTag = 'v0.2.0';
 // The RPMs have no detached updater signatures. Pin the actual released bytes
 // for the read-only exercise alongside the signed Debian and AppImage files.
@@ -635,7 +642,7 @@ export function stageLinuxRuntime({ tag, source, runId, attempt, target, directo
     });
   } else {
     const [id] = candidateArtifactIds({ source, runId, attempt },
-      (name, number) => 'release-desktop-' + name + '-' + number, transport, [target]);
+      desktopProducerArtifact, transport, [target]);
     if (String(id) !== artifactId) throw new Error('Linux runtime verifier received a different producer artifact');
     assets = readDesktopCandidate({ tag, source, runId, attempt, target, directory }).map(asset => {
       const path = join(destination, asset.name);
@@ -653,6 +660,37 @@ export function stageLinuxRuntime({ tag, source, runId, attempt, target, directo
     run_id: Number(runId), run_attempt: Number(attempt), producer_artifact_id: artifactId, target, packages,
   };
   writeFileSync(join(destination, 'linux-runtime-inputs.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
+}
+
+function verifyLinuxRuntimeReports(reports, desktop, tag, source, run, transport) {
+  if (!Array.isArray(reports)) throw new Error('Missing Linux runtime reports');
+  requireExactNames(reports.map(report => report?.target), linuxTargets, 'Linux runtime reports');
+  const producerIds = candidateArtifactIds({ source, runId: String(run.run_id), attempt: String(run.run_attempt) },
+    desktopProducerArtifact, transport, linuxTargets);
+  const archives = new Map(desktop.archives.map(archive => [archive.name, archive]));
+  const assets = new Map(desktop.assets.map(asset => [asset.name, asset]));
+  for (const report of reports) {
+    const { target, packages } = report;
+    if (report.schema_version !== 1 || report.status !== 'passed' || report.origin !== 'release-producer' ||
+        report.tag !== tag || report.source_revision !== source || report.run_id !== run.run_id ||
+        report.run_attempt !== run.run_attempt || report.producer_artifact_id !== String(producerIds[linuxTargets.indexOf(target)]) ||
+        !Array.isArray(packages)) {
+      throw new Error(`Linux runtime report does not identify the candidate: ${target}`);
+    }
+    requireExactNames(packages.map(asset => asset?.name), linuxRuntimeFiles(tag, target, run.arch_packages), target);
+    for (const item of packages) {
+      const archive = archives.get(item.name);
+      const asset = assets.get(item.name);
+      const runtime = item.name.endsWith('.AppImage') ? 'appimage' : 'extracted-native-launcher';
+      if (archive?.target !== target || item.size !== asset?.size || item.sha256 !== archive.sha256 ||
+          item.runtime !== runtime || item.history_rendered !== true || item.service_verified !== true ||
+          !item.members || Object.keys(item.members).length !== 3 ||
+          ['desktop', 'cli', 'service'].some(role => item.members[role]?.path !== archive.members[role].path ||
+            item.members[role]?.sha256 !== archive.members[role].sha256)) {
+        throw new Error(`Linux runtime report does not match the final package: ${item.name}`);
+      }
+    }
+  }
 }
 
 function standaloneArchiveName(version, target) {
@@ -823,7 +861,7 @@ function verifiedUpgradeGate(evidence, receipt) {
   }
 }
 
-function verifyUploadReadbacks(release, tag, source, run, readbacks) {
+function verifyUploadReadbacks(release, tag, source, run, readbacks, transport) {
   const { value } = parseVersion(tag);
   const expected = {
     desktop: desktopReleaseTargets.flatMap(target => expectedDesktopCandidateFiles(tag, target, run.arch_packages)),
@@ -855,6 +893,7 @@ function verifyUploadReadbacks(release, tag, source, run, readbacks) {
     if (kind === 'desktop') {
       requireArchiveReadback(report.archives, archives, new Map(report.assets.map(asset => [asset.name, asset])));
       if (run.windows_candidate_gate) verifyWindowsCandidateReports(readbacks.windows, report, tag, source, run);
+      if (run.linux_runtime_gate) verifyLinuxRuntimeReports(readbacks.linux, report, tag, source, run, transport);
     }
   }
 }
@@ -875,7 +914,7 @@ function publication(mode, version, config, log, transport, bundle) {
   const repair = mode === 'sync-published' || resumeDraft;
   const run = synchronize ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, repair, dual) : null;
   const releaseAssets = synchronize ? verifiedReleaseAssets(release, parsed.value, run.asset_cutoff, dual, run.arch_packages) : null;
-  if (bundle?.readbacks) verifyUploadReadbacks(release, tag, commit, run, bundle.readbacks);
+  if (bundle?.readbacks) verifyUploadReadbacks(release, tag, commit, run, bundle.readbacks, transport);
   if (synchronize && typeof release.draft !== 'boolean') throw new Error('Release draft state is missing');
   if (mode === 'sync-published' && (release.draft !== false || run.status !== 'completed')) {
     throw new Error('Published-channel synchronization requires a public release and completed eligible original run');
@@ -1114,9 +1153,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   } else if (mode === 'replay-linux-runtime' && process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
     stageLinuxRuntime({ target: version, destination: acceptancePath, publicKey: config.plugins.updater.pubkey,
       runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT });
-  } else if (mode === 'linux-runtime-producer-id' && linuxTargets.includes(runAttempt)) {
+  } else if (mode === 'linux-runtime-report-ids' || (mode === 'linux-runtime-producer-id' && linuxTargets.includes(runAttempt))) {
+    const reporting = mode === 'linux-runtime-report-ids';
     console.log(candidateArtifactIds({ source: acceptancePath, runId: process.env.GITHUB_RUN_ID,
-      attempt: process.env.GITHUB_RUN_ATTEMPT }, (target, attempt) => 'release-desktop-' + target + '-' + attempt, gh, [runAttempt])[0]);
+      attempt: process.env.GITHUB_RUN_ATTEMPT }, reporting ? linuxRuntimeArtifact : desktopProducerArtifact,
+      gh, reporting ? linuxTargets : [runAttempt]).join(','));
   } else if (mode === 'stage-linux-runtime' && remaining.length === 2) {
     stageLinuxRuntime({ tag: version, source: acceptancePath, target: runAttempt, directory: upgradePath,
       destination: remaining[0], artifactId: remaining[1], publicKey: config.plugins.updater.pubkey,
@@ -1130,7 +1171,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const readbacks = { releaseId: remaining[0],
       desktop: readEvidenceJson(join(upgradePath, 'desktop-readback.json')).value,
       standalone: readEvidenceJson(join(upgradePath, 'standalone-readback.json')).value,
-      windows: windowsVariants.map(variant => readEvidenceJson(join(upgradePath, `windows-candidate-${variant}.json`)).value) };
+      windows: windowsVariants.map(variant => readEvidenceJson(join(upgradePath, `windows-candidate-${variant}.json`)).value),
+      linux: linuxTargets.map(target => readEvidenceJson(join(upgradePath, `linux-runtime-${target}.json`)).value) };
     console.log(JSON.stringify(publishDual(mode, version, config, acceptancePath, runAttempt, console.error, gh, readbacks)));
   }
   else if (mode !== 'publish-dual' && Object.hasOwn(dualActions, mode) && acceptancePath && runAttempt && !upgradePath) {
