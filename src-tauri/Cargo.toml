@@ -29,7 +29,7 @@ tauri-build = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
 [dependencies]
-dzc-core = { workspace = true, features = ["legacy-bridge"] }
+dzc-core.workspace = true
 dzc-platform.workspace = true
 dzc-host.workspace = true
 tauri = { workspace = true, optional = true }

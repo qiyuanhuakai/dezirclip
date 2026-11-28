@@ -120,7 +120,7 @@ impl HistoryService {
         Ok(Self::from_connection(Arc::new(Mutex::new(conn))))
     }
 
-    fn from_connection(shared: Arc<Mutex<rusqlite::Connection>>) -> Self {
+    pub(super) fn from_connection(shared: Arc<Mutex<rusqlite::Connection>>) -> Self {
         Self {
             repository: Arc::new(SqliteClipboardRepository::new(shared.clone())),
             tags: Arc::new(SqliteTagRepository::new(shared)),
@@ -342,11 +342,6 @@ impl HistoryService {
             .map_err(Into::into)
     }
 
-    #[cfg(feature = "legacy-bridge")]
-    #[doc(hidden)]
-    pub fn from_legacy_connection(shared: Arc<Mutex<rusqlite::Connection>>) -> Self {
-        Self::from_connection(shared)
-    }
 }
 
 /// Automation has only bounded read operations and always applies privacy filtering before decoding.

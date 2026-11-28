@@ -305,8 +305,8 @@ pub async fn set_data_path(app_handle: AppHandle, move_state: State<'_, ProfileM
 mod tests {
     #[test]
     fn migration_preserves_native_encryption_for_content_and_html() {
-        use crate::infrastructure::encryption::{decode_for_mutation, encrypt_sensitive, is_encrypted_value};
-        use rusqlite::params;
+        use dzc_core::crypto::{decode_for_mutation, encrypt_sensitive, has_ciphertext_envelope};
+        use rusqlite::{Connection, params};
         dzc_platform::install_default_key_provider();
         let root = std::env::temp_dir().join(format!("dzc-encrypted-migration-{}", uuid::Uuid::new_v4()));
         let old = root.join("old");
@@ -317,15 +317,28 @@ mod tests {
         std::fs::write(&source, b"fixture image").unwrap();
         let path = source.to_string_lossy();
         let html = format!("<img src='{path}'>");
-        let conn = crate::database::init_db(old.join("clipboard.db").to_str().unwrap()).unwrap();
-        conn.execute("INSERT INTO clipboard_history(content_type,content,html_content,source_app,timestamp,preview,is_external) VALUES('image',?1,?2,'fixture',1,'fixture',1)",
-            params![encrypt_sensitive(&path).unwrap().into_string(), encrypt_sensitive(&html).unwrap().into_string()]).unwrap();
-        drop(conn);
-        let history = dzc_core::api::HistoryService::open(&old.join("clipboard.db")).unwrap();
+        // Older profiles stored encrypted paths directly on the history row.
+        // Seed that format before the protected attachment migrations run.
+        let database = old.join("clipboard.db");
+        let fixture = Connection::open(&database).unwrap();
+        fixture.execute_batch("
+            CREATE TABLE clipboard_history (
+                id INTEGER PRIMARY KEY, content_type TEXT NOT NULL, content TEXT NOT NULL,
+                source_app TEXT NOT NULL, timestamp INTEGER NOT NULL, preview TEXT NOT NULL,
+                is_external INTEGER NOT NULL DEFAULT 0, html_content TEXT
+            );
+        ").unwrap();
+        fixture.execute(
+            "INSERT INTO clipboard_history(content_type,content,html_content,source_app,timestamp,preview,is_external)
+             VALUES('image',?1,?2,'fixture',1,'fixture',1)",
+            params![encrypt_sensitive(&path).unwrap().into_string(), encrypt_sensitive(&html).unwrap().into_string()],
+        ).unwrap();
+        drop(fixture);
+        let history = dzc_core::api::HistoryService::open_desktop(&database).unwrap();
         history.migrate_profile(&old, &new, &root.join("datapath.txt")).unwrap();
-        let db = crate::database::init_db(new.join("clipboard.db").to_str().unwrap()).unwrap();
+        let db = rusqlite::Connection::open(new.join("clipboard.db")).unwrap();
         let (content, html): (String,String) = db.query_row("SELECT content,html_content FROM clipboard_history", [], |r| Ok((r.get(0)?,r.get(1)?))).unwrap();
-        assert!(is_encrypted_value(&content) && is_encrypted_value(&html));
+        assert!(has_ciphertext_envelope(&content) && has_ciphertext_envelope(&html));
         let expected = new.join("attachments").join("image.png");
         assert_eq!(decode_for_mutation(&content).unwrap(), expected.to_string_lossy());
         assert_eq!(decode_for_mutation(&html).unwrap(), format!("<img src='{}'>", expected.display()));

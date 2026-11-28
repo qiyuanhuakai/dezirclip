@@ -179,11 +179,11 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap();
-        assert!(crate::infrastructure::encryption::has_ciphertext_envelope(
+        assert!(dzc_core::crypto::has_ciphertext_envelope(
             &ciphertext
         ));
         assert_eq!(
-            crate::infrastructure::encryption::decode_for_mutation(&ciphertext).unwrap(),
+            dzc_core::crypto::decode_for_mutation(&ciphertext).unwrap(),
             text
         );
         assert_eq!(timestamp, 2);

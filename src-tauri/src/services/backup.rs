@@ -1,1 +1,1 @@
-pub use dzc_core::legacy::services::backup::*;
+pub use dzc_core::backup_format::*;

@@ -33,7 +33,6 @@ pub fn ensure_system_tags(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-#[cfg(any(feature = "legacy-bridge", test))]
 pub fn ensure_tags_if_protected(conn: &Connection) -> rusqlite::Result<()> {
     let ensure = |conn: &Connection| {
         if SqliteSettingsRepository::get_raw(conn, PRIVACY_SETTING)?.as_deref() != Some("false") {

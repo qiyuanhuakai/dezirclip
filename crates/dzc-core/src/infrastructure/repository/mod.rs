@@ -18,5 +18,4 @@ mod privacy_policy_tests;
 
 pub(crate) mod profile_migration;
 
-#[cfg(feature = "legacy-bridge")]
 mod desktop_startup;

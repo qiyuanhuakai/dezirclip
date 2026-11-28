@@ -157,3 +157,5 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **C5 Linux 最终包运行**。使用 GitHub 发布资产 ID、摘要、Tauri 签名和固定的历史 RPM 摘要读取 v0.2.0。Linux x64 本地隔离 X11 会话实际启动 Tauri 和 MyGo 的 AppImage，以及两种 DEB/RPM 所带的启动入口。六个包都显示了独立 CLI 写入的测试历史，随包 CLI 和 Service 的 BuildInfo 通过核对，并确认了实际运行的程序哈希。AppImage 使用其原生解包运行入口。GitHub 托管 x64 和 ARM64 实例也分别通过六个包的同一套检查。Tag 发布现在按不可变 artifact ID 收集本次候选报告，并在公开发布和更新通道同步前逐一核对所有 Linux 二进制包及其成员哈希。报告校验通过合成发布记录覆盖缺包、摘要、来源和测试失败。实际 tag 路径、Arch 原生安装、DEB/RPM 安装、重装和卸载仍待验证。 [Linux 双架构验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46103511034)
 
 - **R6 Tauri 共享装配**。删除旧的 `DbState` 适配器。Tauri 在启动时按原有桌面 SQLite 初始化政策创建一个 `HistoryService`，各命令和 Embedded Host 复用同一组仓库、缓存和既有 RAM session。设置读写和桌面路径选择走 Core，保留旧值默认规则、数据库错误文案和窗口侧效果。Linux Core 单测默认配置 493 项通过，含现有桌面适配配置 494 项通过。Linux X11 Tauri 测试 272 项通过，3 项按原规则忽略。Windows x64 编译了桌面测试目标。独立的备份格式和部分存储测试仍使用原 legacy 导出。
+
+- **R6 Tauri 退出旧 Core 兼容层**。Tauri 的产品入口和测试使用公开 Core API，备份检查继续支持既有文件格式入口。搜索、队列、备份和历史测试保留真实存储和权限边界，Windows 迁移使用旧版 SQLite 文件中的真实 DPAPI 字段。Linux Core 单测 496 项通过，Linux X11 Tauri 269 项通过、3 项忽略，备份集成 9 项通过。Windows 的 DPAPI 迁移回归通过。无兼容特性的独立 Platform IPC 样件也已在 Linux 编译通过。

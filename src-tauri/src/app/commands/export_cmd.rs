@@ -1,9 +1,3 @@
-#[cfg(test)]
-use crate::domain::models::ClipboardEntry;
-#[cfg(test)]
-use crate::infrastructure::repository::cli_query::CliQuery;
-#[cfg(test)]
-use crate::services::backup::{export_to_encrypted, export_to_json, ExportEntry};
 use crate::app::ipc_host::DesktopHost;
 use dzc_host::wire::{BackupExportParams, BackupExportResult as ExportSummary, Method, RuntimeState};
 use tauri::State;
@@ -15,68 +9,27 @@ pub async fn export_to_file(host: State<'_, DesktopHost>, path: String, format: 
         expected_epoch: expected_epoch.unwrap_or(state.privacy_epoch), path, format, passphrase }, "BackupExportResult").await
 }
 
-/// Pure helper: serialize `entries` and write to `path`.
-#[cfg(test)]
-pub(crate) fn export_entries(
-    entries: Vec<ClipboardEntry>,
-    path: String,
-    format: String,
-    passphrase: Option<String>,
-) -> Result<ExportSummary, String> {
-    let count = entries.len() as u64;
-    let export_entries: Vec<ExportEntry> = entries
-        .iter()
-        .map(crate::services::backup::prepare_export_entry)
-        .collect::<Result<_, _>>()?;
-    match format.as_str() {
-        "json" => {
-            let json = export_to_json(export_entries).map_err(|e| e.to_string())?;
-            crate::infrastructure::attachments::write_backup(
-                std::path::Path::new(&path),
-                json.as_bytes(),
-            )?;
-            Ok(ExportSummary {
-                count,
-                format,
-                encrypted: false,
-                path,
-            })
-        }
-        "encrypted" => {
-            let passphrase = passphrase
-                .ok_or_else(|| "passphrase is required for encrypted format".to_string())?;
-            if passphrase.is_empty() {
-                return Err("passphrase must not be empty".to_string());
-            }
-            let blob =
-                export_to_encrypted(export_entries, &passphrase).map_err(|e| e.to_string())?;
-            crate::infrastructure::attachments::write_backup(std::path::Path::new(&path), &blob)?;
-            Ok(ExportSummary {
-                count,
-                format,
-                encrypted: true,
-                path,
-            })
-        }
-        _ => Err("format must be 'json' or 'encrypted'".to_string()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
-    use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
-    use std::sync::{Arc, Mutex};
+    use dzc_core::api::{ClipboardEntry, HistoryService, SessionHistoryStore};
+    use std::collections::VecDeque;
+    use std::path::Path;
+    use std::sync::Arc;
 
-    fn setup_test_repo() -> SqliteClipboardRepository {
-        let mut conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
-        crate::infrastructure::repository::migrations::run_migrations(&mut conn)
-            .expect("run migrations");
-        SqliteClipboardRepository::new(Arc::new(Mutex::new(conn)))
+    async fn request_export(history: &HistoryService, path: &Path, format: &str) -> Result<ExportSummary, String> {
+        let host = DesktopHost::synthetic_fixture(history.clone(), Arc::new(SessionHistoryStore::new(VecDeque::new())));
+        let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await?;
+        host.blocking_call(Method::DesktopBackupExport, BackupExportParams {
+            service_instance_id: state.service_instance_id,
+            expected_epoch: state.privacy_epoch,
+            path: path.to_string_lossy().into_owned(),
+            format: format.into(),
+            passphrase: None,
+        }, "BackupExportResult").await
     }
 
-    fn seed_entry(repo: &SqliteClipboardRepository) {
+    fn seed_entry(history: &HistoryService) {
         let entry = ClipboardEntry {
             id: 0,
             content_type: "text".to_string(),
@@ -96,7 +49,7 @@ mod tests {
             ocr_text: None,
             ocr_status: None,
         };
-        repo.save(&entry, None).expect("seed entry");
+        history.save(&entry, None).expect("seed entry");
     }
 
     #[test]
@@ -114,84 +67,29 @@ mod tests {
         assert!(json.contains("\"path\":\"/tmp/test.json\""));
     }
 
-    #[test]
-    fn test_export_to_file_json_writes_valid_file() {
-        let tmp_path =
-            std::env::temp_dir().join(format!("dezirclip-export-cmd-{}.json", std::process::id()));
-        let _ = std::fs::remove_file(&tmp_path);
-        let repo = setup_test_repo();
-        seed_entry(&repo);
+    #[tokio::test]
+    async fn test_export_to_file_json_writes_valid_file() {
+        let path = std::env::temp_dir().join(format!("dezirclip-export-{}.json", uuid::Uuid::new_v4()));
+        let history = HistoryService::open_desktop(Path::new(":memory:")).unwrap();
+        seed_entry(&history);
 
-        let entries = repo
-            .query_cli(&CliQuery {
-                limit: i32::MAX,
-                ..Default::default()
-            })
-            .expect("load history");
-        let result = export_entries(
-            entries,
-            tmp_path.to_string_lossy().to_string(),
-            "json".to_string(),
-            None,
-        );
-        assert!(
-            result.is_ok(),
-            "json export should succeed: {:?}",
-            result.err()
-        );
-        assert!(tmp_path.exists(), "file should exist");
-        let content = std::fs::read_to_string(&tmp_path).expect("read file");
-        let parsed: serde_json::Value = serde_json::from_str(&content).expect("valid json");
-        assert!(
-            parsed.get("version").is_some(),
-            "export file should have version"
-        );
-        assert!(
-            parsed.get("entries").is_some(),
-            "export file should have entries"
-        );
-        let _ = std::fs::remove_file(tmp_path);
+        let result = request_export(&history, &path, "json").await.unwrap();
+        assert_eq!(result.count, 1);
+        assert!(!result.encrypted);
+        let entries = dzc_core::backup_format::entries_from_json(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(entries[0].content, "hello");
+        std::fs::remove_file(path).unwrap();
     }
 
-    #[test]
-    fn test_export_to_file_encrypted_requires_passphrase() {
-        let repo = setup_test_repo();
-        seed_entry(&repo);
-        let entries = repo
-            .query_cli(&CliQuery {
-                limit: i32::MAX,
-                ..Default::default()
-            })
-            .expect("load history");
-
-        let result = export_entries(
-            entries,
-            "/tmp/test.enc".to_string(),
-            "encrypted".to_string(),
-            None,
-        );
-        assert!(result.is_err(), "missing passphrase should error");
-        let err_msg = result.unwrap_err();
-        assert!(
-            err_msg.contains("passphrase is required"),
-            "error should mention passphrase requirement, got: {err_msg}"
-        );
-    }
-
-    #[test]
-    fn test_export_to_file_invalid_format() {
-        let result = export_entries(
-            Vec::new(),
-            "/tmp/test.csv".to_string(),
-            "csv".to_string(),
-            None,
-        );
-        assert!(result.is_err(), "invalid format should error");
-        let err_msg = result.unwrap_err();
-        assert!(
-            err_msg.contains("format must be 'json' or 'encrypted'"),
-            "error should mention valid formats, got: {err_msg}"
-        );
+    #[tokio::test]
+    async fn test_export_rejects_unknown_format_and_missing_passphrase() {
+        let path = std::env::temp_dir().join(format!("dezirclip-export-{}.dzc", uuid::Uuid::new_v4()));
+        let history = HistoryService::open_desktop(Path::new(":memory:")).unwrap();
+        for format in ["csv", "encrypted"] {
+            let err = request_export(&history, &path, format).await.unwrap_err();
+            assert_eq!(err, "ClipboardHostUnavailable", "{format}");
+        }
+        assert!(!path.exists());
     }
 
     #[test]
@@ -215,7 +113,7 @@ mod tests {
             ocr_text: Some("ocr".to_string()),
             ocr_status: Some("done".to_string()),
         };
-        let exported = crate::services::backup::prepare_export_entry(&entry).unwrap();
+        let exported = dzc_core::backup_format::prepare_export_entry(&entry).unwrap();
         assert_eq!(exported.id, 1);
         assert_eq!(exported.created_at, 1700000000);
         assert_eq!(exported.updated_at, 1700000000);

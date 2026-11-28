@@ -428,9 +428,8 @@ pub async fn get_db_count(host: State<'_, DesktopHost>) -> AppResult<u64> {
 #[cfg(test)]
 mod capture_summary_tests {
     use super::*;
-    use crate::infrastructure::repository::clipboard_repo::{SqliteClipboardRepository,ClipboardRepository};
     use std::collections::VecDeque;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     fn entry(id: i64) -> ClipboardEntry {
         ClipboardEntry {
@@ -455,9 +454,7 @@ mod capture_summary_tests {
     }
 
     fn repository() -> dzc_core::api::HistoryService {
-        dzc_core::api::HistoryService::from_legacy_connection(Arc::new(Mutex::new(
-            crate::database::init_db(":memory:").unwrap(),
-        )))
+        HistoryService::open_desktop(std::path::Path::new(":memory:")).unwrap()
     }
 
     #[test]
@@ -511,8 +508,7 @@ mod capture_summary_tests {
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir(&directory).unwrap();
-        let connection = Arc::new(Mutex::new(crate::database::init_db(":memory:").unwrap()));
-        let repository = SqliteClipboardRepository::new(connection.clone());
+        let history = repository();
         let mut image = entry(0);
         image.content_type = "image".into();
         image.html_content = None;
@@ -521,17 +517,16 @@ mod capture_summary_tests {
         pixels.write_to(&mut encoded,image::ImageFormat::Png).unwrap();
         use base64::Engine;
         image.content = format!("data:image/png;base64,{}",base64::engine::general_purpose::STANDARD.encode(encoded.get_ref()));
-        let id = repository
-            .save_with_conn(&connection.lock().unwrap(), &image, Some(&directory))
+        let id = history
+            .save(&image, Some(&directory))
             .unwrap();
         let session = SessionHistory(dzc_core::api::SessionHistoryStore::new(VecDeque::new()).into());
-        let history=dzc_core::api::HistoryService::from_legacy_connection(connection.clone());
         let summary = captured_entry_summary(&history, &session, id).unwrap();
         assert_eq!(summary.id, id);
         assert!(!summary.is_external);
         assert!(summary.content.starts_with("data:image/png;base64,"));
         assert!(!summary.content.contains("attachments"));
-        let stored=repository.get_entry_by_id(id).unwrap().unwrap();
+        let stored=history.get_entry_by_id(id).unwrap().unwrap();
         let mut page = vec![stored.clone()];
         history.entries_for_gui_list(&mut page, true, chrono::Utc::now().timestamp_millis()).unwrap();
         assert_eq!(page[0].id, id);
@@ -539,26 +534,27 @@ mod capture_summary_tests {
         assert!(std::path::Path::new(&stored.content).starts_with(directory.join("attachments")));
         assert_eq!(std::fs::read(stored.content).unwrap(),*encoded.get_ref());
         assert!(image.content.starts_with("data:"));
-        drop(repository);
-        drop(connection);
+        drop(history);
         std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn summary_read_failures_do_not_expose_storage_errors_or_payloads() {
-        let connection = Arc::new(Mutex::new(crate::database::init_db(":memory:").unwrap()));
-        connection
-            .lock()
-            .unwrap()
-            .execute_batch("DROP TABLE clipboard_history")
-            .unwrap();
+        let directory = std::env::temp_dir().join(format!("dezirclip-summary-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let database = directory.join("clipboard.db");
+        let history = HistoryService::open_desktop(&database).unwrap();
+        // The independent test connection corrupts the fixture, never the managed connection.
+        rusqlite::Connection::open(&database).unwrap()
+            .execute_batch("DROP TABLE clipboard_history").unwrap();
         let session = SessionHistory(dzc_core::api::SessionHistoryStore::new(VecDeque::new()).into());
-        let history=dzc_core::api::HistoryService::from_legacy_connection(connection.clone());
         let error = captured_entry_summary(&history, &session, 1)
             .unwrap_err()
             .to_string();
         assert!(error.ends_with("CapturedEntryReadFailed"));
         assert!(!error.contains("clipboard_history"));
+        drop(history);
+        std::fs::remove_dir_all(directory).unwrap();
     }
     #[test]
     fn embedded_nonempty_search_hosted_identity_and_following_capture_do_not_relock_ram() {

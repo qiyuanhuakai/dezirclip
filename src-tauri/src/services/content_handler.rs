@@ -35,38 +35,44 @@ pub async fn open_content(
 mod authorization_tests {
     use dzc_host::external::{complete_external_open, edit_watch_ticket};
     use dzc_host::wire::WireErrorCode;
-    use std::sync::{Arc,Mutex};
+    use dzc_core::api::{ClipboardEntry, HistoryService, ImportMode, PrivacyReadPermit, SensitiveAccess};
 
-    fn fixture()->(dzc_core::api::HistoryService,Arc<Mutex<rusqlite::Connection>>) {
-        let connection=crate::database::init_db(":memory:").unwrap();
-        connection.execute("INSERT INTO clipboard_history(id,content_type,content,preview,tags,source_app,timestamp,is_pinned) VALUES(1,'url','https://example.invalid/','synthetic','[]','Synthetic',1,0)",[]).unwrap();
-        let connection=Arc::new(Mutex::new(connection));
-        (dzc_core::api::HistoryService::from_legacy_connection(connection.clone()),connection)
+    fn fixture() -> HistoryService {
+        let history = HistoryService::open_desktop(std::path::Path::new(":memory:")).unwrap();
+        let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({
+            "id": 1, "content_type": "url", "content": "https://example.invalid/",
+            "preview": "synthetic", "source_app": "Synthetic", "timestamp": 1, "is_pinned": false
+        })).unwrap();
+        history.restore(&[entry], ImportMode::Merge).unwrap();
+        history
     }
 
-    fn permit(history:&dzc_core::api::HistoryService,now:i64)->dzc_core::api::PrivacyReadPermit {
-        history.privacy().authorize_selected_copy(1,None,dzc_core::api::SensitiveAccess::Denied,None,now).unwrap()
+    fn permit(history: &HistoryService, now: i64) -> PrivacyReadPermit {
+        history.privacy().authorize_selected_copy(1, None, SensitiveAccess::Denied, None, now).unwrap()
     }
 
-    fn uses(connection:&Arc<Mutex<rusqlite::Connection>>)->i32 {
-        connection.lock().unwrap().query_row("SELECT use_count FROM clipboard_history WHERE id=1",[],|row|row.get(0)).unwrap()
+    fn uses(history: &HistoryService) -> i32 {
+        history.get_entry_by_id(1).unwrap().unwrap().use_count
     }
 
     #[test]
     fn external_open_uses_only_handler_preferences_and_code_falls_back_to_text() {
-        let (history, connection) = fixture();
-        connection.lock().unwrap().execute_batch("INSERT OR REPLACE INTO settings(key,value) VALUES
-            ('app.text','text-editor'),('app.code',''),('app.url','browser'),('app.custom_background','user-image')").unwrap();
+        let history = fixture();
+        let epoch = history.runtime_snapshot(10).unwrap().privacy_epoch;
+        history.set_default_application("app.text", "text-editor", epoch).unwrap();
+        history.set_default_application("app.code", "", epoch).unwrap();
+        history.set_default_application("app.url", "browser", epoch).unwrap();
+        history.set_desktop_setting("app.custom_background", "user-image").unwrap();
         assert_eq!(history.default_application("code").unwrap().as_deref(), Some("text-editor"));
         assert_eq!(history.default_application("link").unwrap().as_deref(), Some("browser"));
         assert_eq!(history.default_application("custom_background").unwrap(), None);
-        connection.lock().unwrap().execute("UPDATE settings SET value='code-editor' WHERE key='app.code'", []).unwrap();
+        history.set_default_application("app.code", "code-editor", epoch).unwrap();
         assert_eq!(history.default_application("code").unwrap().as_deref(), Some("code-editor"));
     }
 
     #[test]
     fn paused_recording_allows_read_only_open_without_an_edit_write_ticket() {
-        let (history,_)=fixture();
+        let history = fixture();
         history.privacy().toggle(10).unwrap();
         let permit=permit(&history,11);
         assert!(history.get_entry_authorized(1,&permit,11).unwrap().is_some());
@@ -82,16 +88,16 @@ mod authorization_tests {
 
     #[test]
     fn only_successful_current_persistent_opens_increment_use_count_once() {
-        let (history,connection)=fixture();
+        let history = fixture();
         let permit=permit(&history,10);
         assert!(complete_external_open(&history,1,&permit,Err(WireErrorCode::Unavailable),10).is_err());
-        assert_eq!(uses(&connection),0);
+        assert_eq!(uses(&history),0);
         complete_external_open(&history,0,&permit,Ok(()),10).unwrap();
-        assert_eq!(uses(&connection),0);
+        assert_eq!(uses(&history),0);
         complete_external_open(&history,1,&permit,Ok(()),10).unwrap();
-        assert_eq!(uses(&connection),1);
+        assert_eq!(uses(&history),1);
         history.privacy().toggle(11).unwrap();
         assert!(complete_external_open(&history,1,&permit,Ok(()),12).is_err());
-        assert_eq!(uses(&connection),1);
+        assert_eq!(uses(&history),1);
     }
 }

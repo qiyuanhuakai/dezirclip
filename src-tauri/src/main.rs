@@ -2,8 +2,6 @@
 
 pub mod app;
 pub mod app_state;
-#[cfg(test)]
-mod database;
 pub mod domain;
 pub mod error;
 pub mod global_state;

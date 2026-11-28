@@ -189,7 +189,6 @@ impl SqliteClipboardRepository {
         transaction.commit().map_err(database)
     }
 
-    #[cfg(any(feature = "legacy-bridge", test))]
     pub(crate) fn reset_desktop_preferences(&self, anonymous_id: &str) -> CoreResult<()> {
         let database = |error: rusqlite::Error| CoreError::from(error.to_string());
         let mut connection = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;

@@ -1,12 +1,8 @@
 #[cfg(test)]
-pub mod encryption;
-#[cfg(test)]
 pub mod image_preview_file;
 pub mod process_memory;
 pub mod preview_activation;
 pub mod surface_focus;
-#[cfg(test)]
-pub mod repository;
 pub mod webview_environment;
 #[cfg(target_os = "windows")]
 pub mod windows_ext;
@@ -102,8 +98,6 @@ pub mod windows_api {
         pub fn register_emoji_drag_drop(_app_handle: tauri::AppHandle) {}
     }
 }
-#[cfg(test)]
-pub mod attachments;
 pub mod local_file;
 pub mod update_support;
 pub mod user_resource;

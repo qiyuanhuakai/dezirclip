@@ -1,33 +1,26 @@
 use crate::database::is_sensitive_key;
 use crate::infrastructure::encryption::{self, ENCRYPT_PREFIX};
 use rusqlite::{params, Connection, Result};
-#[cfg(feature = "legacy-bridge")]
 use std::collections::HashMap;
-#[cfg(any(feature = "legacy-bridge", test))]
 use std::sync::{Arc, Mutex};
 
 const LEGACY_PLAIN_PREFIX: &str = "plain:";
 
-#[cfg(any(feature = "legacy-bridge", test))]
 pub trait SettingsRepository {
     fn set(&self, key: &str, value: &str) -> Result<()>;
     fn get(&self, key: &str) -> Result<Option<String>>;
-    #[cfg(feature = "legacy-bridge")]
     fn get_all(&self) -> Result<HashMap<String, String>>;
 }
 
 pub struct SqliteSettingsRepository {
-    #[cfg(any(feature = "legacy-bridge", test))]
     conn: Arc<Mutex<Connection>>,
 }
 
 impl SqliteSettingsRepository {
-    #[cfg(any(feature = "legacy-bridge", test))]
     pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
         Self { conn }
     }
 
-    #[cfg(feature = "legacy-bridge")]
     pub(crate) fn read_window_size(connection: &Connection) -> Result<Option<(u32, u32)>> {
         connection.query_row("SELECT (SELECT value FROM settings WHERE key='app.window_width'),
             (SELECT value FROM settings WHERE key='app.window_height')", [], |row| {
@@ -126,7 +119,6 @@ impl SqliteSettingsRepository {
         value.to_string()
     }
 
-    #[cfg(any(feature = "legacy-bridge", test))]
     fn maybe_decrypt(&self, key: &str, value: &str) -> String {
         if let Some(decrypted) = Self::try_decrypt_legacy_or_sensitive(key, value) {
             return decrypted;
@@ -157,7 +149,6 @@ impl SqliteSettingsRepository {
     }
 }
 
-#[cfg(any(feature = "legacy-bridge", test))]
 impl SettingsRepository for SqliteSettingsRepository {
     fn set(&self, key: &str, value: &str) -> Result<()> {
         let mut conn = self.conn.lock().unwrap();
@@ -193,7 +184,6 @@ impl SettingsRepository for SqliteSettingsRepository {
         }
     }
 
-    #[cfg(feature = "legacy-bridge")]
     fn get_all(&self) -> Result<HashMap<String, String>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT key, value FROM settings")?;

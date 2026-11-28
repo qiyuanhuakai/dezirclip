@@ -1,14 +1,8 @@
-#[cfg(test)]
-use rusqlite::Connection;
 use tauri::State;
 
 use crate::app_state::SearchHistory;
 use dzc_core::api::HistoryService;
 use crate::domain::models::ClipboardEntry;
-#[cfg(test)]
-use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
-#[cfg(test)]
-use crate::services::search::SearchMode;
 
 fn normalize_limit(limit: u32) -> u32 {
     if limit == 0 {
@@ -85,110 +79,52 @@ pub async fn get_search_history(history: State<'_, SearchHistory>) -> Result<Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::repository::migrations::run_migrations;
-    use std::sync::{Arc, Mutex};
-
-    fn setup_test_db() -> (Arc<Mutex<Connection>>, SqliteClipboardRepository) {
-        let mut conn = Connection::open_in_memory().expect("in-memory connection must open");
-        run_migrations(&mut conn).expect("migrations failed");
-        let arc = Arc::new(Mutex::new(conn));
-        let repo = SqliteClipboardRepository::new(arc.clone());
-        (arc, repo)
-    }
-
-    fn insert_entry(conn: &Connection, content: &str, app: &str, ts: i64) {
-        let preview: String = content.chars().take(50).collect();
-        conn.execute(
-            "INSERT INTO clipboard_history
-             (content_type, content, html_content, source_app, timestamp, preview,
-              is_pinned, content_hash, tags, is_external, pinned_order, source_app_path)
-             VALUES ('text', ?1, NULL, ?2, ?3, ?4, 0, 0, '[]', 0, 0, NULL)",
-            rusqlite::params![content, app, ts, preview],
-        )
-        .expect("insert failed");
-    }
-
-    fn execute_plan(arc: &Arc<Mutex<Connection>>, mode: SearchMode, limit: u32) -> Vec<i64> {
-        let history = dzc_core::api::HistoryService::from_legacy_connection(arc.clone());
-        let entries = match mode {
-            SearchMode::Fuzzy { pattern, threshold } => {
-                history.search_fuzzy(&pattern, threshold, limit)
-            }
-            SearchMode::Regex { pattern } => history.search_regex(&pattern, limit),
-            SearchMode::Fts5 { query } => history.search_fts(&query, limit),
+    fn fixture(entries: &[(&str, &str)]) -> HistoryService {
+        let history = HistoryService::open_desktop(std::path::Path::new(":memory:")).unwrap();
+        history.set_desktop_setting("app.privacy_protection", "false").unwrap();
+        for (index, &(content, app)) in entries.iter().enumerate() {
+            let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({
+                "id": 0, "content_type": "text", "content": content, "source_app": app,
+                "timestamp": 1_700_000_000 + index, "preview": content, "is_pinned": false
+            })).unwrap();
+            history.save(&entry, None).unwrap();
         }
-        .unwrap();
-        entries.into_iter().map(|entry| entry.id).collect()
+        history
     }
 
     #[test]
     fn test_search_fts_basic() {
-        let (arc, repo) = setup_test_db();
-        {
-            let conn = arc.lock().expect("lock");
-            insert_entry(
-                &conn,
-                "alpha apple banana foo cherry",
-                "App1",
-                1_700_000_000,
-            );
-            insert_entry(&conn, "delta elephant falcon grape", "App2", 1_700_000_001);
-            insert_entry(&conn, "hello world baz qux", "App3", 1_700_000_002);
-        }
-        let results = repo.search_fts("foo", 10).expect("search_fts failed");
-        assert_eq!(
-            results.len(),
-            1,
-            "expected exactly 1 entry containing 'foo'"
-        );
+        let history = fixture(&[
+            ("alpha apple banana foo cherry", "App1"),
+            ("delta elephant falcon grape", "App2"),
+            ("hello world baz qux", "App3"),
+        ]);
+        let results = history.search_fts("foo", 10).unwrap();
+        assert_eq!(results.len(), 1);
         assert!(results[0].content.contains("foo"));
         assert!(results[0].content.contains("apple"));
     }
 
     #[test]
     fn test_search_fuzzy() {
-        let (arc, _repo) = setup_test_db();
-        {
-            let conn = arc.lock().expect("lock");
-            insert_entry(&conn, "hello world greeting message", "App1", 1_700_000_000);
-            insert_entry(&conn, "completely unrelated text", "App2", 1_700_000_001);
-        }
-        let ids = execute_plan(
-            &arc,
-            SearchMode::Fuzzy {
-                pattern: "hell".to_string(),
-                threshold: 1,
-            },
-            10,
-        );
-        assert_eq!(
-            ids.len(),
-            1,
-            "expected 1 entry matched by fuzzy prefix 'hell'"
-        );
+        let history = fixture(&[
+            ("hello world greeting message", "App1"),
+            ("completely unrelated text", "App2"),
+        ]);
+        let results = history.search_fuzzy("hell", 1, 10).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].source_app, "App1");
     }
 
     #[test]
     fn test_search_regex() {
-        let (arc, _repo) = setup_test_db();
-        {
-            let conn = arc.lock().expect("lock");
-            insert_entry(
-                &conn,
-                "contact user@example.com for details",
-                "App1",
-                1_700_000_000,
-            );
-            insert_entry(&conn, "no email here at all", "App2", 1_700_000_001);
-        }
-        let ids = execute_plan(
-            &arc,
-            SearchMode::Regex {
-                pattern: r"\w+@\w+".to_string(),
-            },
-            10,
-        );
-        assert_eq!(ids.len(), 1, "expected 1 entry matched by regex");
+        let history = fixture(&[
+            ("contact user@example.com for details", "App1"),
+            ("no email here at all", "App2"),
+        ]);
+        let results = history.search_regex(r"\w+@\w+", 10).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].source_app, "App1");
     }
 
     #[test]

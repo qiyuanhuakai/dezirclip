@@ -38,9 +38,7 @@ pub use crate::capture::{CaptureEngine, CaptureStore, EventSink};
 mod capture_store;
 mod settings;
 pub use settings::{AutomaticUpdatePreference, QuickPastePresentation, SurfaceAppearancePreferences, UpdateAttemptChannel};
-#[cfg(feature = "legacy-bridge")]
 mod desktop_startup;
-#[cfg(feature = "legacy-bridge")]
 pub use desktop_startup::DesktopStartupPreferences;
 mod startup;
 pub use startup::probe_startup_disable_webview_gpu;

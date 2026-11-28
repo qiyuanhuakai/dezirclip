@@ -6,6 +6,14 @@ pub mod media_preview;
 pub mod privacy;
 pub use dzc_protocol as protocol;
 pub use services::{capture, classification, qr, transforms};
+/// The shared backup file format, usable without opening a history profile.
+pub mod backup_format {
+    pub use crate::services::backup::{
+        decrypt_to_json, entries_from_json, export_to_encrypted, export_to_json,
+        import_from_encrypted, import_from_json, prepare_export_entry, BackupError,
+        ExportEntry, ExportFile, ImportMode, ImportSummary, EXPORT_VERSION,
+    };
+}
 mod database;
 mod infrastructure;
 mod services;

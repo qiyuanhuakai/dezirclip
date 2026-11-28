@@ -227,7 +227,6 @@ pub fn save_image_to_file(data_url: &str, data_dir: &std::path::Path) -> Option<
 
 // delete_entry_db, delete_entry, enforce_storage_limit, clear_history removed (migrated to repository)
 
-#[cfg(any(feature = "legacy-bridge", test))]
 pub fn seed_defaults(conn: &Connection) -> Result<()> {
     seed_preference_defaults(conn)?;
     crate::infrastructure::repository::sensitive_tags::ensure_tags_if_protected(conn)
