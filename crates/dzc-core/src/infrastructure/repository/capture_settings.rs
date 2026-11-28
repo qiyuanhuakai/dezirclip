@@ -189,17 +189,6 @@ impl SqliteClipboardRepository {
         transaction.commit().map_err(database)
     }
 
-    pub(crate) fn reset_desktop_preferences(&self, anonymous_id: &str) -> CoreResult<()> {
-        let database = |error: rusqlite::Error| CoreError::from(error.to_string());
-        let mut connection = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
-        let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(database)?;
-        transaction.execute("DELETE FROM settings", []).map_err(database)?;
-        crate::database::seed_defaults(&transaction).map_err(database)?;
-        SqliteSettingsRepository::write_value(&transaction, "app.anon_id", anonymous_id).map_err(database)?;
-        transaction.commit().map_err(database)
-    }
-
     pub(crate) fn set_settings_at_epoch(&self, settings: &[(&str, &str)], epoch: u64) -> CoreResult<()> {
         let database = |error: rusqlite::Error| CoreError::from(error.to_string());
         let mut connection = self.conn.lock().map_err(|_| CoreError::from("CaptureSettingsUnavailable".to_owned()))?;
@@ -269,28 +258,6 @@ impl SqliteClipboardRepository {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
-
-    #[test]
-    fn desktop_reset_rolls_back_defaults_when_replacing_identity_fails() {
-        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
-        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
-        connection.execute_batch("INSERT OR REPLACE INTO settings(key,value) VALUES
-            ('app.theme','retro'), ('app.anon_id','old-identity'), ('internal.fixture','before-reset');
-            CREATE TRIGGER reject_anonymous_identity BEFORE INSERT ON settings
-            WHEN NEW.key='app.anon_id' BEGIN SELECT RAISE(ABORT,'identity rejected'); END;").unwrap();
-        let shared = Arc::new(Mutex::new(connection));
-        let repository = SqliteClipboardRepository::new(shared.clone());
-        let value = |key| SqliteSettingsRepository::get_raw(&shared.lock().unwrap(), key).unwrap();
-        assert!(repository.reset_desktop_preferences("new-identity").is_err());
-        assert_eq!(value("app.theme").as_deref(), Some("retro"));
-        assert_eq!(value("app.anon_id").as_deref(), Some("old-identity"));
-        assert_eq!(value("internal.fixture").as_deref(), Some("before-reset"));
-        shared.lock().unwrap().execute_batch("DROP TRIGGER reject_anonymous_identity").unwrap();
-        repository.reset_desktop_preferences("new-identity").unwrap();
-        assert_eq!(value("app.theme").as_deref(), Some("mica"));
-        assert_eq!(value("app.anon_id").as_deref(), Some("new-identity"));
-        assert_eq!(value("internal.fixture"), None);
-    }
 
     #[test]
     fn reset_preferences_is_atomic_and_preserves_host_identity_and_privacy() {

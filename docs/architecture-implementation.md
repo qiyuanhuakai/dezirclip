@@ -203,6 +203,12 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 
 - **C6 独立复核取消的候选封存**。手动恢复先按原 run、attempt 和 job 时间读取七份固定 artifact ID 对应的成功报告，重建 `dezirclip-candidate.json` 并逐字节核对已上传附件。附件的原时间窗口和全部 40 项产品的原截止时间仍参与校验。单列成功复核任务的 run、attempt、源码、job、artifact ID 和摘要，恢复发布器在写入前再次核对两轮身份。离线模拟通过附件上传后取消、发布后再次同步、缺失或替换的证据、验收未通过、错时间与错复核来源。真实公开的 v0.2.0 已在 GitHub API 只读查询中通过旧 36 项合同的恢复规划分类。新 tag 的 40+1 全链、首次耗时和真实取消后的恢复尚待托管实测。 [v0.2.0 原发布运行](https://github.com/qiyuanhuakai/dezirclip/actions/runs/45952455038)
 
+### R6 桌面设置重置
+
+Tauri 与 MyGo 使用同一个 `desktop.settings.reset`。Core 在事务中恢复应用默认值，保留剪贴板历史、内部配置和已有匿名标识。Host 负责隐私权限、旧快照撤销、粘贴队列和重置事件。Tauri 从同一个启动设置快照重建运行时缓存，并更新快捷键、托盘、置顶和更新检查。旧的整表删除、硬件标识生成及其依赖已移除。
+
+Linux X11 中用实际 Tauri 窗口执行了重置，分别覆盖内嵌 Host 和独立 Service。Service 场景核对了实例未更换并产生重置事件。Linux Tauri 套件 270 项通过、4 项按既有条件忽略。Tauri 重置桥接回归在 Windows 也通过，Core 和 Host 的重置测试覆盖事务回滚、旧权限拒绝、队列清理及已提交后撤销重试。
+
 ### R5b/R6 历史读取边界
 
 Tauri 的内嵌历史查询使用同一个 Host 持有的 `HistoryService` 和 RAM store。Core 负责首页内存条目合并、过滤、排序、分页和正文隐私投影。Tauri 负责参数、WebView 显示裁剪、原宿主 ID 与错误映射。内嵌模式按持久条目偏移，Service 模式继续执行其协议分页。历史删除、置顶、编辑和改标签统一走 Host，移除了返回类型中已无实际路径的本地删除分支。富文本快捷粘贴也直接调用 Host 适配器。

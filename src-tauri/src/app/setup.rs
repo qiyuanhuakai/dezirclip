@@ -238,54 +238,9 @@ fn setup_state(
 ) {
     app.manage(database);
 
-    app.manage(SettingsState {
-        deduplicate: AtomicBool::new(s.deduplicate),
-        persistent: AtomicBool::new(s.persistent),
-        theme: std::sync::Mutex::new(s.theme.clone()),
-        capture_files: AtomicBool::new(s.capture_files),
-        capture_rich_text: AtomicBool::new(s.capture_rich_text),
-        silent_start: AtomicBool::new(s.silent_start),
-        delete_after_paste: AtomicBool::new(s.delete_after_paste),
-        privacy_protection: AtomicBool::new(s.privacy_protection),
-        privacy_protection_kinds: std::sync::Mutex::new(
-            s.privacy_kinds
-                .split(',')
-                .map(|x| x.trim().to_string())
-                .collect(),
-        ),
-        privacy_protection_custom_rules: std::sync::Mutex::new(
-            s.privacy_custom
-                .lines()
-                .map(|x| x.trim().to_string())
-                .collect(),
-        ),
-        excluded_source_apps: std::sync::Mutex::new(
-            crate::services::source_exclusion::parse_excluded_source_apps(&s.excluded_source_apps),
-        ),
-        sequential_mode: AtomicBool::new(s.sequential_mode),
-        sequential_paste_hotkey: std::sync::Mutex::new(s.sequential_hotkey.clone()),
-        rich_paste_hotkey: std::sync::Mutex::new(s.rich_paste_hotkey.clone()),
-        search_hotkey: std::sync::Mutex::new(s.search_hotkey.clone()),
-        screenshot_enabled: AtomicBool::new(s.screenshot_enabled),
-        screenshot_hotkey: std::sync::Mutex::new(s.screenshot_hotkey.clone()),
-        screenshot_full_hotkey: std::sync::Mutex::new(s.screenshot_full_hotkey.clone()),
-        quick_paste_enabled: AtomicBool::new(s.quick_paste_enabled),
-        quick_paste_hotkey: std::sync::Mutex::new(s.quick_paste_hotkey.clone()),
-        ocr_enabled: AtomicBool::new(s.ocr_enabled),
-        sound_enabled: AtomicBool::new(s.sound_enabled),
-        hide_tray_icon: AtomicBool::new(s.hide_tray_icon),
-        edge_docking: AtomicBool::new(s.edge_docking),
-        follow_mouse: AtomicBool::new(s.follow_mouse),
-        arrow_key_selection: AtomicBool::new(s.arrow_key_selection),
-        main_hotkey: std::sync::Mutex::new(s.main_hotkey.clone()),
-        monitors: std::sync::Mutex::new(Vec::new()),
-        idle_destroy_enabled: AtomicBool::new(s.idle_destroy_enabled),
-        idle_destroy_seconds: AtomicU64::new(
-            s.idle_destroy_seconds
-                .map(crate::app::idle_destroyer::clamp_idle_seconds)
-                .unwrap_or(crate::app::idle_destroyer::DEFAULT_IDLE_DESTROY_SECONDS),
-        ),
-    });
+    let settings = SettingsState::default();
+    settings.apply_preferences(s);
+    app.manage(settings);
 
     app.manage(SessionHistory(dzc_core::api::SessionHistoryStore::new(
         std::collections::VecDeque::new(),

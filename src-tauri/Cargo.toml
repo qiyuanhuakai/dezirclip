@@ -14,7 +14,7 @@ desktop = [
     "dep:tauri", "dep:tauri-build", "dep:serde_json", "dep:tauri-plugin-opener",
     "dep:tauri-plugin-dialog", "dep:tauri-plugin-global-shortcut",
     "dep:tauri-plugin-single-instance", "dep:tauri-plugin-window-state",
-    "dep:window-vibrancy", "dep:machine-uid",
+    "dep:window-vibrancy",
     "dep:dotenvy", "native-screen",
     "dep:windows-core", "dep:windows-future", "dep:windows-version",
     "dep:webview2-com", "dep:x11-clipboard", "dep:ksni", "dep:gtk",
@@ -56,8 +56,6 @@ tauri-plugin-single-instance = { workspace = true, optional = true }
 tauri-plugin-window-state = { workspace = true, optional = true }
 uuid = { workspace = true }
 urlencoding = { workspace = true }
-machine-uid = { workspace = true, optional = true }
-sha2 = { workspace = true }
 dotenvy = { workspace = true, optional = true }
 
 zeroize = { workspace = true }

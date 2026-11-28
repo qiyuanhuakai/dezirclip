@@ -450,83 +450,59 @@ pub fn set_sound_enabled(
     save_bool_setting(&db_state, "app.sound_enabled", enabled)
 }
 
+async fn reset_host_preferences(host: &crate::app::ipc_host::DesktopHost) -> AppResult<()> {
+    use dzc_host::wire::{LibraryStateParams, Method, OperationResult, RuntimeState};
+
+    let state: RuntimeState = host
+        .call(Method::Health, serde_json::json!({}), "RuntimeState")
+        .await
+        .map_err(AppError::Validation)?;
+    let result: OperationResult = host
+        .blocking_call(
+            Method::DesktopSettingsReset,
+            LibraryStateParams {
+                service_instance_id: state.service_instance_id,
+                expected_epoch: state.privacy_epoch,
+            },
+            "OperationResult",
+        )
+        .await
+        .map_err(AppError::Validation)?;
+    if !result.performed {
+        return Err(AppError::Validation("SettingsResetUnconfirmed".into()));
+    }
+    Ok(())
+}
+
 #[tauri::command]
-pub fn reset_settings(
+pub async fn reset_settings(
     app: AppHandle,
-    state: State<'_, HistoryService>,
-    settings_state: State<'_, crate::app_state::SettingsState>,
+    host: State<'_, crate::app::ipc_host::DesktopHost>,
+    history: State<'_, HistoryService>,
+    settings: State<'_, SettingsState>,
 ) -> AppResult<()> {
-    let machine_id = crate::app::system::get_machine_id();
-    let new_id = format!("{}-0000-0000-0000-000000000000", machine_id);
-    state.reset_desktop_preferences(&new_id)
-        .map_err(setting_error)?;
+    reset_host_preferences(&host).await?;
 
-    let main_hotkey = state
-.desktop_setting("app.hotkey")
-        .unwrap_or(Some("Alt+C".to_string()))
-        .unwrap_or("Alt+C".to_string());
-    let seq_hotkey = state
-.desktop_setting("app.sequential_hotkey")
-        .unwrap_or(Some("Alt+V".to_string()))
-        .unwrap_or("Alt+V".to_string());
-    let rich_hotkey = state
-.desktop_setting("app.rich_paste_hotkey")
-        .unwrap_or(Some("Ctrl+Shift+Z".to_string()))
-        .unwrap_or("Ctrl+Shift+Z".to_string());
-    let search_hotkey = state
-.desktop_setting("app.search_hotkey")
-        .unwrap_or(Some("Alt+F".to_string()))
-        .unwrap_or("Alt+F".to_string());
-    let screenshot_hotkey = state
-.desktop_setting("app.screenshot_hotkey")
-        .unwrap_or(Some("Ctrl+Shift+A".to_string()))
-        .unwrap_or("Ctrl+Shift+A".to_string());
-    let screenshot_full_hotkey = state
-.desktop_setting("app.screenshot_full_hotkey")
-        .unwrap_or(Some("Ctrl+Shift+F".to_string()))
-        .unwrap_or("Ctrl+Shift+F".to_string());
-    let quick_paste_hotkey = state
-.desktop_setting("app.quick_paste_hotkey")
-        .unwrap_or(Some("Ctrl+Shift+V".to_string()))
-        .unwrap_or("Ctrl+Shift+V".to_string());
-
-    {
-        let mut guard = settings_state.main_hotkey.lock().unwrap();
-        *guard = main_hotkey.clone();
+    let preferences = history.desktop_startup_preferences();
+    settings.apply_preferences(&preferences);
+    apply_tray_visibility(&app, !preferences.hide_tray_icon);
+    let previously_pinned = crate::WINDOW_PINNED.swap(preferences.window_pinned, Ordering::Relaxed);
+    if preferences.window_pinned != previously_pinned {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.set_always_on_top(preferences.window_pinned);
+        }
     }
-    {
-        let mut guard = settings_state.sequential_paste_hotkey.lock().unwrap();
-        *guard = seq_hotkey.clone();
-    }
-    {
-        let mut guard = settings_state.rich_paste_hotkey.lock().unwrap();
-        *guard = rich_hotkey.clone();
-    }
-    {
-        let mut guard = settings_state.search_hotkey.lock().unwrap();
-        *guard = search_hotkey.clone();
-    }
-    {
-        let mut guard = settings_state.screenshot_hotkey.lock().unwrap();
-        *guard = screenshot_hotkey.clone();
-    }
-    {
-        let mut guard = settings_state.screenshot_full_hotkey.lock().unwrap();
-        *guard = screenshot_full_hotkey.clone();
-    }
-    {
-        let mut guard = settings_state.quick_paste_hotkey.lock().unwrap();
-        *guard = quick_paste_hotkey.clone();
-    }
-    settings_state
-        .screenshot_enabled
-        .store(true, Ordering::Relaxed);
-    settings_state
-        .quick_paste_enabled
-        .store(true, Ordering::Relaxed);
-    settings_state.ocr_enabled.store(true, Ordering::Relaxed);
-    apply_setting_state_update(&app, &settings_state, "app.excluded_source_apps", "");
+    app.state::<crate::app::updater::UpdaterState>().preferences_changed();
     sync_hotkeys_from_settings(&app)
+}
+
+fn apply_tray_visibility(_app: &AppHandle, visible: bool) {
+    #[cfg(target_os = "linux")]
+    crate::infrastructure::linux_api::tray::set_tray_visible(visible);
+    #[cfg(not(target_os = "linux"))]
+    if let Some(tray) = _app.tray_by_id("main_tray") {
+        let _ = tray.set_visible(visible);
+    }
 }
 
 #[tauri::command]
@@ -536,12 +512,7 @@ pub fn set_tray_visible(
     visible: bool,
 ) -> AppResult<()> {
     state.hide_tray_icon.store(!visible, Ordering::Relaxed);
-    #[cfg(target_os = "linux")]
-    crate::infrastructure::linux_api::tray::set_tray_visible(visible);
-    #[cfg(not(target_os = "linux"))]
-    if let Some(tray) = app_handle.tray_by_id("main_tray") {
-        let _ = tray.set_visible(visible);
-    }
+    apply_tray_visibility(&app_handle, visible);
     let db_state = app_handle.state::<HistoryService>();
     save_bool_setting(&db_state, "app.hide_tray_icon", !visible)
 }
@@ -596,6 +567,66 @@ pub fn set_idle_destroy_seconds(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn tauri_resets_preferences_through_the_host_and_refreshes_runtime_state() {
+        use dzc_core::api::{ClipboardEntry, ImportMode, SessionHistoryStore};
+        use dzc_host::wire::{EventsResult, Method, OperationResult, QueueReplaceParams, RuntimeState, SubscribeParams};
+        use std::{collections::VecDeque, path::Path, sync::Arc};
+
+        let history = HistoryService::open_desktop(Path::new(":memory:")).unwrap();
+        let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({
+            "id": 1, "content_type": "text", "content": "reset fixture", "preview": "reset fixture",
+            "timestamp": 1, "source_app": "test", "is_pinned": false
+        })).unwrap();
+        history.restore(&[entry], ImportMode::Merge).unwrap();
+        for (key, value) in [
+            ("app.theme", "retro"), ("app.hotkey", "Ctrl+Shift+F8"),
+            ("app.sound_enabled", "true"), ("app.hide_tray_icon", "true"),
+            ("app.anon_id", "existing-identity"), ("internal.fixture", "retained"),
+        ] {
+            history.set_desktop_setting(key, value).unwrap();
+        }
+        let state = SettingsState::default();
+        state.apply_preferences(&history.desktop_startup_preferences());
+        let host = crate::app::ipc_host::DesktopHost::synthetic_fixture(
+            history.clone(),
+            Arc::new(SessionHistoryStore::new(VecDeque::new())),
+        );
+        let before: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await.unwrap();
+        let queued: OperationResult = host.call(
+            Method::DesktopQueueSet,
+            QueueReplaceParams {
+                service_instance_id: before.service_instance_id.clone(),
+                expected_epoch: before.privacy_epoch,
+                ids: vec![1],
+            },
+            "OperationResult",
+        ).await.unwrap();
+        assert!(queued.performed);
+        assert!(state.sound_enabled.load(Ordering::Relaxed));
+        assert!(state.hide_tray_icon.load(Ordering::Relaxed));
+
+        reset_host_preferences(&host).await.unwrap();
+        state.apply_preferences(&history.desktop_startup_preferences());
+        assert!(!state.sound_enabled.load(Ordering::Relaxed));
+        assert!(!state.hide_tray_icon.load(Ordering::Relaxed));
+        assert_eq!(*state.theme.lock().unwrap(), "mica");
+        assert_eq!(*state.main_hotkey.lock().unwrap(), "Alt+C");
+        assert_eq!(history.desktop_setting("app.anon_id").unwrap().as_deref(), Some("existing-identity"));
+        assert_eq!(history.desktop_setting("internal.fixture").unwrap().as_deref(), Some("retained"));
+        assert_eq!(history.get_entry_by_id(1).unwrap().unwrap().content, "reset fixture");
+
+        let events: EventsResult = host.call(
+            Method::EventsSubscribe,
+            SubscribeParams { after_sequence: before.event_sequence, wait_ms: Some(0), settings_only: None },
+            "EventsResult",
+        ).await.unwrap();
+        assert!(events.state.privacy_epoch > before.privacy_epoch);
+        for status in ["paste_queue_changed:0", "application_settings_reset"] {
+            assert!(events.events.iter().any(|event| event.data.status.as_deref() == Some(status)), "{status}");
+        }
+    }
 
     #[test]
     fn appearance_keys_are_broadcast() {

@@ -44,7 +44,6 @@ tauri-plugin-single-instance = { version = "2" }
 tauri-plugin-window-state = { version = "2" }
 uuid = { version = "1.19.0", features = ["v4"] }
 urlencoding = "2.1.3"
-machine-uid = { version = "0.5" }
 sha2 = "0.10"
 dotenvy = { version = "0.15" }
 dirs = "5.0"

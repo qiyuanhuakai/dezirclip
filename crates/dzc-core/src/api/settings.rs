@@ -95,10 +95,6 @@ impl HistoryService {
     }
 
     /// Apply the desktop's existing reset semantics as one transaction.
-    pub fn reset_desktop_preferences(&self, anonymous_id: &str) -> CoreResult<()> {
-        self.repository.reset_desktop_preferences(anonymous_id)
-    }
-
     pub fn reset_application_preferences(&self, epoch: u64) -> CoreResult<()> {
         self.repository.reset_application_preferences(epoch)
     }
