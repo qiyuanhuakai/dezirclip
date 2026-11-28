@@ -131,7 +131,14 @@ pub struct Listener {
 impl Listener {
     pub async fn accept(&mut self) -> io::Result<Stream> {
         let (stream, _) = self.listener.accept().await?;
-        let peer = authenticated_peer(&stream, &self.endpoint.identity)?;
+        let credentials = authenticated_peer(&stream, &self.endpoint.identity);
+        #[cfg(target_os = "macos")]
+        let credentials = credentials.map_err(|error| {
+            // Darwin can lose the peer credentials between accept and lookup.
+            // Reject just that stream, as for any other unauthenticated peer.
+            if error.kind() == io::ErrorKind::NotConnected { denied() } else { error }
+        });
+        let peer = credentials?;
         #[cfg(target_os = "macos")]
         if self.required_pid.is_some_and(|pid| peer.pid() != Some(pid)) { return Err(denied()); }
         Ok(Stream(stream, peer))

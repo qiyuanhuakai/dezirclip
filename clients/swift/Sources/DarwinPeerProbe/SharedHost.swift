@@ -69,6 +69,11 @@ private func verifyStartedHost(_ host: BundledDesktopHost, credentials: Bootstra
         throw ProbeFailure("Host accepted an invalid Desktop grant")
     } catch DesktopSessionError.remote(.permissionDenied) {}
 
+    // An identity probe can close before the server reads the peer credentials.
+    for _ in 0..<8 {
+        let idle = try await host.verifiedSocket()
+        Darwin.close(idle)
+    }
     let query = try await host.openSession()
     let events = try await host.openSession()
     let actions = try await host.openSession(requireCopy: true)
