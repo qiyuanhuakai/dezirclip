@@ -64,10 +64,11 @@ def resolve_mode(event, inputs):
         raise ValueError("Unknown Windows crash target or build profile")
 
     if event != "workflow_dispatch":
-        # The reusable Release call retains its existing source_acceptance input.
-        if aliases not in ([], ["source_acceptance"]) or named != "auto":
+        # Tag-triggered Release passes workflow_call inputs with the original push event.
+        source_requested = named == "source-acceptance" or aliases == ["source_acceptance"]
+        if (named != "auto" or aliases) and not (event == "push" and source_requested):
             raise ValueError("Focused modes are manual CI requests")
-        mode = "source-acceptance" if aliases else "development"
+        mode = "source-acceptance" if source_requested else "development"
     elif aliases:
         mode = LEGACY_MODES[aliases[0]]
     elif named == "auto":
@@ -292,7 +293,8 @@ def summarize():
     legacy_installer = selected["outputs"]["legacy_installer"] == "true"
     crash_profile = selected["outputs"]["crash_profile"]
     run = int(env["GITHUB_RUN_ID"])
-    prefix = "Source acceptance / " if mode == "source-acceptance" and env["GITHUB_EVENT_NAME"] != "workflow_dispatch" else ""
+    caller_file = env["GITHUB_WORKFLOW_REF"].split("@", 1)[0]
+    prefix = "Source acceptance / " if caller_file.endswith("/.github/workflows/release.yml") else ""
     # GitHub job details can lag behind the scheduler dependency status.
     attempt = int(env["GITHUB_RUN_ATTEMPT"])
     for check in range(3):

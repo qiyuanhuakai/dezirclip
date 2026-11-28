@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Synchronize a channel, recover a release, or replay published desktop acceptance
+        description: Verify candidate source, replay published acceptance, recover a release, or synchronize a channel
         required: true
         type: choice
         default: sync-dual-channel
-        options: [sync-published-channel, resume-verified-draft, sync-dual-channel, resume-dual-draft, replay-windows-candidate, replay-linux-runtime]
+        options: [verify-source-candidate, replay-windows-candidate, replay-linux-runtime, sync-published-channel, resume-verified-draft, sync-dual-channel, resume-dual-draft]
       tag:
         description: Original version tag for channel synchronization or verified draft recovery
         required: false
@@ -35,7 +35,7 @@ env:
   DZC_BUILD_REVISION: ${{ github.sha }}
 
 concurrency:
-  group: ${{ startsWith(inputs.mode || '', 'replay-') && format('release-{0}-{1}', inputs.mode, github.ref) || 'release-updater-channels' }}
+  group: ${{ (inputs.mode == 'verify-source-candidate' || startsWith(inputs.mode || '', 'replay-')) && format('release-{0}-{1}', inputs.mode, github.ref) || 'release-updater-channels' }}
   queue: max
   cancel-in-progress: false
 
@@ -112,14 +112,13 @@ jobs:
 
   accept-source:
     name: Source acceptance
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'verify-source-candidate')
     permissions:
       contents: read
       actions: read
     uses: ./.github/workflows/ci.yml
     with:
-      full_validation: false
-      source_acceptance: true
+      mode: source-acceptance
 
   publish-standalone-cli:
     name: Publish verified standalone archives

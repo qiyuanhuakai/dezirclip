@@ -14,6 +14,7 @@
 | 手动 `mode=development` | 开发检查及历史 MyGo 安装验收 | 手动触发缺少可靠 diff 基线，历史安装器按需执行规则要求运行 |
 | 手动 `mode=full`（未指定专项时的默认模式） | 开发检查、历史 MyGo 安装验收、四目标桌面和当前 Windows x64 MyGo 安装验收、四目标 standalone、六场景 NSIS、两个 Flatpak | Windows ARM64 的桌面和 standalone 任务是交叉构建 |
 | `mode=source-acceptance` 或 Release 复用调用 | 前端、Rust 与 Go 开发检查，Linux / Windows x64 的源码、真实客户端和桌面验收，写出绑定候选提交和 attempt 的凭据 | 正常 tag 的独立打包和最终包验收按下文执行 |
+| 手动触发 Release 的 `mode=verify-source-candidate` | 指定分支提交走正式 tag 使用的同一源码验收 | 仅有读取源码和 Actions 的权限，输出验收记录和准入凭据 |
 | `v*` tag push | draft、四目标 standalone、四目标双桌面构建与验收、候选封存、公开与通道同步 | 以本页“正常 tag 发布”部分的实际门槛为准 |
 
 桌面专项同时运行轻量的前端工具契约步骤。生成检查、前端安装、单测和构建仍随开发、全量和源码准入模式执行。
@@ -30,7 +31,7 @@
 | `windows-performance` | 构建 Windows 比较用产物，对同一份产物执行功能验收和 ABBA 采样 |
 | `windows-crash` | 选择 `windows_crash_target=service-startup` 或 `surface`。只有 `surface` 可选 `windows_crash_build_profile=debug` |
 
-每次手动触发只接受一个模式。脚本迁移期间，`mode=auto` 继续接受一个旧专项开关。旧 `full_validation` 只在未选择专项时决定默认范围，`false` 选择 development。旧输入供已经使用 `gh workflow run` 的专项调用迁移，仓库内的 Release 暂时继续传 `source_acceptance=true`。调用迁至命名模式并核实旧接口已无消费者后移除对应参数。命名模式和旧专项开关同时出现时，前置任务会拒绝请求。
+每次手动触发只接受一个模式。Release 统一传 `mode=source-acceptance`。脚本迁移期间，`mode=auto` 继续接受一个旧专项开关。旧 `full_validation` 只在未选择专项时决定默认范围，`false` 选择 development。旧输入供已有专项调用迁移。命名模式和旧专项开关同时出现时，前置任务会拒绝请求。
 
 结果汇总通过 GitHub Actions 的任务记录核对固定清单。每个必需矩阵实例和所列的关键步骤都要实际成功，缺失、跳过、取消和失败分别显示。普通 CI 的部分重跑沿用 GitHub 认定的同一 run 最新结果。候选源码验收核对当前 attempt，核对通过后才生成既有格式的凭据。
 

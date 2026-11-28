@@ -1,6 +1,8 @@
 from pathlib import Path
 import json
+import os
 import re
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -26,6 +28,10 @@ class ModeTests(unittest.TestCase):
             self.assertEqual(ci_policy.resolve_mode(event, {}), ("development", "release"))
         self.assertEqual(ci_policy.resolve_mode("push", {"source_acceptance": True, "full_validation": False}),
                          ("source-acceptance", "release"))
+        for event in ("push", "workflow_dispatch"):
+            self.assertEqual(ci_policy.resolve_mode(event, {
+                "mode": "source-acceptance", "full_validation": True, "source_acceptance": False,
+            }), ("source-acceptance", "release"))
         self.assertEqual(ci_policy.resolve_mode("workflow_dispatch", {}), ("full", "release"))
         self.assertEqual(ci_policy.resolve_mode("workflow_dispatch", {"full_validation": False}),
                          ("development", "release"))
@@ -163,6 +169,31 @@ class AcceptanceTests(unittest.TestCase):
         report = ci_policy.evaluate("source-acceptance", False, jobs, SHA, RUN, ATTEMPT, prefix)
         self.assertIn(("Tauri backend (linux-x86_64)", "required", "missing", False), report)
         self.assertIn(("Tauri backend (windows-x86_64)", "required", "wrong run, attempt or source", False), report)
+
+    def test_manual_source_acceptance_binds_both_release_and_direct_ci(self):
+        mode = "source-acceptance"
+        targets = ci_policy.desktop_targets(mode)
+        needs = {key: {"result": "success"} for key in ci_policy.SOURCE_JOBS}
+        needs["ci-desktop-plan"]["outputs"] = {
+            "mode": mode, "legacy_installer": "false", "crash_profile": "release",
+            "matrix": json.dumps({"include": targets}),
+        }
+        for file, prefix in (("release.yml", "Source acceptance / "), ("ci.yml", "")):
+            with self.subTest(file=file), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory)
+                env = dict(DEPENDENCIES=json.dumps(needs), GITHUB_SHA=SHA, CI_REPORTED_SOURCE=SHA,
+                           GITHUB_RUN_ID=str(RUN), GITHUB_RUN_ATTEMPT=str(ATTEMPT), RUNNER_TEMP=directory,
+                           GITHUB_EVENT_NAME="workflow_dispatch", GITHUB_STEP_SUMMARY=str(path / "summary"),
+                           GITHUB_OUTPUT=str(path / "output"),
+                           GITHUB_WORKFLOW_REF=f"owner/repo/.github/workflows/{file}@refs/heads/candidate")
+                with patch.dict(os.environ, env, clear=True), \
+                        patch.object(ci_policy.subprocess, "check_output", return_value=SHA + "\n"), \
+                        patch.object(ci_policy, "workflow_jobs", return_value=finished(mode, prefix=prefix)):
+                    ci_policy.summarize()
+                receipt = json.loads((path / "source-acceptance.json").read_text(encoding="utf-8"))
+                self.assertEqual((receipt["source_revision"], receipt["run_id"], receipt["run_attempt"]),
+                                 (SHA, RUN, ATTEMPT))
+                self.assertEqual(receipt["desktop_targets"], ["linux-x86_64", "windows-x86_64"])
 
     def test_surface_crash_debug_mode_requires_the_debug_artifact(self):
         mode = "windows-surface-crash"
