@@ -185,7 +185,7 @@ jobs:
 
   frontend:
     needs: ci-desktop-plan
-    if: needs.ci-desktop-plan.outputs.development == 'true'
+    if: needs.ci-desktop-plan.outputs.development == 'true' || needs.ci-desktop-plan.outputs.desktop == 'true'
     name: Frontend
     runs-on: ubuntu-22.04
     steps:
@@ -193,6 +193,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        if: needs.ci-desktop-plan.outputs.development == 'true'
         uses: pnpm/action-setup@v4
         with:
           version: 11.0.9
@@ -201,73 +202,86 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
+          cache: ${{ needs.ci-desktop-plan.outputs.development == 'true' && 'pnpm' || '' }}
 
-      - name: Check pinned MyGo dependency before installing frontend packages
-        run: node --test scripts/tests/mygo-surface-patch.node.mjs
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Check i18n keys
-        run: pnpm run i18n:check
-
-      - name: Check synchronized release versions
-        run: pnpm run release:set-version --check
-
-      - name: Check shared Surface design tokens
-        run: pnpm run surface:tokens --check
-
-      - name: Check embedded emoji catalog
-        run: node scripts/emoji-catalog/sync-embed.mjs --check
-
-      - name: Test independent Surface build identity
-        run: node --test scripts/tests/surface-build.node.mjs
-
-      - name: Setup Python for Linux release input contracts
+      - name: Setup Python for shared tooling contracts
         uses: actions/setup-python@v6
         with:
           python-version: '3.13.15'
 
-      - name: Test optional Linux release input contracts without building
-        run: python -B -m unittest discover -s scripts/tests -p test_linux_release_inputs.py -v
+      - name: Test portable tooling and release contracts
+        run: |
+          python -B scripts/ci_contracts.py portable
+          python -I -B -m unittest discover -s scripts -p test_release_recovery.py -v
+          python -B -m unittest discover -s scripts/performance/tests -v
+
+      - name: Check pinned MyGo dependency before installing frontend packages
+        if: needs.ci-desktop-plan.outputs.development == 'true'
+        run: node --test scripts/tests/mygo-surface-patch.node.mjs
+
+      - name: Install frontend dependencies
+        if: needs.ci-desktop-plan.outputs.development == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Check i18n keys
+        if: needs.ci-desktop-plan.outputs.development == 'true'
+        run: pnpm run i18n:check
+
+      - name: Check synchronized release versions
+        if: needs.ci-desktop-plan.outputs.development == 'true'
+        run: pnpm run release:set-version --check
+
+      - name: Check shared Surface design tokens
+        if: needs.ci-desktop-plan.outputs.development == 'true'
+        run: pnpm run surface:tokens --check
+
+      - name: Check embedded emoji catalog
+        if: needs.ci-desktop-plan.outputs.development == 'true'
+        run: node scripts/emoji-catalog/sync-embed.mjs --check
+
+      - name: Test independent Surface build identity
+        if: needs.ci-desktop-plan.outputs.development == 'true'
+        run: node --test scripts/tests/surface-build.node.mjs
 
       - name: Test disposable native Surface fixture contracts
+        if: needs.ci-desktop-plan.outputs.development == 'true'
         run: |
           node --test scripts/tests/native-windows-surface.node.mjs scripts/tests/native-windows-crash-events.node.mjs scripts/tests/native-windows-lifecycle.node.mjs scripts/tests/native-windows-service-paste.node.mjs scripts/tests/native-ownership-discovery.node.mjs
-          python -B -m unittest discover -s scripts/tests -p test_native_windows_click_plan.py
-          python -B -m unittest discover -s scripts/tests -p test_native_windows_surface_target.py
-          python -B -m unittest discover -s scripts/tests -p test_native_windows_supervisor.py
-          python -B -m unittest discover -s scripts/tests -p test_native_windows_service_paste.py
 
       - name: Test opt-in Windows performance fixture contracts without native execution
+        if: needs.ci-desktop-plan.outputs.development == 'true'
         run: |
-          python -B -m unittest discover -s scripts/tests -p test_windows_performance_derivation.py
-          python -B -m unittest discover -s scripts/tests -p 'test_windows_crash*.py'
           python -B scripts/tests/windows-performance/derive.py --output-dir .harness/windows-performance-pure-check
           node --test .harness/windows-performance-pure-check/pure.node.mjs
 
       - name: Check single-source local protocol generation
+        if: needs.ci-desktop-plan.outputs.development == 'true'
         run: python scripts/generate-protocol.py --check
 
       - name: Test updater release gates
+        if: needs.ci-desktop-plan.outputs.development == 'true'
         run: |
           bash -n scripts/bundle-archlinux.sh
           node --test scripts/tests/set-release-version.node.mjs scripts/tests/updater-release.node.mjs scripts/tests/release-windows-upgrade.node.mjs scripts/tests/release-upgrade-artifact.node.mjs
 
       - name: Check final Windows upgrade source boundary
+        if: needs.ci-desktop-plan.outputs.development == 'true'
         run: python -I -B scripts/tests/release-windows-upgrade-ps.py
 
       - name: Check theme CSS contracts
+        if: needs.ci-desktop-plan.outputs.development == 'true'
         run: node scripts/audit-theme-css.mjs --check
 
       - name: Run unit tests
+        if: needs.ci-desktop-plan.outputs.development == 'true'
         run: pnpm run test:unit
 
       - name: Build frontend
+        if: needs.ci-desktop-plan.outputs.development == 'true'
         run: pnpm run build
 
       - name: Verify production WebView startup
+        if: needs.ci-desktop-plan.outputs.development == 'true'
         run: |
           if [[ ! -x /usr/bin/google-chrome ]]; then
             pnpm exec playwright install chromium --only-shell
@@ -382,6 +396,8 @@ jobs:
     # GitHub displays this template literally when the job is skipped before matrix expansion.
     name: Tauri backend (${{ matrix.name }})
     runs-on: ${{ matrix.platform }}
+    env:
+      DZC_COMPANION_TARGET: ${{ matrix.rust_target }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.ci-desktop-plan.outputs.matrix) }}
@@ -419,6 +435,7 @@ jobs:
           enable-cache: false
 
       - name: Require compatible SQLite for synthetic FTS5 fixtures
+        if: matrix.can_test
         run: >-
           python -c "import sqlite3; print('Fixture SQLite', sqlite3.sqlite_version); assert sqlite3.sqlite_version_info >= (3, 50, 4), 'Synthetic schema20 fixtures require SQLite >=3.50.4'; connection=sqlite3.connect(':memory:'); connection.execute('CREATE VIRTUAL TABLE fixture_fts USING fts5(content)'); connection.close()"
 
@@ -448,15 +465,6 @@ jobs:
               json.dump({'schema_version': 1, 'status': 'passed', 'identity': identity, 'key_exists': key.exists(), 'before': before, 'after': after}, output)
               output.flush()
               os.fsync(output.fileno())
-
-      - name: Test standalone packaging
-        run: python -m unittest discover -s scripts/tests -v
-
-      - name: Test fixed release recovery guard
-        run: python -I -B -m unittest discover -s scripts -p test_release_recovery.py -v
-
-      - name: Test performance build provenance
-        run: python -m unittest discover -s scripts/performance/tests -v
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
@@ -618,9 +626,15 @@ jobs:
           subprocess.run(["python", "scripts/test-local-ipc.py", "--rust-fixture", str(fixture), "--go", shutil.which("go")], check=True)
           subprocess.run(["python", "scripts/test-capture-lease.py", "--fixture", str(fixture)], check=True)
 
+      - name: Test desktop tooling in its platform environment
+        if: matrix.can_test
+        run: python -B scripts/ci_contracts.py desktop
+
+      - name: Build standalone CLI and Service for desktop acceptance
+        run: python -B scripts/ci_desktop_binaries.py build
+
       - name: Test Tauri crate
         if: matrix.can_test
-        working-directory: src-tauri
         shell: python
         # --all-targets so `examples/` is covered too. `cargo test` only builds
         # examples, it does not run their tests, and backup-inspect moved out of
@@ -628,7 +642,8 @@ jobs:
         # this flag its 15 tests silently stop running.
         run: |
           import os, subprocess, sys
-          command = ["cargo", "test", "--locked", "-p", "dezirclip", "--all-targets"]
+          command = [sys.executable, "-B", "scripts/ci_desktop_binaries.py", "protect",
+                     "cargo", "test", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "-p", "dezirclip", "--all-targets"]
           if sys.platform == "linux":
               command = ["xvfb-run", "-a", *command]
               os.environ["XDG_SESSION_TYPE"] = "x11"
@@ -637,9 +652,8 @@ jobs:
           subprocess.run(command, check=True)
 
       - name: Build Tauri crate
-        if: needs.ci-desktop-plan.outputs.mode != 'source-acceptance'
-        working-directory: src-tauri
-        run: cargo build ${{ matrix.cargo_args }}
+        if: "!matrix.can_test || (runner.os == 'Linux' && needs.ci-desktop-plan.outputs.mode != 'source-acceptance')"
+        run: python -B scripts/ci_desktop_binaries.py protect cargo build --locked --manifest-path src-tauri/Cargo.toml ${{ matrix.cargo_args }}
 
       - name: Verify optional local service without native capture
         id: local-service
@@ -649,9 +663,6 @@ jobs:
           import os
           from pathlib import Path
           import subprocess
-          subprocess.run(["cargo", "build", "--locked", "-p", "dzc-cli", "-p", "dzc-service",
-                          "--no-default-features", "--features", "dzc-cli/native-screen,dzc-service/native-screen",
-                          "--bin", "dzc", "--bin", "dzc-service"], check=True)
           binary = Path("target/debug") / ("dzc.exe" if os.name == "nt" else "dzc")
           fixture = binary.with_name("dzc-desktop-fixture" + binary.suffix).resolve()
           subprocess.run(["go", "build", "-o", str(fixture), "./cmd/host-fixture"], cwd="clients/go", check=True)
@@ -714,6 +725,8 @@ jobs:
       - name: Verify MyGo React library operations against the Rust Service
         id: mygo_library
         if: matrix.can_test
+        env:
+          CGO_ENABLED: '0'
         shell: python
         run: |
           import json, os, subprocess
@@ -798,11 +811,12 @@ jobs:
         env:
           DZC_TEST_CLIPBOARD_READER: '1'
         run: |
-          cargo test --locked -p dzc-platform capture::windows_access::tests::reader_window_owns_the_lock_until_drop -- --exact
+          $result = cargo test --locked -p dzc-platform --lib -- --test-threads=1 capture::windows_access::tests::reader_window_owns_the_lock_until_drop native_clipboard::windows_public::tests::own_notification_is_identified_without_acquiring_the_clipboard native_clipboard::windows_image::tests
+          $result | Write-Host
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --locked -p dzc-platform native_clipboard::windows_public::tests::own_notification_is_identified_without_acquiring_the_clipboard -- --exact
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --locked -p dzc-platform native_clipboard::windows_image::tests
+          foreach ($test in @('reader_window_owns_the_lock_until_drop', 'own_notification_is_identified_without_acquiring_the_clipboard', 'published_image_survives_transaction_and_owner_destruction')) {
+            if (-not ($result -match "::$test \.\.\. ok\s*$")) { throw "Required Windows clipboard test did not pass: $test" }
+          }
 
       - name: Verify MyGo elevated Service and desktop handoff
         if: runner.os == 'Windows' && matrix.can_test
@@ -842,11 +856,14 @@ jobs:
       - name: Verify middle-button hook survives a blocked resident UI
         if: runner.os == 'Windows' && matrix.can_test
         timeout-minutes: 2
-        working-directory: frontends/dzc-surface
         env:
           DZC_TEST_MIDDLE_HOOK: '1'
-          CGO_ENABLED: '0'
-        run: go test ./cmd/dzc-desktop -run '^TestMiddleHookSurvivesBlockedResident$' -count=1 -timeout=30s
+        shell: pwsh
+        run: |
+          $result = ./target/debug/mygo-library.test.exe -test.run '^TestMiddleHookSurvivesBlockedResident$' -test.count=1 -test.timeout=30s -test.v
+          $result | Write-Host
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($result -match '^--- PASS: TestMiddleHookSurvivesBlockedResident\b')) { throw 'Native middle button fixture did not pass' }
 
       - name: Verify MyGo Native screenshot buttons on the Windows desktop
         if: ${{ !cancelled() && runner.os == 'Windows' && matrix.can_test && steps.mygo_library.outcome == 'success' && steps.windows-desktop-fixture.outcome == 'success' }}
@@ -867,30 +884,13 @@ jobs:
           RUST_BACKTRACE: '1'
         run: cargo test -p dzc-platform --features ipc native_clipboard::private_windows::tests::disposable_native_ -- --ignored --nocapture --test-threads=1
 
-      - name: Check backend without replacing the built CLI
-        shell: python
-        run: |
-          import hashlib
-          import os
-          from pathlib import Path
-          import shlex
-          import subprocess
-          binary = Path(os.environ["GITHUB_WORKSPACE"]) / "target"
-          target = "${{ matrix.rust_target }}"
-          if target:
-              binary /= target
-          binary = binary / "debug" / ("dzc.exe" if os.name == "nt" else "dzc")
-          before = hashlib.sha256(binary.read_bytes()).digest()
-          subprocess.run([
-              "cargo", "check", "--manifest-path", "src-tauri/Cargo.toml", "--all-targets",
-              *shlex.split("${{ matrix.cargo_args }}"),
-          ], check=True)
-          if hashlib.sha256(binary.read_bytes()).digest() != before:
-              raise RuntimeError("backend check replaced the built CLI")
+      - name: Check cross-built Tauri targets preserving standalone companions
+        if: '!matrix.can_test'
+        run: python -B scripts/ci_desktop_binaries.py protect cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets ${{ matrix.cargo_args }}
 
       - name: Build actual Windows desktop with embedded frontend for Surface acceptance
         if: runner.os == 'Windows' && matrix.can_test
-        run: cargo build --locked --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --bin dezirclip
+        run: python -B scripts/ci_desktop_binaries.py protect cargo build --locked --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --bin dezirclip
 
       - name: Verify experimental Surface on disposable Windows desktop
         if: runner.os == 'Windows' && matrix.can_test
@@ -976,6 +976,14 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           choco install nsis --no-progress -y
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          @'
+          import unittest
+          suite = unittest.defaultTestLoader.discover("scripts/tests", pattern="test_installer_hook.py")
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if not result.testsRun or result.skipped or not result.wasSuccessful():
+              raise SystemExit("Required Windows NSIS hook tests did not pass")
+          '@ | python -B -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $installer = "$env:RUNNER_TEMP/mygo-test-installer/DezirClip-v$version-windows-x64-MyGo-setup.exe"
           python scripts/build-mygo-installer.py --stage "$env:RUNNER_TEMP/mygo-test-package" --version "$version" --output "$installer"

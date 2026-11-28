@@ -39,6 +39,8 @@ LEGACY_INSTALLER_PATHS = (
     "scripts/tests/service-process-receipt.ps1", "src-tauri/icons/icon.ico",
 )
 NATIVE_DESKTOP_STEPS = (
+    "Test desktop tooling in its platform environment",
+    "Test Tauri crate",
     "Verify native Rust and Go protocol compatibility",
     "Verify optional local service without native capture",
     "Verify MyGo React library operations against the Rust Service",
@@ -111,9 +113,12 @@ def requires_legacy_installer(mode, event, base):
 
 def job_requirements(mode, legacy_installer, crash_profile="release"):
     jobs = {"Select desktop acceptance targets": ()}
+    desktop = desktop_targets(mode)
+    if mode in DEVELOPMENT_MODES or desktop:
+        jobs["Frontend"] = ("Test portable tooling and release contracts",)
     if mode in DEVELOPMENT_MODES:
-        jobs["Frontend"] = ("Check single-source local protocol generation", "Run unit tests",
-                            "Build frontend", "Verify production WebView startup")
+        jobs["Frontend"] += ("Check single-source local protocol generation", "Run unit tests",
+                             "Build frontend", "Verify production WebView startup")
         for runner in DEVELOPMENT_RUNNERS:
             jobs[f"Go development ({runner})"] = ("Test local protocol client", "Test MyGo desktop and native surfaces")
             core = ("Test shared core, protocol, Host, Service and CLI",)
@@ -138,14 +143,19 @@ def job_requirements(mode, legacy_installer, crash_profile="release"):
             jobs[f"Compatible standalone CLI / Standalone ({name})"] = steps
         for name in ("linux-x86_64", "linux-aarch64"):
             jobs[f"Verified Flatpak / Flatpak ({name})"] = ("Verify OCR and paste on the final Platform runtime",)
-    for item in desktop_targets(mode):
+    for item in desktop:
         name = item["name"]
-        steps = NATIVE_DESKTOP_STEPS if item["can_test"] else ("Build Tauri crate",)
+        steps = ("Build standalone CLI and Service for desktop acceptance",)
+        steps += (NATIVE_DESKTOP_STEPS if item["can_test"] else (
+            "Build Tauri crate", "Check cross-built Tauri targets preserving standalone companions"))
         if item["can_test"]:
             if name.startswith("linux-"):
                 steps += ("Verify MyGo Native history and clipboard on X11",)
             else:
                 steps += ("Verify MyGo Native paste into an independent Windows editor",
+                          "Verify Windows clipboard reader window ownership",
+                          "Verify middle-button hook survives a blocked resident UI",
+                          "Build actual Windows desktop with embedded frontend for Surface acceptance",
                           "Verify real Service-mode paste target binding on disposable Windows")
         if name == "windows-x86_64" and mode in ("full", "mygo-package"):
             steps += CURRENT_MYGO_STEPS

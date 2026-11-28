@@ -74,6 +74,12 @@ class ModeTests(unittest.TestCase):
             self.assertEqual([row["name"] for row in ci_policy.desktop_targets(mode)], targets.get(mode, []))
         self.assertFalse(ci_policy.desktop_targets("full")[-1]["can_test"])
 
+    def test_desktop_focused_requests_keep_the_portable_tooling_contract_only(self):
+        for mode in ("mygo-package", "linux-release-inputs"):
+            jobs = ci_policy.job_requirements(mode, False)
+            self.assertEqual(jobs["Frontend"], ("Test portable tooling and release contracts",))
+            self.assertFalse(any(name.startswith(("Go development", "Rust development")) for name in jobs))
+
     def test_legacy_installer_is_conservative_with_no_reliable_diff(self):
         self.assertFalse(ci_policy.requires_legacy_installer("source-acceptance", "push", ""))
         self.assertTrue(ci_policy.requires_legacy_installer("development", "push", ""))

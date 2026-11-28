@@ -27,10 +27,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check Flatpak verifier contracts
-        run: |
-          python3 -I -B -m unittest discover -s scripts/tests -p test_verify_flatpak.py -v
-
       - name: Install Linux system dependencies
         run: |
           sudo apt-get update
