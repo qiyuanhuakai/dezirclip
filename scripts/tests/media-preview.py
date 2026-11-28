@@ -1,4 +1,8 @@
-"""Synthetic media only; no desktop, clipboard or user history access."""
+"""Decode a synthetic H.264 clip with five blue frames followed by five red frames.
+
+Regenerate two-colors.mp4 with ffmpeg using 160x120 blue/red lavfi color sources
+(0.5 s each at 10 fps), the concat filter, libx264, yuv420p and +faststart.
+"""
 import os
 from pathlib import Path
 import subprocess
@@ -6,10 +10,7 @@ import tempfile
 
 with tempfile.TemporaryDirectory(prefix="dzc-media-fixture-") as folder:
     root = Path(folder)
-    video = root / "two-colors.mp4"
-    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=blue:s=160x120:d=0.5:r=10",
-        "-f", "lavfi", "-i", "color=c=red:s=160x120:d=0.5:r=10", "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(video)], check=True, timeout=30)
+    video = Path(__file__).with_name("two-colors.mp4").resolve(strict=True)
     subprocess.run(["cargo", "run", "--locked", "-p", "dzc-platform", "--example", "video_preview_fixture", "--", str(video)], check=True)
     if os.name == "nt" and os.environ.get("GITHUB_ACTIONS") == "true":
         subprocess.run(["cargo", "build", "--locked", "-p", "dzc-platform", "--example", "native_crash_fixture"], check=True)

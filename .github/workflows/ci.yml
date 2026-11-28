@@ -308,11 +308,6 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run desktop:mygo:build
           cargo build --locked -p dzc-cli -p dzc-service --no-default-features --features dzc-cli/native-screen,dzc-service/native-screen --bin dzc --bin dzc-service
-      - name: Ensure the synthetic Windows video encoder is available
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg -y --no-progress }
       - name: Verify isolated video frames and native crash evidence
         run: python scripts/tests/media-preview.py
       - name: Verify actual Windows file transfers
@@ -750,15 +745,15 @@ jobs:
                   if log.is_file(): print(log.read_text(encoding="utf-8"))
               result.check_returncode()
 
+      - name: Stage the tested MyGo Desktop alongside the Windows helpers
+        if: runner.os == 'Windows' && matrix.can_test
+        id: windows-desktop-fixture
+        shell: pwsh
+        run: Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/ -ErrorAction Stop
+
       - name: Verify Windows executable icons
         if: runner.os == 'Windows' && matrix.can_test
         run: python scripts/tests/windows-executable-icons.py target/debug/dzc.exe target/debug/dzc-service.exe artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe
-
-      - name: Ensure Windows media fixture encoder
-        if: runner.os == 'Windows' && matrix.can_test
-        shell: pwsh
-        run: |
-          if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg -y --no-progress }
 
       - name: Verify isolated media and native exception diagnostics
         if: matrix.can_test
@@ -780,7 +775,6 @@ jobs:
         if: runner.os == 'Windows' && matrix.can_test
         shell: powershell
         run: |
-          Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -FileDrag
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -NativeMain
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -QuickPasteInput
@@ -851,12 +845,12 @@ jobs:
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -DisabledPanels
 
       - name: Verify MyGo tray Exit drains Desktop and Service processes
-        if: ${{ !cancelled() && runner.os == 'Windows' && matrix.can_test && steps.mygo_library.outcome == 'success' }}
+        if: ${{ !cancelled() && runner.os == 'Windows' && matrix.can_test && steps.mygo_library.outcome == 'success' && steps.windows-desktop-fixture.outcome == 'success' }}
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Quit
 
       - name: Verify MyGo tray recovers after the Service exits
-        if: ${{ !cancelled() && runner.os == 'Windows' && matrix.can_test && steps.mygo_library.outcome == 'success' }}
+        if: ${{ !cancelled() && runner.os == 'Windows' && matrix.can_test && steps.mygo_library.outcome == 'success' && steps.windows-desktop-fixture.outcome == 'success' }}
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -RecoverService
 
@@ -870,7 +864,7 @@ jobs:
         run: go test ./cmd/dzc-desktop -run '^TestMiddleHookSurvivesBlockedResident$' -count=1 -timeout=30s
 
       - name: Verify MyGo Native screenshot buttons on the Windows desktop
-        if: ${{ !cancelled() && runner.os == 'Windows' && matrix.can_test && steps.mygo_library.outcome == 'success' }}
+        if: ${{ !cancelled() && runner.os == 'Windows' && matrix.can_test && steps.mygo_library.outcome == 'success' && steps.windows-desktop-fixture.outcome == 'success' }}
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Capture
 
