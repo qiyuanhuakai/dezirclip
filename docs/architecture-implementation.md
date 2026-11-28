@@ -233,6 +233,12 @@ Windows、Linux Go 套件和 Linux 竞态测试通过。隔离 Service 验收用
 
 macOS 26 ARM64 第一次托管验收通过。15 项 Swift 测试和 47 项 Host 测试通过，1 项 Host 兼容用例按既有条件忽略。真实临时签名测试包覆盖主线程直接调用的拒绝、独立订阅期间的系统剪贴板写入与读回、持久 profile、隐私 epoch、授权撤销和关闭。Linux Host 套件通过 88 项，1 项按既有条件忽略。macOS 13 的真实运行及 Developer ID 更新后对 Keychain 的访问仍待独立验证。 [Darwin 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46142341897)
 
+### M2 Swift 签名 Host 启动
+
+`2e7da440` 将签名包内 helper 发现、启动、限长启动回执、对端身份和会话建立收进 `DzcSession`。SDK 在启动前固定嵌入 helper 的代码目录摘要，后续对每条连接用内核 UID、PID 和 audit token 核对实际运行签名。授权留在 SDK 和继承管道内。查询、事件和剪贴板操作各建独立会话。关闭管道后等待 helper 排空，已关闭的启动器拒绝新会话。
+
+macOS 26 ARM64 首次验收用时 3 分 36 秒。临时签名测试包通过 15 项 Swift 与 47 项 Host 测试，并验证了拒绝包外启动、链接目录和其他同用户进程。用同一启动器读取真实 SQLite、订阅事件、操作系统剪贴板并检查撤销、半帧关闭和重复停止。生产 helper 的入口、macOS 13 实跑和 Developer ID 签名后的 Keychain ACL 仍需验收。 [Darwin 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46143713914)
+
 ### R8 维护量中间复算
 
 按规范原基线 `1f1641a0` 与 `d2291d7b` 的 Git blob 统计。使用 `git ls-tree -r -z` 取得两次提交的常规文件，按对象 ID 批量读取，计入末尾没有换行的最后一行。范围沿用原统计的 Rust、Go、Python、JSON、TS、TSX、MJS、JS，加上当前提交中的 Swift。基线复算与规范原表的八种后缀计数一致。
