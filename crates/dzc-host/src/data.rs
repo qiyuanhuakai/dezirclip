@@ -1,5 +1,7 @@
 //! One data-path resolver for optional Host helpers and linked clients.
-use std::{io, path::{Path, PathBuf}};
+use std::path::PathBuf;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+use std::{io, path::Path};
 pub(crate) fn installed_config_directory() -> Result<PathBuf, String> {
     Ok(dirs::data_dir().ok_or("cannot locate the application data directory")?.join("io.github.qiyuanhuakai.dezirclip"))
 }
@@ -22,6 +24,7 @@ pub fn canonical_directory(database: &std::path::Path) -> Result<PathBuf, String
     directory.canonicalize().map_err(|_| "HostDataDirectoryUnavailable".into())
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 pub(crate) fn installed_move_directories(database: &Path, destination: &Path) -> io::Result<(PathBuf, PathBuf)> {
     let executable = std::env::current_exe()?;
     if std::env::var_os("DEZIRCLIP_DB_PATH").is_some() || std::env::var_os("TIEZ_DB_PATH").is_some() {
@@ -39,11 +42,13 @@ pub(crate) fn installed_move_directories(database: &Path, destination: &Path) ->
     Ok((source_dir, target_dir))
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 pub(crate) fn reserve_profile(directory: &Path) -> io::Result<dzc_platform::ipc::Listener> {
     dzc_platform::ipc::Endpoint::for_current_session(directory)?.bind()
         .map_err(|e| io::Error::new(e.kind(), format!("Could not reserve the profile; close its desktop Host or Service: {e}")))
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 pub(crate) fn move_redirect(database: &Path) -> io::Result<PathBuf> {
     if database_path().map_err(io::Error::other)?.canonicalize()? != database.canonicalize()? {
         return Err(io::Error::other("The active profile changed before migration"));

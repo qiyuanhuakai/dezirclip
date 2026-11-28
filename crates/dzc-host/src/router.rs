@@ -9,6 +9,7 @@ pub trait PreparedPaste: Send {
     fn send(&self) -> Result<(), WireErrorCode>;
 }
 pub trait HostActions: Send + Sync {
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     fn system_fonts(&self) -> Vec<DesktopFont> { dzc_platform::fonts::list_system_fonts() }
     fn platform_capabilities(&self) -> Value;
     fn can_copy(&self) -> bool;
@@ -28,6 +29,7 @@ pub trait HostActions: Send + Sync {
     fn privacy_changed(&self, _snapshot: &api::RuntimeSnapshot) {}
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 impl Host {
     pub(crate) fn play_feedback(&self, cue: dzc_platform::sound::Cue) {
         dzc_platform::sound::play(&self.history, cue);
@@ -66,24 +68,33 @@ pub struct Host {
     pub(crate) backup_operation: Mutex<()>,
     #[cfg(test)]
     pub(crate) after_backup_ticket: Mutex<Option<(tokio::sync::oneshot::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
-    #[cfg(test)]
+    #[cfg(all(test, any(target_os = "linux", target_os = "windows")))]
     pub(crate) explorer_restart_pause: Mutex<Option<(tokio::sync::oneshot::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) manual_ocr_operation: Mutex<()>,
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     font_scan: Mutex<()>,
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     background_read: Mutex<()>,
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     application_selection: Mutex<()>,
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) external: crate::external::ExternalEdits,
     stopped: AtomicBool,
     pub(crate) snapshots: crate::desktop::Snapshots,
     observed_epoch: Mutex<u64>,
     settings_reset_pending: Mutex<bool>,
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     hotkey: Mutex<Option<crate::hotkey::Hotkey>>,
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) recording: crate::recording::Recording,
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) queue: crate::paste_queue::Queue,
     delivery: Mutex<()>,
     pub(crate) uploads: crate::upload::Uploads,
-    #[cfg(feature = "native-screen")]
+    #[cfg(all(feature = "native-screen", any(target_os = "linux", target_os = "windows")))]
     pub(crate) screen: crate::screen::Screens,
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     copy_echo:Mutex<Option<(dzc_platform::capture::ClipboardEcho,i64)>>,
     capture_diagnostic:Mutex<Option<String>>,
     history_version:Mutex<crate::history_version::HistoryVersion>,
@@ -118,16 +129,30 @@ impl Host {
     }
     pub fn with_session(options: HostOptions, session: Arc<api::SessionHistoryStore>) -> Result<Arc<Self>, WireErrorCode> {
         let epoch = options.history.runtime_snapshot(now_ms()?).map_err(unavailable)?.privacy_epoch;
-        let host = Arc::new_cyclic(|owner| Self { external: crate::external::ExternalEdits::new(owner.clone()), history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
+        let host = Arc::new_cyclic(|_owner| Self {
+            history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
             #[cfg(test)] after_backup_ticket: Mutex::new(None),
-            #[cfg(test)] explorer_restart_pause: Mutex::new(None),
-            stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), font_scan: Mutex::new(()), background_read: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
-            application_selection: Mutex::new(()), settings_reset_pending: Mutex::new(false),
-            #[cfg(feature = "native-screen")]
+            #[cfg(all(test, any(target_os = "linux", target_os = "windows")))] explorer_restart_pause: Mutex::new(None),
+            stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None),
+            backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
+            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), settings_reset_pending: Mutex::new(false),
+            delivery: Mutex::new(()), uploads: Default::default(), capture_diagnostic: Mutex::new(None),
+            history_version: Mutex::new(Default::default()),
+            #[cfg(any(target_os = "linux", target_os = "windows"))] manual_ocr_operation: Mutex::new(()),
+            #[cfg(any(target_os = "linux", target_os = "windows"))] font_scan: Mutex::new(()),
+            #[cfg(any(target_os = "linux", target_os = "windows"))] background_read: Mutex::new(()),
+            #[cfg(any(target_os = "linux", target_os = "windows"))] application_selection: Mutex::new(()),
+            #[cfg(any(target_os = "linux", target_os = "windows"))] external: crate::external::ExternalEdits::new(_owner.clone()),
+            #[cfg(any(target_os = "linux", target_os = "windows"))] hotkey: Mutex::new(None),
+            #[cfg(any(target_os = "linux", target_os = "windows"))] recording: Default::default(),
+            #[cfg(any(target_os = "linux", target_os = "windows"))] queue: Default::default(),
+            #[cfg(any(target_os = "linux", target_os = "windows"))] copy_echo: Mutex::new(None),
+            #[cfg(all(feature = "native-screen", any(target_os = "linux", target_os = "windows")))]
             screen: Default::default(),
-            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), recording: Default::default(), queue: Default::default(), delivery:Mutex::new(()), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
-        *host.hotkey.lock().map_err(unavailable)? = Some(crate::hotkey::Hotkey::new(Arc::downgrade(&host)));
+        });
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        { *host.hotkey.lock().map_err(unavailable)? = Some(crate::hotkey::Hotkey::new(Arc::downgrade(&host))); }
         Ok(host)
     }
     pub fn attach_lifecycle(&self, lifecycle: Arc<dyn HostLifecycle>) -> Result<(), WireErrorCode> {
@@ -140,6 +165,7 @@ impl Host {
     /// Immutable identity needs no history/database locks or state observation.
     pub fn instance_id(&self)->&str {&self.instance}
     #[cfg(test)]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) fn waiting_subscriptions(&self) -> usize { self.events.waiters() }
     pub fn is_stopping(&self) -> bool { self.stop_requested.load(Ordering::Acquire) }
     pub fn capture_stopped(&self) -> bool { self.stopped.load(Ordering::Acquire) }
@@ -161,6 +187,7 @@ impl Host {
     fn stop(&self) -> Result<(), WireErrorCode> {
         if self.stopped.load(Ordering::Acquire) {return Ok(());}
         let _delivery = self.delivery.try_lock().map_err(|_| WireErrorCode::Busy)?;
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         let _ocr = self.manual_ocr_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
         let _backup = self.backup_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
         self.stop_locked()
@@ -170,17 +197,19 @@ impl Host {
         self.stop_requested.store(true, Ordering::Release);
         self.events.interrupt();
         if let Some(lifecycle) = self.lifecycle.lock().map_err(unavailable)?.as_ref() { lifecycle.stop_capture()?; }
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         if let Some(hotkey) = self.hotkey.lock().map_err(unavailable)?.as_mut() { hotkey.stop()?; }
         self.actions.revoke_private_exports()?;
         self.snapshots.clear()?;
         self.uploads.clear()?;
-        #[cfg(feature = "native-screen")]
+        #[cfg(all(feature = "native-screen", any(target_os = "linux", target_os = "windows")))]
         self.screen.clear()?;
         self.actions.stop_helpers()?;
         if let Some(lifecycle) = self.lifecycle.lock().map_err(unavailable)?.as_ref() { lifecycle.release_ownership()?; }
         self.stopped.store(true, Ordering::Release);
         Ok(())
     }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     fn move_installed_profile(&self, session: &Session, request: BackupPreviewParams) -> Result<Value, WireErrorCode> {
         session.require(Permission::ServiceManage)?;
         self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
@@ -240,13 +269,16 @@ impl Host {
         self.actions.revoke_private_exports()?;
         self.snapshots.clear()?;
         self.uploads.clear()?;
-        #[cfg(feature = "native-screen")]
+        #[cfg(all(feature = "native-screen", any(target_os = "linux", target_os = "windows")))]
         self.screen.clear()?;
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         self.queue.invalidate()?;
         let state = self.snapshot()?;
         self.events.push(EventKind::PrivacyStateChanged, state, EventData { entry_id: None, status: None }).map_err(unavailable)?;
         if *reset {
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             self.queue.clear()?;
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             self.actions.queue_changed(0);
             for status in ["paste_queue_changed:0", "PrivacyHotkeyChanged", "view_settings_changed", "application_settings_reset"] {
                 self.events.push(EventKind::ServiceStateChanged, self.snapshot()?, EventData { entry_id: None, status: Some(status.into()) }).map_err(unavailable)?;
@@ -257,6 +289,7 @@ impl Host {
         self.actions.privacy_changed(&snapshot);
         Ok(())
     }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub fn initialize_privacy_shortcut(&self) -> Result<(), WireErrorCode> {
         let configured = self.history.privacy().hotkey().map_err(privacy_error)?;
         if configured.is_empty() { return Ok(()); }
@@ -273,6 +306,7 @@ impl Host {
         if self.is_stopping() {return Err(WireErrorCode::Busy);}
         self.lifecycle.lock().map_err(unavailable)?.as_ref().ok_or(WireErrorCode::Unavailable)?.begin_work()
     }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) fn try_toggle_privacy(&self) -> Result<bool, WireErrorCode> {
         let _request = match self.requests.try_lock() {
             Ok(request) => request,
@@ -295,20 +329,29 @@ impl Host {
         self.events.push(event, self.snapshot()?, data).map_err(unavailable)
     }
     pub(crate) fn copy_payload(&self,payload:dzc_core::ports::ClipboardPayload)->Result<(),WireErrorCode> {
-        let hint=dzc_platform::capture::clipboard_echo(&payload).map_err(|_| {
-            eprintln!("Clipboard copy failed while preparing echo fingerprint");
-            WireErrorCode::Unavailable
-        })?;
-        let timestamp=now_ms()?;
-        *self.copy_echo.lock().map_err(unavailable)?=hint.map(|hint|(hint,timestamp));
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        {
+            let hint=dzc_platform::capture::clipboard_echo(&payload).map_err(|_| {
+                eprintln!("Clipboard copy failed while preparing echo fingerprint");
+                WireErrorCode::Unavailable
+            })?;
+            let timestamp=now_ms()?;
+            *self.copy_echo.lock().map_err(unavailable)?=hint.map(|hint|(hint,timestamp));
+        }
         let result=self.actions.copy(payload);
-        if result.is_err() {eprintln!("Clipboard copy failed in platform writer");self.clear_copy_echo();}
+        if result.is_err() {
+            eprintln!("Clipboard copy failed in platform writer");
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            self.clear_copy_echo();
+        }
         result
     }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) fn own_copy(&self,timestamp:i64)->dzc_core::capture::OwnClipboardCopy {
         self.copy_echo.lock().ok().and_then(|hint|*hint).map(|(hint,time)|dzc_core::capture::OwnClipboardCopy{
             primary:hint.primary,alternative:hint.alternative,age_seconds:timestamp.saturating_sub(time).max(0) as u64/1000}).unwrap_or_default()
     }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) fn clear_copy_echo(&self) {if let Ok(mut hint)=self.copy_echo.lock(){*hint=None;}}
     fn privacy_state(&self) -> Result<PrivacyState, WireErrorCode> {
         let snapshot = self.history.runtime_snapshot(now_ms()?).map_err(unavailable)?;
@@ -339,52 +382,77 @@ impl Host {
         if can(Permission::HistoryBody) { methods.push("history.get"); }
         if can(Permission::ClipboardCopy) && self.actions.can_copy() { methods.extend(["clipboard.copy", "surface.copy"]); }
         if can(Permission::ClipboardPaste) && self.actions.can_copy() && self.actions.can_paste() { methods.push("surface.paste"); }
-        if can(Permission::PrivacyWrite) { methods.extend(["privacy.set", "privacy.toggle", "privacy.hotkey.get", "privacy.hotkey.set"]); }
+        if can(Permission::PrivacyWrite) {
+            methods.extend(["privacy.set", "privacy.toggle"]);
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            methods.extend(["privacy.hotkey.get", "privacy.hotkey.set"]);
+        }
         if can(Permission::DesktopHistory) && session.role() == ClientRole::Desktop {
             methods.push("desktop.settings.capture.get");
             if can(Permission::PrivacyWrite) { methods.push("desktop.settings.capture.set"); }
-            #[cfg(feature = "native-screen")]
+            #[cfg(all(feature = "native-screen", any(target_os = "linux", target_os = "windows")))]
             if crate::screen::supported() {
                 methods.extend(["desktop.screen.begin", "desktop.screen.read", "desktop.screen.crop", "desktop.screen.cancel"]);
                 if self.actions.can_copy() { methods.push("desktop.screen.finish"); }
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             methods.extend(["desktop.ocr.recognize", "desktop.ocr.status", "desktop.ocr.engine"]);
             methods.extend(["desktop.backup.preview", "desktop.backup.inspect", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 methods.push("desktop.hotkey.recording");
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 methods.push("desktop.hotkey.main.set");
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 methods.push("desktop.hotkey.panel.set");
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 methods.push("desktop.hotkey.action.set");
                 methods.push("desktop.settings.view.set");
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 if can(Permission::PrivacyWrite) { methods.push("desktop.settings.reset"); }
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 if can(Permission::PrivacyWrite) && dzc_platform::desktop_system::supported() {
                     methods.extend(["desktop.system.win_v.get", "desktop.system.win_v.begin", "desktop.system.win_v.finish", "desktop.system.clipboard_history.set", "desktop.system.explorer.restart", "desktop.system.admin.get"]);
                 }
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 methods.push("desktop.settings.fonts");
                 methods.extend(["desktop.window.pin", "desktop.window.resize"]);
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 methods.push("desktop.emoji.favorites");
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 if self.actions.can_copy() { methods.push("desktop.window.emoji"); }
                 methods.extend(["desktop.history.manual.begin", "desktop.history.manual.finish"]);
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 if can(Permission::ClipboardPaste) && self.actions.can_paste() && self.actions.can_copy() {
                     methods.extend(["desktop.window.target", "desktop.window.paste"]);
                 }
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 methods.push("desktop.platform.probe");
                 methods.push("desktop.profile.info");
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 if self.mode == HostMode::Service && can(Permission::ServiceManage) {
                     methods.push("desktop.profile.move");
                 }
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 methods.push("desktop.appearance.background");
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 methods.push("desktop.applications.select");
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 methods.push("desktop.history.open");
-                if cfg!(any(target_os = "linux", target_os = "windows")) { methods.push("desktop.history.share"); }
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
+                methods.push("desktop.history.share");
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 methods.push("desktop.files.drag");
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 if self.actions.can_copy() { methods.push("desktop.files.drop"); }
                 methods.push("desktop.settings.preferences");
                 methods.push("desktop.quick.preferences");
                 methods.push("desktop.screen.preferences");
                 methods.extend(["desktop.themes.list", "desktop.themes.get", "desktop.themes.import", "desktop.themes.export", "desktop.themes.remove"]);
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 methods.extend(["desktop.queue.get", "desktop.queue.status", "desktop.queue.set", "desktop.queue.configure"]);
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 if self.actions.can_copy() && self.actions.can_paste() {
                     methods.extend(["desktop.paste.target", "desktop.queue.next"]);
                     if session.peer.is_some() { methods.extend(["desktop.quick.begin","desktop.quick.dismiss","desktop.quick.paste"]); }
@@ -412,6 +480,7 @@ impl Host {
         if let Some(platform) = platform.as_object_mut() {
             if can(Permission::DesktopHistory) && session.role()==ClientRole::Desktop {
                 platform.insert("desktop_generated_copy".into(),serde_json::json!({"supported":self.actions.can_copy(),"version":1}));
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 platform.insert("desktop_queue_completion".into(),serde_json::json!({"supported":true,"version":1}));
                 let component = if self.mode == HostMode::Service {
                     dzc_protocol::build_info::Component::Service
@@ -541,23 +610,29 @@ impl Host {
                 self.synchronize_privacy()?;
                 result("PrivacyState", self.privacy_state()?)
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::PrivacyHotkeyGet => {
                 session.require(Permission::PrivacyWrite)?;
                 result("PrivacyHotkey", PrivacyHotkey { hotkey: self.history.privacy().hotkey().map_err(privacy_error)? })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::PrivacyHotkeySet => {
                 session.require(Permission::PrivacyWrite)?;
                 let request: PrivacyHotkey = params(request.params)?;
                 let hotkey = self.hotkey.lock().map_err(unavailable)?.as_mut().ok_or(WireErrorCode::Unavailable)?.set(&request.hotkey)?;
                 result("PrivacyHotkey", PrivacyHotkey { hotkey })
             }
-            Method::DesktopHistoryPage | Method::DesktopHistoryGet | Method::DesktopHistorySourceIcon | Method::DesktopHistoryLocalVideo | Method::DesktopSnapshotRead => self.desktop(session, request.method, request.params),
+            Method::DesktopHistoryPage | Method::DesktopHistoryGet | Method::DesktopSnapshotRead => self.desktop(session, request.method, request.params),
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            Method::DesktopHistorySourceIcon | Method::DesktopHistoryLocalVideo => self.desktop(session, request.method, request.params),
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopAppearanceBackground => {
                 let request: BackgroundParams = params(request.params)?;
                 self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
                 let _reading = self.background_read.lock().map_err(unavailable)?;
                 self.read_background(session, request)
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopProfileMove => {
                 let request: BackupPreviewParams = params(request.params)?;
                 self.move_installed_profile(session, request)
@@ -570,10 +645,12 @@ impl Host {
                     database_schema_version: dzc_core::api::DATABASE_SCHEMA_VERSION as u32,
                 })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopPlatformProbe => {
                 self.desktop_permission(session, self.instance_id())?;
                 result("DesktopPlatformReport", serde_json::json!({ "report": dzc_platform::runtime::session_capabilities() }))
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopSettingsFonts => {
                 self.desktop_permission(session, self.instance_id())?;
                 let _scan = self.font_scan.try_lock().map_err(|_| WireErrorCode::Busy)?;
@@ -614,19 +691,24 @@ impl Host {
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("capture_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopHistoryOpen => {
                 self.open_history_item(session, params(request.params)?)?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopHistoryShare => {
                 let performed = self.share_history_item(session, params(request.params)?)?;
                 result("OperationResult", OperationResult { performed })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopFilesDrop => {
                 self.drop_files(session, params(request.params)?)?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopFilesDrag => result("FileDragResult", self.drag_files(session, params(request.params)?)?),
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopApplicationsSelect => {
                 let input: ApplicationSelection = params(request.params)?;
                 self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
@@ -645,6 +727,7 @@ impl Host {
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopHotkeyRecording => {
                 session.require(Permission::PrivacyWrite)?;
                 let input: RecordingParams = params(request.params)?;
@@ -656,6 +739,7 @@ impl Host {
                 self.recording.set(session.id(), input.enabled)?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopHotkeyMainSet => {
                 let input: MainHotkeyParams = params(request.params)?;
                 self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
@@ -674,6 +758,7 @@ impl Host {
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopHotkeyPanelSet => {
                 let input: PanelHotkeyParams = params(request.params)?;
                 self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
@@ -692,6 +777,7 @@ impl Host {
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopHotkeyActionSet => {
                 let input: ActionHotkeyParams = params(request.params)?;
                 self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
@@ -721,6 +807,7 @@ impl Host {
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopSettingsReset => {
                 session.require(Permission::PrivacyWrite)?;
                 let input: LibraryStateParams = params(request.params)?;
@@ -743,13 +830,14 @@ impl Host {
                 self.synchronize_privacy()?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopSystemAdminGet | Method::DesktopSystemExplorerRestart | Method::DesktopSystemWinVGet | Method::DesktopSystemWinVBegin | Method::DesktopSystemWinVFinish |
             Method::DesktopSystemClipboardHistorySet => self.system_settings_request(session, request.method, request.params),
             Method::DesktopScreenBegin | Method::DesktopScreenRead | Method::DesktopScreenCrop |
             Method::DesktopScreenFinish | Method::DesktopScreenCancel => {
-                #[cfg(feature = "native-screen")]
+                #[cfg(all(feature = "native-screen", any(target_os = "linux", target_os = "windows")))]
                 { self.screen_request(session, request.method, request.params) }
-                #[cfg(not(feature = "native-screen"))]
+                #[cfg(not(all(feature = "native-screen", any(target_os = "linux", target_os = "windows"))))]
                 { Err(WireErrorCode::UnsupportedCapability) }
             }
             Method::DesktopScreenPreferences => {
@@ -762,13 +850,17 @@ impl Host {
                 let (enabled, hotkey, layout, full, half) = self.history.quick_preferences().map_err(unavailable)?;
                 result("QuickPreferences", QuickPreferences { enabled, hotkey, layout: Some(if layout == "ring" { layout } else { "list".into() }), full_sectors: Some(full), half_sectors: Some(half) })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopQuickBegin | Method::DesktopQuickDismiss | Method::DesktopQuickPaste => self.quick_request(session, request.method, request.params),
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopPasteTarget | Method::DesktopQueueGet | Method::DesktopQueueStatus | Method::DesktopQueueSet |
             Method::DesktopQueueConfigure | Method::DesktopQueueNext => self.queue_request(session, request.method, request.params),
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopOcrEngine => {
                 self.desktop_permission(session, self.instance_id())?;
                 result("OcrEngineInfo", crate::ocr::engine_info())
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopOcrRecognize | Method::DesktopOcrStatus => {
                 let params: ManualOcrParams = params(request.params)?;
                 self.desktop_permission(session, &params.service_instance_id)?;
@@ -783,8 +875,11 @@ impl Host {
             Method::DesktopClipboardTransformCopy => self.desktop_transform_copy(session, request.params),
             Method::DesktopClipboardQrCopy => self.desktop_qr_copy(session, request.params),
             Method::DesktopClipboardOcrCopy => self.desktop_ocr_copy(session, request.params),
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopEmojiFavorites => self.emoji_favorites(session, params(request.params)?),
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopWindowEmoji => self.send_window_emoji(session, params(request.params)?),
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopWindowTarget => self.remember_window_target(session, request.params),
             Method::DesktopWindowResize => {
                 let input: WindowSizeParams = params(request.params)?;
@@ -798,6 +893,7 @@ impl Host {
                 self.history.set_window_pinned(input.pinned, input.expected_epoch).map_err(privacy_error)?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             Method::DesktopWindowPaste => self.paste_from_window(session, params(request.params)?),
             Method::DesktopHistoryMutate => self.desktop_mutate(session,request.params),
             Method::DesktopPrivacyRules|Method::DesktopPrivacyDecision|Method::DesktopPrivacyFeedback|Method::DesktopPrivacyRemoveRule=>self.desktop_policy(session,request.method,request.params),
@@ -852,7 +948,12 @@ impl Host {
                 } else { self.history.clipboard_payload_authorized(request_body.id, &permit, now).map_err(privacy_error)? };
                 self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?;
                 self.copy_payload(payload)?;
-                if request.method == Method::SurfacePaste { self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?; self.actions.paste()?; self.play_feedback(dzc_platform::sound::Cue::Paste); }
+                if request.method == Method::SurfacePaste {
+                    self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?;
+                    self.actions.paste()?;
+                    #[cfg(any(target_os = "linux", target_os = "windows"))]
+                    self.play_feedback(dzc_platform::sound::Cue::Paste);
+                }
                 result("OperationResult", OperationResult { performed: true })
             }
             Method::SurfaceActivate | Method::SurfaceDismiss => {
@@ -870,6 +971,8 @@ impl Host {
                 self.stop()?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+            _ => Err(WireErrorCode::UnsupportedCapability),
         }
     }
     pub(super) fn entry_authorized(&self, id: i64, permit: &api::PrivacyReadPermit, now: i64) -> Result<ClipboardEntry, WireErrorCode> {
@@ -911,50 +1014,11 @@ pub(crate) fn summary(entry: api::EntrySummary) -> EntrySummary {
         timestamp: entry.timestamp, source_app: entry.source_app, privacy_visibility: "ordinary".into() }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(target_os = "linux", target_os = "windows")))]
 pub(crate) mod tests {
     use super::*;
-    use std::path::Path;
+    use crate::fixtures::synthetic_host;
 
-    #[derive(Default)]
-    pub struct Actions { copied: Mutex<Vec<String>> }
-    impl HostActions for Actions {
-        fn platform_capabilities(&self) -> Value { serde_json::json!({"synthetic":true}) }
-        fn can_copy(&self) -> bool { true }
-        fn copy(&self, payload: dzc_core::ports::ClipboardPayload) -> Result<(), WireErrorCode> {
-            if let dzc_core::ports::ClipboardPayload::Text(text) = payload { self.copied.lock().unwrap().push(text); Ok(()) } else { Err(WireErrorCode::Unavailable) }
-        }
-        fn can_paste(&self) -> bool { false }
-        fn paste(&self) -> Result<(), WireErrorCode> { Err(WireErrorCode::Unavailable) }
-        fn stop_helpers(&self) -> Result<(), WireErrorCode> { Ok(()) }
-        fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
-    }
-    struct SyntheticKeys;
-    fn sealed_fixture_values() -> &'static Mutex<std::collections::HashMap<String, String>> {
-        static VALUES: std::sync::OnceLock<Mutex<std::collections::HashMap<String, String>>> = std::sync::OnceLock::new();
-        VALUES.get_or_init(Mutex::default)
-    }
-    impl dzc_core::crypto::KeyProvider for SyntheticKeys {
-        fn seal_text(&self, plain: &str) -> Result<String, dzc_core::crypto::EncryptionError> {
-            // A deterministic process-local fixture uses the actual Core cipher;
-            // this registry is not a platform key provider or a crypto claim.
-            let sealed = dzc_core::crypto::encrypt_with_key(plain, || Ok([37;32]), |nonce| { nonce.fill(19); Ok(()) })?;
-            sealed_fixture_values().lock().unwrap().insert(sealed.clone(), plain.into());
-            Ok(sealed)
-        }
-        fn open_text(&self, cipher: &str) -> Option<String> {
-            sealed_fixture_values().lock().unwrap().get(cipher).cloned()
-        }
-    }
-    pub fn windows_target() -> WindowsPasteTarget {
-        WindowsPasteTarget{hwnd:"10".into(),root_hwnd:"10".into(),pid:20,thread_id:30,creation_time_100ns:"40".into()}
-    }
-    pub fn synthetic_host() -> Arc<Host> {
-        static KEYS: SyntheticKeys = SyntheticKeys;
-        let _ = dzc_core::crypto::install_key_provider(&KEYS);
-        Host::new(HostOptions { mode: HostMode::Service, history: HistoryService::open(Path::new(":memory:")).unwrap(),
-            directory: std::env::temp_dir().join(format!("dzc-host-{}", uuid::Uuid::new_v4())), actions: Arc::new(Actions::default()) }).unwrap()
-    }
     fn hello(role: ClientRole) -> HelloParams {
         HelloParams { protocol_version: wire::VERSION, client_version: "fixture".into(), client_role: role, capabilities: vec![], required_capabilities: vec![], grant: None }
     }

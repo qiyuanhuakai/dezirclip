@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn native_files_require_desktop_authority_and_current_state() {
-        let host = crate::router::tests::synthetic_host();
+        let host = crate::fixtures::synthetic_host();
         let state = host.snapshot().unwrap();
         for client in [session(&host, ClientRole::Desktop, false), session(&host, ClientRole::Cli, true)] {
             for (method, params) in [
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn native_drag_resolves_real_session_files_without_deleting_them() {
-        let host = crate::router::tests::synthetic_host();
+        let host = crate::fixtures::synthetic_host();
         let directory = std::env::temp_dir().join(format!("dzc-drag-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
         let file = directory.join("文件 with spaces.txt");
@@ -271,7 +271,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn email_uses_named_exports_and_requires_reveal_for_protected_files() {
-        let host = crate::router::tests::synthetic_host();
+        let host = crate::fixtures::synthetic_host();
         let png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2fUAAAAASUVORK5CYII=";
         let archive = r#"dzc-files-v1:{"version":1,"files":[{"name":"附件.txt","data":"cHJvdGVjdGVk"}]}"#;
         for (id, kind, content, tags) in [(-1, "image", png, vec![]), (-2, "files", archive, vec!["sensitive"])] {

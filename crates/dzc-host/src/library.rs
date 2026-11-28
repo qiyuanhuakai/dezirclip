@@ -11,6 +11,7 @@ impl Host {
         Ok(())
     }
 
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) fn read_background(&self, session: &Session, request: BackgroundParams) -> Result<Value, WireErrorCode> {
         use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
         use dzc_platform::user_resource;

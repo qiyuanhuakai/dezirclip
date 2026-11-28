@@ -142,6 +142,7 @@ impl Host {
             if request.paste==Some(true) {
                 self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
                 if let Some(target)=upload.paste_target { target.send()?; } else { self.actions.paste()?; }
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 self.play_feedback(dzc_platform::sound::Cue::Paste);
             }
             return serde_json::to_value(OperationResult{performed:true}).map_err(|_|WireErrorCode::Internal);
@@ -216,7 +217,7 @@ mod tests {
         fn paste(&self)->Result<(),WireErrorCode> {panic!("bound generated paste cannot use unbound fallback")}
         fn supports_windows_bound_paste(&self)->bool {true}
         fn prepare_windows_paste(&self,target:&WindowsPasteTarget)->Result<Box<dyn crate::PreparedPaste>,WireErrorCode> {
-            assert_eq!(*target,crate::router::tests::windows_target());
+            assert_eq!(*target,crate::fixtures::windows_target());
             struct Fixed {pastes:Arc<std::sync::atomic::AtomicUsize>,generation:Arc<std::sync::atomic::AtomicUsize>,original:usize}
             impl crate::PreparedPaste for Fixed {
                 fn send(&self)->Result<(),WireErrorCode> {
@@ -241,7 +242,7 @@ mod tests {
     fn begin(host:&Host,session:&Session,copy:bool)->Response {
         let state=host.snapshot().unwrap();
         let mut params=serde_json::json!({"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"copy_to_clipboard":copy});
-        if copy {params["expected_paste_target"]=serde_json::to_value(crate::router::tests::windows_target()).unwrap();}
+        if copy {params["expected_paste_target"]=serde_json::to_value(crate::fixtures::windows_target()).unwrap();}
         call(host,session,Method::DesktopCaptureBegin,params)
     }
     fn upload(host:&Host,session:&Session,body:Value)->String {
@@ -257,7 +258,7 @@ mod tests {
     }
     #[test]
     fn frozen_remote_selection_longer_than_upload_ttl_starts_transport_with_original_epoch() {
-        let original=crate::router::tests::synthetic_host();
+        let original=crate::fixtures::synthetic_host();
         let actions=Arc::new(Actions::default());
         let host=Host::new(HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:actions.clone()}).unwrap();
         let desktop=session(&host,ClientRole::Desktop,true);
@@ -265,7 +266,7 @@ mod tests {
         // Waiting for a selection creates no upload or upload-expiry deadline.
         std::thread::sleep(Duration::from_millis(5_100));
         let response=call(&host,&desktop,Method::DesktopCaptureBegin,serde_json::json!({
-            "service_instance_id":frozen.service_instance_id,"expected_epoch":frozen.privacy_epoch,"copy_to_clipboard":true,"expected_paste_target":crate::router::tests::windows_target()}));
+            "service_instance_id":frozen.service_instance_id,"expected_epoch":frozen.privacy_epoch,"copy_to_clipboard":true,"expected_paste_target":crate::fixtures::windows_target()}));
         let id=response.result.unwrap()["capture_id"].as_str().unwrap().to_owned();
         let body=serde_json::json!({"kind":"text","text":"synthetic frozen screenshot transfer"});
         assert!(call(&host,&desktop,Method::DesktopCaptureWrite,serde_json::json!({"capture_id":id,"offset":0,
@@ -276,13 +277,13 @@ mod tests {
         host.history.privacy().toggle(now).unwrap();
         host.history.privacy().toggle(now+1).unwrap();
         let stale=call(&host,&desktop,Method::DesktopCaptureBegin,serde_json::json!({
-            "service_instance_id":frozen.service_instance_id,"expected_epoch":frozen.privacy_epoch,"copy_to_clipboard":true,"expected_paste_target":crate::router::tests::windows_target()}));
+            "service_instance_id":frozen.service_instance_id,"expected_epoch":frozen.privacy_epoch,"copy_to_clipboard":true,"expected_paste_target":crate::fixtures::windows_target()}));
         assert_eq!(stale.error.unwrap().code,WireErrorCode::PrivacyBlocked);
         assert_eq!(actions.copied.lock().unwrap().len(),1);
     }
     #[test]
     fn generated_original_target_is_frozen_at_begin_not_reselected_at_finish() {
-        let original=crate::router::tests::synthetic_host();
+        let original=crate::fixtures::synthetic_host();
         let actions=Arc::new(Actions::default());
         let host=Host::new(HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:actions.clone()}).unwrap();
         let desktop=session(&host,ClientRole::Desktop,true);
@@ -296,12 +297,12 @@ mod tests {
     }
     #[test]
     fn generated_finish_cannot_add_or_replace_an_original_target() {
-        let original=crate::router::tests::synthetic_host();
+        let original=crate::fixtures::synthetic_host();
         let actions=Arc::new(Actions::default());
         let host=Host::new(HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:actions.clone()}).unwrap();
         let desktop=session(&host,ClientRole::Desktop,true);
         let id=upload(&host,&desktop,serde_json::json!({"kind":"text","text":"synthetic original target"}));
-        let changed=call(&host,&desktop,Method::DesktopCaptureFinish,serde_json::json!({"capture_id":id,"source_app":"Synthetic","inherited_protection":false,"paste":true,"expected_paste_target":crate::router::tests::windows_target()}));
+        let changed=call(&host,&desktop,Method::DesktopCaptureFinish,serde_json::json!({"capture_id":id,"source_app":"Synthetic","inherited_protection":false,"paste":true,"expected_paste_target":crate::fixtures::windows_target()}));
         assert_eq!(changed.error.unwrap().code,WireErrorCode::InvalidRequest);
         assert_eq!(actions.pastes.load(std::sync::atomic::Ordering::SeqCst),0);
         let state=host.snapshot().unwrap();
@@ -313,9 +314,10 @@ mod tests {
         assert_eq!(actions.pastes.load(std::sync::atomic::Ordering::SeqCst),0);
         assert!(actions.copied.lock().unwrap().is_empty());
     }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     #[test]
     fn emoji_copy_checks_grant_epoch_managed_path_and_original_target_before_writing() {
-        let original = crate::router::tests::synthetic_host();
+        let original = crate::fixtures::synthetic_host();
         let actions = Arc::new(Actions::default());
         let host = Host::new(HostOptions { mode: HostMode::Service, history: original.history.clone(),
             directory: original.directory.clone(), actions: actions.clone() }).unwrap();
@@ -344,7 +346,7 @@ mod tests {
 
     #[test]
     fn generated_copy_uses_desktop_owner_for_emoji_image_and_large_unpersisted_content() {
-        let original=crate::router::tests::synthetic_host();
+        let original=crate::fixtures::synthetic_host();
         let actions=Arc::new(Actions::default());
         let host=Host::new(HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:actions.clone()}).unwrap();
         for role in [ClientRole::Desktop,ClientRole::Mcp,ClientRole::Surface,ClientRole::Cli] {

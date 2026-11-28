@@ -54,7 +54,7 @@ impl Host {
     }
     pub(crate) fn desktop_copy(&self,session:&Session,parameters:Value)->Result<Value,WireErrorCode> {
         let request:DesktopCopyParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
-        self.desktop_copy_bound(session, request, None)
+        self.desktop_copy_impl(session, request, #[cfg(any(target_os = "linux", target_os = "windows"))] None, None)
     }
 
     pub(crate) fn desktop_transform_copy(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
@@ -64,7 +64,7 @@ impl Host {
             reveal: request.reveal, paste: false, with_format: None, derived_text: None, image_as_base64: None,
             delete_after_use: None, move_to_top: None, expected_paste_target: None,
         };
-        self.desktop_copy_impl(session, copy, None, Some(DerivedText::Transform(&request.kind)))
+        self.desktop_copy_impl(session, copy, #[cfg(any(target_os = "linux", target_os = "windows"))] None, Some(DerivedText::Transform(&request.kind)))
     }
 
     pub(crate) fn desktop_qr_preview(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
@@ -107,7 +107,7 @@ impl Host {
             delete_after_use: None, move_to_top: None, expected_paste_target: None,
         };
         let operation = DerivedText::QrSvg { content_sha256: &request.content_sha256 };
-        self.desktop_copy_impl(session, copy, None, Some(operation))
+        self.desktop_copy_impl(session, copy, #[cfg(any(target_os = "linux", target_os = "windows"))] None, Some(operation))
     }
 
     pub(crate) fn desktop_ocr_copy(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
@@ -120,9 +120,10 @@ impl Host {
             reveal: request.reveal, paste: false, with_format: None, derived_text: None, image_as_base64: None,
             delete_after_use: None, move_to_top: None, expected_paste_target: None,
         };
-        self.desktop_copy_impl(session, copy, None, Some(DerivedText::Ocr))
+        self.desktop_copy_impl(session, copy, #[cfg(any(target_os = "linux", target_os = "windows"))] None, Some(DerivedText::Ocr))
     }
 
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) fn remember_window_target(&self, session: &Session, params: Value) -> Result<Value, WireErrorCode> {
         self.desktop_permission(session, self.instance_id())?;
         session.require(Permission::ClipboardPaste)?;
@@ -141,6 +142,7 @@ impl Host {
         encoded(OperationResult { performed: true })
     }
 
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) fn paste_from_window(&self, session: &Session, request: DesktopCopyParams) -> Result<Value, WireErrorCode> {
         self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
         session.require(Permission::ClipboardPaste)?;
@@ -154,6 +156,7 @@ impl Host {
         self.desktop_copy_bound(session, request, Some((input, state)))
     }
 
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     fn take_window_target(&self, session: &Session) -> Result<dzc_platform::runtime::QueueInputTarget, WireErrorCode> {
         let destination = session.window_target.lock().map_err(|_| WireErrorCode::Unavailable)?
             .take().ok_or(WireErrorCode::NotFound)?;
@@ -161,6 +164,7 @@ impl Host {
         dzc_platform::runtime::QueueInputTarget::prepare(target).map_err(|_| WireErrorCode::Unavailable)
     }
 
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) fn send_window_emoji(&self, session: &Session, request: WindowEmojiParams) -> Result<Value, WireErrorCode> {
         self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
         if !self.actions.can_copy() || (request.paste && !self.actions.can_paste()) {
@@ -198,6 +202,7 @@ impl Host {
         encoded(OperationResult { performed: true })
     }
 
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) fn emoji_favorites(&self, session: &Session, request: EmojiFavoritesParams) -> Result<Value, WireErrorCode> {
         self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
         if let Some(action) = request.mutation.as_deref() {
@@ -240,6 +245,7 @@ impl Host {
         encoded(result)
     }
 
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) fn desktop_copy_bound(&self, session: &Session, request: DesktopCopyParams, bound: Option<(dzc_platform::runtime::QueueInputTarget, RuntimeState)>) -> Result<Value,WireErrorCode> {
         self.desktop_copy_impl(session, request, bound, None)
     }
@@ -248,12 +254,17 @@ impl Host {
         &self,
         session: &Session,
         request: DesktopCopyParams,
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         bound: Option<(dzc_platform::runtime::QueueInputTarget, RuntimeState)>,
         derived: Option<DerivedText<'_>>,
     ) -> Result<Value, WireErrorCode> {
         self.desktop_permission(session,&request.service_instance_id)?;
         if !self.actions.can_copy() || request.paste && !self.actions.can_paste() {return Err(WireErrorCode::UnsupportedCapability);}
-        let paste_target=if bound.is_none() { self.prepare_desktop_paste(request.paste,request.expected_paste_target.as_ref())? } else { None };
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        let use_bound_target = false;
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        let use_bound_target = bound.is_some();
+        let paste_target = if use_bound_target { None } else { self.prepare_desktop_paste(request.paste, request.expected_paste_target.as_ref())? };
         let now=crate::router::now_ms()?;
         let generated=request.derived_text.is_some() || request.image_as_base64.unwrap_or(false) || derived.is_some();
         // A Service started without capture still handles explicit copy actions.
@@ -283,6 +294,7 @@ impl Host {
             self.capture_generated(frame,CaptureSource{app_name:"DezirClip Derived".into(),process_path:None},now)?;
         }
         self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         let input = if bound.is_some() {
             let (_, _, method) = self.history.queue_preferences().map_err(|_|WireErrorCode::Unavailable)?;
             let mut data = &payload;
@@ -294,7 +306,9 @@ impl Host {
             };
             Some((method, kind, text))
         } else { None };
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         let selected_state = bound.as_ref().map(|(_,state)| state.clone());
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         let check_selection = || -> Result<(), WireErrorCode> {
             if let Some(state) = &selected_state {
                 if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
@@ -302,16 +316,26 @@ impl Host {
             }
             Ok(())
         };
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         check_selection()?;
         self.copy_payload(payload)?;
         if request.paste {
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             check_selection()?;
             self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
-            if let Some(((target, _), (method, kind, text))) = bound.zip(input) {
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            let sent = if let Some(((target, _), (method, kind, text))) = bound.zip(input) {
                 target.send(&method, text.as_deref(), kind, || !self.is_stopping() && check_selection().is_ok()
                     && crate::router::now_ms().is_ok_and(|now| self.history.privacy().check_read(&permit, now).is_ok()))
                     .map_err(|_| WireErrorCode::Unavailable)?;
-            } else if let Some(target)=paste_target { target.send()?; } else { self.actions.paste()?; }
+                true
+            } else { false };
+            #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+            let sent = false;
+            if !sent {
+                if let Some(target) = paste_target { target.send()?; } else { self.actions.paste()?; }
+            }
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             self.play_feedback(dzc_platform::sound::Cue::Paste);
         }
         if request.delete_after_use==Some(true) {
@@ -540,7 +564,7 @@ mod queue_completion_tests {
         }
         for mode in [HostMode::Embedded,HostMode::Service] {
             for delete in [false,true] {
-                let original=crate::router::tests::synthetic_host();
+                let original=crate::fixtures::synthetic_host();
                 let host=Host::new(crate::HostOptions{mode,history:original.history.clone(),directory:original.directory.clone(),actions:Arc::new(FailingPaste)}).unwrap();
                 let entry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"synthetic rejected paste","preview":"synthetic","source_app":"Synthetic","timestamp":1,"is_pinned":false})).unwrap();
                 let id=host.history.save(&entry,None).unwrap();
@@ -548,7 +572,7 @@ mod queue_completion_tests {
                 let before=host.history.query(&query).unwrap();
                 let owner=session(&host,ClientRole::Desktop);let state=host.snapshot().unwrap();
                 let cursor=state.event_sequence;
-                let failed=call(&host,&owner,Method::DesktopClipboardCopy,serde_json::json!({"id":id,"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"reveal":false,"paste":true,"expected_paste_target":crate::router::tests::windows_target(),"delete_after_use":delete,"move_to_top":true}));
+                let failed=call(&host,&owner,Method::DesktopClipboardCopy,serde_json::json!({"id":id,"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"reveal":false,"paste":true,"expected_paste_target":crate::fixtures::windows_target(),"delete_after_use":delete,"move_to_top":true}));
                 assert_eq!(failed.error.unwrap().code,WireErrorCode::Unavailable);
                 let after=host.history.query(&query).unwrap();
                 assert_eq!(after.len(),1);
@@ -582,7 +606,7 @@ mod queue_completion_tests {
             fn paste(&self)->Result<(),WireErrorCode> {panic!("no unbound fallback")}
             fn supports_windows_bound_paste(&self)->bool {true}
             fn prepare_windows_paste(&self,target:&WindowsPasteTarget)->Result<Box<dyn crate::PreparedPaste>,WireErrorCode> {
-                assert_eq!(*target,crate::router::tests::windows_target());
+                assert_eq!(*target,crate::fixtures::windows_target());
                 Ok(Box::new(Fixed{current:self.current.clone(),sent:self.sent.clone()}))
             }
             fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
@@ -595,7 +619,7 @@ mod queue_completion_tests {
             (false, false, true, Some(false)),
             (false, false, true, None),
         ] {
-            let original=crate::router::tests::synthetic_host();
+            let original=crate::fixtures::synthetic_host();
             let actions=Arc::new(Bound{current:Arc::new(AtomicBool::new(true)),sent:Arc::new(AtomicUsize::new(0)),copies:AtomicUsize::new(0),change});
             let host=Host::new(crate::HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:actions.clone()}).unwrap();
             let entry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"synthetic bound target","preview":"synthetic","source_app":"Synthetic","timestamp":1,"is_pinned":false})).unwrap();
@@ -610,7 +634,7 @@ mod queue_completion_tests {
             if let Some(move_to_top) = requested {
                 params["move_to_top"] = move_to_top.into();
             }
-            if !missing {params["expected_paste_target"]=serde_json::to_value(crate::router::tests::windows_target()).unwrap();}
+            if !missing {params["expected_paste_target"]=serde_json::to_value(crate::fixtures::windows_target()).unwrap();}
             let response=call(&host,&owner,Method::DesktopClipboardCopy,params);
             assert_eq!(response.error.is_none(),!missing && !change);
             assert_eq!(actions.copies.load(Ordering::SeqCst),if !missing {1}else{0});
@@ -623,7 +647,7 @@ mod queue_completion_tests {
     }
     #[test]
     fn desktop_paste_notifies_observers_and_promotes_only_when_requested() {
-        let host = crate::router::tests::synthetic_host();
+        let host = crate::fixtures::synthetic_host();
         let entry = serde_json::from_value(serde_json::json!({
             "id": 0, "content_type": "text", "content": "first synthetic entry",
             "preview": "example", "source_app": "Synthetic", "timestamp": 1, "is_pinned": false
@@ -678,7 +702,7 @@ mod queue_completion_tests {
 
     #[test]
     fn host_copy_only_does_not_paste_delete_or_count_and_completion_only_updates_metadata() {
-        let original=crate::router::tests::synthetic_host();
+        let original=crate::fixtures::synthetic_host();
         let actions=Arc::new(Actions::default());
         let host=Host::new(crate::HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:actions.clone()}).unwrap();
         let entry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"synthetic queue","preview":"synthetic","source_app":"Synthetic","timestamp":1,"is_pinned":false})).unwrap();
@@ -696,7 +720,7 @@ mod queue_completion_tests {
     }
     #[test]
     fn completed_use_requires_desktop_grant_original_instance_epoch_and_metadata_only_parameters() {
-        let host=crate::router::tests::synthetic_host();let owner=session(&host,ClientRole::Desktop);let state=host.snapshot().unwrap();
+        let host=crate::fixtures::synthetic_host();let owner=session(&host,ClientRole::Desktop);let state=host.snapshot().unwrap();
         assert_eq!(call(&host,&session(&host,ClientRole::Cli),Method::DesktopHistoryMutate,used(1,&state)).error.unwrap().code,WireErrorCode::PermissionDenied);
         let capabilities=call(&host,&owner,Method::Capabilities,serde_json::json!({})).result.unwrap();
         assert_eq!(capabilities["platform"]["desktop_queue_completion"],serde_json::json!({"supported":true,"version":1}));

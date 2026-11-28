@@ -29,7 +29,7 @@ mod tests {
         }
     }
     fn host()->(Arc<Host>,Arc<Actions>) {
-        let original=crate::router::tests::synthetic_host();let actions=Arc::new(Actions::default());
+        let original=crate::fixtures::synthetic_host();let actions=Arc::new(Actions::default());
         let host=Host::with_session(crate::HostOptions{history:original.history.clone(),directory:original.directory.clone(),mode:HostMode::Service,actions:actions.clone()},Arc::new(dzc_core::api::SessionHistoryStore::default())).unwrap();
         (host,actions)
     }

@@ -111,7 +111,7 @@ mod tests {
     }
     #[test]
     fn surface_delegation_is_finite_read_only_and_revocable() {
-        let host = crate::router::tests::synthetic_host();
+        let host = crate::fixtures::synthetic_host();
         assert!(host.grants().issue_surface_read(Duration::ZERO).is_err());
         assert!(host.grants().issue_surface_read(Duration::from_secs(601)).is_err());
         let (grant, session) = grant_session(&host);
@@ -128,7 +128,7 @@ mod tests {
     }
     #[test]
     fn page_is_bounded_searchable_metadata_without_protected_body() {
-        let host = crate::router::tests::synthetic_host();
+        let host = crate::fixtures::synthetic_host();
         insert(&host, "ordinary first", false); insert(&host, "ordinary second", false); insert(&host, "private forbidden", true);
         let (_, session) = grant_session(&host);
         let mut parameters = request(&host);
@@ -149,7 +149,7 @@ mod tests {
     }
     #[test]
     fn claimed_surface_or_changed_instance_epoch_revision_cannot_query_old_state() {
-        let host = crate::router::tests::synthetic_host();
+        let host = crate::fixtures::synthetic_host();
         let ungranted = host.hello(HelloParams { protocol_version: VERSION, client_version:"synthetic".into(), client_role:ClientRole::Surface,
             capabilities:vec![], required_capabilities:vec!["surface.history.page".into()], grant:None });
         assert!(matches!(ungranted, Err(WireErrorCode::UnsupportedCapability)));
@@ -165,7 +165,7 @@ mod tests {
     }
     #[test]
     fn unpublished_ram_insert_edit_reorder_evict_delete_and_rollback_expire_previous_pages() {
-        let host=crate::router::tests::synthetic_host();let (_,reader)=grant_session(&host);
+        let host=crate::fixtures::synthetic_host();let (_,reader)=grant_session(&host);
         let row=|id:i64,time:i64|serde_json::from_value(serde_json::json!({"id":id,"content_type":"text","content":"original body","preview":"same preview","source_app":"synthetic","timestamp":time,"is_pinned":false})).unwrap();
         {let mut rows=host.session.lock().unwrap();rows.push_back(row(-1,1));rows.push_back(row(-2,2));}
         for change in 0..6 {
@@ -189,7 +189,7 @@ mod tests {
     }
     #[test]
     fn hello_health_events_desktop_snapshot_and_surface_share_one_host_revision() {
-        let host=crate::router::tests::synthetic_host();let (_,reader)=grant_session(&host);let before=host.snapshot().unwrap();
+        let host=crate::fixtures::synthetic_host();let (_,reader)=grant_session(&host);let before=host.snapshot().unwrap();
         let row=serde_json::from_value(serde_json::json!({"id":-9,"content_type":"text","content":"ordinary RAM","preview":"ordinary","source_app":"synthetic","timestamp":1,"is_pinned":false})).unwrap();
         host.session.lock().unwrap().push_back(row);
         let actual=host.snapshot().unwrap();assert!(actual.history_revision>before.history_revision);
@@ -218,7 +218,7 @@ mod tests {
             fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
         }
         for mode in [HostMode::Embedded,HostMode::Service] {
-            let original=crate::router::tests::synthetic_host();let copies=Arc::new(Copies::default());
+            let original=crate::fixtures::synthetic_host();let copies=Arc::new(Copies::default());
             let host=Host::new(crate::HostOptions{mode,history:original.history.clone(),directory:original.directory.clone(),actions:copies.clone()}).unwrap();
             let row=|id,tags|serde_json::from_value(serde_json::json!({"id":id,"content_type":"text","content":"unchanged selected body","preview":"preview","source_app":"synthetic","timestamp":1,"is_pinned":false,"tags":tags})).unwrap();
             let persistent=host.history.save(&row(0,vec![] as Vec<&str>),None).unwrap();
@@ -258,7 +258,7 @@ mod tests {
             fn stop_helpers(&self)->Result<(),WireErrorCode>{Ok(())}
             fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
         }
-        let original=crate::router::tests::synthetic_host();insert(&original,"original",false);
+        let original=crate::fixtures::synthetic_host();insert(&original,"original",false);
         let id=original.history.query(&api::HistoryQuery{limit:1,..Default::default()}).unwrap()[0].id;
         let host=Host::new(crate::HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:Arc::new(Changed{history:original.history.clone()})}).unwrap();
         let grant=host.grants().issue_control(ClientRole::Desktop).unwrap();

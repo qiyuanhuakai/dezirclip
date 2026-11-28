@@ -261,7 +261,7 @@ mod tests {
         let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").expect("private fixture runtime"));
         assert!(runtime.join("dezirclip-isolated-host-fixture").is_file());
         use dzc_core::ports::ClipboardWriter;
-        let host = crate::router::tests::synthetic_host();
+        let host = crate::fixtures::synthetic_host();
         let (capture, ready) = CaptureManager::start(&host).unwrap();
         ready.unwrap();
         assert!(CaptureLease::acquire().is_err());
@@ -301,7 +301,7 @@ mod tests {
                 if self.worker.is_finished() { Ok(()) } else { Err("UnconfirmedSyntheticWorker".into()) }
             }
         }
-        let host = crate::router::tests::synthetic_host();
+        let host = crate::fixtures::synthetic_host();
         let lease = CaptureLease::acquire().unwrap();
         let (sender, receiver) = mpsc::sync_channel::<Task>(1);
         let (release, blocked) = mpsc::sync_channel::<()>(1);

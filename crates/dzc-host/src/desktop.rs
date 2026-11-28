@@ -156,6 +156,7 @@ impl Host {
         if request.service_instance_id != self.snapshot()?.service_instance_id { return Err(WireErrorCode::PrivacyBlocked); }
         let permit = self.history.privacy().authorize_read(api::PrivacyAccessIntent::InteractiveRead,
             if request.reveal { api::SensitiveAccess::ExplicitUserAction } else { api::SensitiveAccess::Denied }, Some(request.expected_epoch), now).map_err(blocked)?;
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         if matches!(method, Method::DesktopHistorySourceIcon | Method::DesktopHistoryLocalVideo) {
             if request.reveal || request.thumbnail_dimension.is_some() {
                 return Err(WireErrorCode::InvalidRequest);
@@ -262,7 +263,7 @@ mod tests {
     }
     #[test]
     fn inline_snapshot_requires_permission_and_preserves_large_snapshot_fallback() {
-        let host = crate::router::tests::synthetic_host();
+        let host = crate::fixtures::synthetic_host();
         let id = insert(&host, "synthetic UTF-8 fixture 示例", false);
         let mut hello = HelloParams {
             protocol_version: dzc_protocol::wire::VERSION, client_version: "synthetic".into(),
@@ -290,7 +291,7 @@ mod tests {
     }
     #[test]
     fn tag_pages_are_owner_scoped_metadata_and_keep_content_search_private() {
-        let host = crate::router::tests::synthetic_host();
+        let host = crate::fixtures::synthetic_host();
         let ordinary = insert(&host, "ordinary searchable tag text", false);
         host.history.update_entry_tags(ordinary, vec!["work".into()]).unwrap();
         let protected = insert(&host, "private tag secret", true);
@@ -333,7 +334,7 @@ mod tests {
     }
     #[test]
     fn desktop_grants_do_not_follow_claimed_roles_or_cli_control_and_sensitive_reveal_is_explicit() {
-        let host=crate::router::tests::synthetic_host();
+        let host=crate::fixtures::synthetic_host();
         let id=insert(&host,"synthetic protected body",true);
         for role in [ClientRole::Desktop,ClientRole::Surface,ClientRole::Mcp,ClientRole::Cli] {
             assert_eq!(get(&host,&session(&host,role,false),id,true).error.unwrap().code,WireErrorCode::PermissionDenied);
@@ -350,9 +351,10 @@ mod tests {
         assert!(entry.get("source_app_path").is_none());
         assert!(!String::from_utf8(bytes).unwrap().contains("process.exe"));
     }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     #[test]
     fn source_icons_require_desktop_authority_and_never_reveal_protected_rows_or_paths() {
-        let host = crate::router::tests::synthetic_host();
+        let host = crate::fixtures::synthetic_host();
         let ordinary = insert(&host, "ordinary icon fixture", false);
         let sensitive = insert(&host, "protected icon fixture", true);
         let desktop = session(&host, ClientRole::Desktop, true);
@@ -380,7 +382,7 @@ mod tests {
 
     #[test]
     fn completed_snapshots_release_quota_while_incomplete_snapshots_remain_bounded() {
-        let host=crate::router::tests::synthetic_host();
+        let host=crate::fixtures::synthetic_host();
         let desktop=session(&host,ClientRole::Desktop,true);
         let id=insert(&host,"ordinary completed snapshot",false);
         for _ in 0..5 {
@@ -405,7 +407,7 @@ mod tests {
     }
     #[test]
     fn snapshots_are_bound_to_connection_instance_epoch_expiry_and_total_budget() {
-        let host=crate::router::tests::synthetic_host();
+        let host=crate::fixtures::synthetic_host();
         let desktop=session(&host,ClientRole::Desktop,true);
         let other=session(&host,ClientRole::Desktop,true);
         let id=insert(&host,"ordinary synthetic",false);

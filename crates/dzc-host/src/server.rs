@@ -102,10 +102,12 @@ async fn connection(host: Arc<Host>, mut stream: Stream, state: Arc<Connections>
         Err(code) => { send(&mut stream, Response::failure(id, code)).await?; return Ok(()); },
     };
     send(&mut stream, Response::success(id, serde_json::to_value(hello)?)).await?;
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     let screen_owner = session.id().to_owned();
     let result = requests(host.clone(), session, stream, state, stopped).await;
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     host.recording.disconnect(&screen_owner);
-    #[cfg(feature = "native-screen")]
+    #[cfg(all(feature = "native-screen", any(target_os = "linux", target_os = "windows")))]
     host.screen.disconnect(&screen_owner);
     result
 }
@@ -113,8 +115,10 @@ async fn connection(host: Arc<Host>, mut stream: Stream, state: Arc<Connections>
 async fn requests(host: Arc<Host>, session: Session, mut stream: Stream, state: Arc<Connections>, mut stopped: watch::Receiver<bool>) -> io::Result<()> {
     let session = Arc::new(session);
     loop {
-        let timeout = if session.quick.active() { crate::quick::TIMEOUT } else { Duration::from_secs(30) };
-        #[cfg(feature = "native-screen")]
+        let timeout = Duration::from_secs(30);
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        let timeout = if session.quick.active() { crate::quick::TIMEOUT } else { timeout };
+        #[cfg(all(feature = "native-screen", any(target_os = "linux", target_os = "windows")))]
         let timeout = if host.screen.owns(session.id()) { crate::screen::SELECTION_TIMEOUT } else { timeout };
         let bytes = read_request(&mut stream, &mut stopped, timeout).await?;
         let request: Request = wire::decode("Request", &bytes).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
@@ -139,14 +143,8 @@ async fn requests(host: Arc<Host>, session: Session, mut stream: Stream, state: 
 mod tests {
     use super::*;
     use crate::{Client, ControlFile};
+    use crate::fixtures::socket_directory as directory;
     use dzc_protocol::wire::*;
-    fn directory() -> std::path::PathBuf {
-        let directory = std::env::temp_dir().join(format!("dzc-host-drain-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir(&directory).unwrap();
-        #[cfg(target_os="linux")]
-        { use std::os::unix::fs::PermissionsExt; std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap(); }
-        directory
-    }
 
     #[test]
     #[ignore = "requires the prebuilt Go Host fixture in a private native namespace"]
@@ -155,7 +153,7 @@ mod tests {
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
             for mode in [HostMode::Embedded,HostMode::Service] {
                 let directory=directory();
-                let original=crate::router::tests::synthetic_host();
+                let original=crate::fixtures::synthetic_host();
                 let entry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"ordinary synthetic Go Host fixture","preview":"synthetic metadata","source_app":"Fixture","timestamp":1,"is_pinned":false,"tags":[]})).unwrap();
                 let id=original.history.save(&entry,None).unwrap();
                 let host=Host::new(crate::HostOptions{mode,history:original.history.clone(),directory:directory.clone(),actions:original.actions.clone()}).unwrap();
@@ -185,7 +183,7 @@ mod tests {
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
             for operation in [Method::PrivacySet, Method::ServiceRevoke, Method::ServiceStop] {
                 let directory = directory();
-                let host = crate::router::tests::synthetic_host();
+                let host = crate::fixtures::synthetic_host();
                 let endpoint = Endpoint::in_directory(&directory).unwrap();
                 let listener = endpoint.bind().unwrap();
                 let credentials = ControlFile::publish(&host, &endpoint).unwrap();
@@ -230,6 +228,7 @@ mod tests {
         });
     }
 
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     #[test]
     fn blocked_system_fonts_leave_privacy_and_other_connections_responsive() {
         struct SlowFonts {
@@ -252,7 +251,7 @@ mod tests {
         }
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
             let directory = directory();
-            let original = crate::router::tests::synthetic_host();
+            let original = crate::fixtures::synthetic_host();
             let (entered, waiting) = tokio::sync::oneshot::channel();
             let (resume, paused) = std::sync::mpsc::channel();
             let host = Host::new(crate::HostOptions { mode: HostMode::Service, history: original.history.clone(),
@@ -282,11 +281,12 @@ mod tests {
         });
     }
 
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     #[test]
     fn explorer_restart_does_not_block_transaction_heartbeat() {
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
             let directory = directory();
-            let host = crate::router::tests::synthetic_host();
+            let host = crate::fixtures::synthetic_host();
             let endpoint = Endpoint::in_directory(&directory).unwrap();
             let listener = endpoint.bind().unwrap();
             let credentials = ControlFile::publish(&host, &endpoint).unwrap();
@@ -319,7 +319,7 @@ mod tests {
     fn privacy_switch_on_second_connection_invalidates_inflight_backup() {
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
             let directory = directory();
-            let host = crate::router::tests::synthetic_host();
+            let host = crate::fixtures::synthetic_host();
             let endpoint = Endpoint::in_directory(&directory).unwrap();
             let listener = endpoint.bind().unwrap();
             let credentials = ControlFile::publish(&host, &endpoint).unwrap();
@@ -351,9 +351,12 @@ mod tests {
     #[test]
     fn admitted_stop_and_handoff_ack_survive_another_connection_finishing_during_drain() {
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
-            for method in [Method::ServiceStop, Method::ServiceHandoff] {
+            let methods = [Method::ServiceStop,
+                #[cfg(any(target_os = "linux", target_os = "windows"))]
+                Method::ServiceHandoff];
+            for method in methods {
                 let directory = directory();
-                let host = crate::router::tests::synthetic_host();
+                let host = crate::fixtures::synthetic_host();
                 let endpoint = Endpoint::in_directory(&directory).unwrap();
                 let listener = endpoint.bind().unwrap();
                 let credentials = ControlFile::publish(&host, &endpoint).unwrap();
@@ -385,12 +388,9 @@ mod tests {
     }
     #[test]
     fn real_local_client_requires_explicit_grants_and_revocation_applies_to_live_connections() {
-        let directory = std::env::temp_dir().join(format!("dzc-host-native-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir(&directory).unwrap();
-        #[cfg(target_os="linux")]
-        { use std::os::unix::fs::PermissionsExt; std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap(); }
+        let directory = directory();
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
-            let host = crate::router::tests::synthetic_host();
+            let host = crate::fixtures::synthetic_host();
             let endpoint = Endpoint::in_directory(&directory).unwrap();
             let listener = endpoint.bind().unwrap();
             let credentials = ControlFile::publish(&host, &endpoint).unwrap();
@@ -413,6 +413,74 @@ mod tests {
             tokio::time::timeout(Duration::from_secs(3), server).await.unwrap().unwrap().unwrap();
             drop(credentials);
             assert!(!endpoint.control_path().exists());
+        });
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn shared_host_serves_authorized_history_and_events_over_native_transport() {
+        let directory = directory();
+        let actions = Arc::new(crate::fixtures::Actions::default());
+        let history = crate::fixtures::synthetic_host().history.clone();
+        let host = Host::new(crate::HostOptions {
+            mode: HostMode::Service, history, directory: directory.clone(), actions: actions.clone(),
+        }).unwrap();
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            let endpoint = Endpoint::in_directory(&directory).unwrap();
+            let listener = endpoint.bind().unwrap();
+            let (shutdown, receiver) = watch::channel(false);
+            let server = tokio::spawn(serve_listener(host.clone(), listener, receiver));
+            let grant = host.grants().issue(ClientRole::Desktop, vec![
+                Permission::DesktopHistory, Permission::HistoryBody, Permission::ClipboardCopy,
+            ], Duration::from_secs(30)).unwrap();
+            let mut desktop = Client::connect(&endpoint, ClientRole::Desktop, Some(grant.token().into())).await.unwrap();
+            let mut unrelated = Client::connect(&endpoint, ClientRole::Desktop, None).await.unwrap();
+            assert!(!endpoint.control_path().exists());
+            assert!(desktop.hello.permissions.contains(&Permission::DesktopHistory));
+            assert!(!desktop.hello.permissions.contains(&Permission::ClipboardPaste));
+            let caps: CapabilityReport = desktop.call(Method::Capabilities, serde_json::json!({}), "CapabilityReport").await.unwrap();
+            assert!(caps.methods.iter().any(|method| method == "desktop.history.get"));
+            assert!(!caps.methods.iter().any(|method| method == "surface.paste"));
+            #[cfg(target_os = "macos")]
+            {
+                assert!(!caps.methods.iter().any(|method| method == "desktop.window.target" || method == "desktop.settings.fonts"));
+                let unavailable = desktop.call::<Vec<DesktopFont>>(Method::DesktopSettingsFonts, serde_json::json!({}), "DesktopFonts").await.unwrap_err();
+                assert_eq!(unavailable.to_string(), serde_json::to_string(&WireErrorCode::UnsupportedCapability).unwrap());
+            }
+
+            let text = "Local Host transport fixture 示例";
+            let entry = serde_json::from_value(serde_json::json!({
+                "id": 0, "content_type": "text", "content": text, "preview": text,
+                "source_app": "Fixture", "timestamp": 1, "is_pinned": false, "tags": []
+            })).unwrap();
+            let id = host.history.save(&entry, None).unwrap();
+            host.publish(EventKind::EntryAdded, EventData { entry_id: Some(id), status: None }).unwrap();
+            let events: EventsResult = desktop.call(Method::EventsSubscribe, SubscribeParams {
+                after_sequence: desktop.hello.state.event_sequence, wait_ms: None, settings_only: None,
+            }, "EventsResult").await.unwrap();
+            assert!(events.events.iter().any(|event| event.event == EventKind::EntryAdded && event.data.entry_id == Some(id)));
+            let input = serde_json::json!({
+                "id": id, "service_instance_id": events.state.service_instance_id,
+                "expected_epoch": events.state.privacy_epoch, "reveal": false
+            });
+            assert!(unrelated.call::<BodySnapshot>(Method::DesktopHistoryGet, &input, "BodySnapshot").await.is_err());
+            let snapshot: BodySnapshot = desktop.call(Method::DesktopHistoryGet, &input, "BodySnapshot").await.unwrap();
+            let mut second_desktop = Client::connect(&endpoint, ClientRole::Desktop, Some(grant.token().into())).await.unwrap();
+            assert!(second_desktop.call::<SnapshotChunk>(Method::DesktopSnapshotRead, SnapshotReadParams {
+                snapshot_id: snapshot.snapshot_id.clone(), offset: 0,
+                expected_epoch: snapshot.state.privacy_epoch, service_instance_id: snapshot.state.service_instance_id.clone(),
+            }, "SnapshotChunk").await.is_err());
+            let row: DesktopEntry = desktop.read_snapshot(snapshot, "DesktopEntry").await.unwrap();
+            assert_eq!(row.id, id);
+            assert_eq!(row.content, text);
+            let copy: OperationResult = desktop.call(Method::ClipboardCopy, serde_json::json!({"id": id}), "OperationResult").await.unwrap();
+            assert!(copy.performed);
+            assert_eq!(actions.copied(), vec![text]);
+
+            host.grants().revoke(&grant);
+            assert!(desktop.call::<RuntimeState>(Method::Health, serde_json::json!({}), "RuntimeState").await.is_err());
+            shutdown.send(true).unwrap();
+            server.await.unwrap().unwrap();
         });
         std::fs::remove_dir_all(directory).unwrap();
     }

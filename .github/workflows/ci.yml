@@ -106,6 +106,8 @@ jobs:
           cargo test --locked -p dzc-core --lib infrastructure::local_file::tests
           cargo test --locked -p dzc-platform --features ipc --lib ipc::
           cargo test --locked -p dzc-platform --features ipc --lib darwin_clipboard::
+      - name: Exercise shared Host history, authorization and snapshots over Darwin IPC
+        run: cargo test --locked -p dzc-host --lib shared_host_serves_authorized_history_and_events_over_native_transport
       - name: Test the Swift local framed transport
         run: swift test --package-path clients/swift
       - name: Bind the Swift client to its signed Rust fixture over the local socket

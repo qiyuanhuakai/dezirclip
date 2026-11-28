@@ -305,8 +305,8 @@ mod tests {
         #[cfg(target_os="linux")]
         { use std::os::unix::fs::PermissionsExt; std::fs::set_permissions(&directory,std::fs::Permissions::from_mode(0o700)).unwrap(); }
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
-            let fixture=crate::router::tests::synthetic_host();
-            let host=Host::new(HostOptions {mode:HostMode::Embedded,history:fixture.history.clone(),directory:directory.clone(),actions:Arc::new(crate::router::tests::Actions::default())}).unwrap();
+            let fixture=crate::fixtures::synthetic_host();
+            let host=Host::new(HostOptions {mode:HostMode::Embedded,history:fixture.history.clone(),directory:directory.clone(),actions:Arc::new(crate::fixtures::Actions::default())}).unwrap();
             let stopped=Arc::new(AtomicUsize::new(0));
             host.attach_lifecycle(Arc::new(StopCount(stopped.clone()))).unwrap();
             let database=directory.join("not-opened.db");
