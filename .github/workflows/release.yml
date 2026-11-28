@@ -585,10 +585,67 @@ jobs:
           name: linux-runtime-diagnostics-${{ matrix.target }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/linux-runtime-evidence/
 
+  seal-candidate:
+    name: Seal verified release candidate
+    if: github.event_name == 'push'
+    needs: [create-release, upload-desktop, publish-standalone-cli, accept-source, verify-windows-candidate, verify-linux-runtime]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      asset_id: ${{ steps.seal.outputs.asset_id }}
+      sha256: ${{ steps.seal.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Resolve exact producer artifacts for the original attempt
+        id: reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE: ${{ needs.create-release.outputs.source }}
+          ACCEPTED_SOURCE: ${{ needs.accept-source.outputs.accepted_source }}
+        run: |
+          set -euo pipefail
+          test "$RELEASE_SOURCE" = "$GITHUB_SHA"
+          test "$ACCEPTED_SOURCE" = "$GITHUB_SHA"
+          ids="$(node scripts/updater-release.mjs seal-input-ids "$GITHUB_REF_NAME" "$GITHUB_SHA")"
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
+      - name: Download source acceptance and native package reports
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.reports.outputs.ids }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/candidate-readbacks
+      - name: Attach and read back the immutable release candidate
+        id: seal
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+          REPORT_IDS: ${{ steps.reports.outputs.ids }}
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/release-seal.json"
+          node scripts/updater-release.mjs seal-dual "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$RUNNER_TEMP/candidate-readbacks" "$RELEASE_ID" "$REPORT_IDS" > "$receipt"
+          asset_id="$(jq -er .id "$receipt")"
+          sha256="$(jq -er .sha256 "$receipt")"
+          echo "asset_id=$asset_id" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-seal-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-seal.json
+          if-no-files-found: error
+
   verify-publish-and-promote:
     name: Verify signed artifacts, publish and synchronize update channel
     if: github.event_name == 'push'
-    needs: [create-release, upload-desktop, publish-standalone-cli, accept-source, verify-windows-candidate, verify-linux-runtime]
+    needs: [create-release, seal-candidate]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -600,74 +657,33 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Download the source acceptance receipt from this attempt
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: ${{ needs.accept-source.outputs.accepted_artifact }}
-          merge-multiple: true
-          path: ${{ runner.temp }}/candidate-source
-      - name: Require the tested source to match the release candidate
-        shell: python
-        env:
-          ACCEPTED_SOURCE: ${{ needs.accept-source.outputs.accepted_source }}
-          RELEASE_SOURCE: ${{ needs.create-release.outputs.source }}
-        run: |
-          import json, os
-          from pathlib import Path
-          receipt = json.loads((Path(os.environ["RUNNER_TEMP"]) / "candidate-source/source-acceptance.json").read_text(encoding="utf-8"))
-          source = os.environ["GITHUB_SHA"]
-          if (source != os.environ["ACCEPTED_SOURCE"] or source != os.environ["RELEASE_SOURCE"]
-                  or receipt["source_revision"] != source or receipt["mode"] != "source-acceptance"
-                  or receipt["schema_version"] != 1 or receipt["run_id"] != int(os.environ["GITHUB_RUN_ID"])
-                  or receipt["run_attempt"] != int(os.environ["GITHUB_RUN_ATTEMPT"])
-                  or receipt["desktop_targets"] != ["linux-x86_64", "windows-x86_64"]
-                  or receipt["jobs"] != {name: "success" for name in ("frontend", "rust-development", "go-development", "ci-desktop-plan", "tauri")}):
-              raise SystemExit("Source acceptance receipt does not attest the candidate")
-      - name: Resolve the two Windows candidate report IDs
-        id: windows-reports
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ids="$(node scripts/updater-release.mjs windows-report-ids "$GITHUB_REF_NAME" "$GITHUB_SHA")"
-          echo "ids=$ids" >> "$GITHUB_OUTPUT"
-      - name: Resolve both Linux runtime report IDs
-        id: linux-reports
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ids="$(node scripts/updater-release.mjs linux-runtime-report-ids "$GITHUB_REF_NAME" "$GITHUB_SHA")"
-          echo "ids=$ids" >> "$GITHUB_OUTPUT"
-      - name: Download the upload readbacks and native desktop reports
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: ${{ needs.upload-desktop.outputs.readback }},${{ needs.publish-standalone-cli.outputs.readback }},${{ steps.windows-reports.outputs.ids }},${{ steps.linux-reports.outputs.ids }}
-          merge-multiple: true
-          path: ${{ runner.temp }}/candidate-readbacks
-      - name: Verify both desktops and activate the update channel
+      - name: Verify the seal and activate the update channel
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+          SEAL_ID: ${{ needs.seal-candidate.outputs.asset_id }}
+          SEAL_SHA256: ${{ needs.seal-candidate.outputs.sha256 }}
+          DZC_PUBLICATION_TRACE: ${{ runner.temp }}/publication-stages.ndjson
         run: |
           set -euo pipefail
-          node scripts/updater-release.mjs publish-dual "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
-            "$RUNNER_TEMP/candidate-readbacks" "$RELEASE_ID" | tee "$RUNNER_TEMP/updater-channel-sync.json"
+          node scripts/updater-release.mjs publish-sealed-dual "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$RELEASE_ID" "$SEAL_ID" "$SEAL_SHA256" | tee "$RUNNER_TEMP/updater-channel-sync.json"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: updater-channel-sync-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/updater-channel-sync.json
-          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/updater-channel-sync.json
+            ${{ runner.temp }}/publication-stages.ndjson
+          if-no-files-found: warn
       - name: Record the first-attempt release time
         if: github.run_attempt == '1'
         shell: bash
         run: |
           node --input-type=module - "$RUNNER_TEMP/updater-channel-sync.json" <<'JS'
           import { appendFileSync, readFileSync } from 'node:fs';
-          const { workflow } = JSON.parse(readFileSync(process.argv[2], 'utf8'));
-          const elapsed = Math.round((Date.now() - Date.parse(workflow.run_started_at)) / 1000);
+          const { workflow, channel_verified_at } = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+          const elapsed = Math.round((Date.parse(channel_verified_at) - Date.parse(workflow.run_started_at)) / 1000);
           if (Number.isFinite(elapsed) && elapsed >= 0) {
             const minutes = (elapsed / 60).toFixed(1);
             appendFileSync(process.env.GITHUB_STEP_SUMMARY,
@@ -690,6 +706,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Locate the original successful seal receipt
+        id: receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_RUN: ${{ inputs.release-run-id }}
+          RELEASE_ATTEMPT: ${{ inputs.release-run-attempt }}
+        run: |
+          set -euo pipefail
+          id="$(node scripts/updater-release.mjs seal-receipt-id "$RELEASE_TAG" "$RELEASE_RUN" "$RELEASE_ATTEMPT")"
+          echo "artifact_id=$id" >> "$GITHUB_OUTPUT"
+      - name: Download the immutable original receipt by ID
+        if: steps.receipt.outputs.artifact_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.release-run-id }}
+          artifact-ids: ${{ steps.receipt.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/original-seal
       - name: Verify the original dual-desktop jobs and synchronize
         env:
           GH_TOKEN: ${{ github.token }}
@@ -697,7 +733,22 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
           RELEASE_RUN: ${{ inputs.release-run-id }}
           RELEASE_ATTEMPT: ${{ inputs.release-run-attempt }}
-        run: node scripts/updater-release.mjs "$RELEASE_MODE" "$RELEASE_TAG" "$RELEASE_RUN" "$RELEASE_ATTEMPT"
+          SEAL_ARTIFACT: ${{ steps.receipt.outputs.artifact_id }}
+          DZC_PUBLICATION_TRACE: ${{ runner.temp }}/publication-stages.ndjson
+        run: |
+          set -euo pipefail
+          receipt=()
+          if [[ -n "$SEAL_ARTIFACT" ]]; then receipt+=("$RUNNER_TEMP/original-seal/release-seal.json"); fi
+          node scripts/updater-release.mjs "$RELEASE_MODE" "$RELEASE_TAG" "$RELEASE_RUN" "$RELEASE_ATTEMPT" "${receipt[@]}" \
+            | tee "$RUNNER_TEMP/updater-channel-sync.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recovered-channel-attempt-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/updater-channel-sync.json
+            ${{ runner.temp }}/publication-stages.ndjson
+          if-no-files-found: warn
 
   sync-published-channel:
     name: Resume verified publication or synchronize update channel

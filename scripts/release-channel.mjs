@@ -93,7 +93,7 @@ export function dualChannelUpdate({ channel, manifest, identity, sameManifest })
     return { active, old, staged, stagedName: staged.name };
   }
 
-  function synchronize({ client, tag, repository, release, transport, log }) {
+  function synchronize({ client, tag, repository, release, transport, log, trace }) {
     let releaseId = release?.id;
     const load = () => {
       const observed = client.releaseByTag(tag);
@@ -115,6 +115,8 @@ export function dualChannelUpdate({ channel, manifest, identity, sameManifest })
     }
 
     let transition = inspect(client, release);
+    trace?.('channel-observed', { release_id: releaseId, active_asset_id: transition.active?.value.id,
+      old_asset_id: transition.old?.value.id, staged_asset_id: transition.staged?.id, manifest_sha256: contentHash });
     if (!transition.staged && transition.order === undefined) {
       const expected = transition.active;
       const name = `${prefix}${expected?.value.id ?? 0}-${expected?.hash ?? noPrevious}.json`;
@@ -143,10 +145,12 @@ export function dualChannelUpdate({ channel, manifest, identity, sameManifest })
     if (staged) {
       const old = transition.old?.value;
       const backupName = old && `${previous}${old.id}-${operation}.json`;
+      trace?.('channel-staging-readback', { release_id: releaseId, staged_asset_id: staged.id, old_asset_id: old?.id });
       try {
         if (transition.active) client.moveAsset(old, backupName);
         const ready = inspect(client, load());
         if (ready.active || ready.staged?.id !== staged.id) throw new Error('Updater transition changed before activation');
+        trace?.('channel-activation-requested', { release_id: releaseId, staged_asset_id: staged.id, old_asset_id: old?.id });
         client.moveAsset(staged, activeName);
       } catch (error) {
         const observed = inspect(client, load());
@@ -164,6 +168,7 @@ export function dualChannelUpdate({ channel, manifest, identity, sameManifest })
     if (result.order !== 0 || result.active.value.id !== intended || (staged && !result.active.bytes.equals(contents))) {
       throw new Error('Active updater channel readback differs');
     }
+    trace?.('channel-active-readback', { release_id: releaseId, active_asset_id: intended, draft: activated.draft });
     if (activated.draft) {
       try {
         transport(['release', 'edit', tag, '--repo', repository, '--draft=false', '--latest=false']);
@@ -176,6 +181,7 @@ export function dualChannelUpdate({ channel, manifest, identity, sameManifest })
         throw new Error('Published updater channel does not match its verified draft');
       }
     }
+    trace?.('channel-public-readback', { release_id: releaseId, active_asset_id: intended });
     log(`Verified ${activeName} for ${manifest.version}.`);
     return { status: staged || activated.draft ? 'synchronized' : 'already_synchronized', channel_version: manifest.version };
   }

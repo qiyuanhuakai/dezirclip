@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, publishAndSync, publishDual, syncPublished, resumeVerifiedDraft, promote as promoteFile, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
 import { attachDesktopCandidates, desktopArtifactIds, desktopReleaseTargets, expectedDesktopCandidateFiles, readStandaloneCandidates, standaloneArtifactIds, stageDesktopCandidate } from '../updater-release.mjs';
+import { releaseSealInputIds, releaseSealReceiptId, sealReleaseCandidate } from '../updater-release.mjs';
+import { candidateFilename, candidateSealJob } from '../release-candidate.mjs';
 
 const gateNames = ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'];
 const gateReport = (receipt, kind) => ({ schema_version: 1, kind, status: 'passed',
@@ -239,7 +241,7 @@ function publisherFixture(options = {}) {
       if (path === 'actions/workflows/release.yml') return json(state.workflow);
       if (path === 'actions/runs/7001' || path === 'actions/runs/7001/attempts/1') {
         if (path.endsWith('/attempts/1') && ++state.runReads === options.changeRunAt) state.run.head_sha = 'b'.repeat(40);
-        return json(state.run);
+        return json(path === 'actions/runs/7001' && state.latestRun ? state.latestRun : state.run);
       }
       if (path === 'actions/runs/7001/artifacts?per_page=100') {
         assert.deepEqual(args.slice(2), ['--paginate', '--slurp']);
@@ -318,6 +320,17 @@ function publisherFixture(options = {}) {
       state.channel.assets.push(asset(basename(path), readFileSync(path)));
       recordMutation('upload:channel');
       options.afterUpload?.(state, bytes);
+      return '';
+    }
+    if (action === 'upload' && target === tag) {
+      const path = args.at(-1);
+      assert.equal(basename(path), candidateFilename);
+      assert.equal(state.product.draft, true);
+      assert.equal(state.product.assets.some(value => value.name === candidateFilename), false);
+      assert.equal(args.includes('--clobber'), false);
+      state.product.assets.push({ ...asset(candidateFilename, readFileSync(path)),
+        created_at: '2026-10-21T01:05:00Z', updated_at: '2026-10-21T01:05:00Z' });
+      recordMutation('upload:candidate');
       return '';
     }
     if (action === 'edit' && (target === tag || target === 'updater-channels')) {
@@ -488,64 +501,67 @@ test('Arch packages and AUR recipes must be present before a Release with Arch p
   }
 });
 
+function currentDualFixture(version, native = false, linux = false, options = {}) {
+  const tag = `v${version}`;
+  const fixture = publisherFixture({ version, sync: true, dual: true, running: true, arch: true, ...options });
+  const readbacks = { releaseId: String(fixture.state.product.id) };
+  for (const kind of ['desktop', 'standalone']) {
+    const names = fixture.state.product.assets.filter(asset => asset.name.startsWith('dzc-') === (kind === 'standalone'));
+    readbacks[kind] = { schema_version: 1, kind, tag, source_revision: 'a'.repeat(40), release_id: readbacks.releaseId,
+      run_id: 7001, run_attempt: 1, assets: names.map(asset => ({ id: asset.id, size: asset.size,
+        name: asset.name, sha256: asset.digest.slice(7) })) };
+  }
+  readbacks.desktop.archives = desktopReleaseTargets.flatMap(target =>
+    expectedDesktopCandidateFiles(tag, target).filter(name => !name.endsWith('.sig')).map(name => ({
+      name, target, sha256: readbacks.desktop.assets.find(asset => asset.name === name).sha256,
+      members: name.endsWith('.src.tar.gz') ? {} : Object.fromEntries(['desktop', 'cli', 'service'].map(role =>
+        [role, { path: role, sha256: 'c'.repeat(64) }])),
+    })));
+  if (native) {
+    const variants = [
+      { variant: 'tauri', current: `DezirClip_${version}_x64-setup.exe`,
+        previous: 'DezirClip_0.2.0_x64-setup.exe', sha256: 'e9406e6da0ad5cbe64d1f45209ac82e34d8161d5d6ce2da50737f835c83e25dd' },
+      { variant: 'mygo', current: `DezirClip-v${version}-windows-x64-MyGo-setup.exe`,
+        previous: 'DezirClip-v0.2.0-windows-x64-MyGo-setup.exe', sha256: 'f7d408f94eec8118767457db90c43ef5e232ae0b6cce63d8c80c0704c33fca92' },
+    ];
+    readbacks.windows = variants.map(({ variant, current, previous, sha256 }) => {
+      const jobs = fixture.state.jobs;
+      jobs.push({ ...jobs[0], id: 8_000 + jobs.length, name: `Verify final Windows installer (${variant})` });
+      const archive = readbacks.desktop.archives.find(item => item.name === current);
+      return { schema_version: 1, origin: 'release-producer', status: 'passed', variant, tag, target: 'windows-x86_64',
+        source_revision: 'a'.repeat(40), run_id: 7001, run_attempt: 1, producer_artifact_id: '925',
+        current: { name: current, tag, source_revision: 'a'.repeat(40), sha256: archive.sha256 },
+        previous: { name: previous, tag: 'v0.2.0', source_revision: 'ba0ad71f7b9d8caddac45d0bc5588254a8273482', sha256 },
+        members: structuredClone(archive.members) };
+    });
+  }
+  if (linux) {
+    const targets = ['linux-x86_64', 'linux-aarch64'];
+    fixture.state.artifacts = targets.map((target, index) => ({
+      id: 950 + index, name: `release-desktop-${target}-1`, digest: 'sha256:' + 'd'.repeat(64),
+      expired: false, workflow_run: { id: 7001, head_sha: 'a'.repeat(40), repository_id: 90, head_repository_id: 90 },
+    }));
+    readbacks.linux = targets.map((target, index) => {
+      const jobs = fixture.state.jobs;
+      jobs.push({ ...jobs[0], id: 8_000 + jobs.length, name: `Verify final Linux desktop runtime (${target})` });
+      return { schema_version: 1, origin: 'release-producer', status: 'passed', tag, target,
+        source_revision: 'a'.repeat(40), run_id: 7001, run_attempt: 1,
+        producer_artifact_id: String(fixture.state.artifacts[index].id),
+        packages: readbacks.desktop.archives.filter(archive => archive.target === target && !archive.name.endsWith('.src.tar.gz'))
+          .map(({ name, sha256, members }) => ({ name, sha256, members: structuredClone(members),
+            size: readbacks.desktop.assets.find(asset => asset.name === name).size,
+            runtime: name.endsWith('.AppImage') ? 'appimage' : 'extracted-native-launcher',
+            history_rendered: true, service_verified: true })),
+      };
+    });
+  }
+  return { ...fixture, readbacks };
+}
+
 test('a current workflow publishes only the asset identities read back from its original draft', () => {
   const version = '0.2.1-beta.1';
   const tag = `v${version}`;
-  const make = (native = false, linux = false) => {
-    const fixture = publisherFixture({ version, sync: true, dual: true, running: true, arch: true });
-    const readbacks = { releaseId: String(fixture.state.product.id) };
-    for (const kind of ['desktop', 'standalone']) {
-      const names = fixture.state.product.assets.filter(asset => asset.name.startsWith('dzc-') === (kind === 'standalone'));
-      readbacks[kind] = { schema_version: 1, kind, tag, source_revision: 'a'.repeat(40), release_id: readbacks.releaseId,
-        run_id: 7001, run_attempt: 1, assets: names.map(asset => ({ id: asset.id, size: asset.size,
-          name: asset.name, sha256: asset.digest.slice(7) })) };
-    }
-    readbacks.desktop.archives = desktopReleaseTargets.flatMap(target =>
-      expectedDesktopCandidateFiles(tag, target).filter(name => !name.endsWith('.sig')).map(name => ({
-        name, target, sha256: readbacks.desktop.assets.find(asset => asset.name === name).sha256,
-        members: name.endsWith('.src.tar.gz') ? {} : Object.fromEntries(['desktop', 'cli', 'service'].map(role =>
-          [role, { path: role, sha256: 'c'.repeat(64) }])),
-      })));
-    if (native) {
-      const variants = [
-        { variant: 'tauri', current: `DezirClip_${version}_x64-setup.exe`,
-          previous: 'DezirClip_0.2.0_x64-setup.exe', sha256: 'e9406e6da0ad5cbe64d1f45209ac82e34d8161d5d6ce2da50737f835c83e25dd' },
-        { variant: 'mygo', current: `DezirClip-v${version}-windows-x64-MyGo-setup.exe`,
-          previous: 'DezirClip-v0.2.0-windows-x64-MyGo-setup.exe', sha256: 'f7d408f94eec8118767457db90c43ef5e232ae0b6cce63d8c80c0704c33fca92' },
-      ];
-      readbacks.windows = variants.map(({ variant, current, previous, sha256 }) => {
-        const jobs = fixture.state.jobs;
-        jobs.push({ ...jobs[0], id: 8_000 + jobs.length, name: `Verify final Windows installer (${variant})` });
-        const archive = readbacks.desktop.archives.find(item => item.name === current);
-        return { schema_version: 1, origin: 'release-producer', status: 'passed', variant, tag, target: 'windows-x86_64',
-          source_revision: 'a'.repeat(40), run_id: 7001, run_attempt: 1, producer_artifact_id: '925',
-          current: { name: current, tag, source_revision: 'a'.repeat(40), sha256: archive.sha256 },
-          previous: { name: previous, tag: 'v0.2.0', source_revision: 'ba0ad71f7b9d8caddac45d0bc5588254a8273482', sha256 },
-          members: structuredClone(archive.members) };
-      });
-    }
-    if (linux) {
-      const targets = ['linux-x86_64', 'linux-aarch64'];
-      fixture.state.artifacts = targets.map((target, index) => ({
-        id: 950 + index, name: `release-desktop-${target}-1`, digest: 'sha256:' + 'd'.repeat(64),
-        expired: false, workflow_run: { id: 7001, head_sha: 'a'.repeat(40), repository_id: 90, head_repository_id: 90 },
-      }));
-      readbacks.linux = targets.map((target, index) => {
-        const jobs = fixture.state.jobs;
-        jobs.push({ ...jobs[0], id: 8_000 + jobs.length, name: `Verify final Linux desktop runtime (${target})` });
-        return { schema_version: 1, origin: 'release-producer', status: 'passed', tag, target,
-          source_revision: 'a'.repeat(40), run_id: 7001, run_attempt: 1,
-          producer_artifact_id: String(fixture.state.artifacts[index].id),
-          packages: readbacks.desktop.archives.filter(archive => archive.target === target && !archive.name.endsWith('.src.tar.gz'))
-            .map(({ name, sha256, members }) => ({ name, sha256, members: structuredClone(members),
-              size: readbacks.desktop.assets.find(asset => asset.name === name).size,
-              runtime: name.endsWith('.AppImage') ? 'appimage' : 'extracted-native-launcher',
-              history_rendered: true, service_verified: true })),
-        };
-      });
-    }
-    return { ...fixture, readbacks };
-  };
+  const make = (native, linux) => currentDualFixture(version, native, linux);
   const publish = fixture => publishDual('publish-dual', version, fixture.config, 7001, 1, () => {},
     fixture.transport, fixture.readbacks);
   assert.equal(publish(make()).status, 'synchronized');
@@ -606,6 +622,141 @@ test('a current workflow publishes only the asset identities read back from its 
     assert.deepEqual(fixture.state.mutations, []);
   }
 });
+
+function sealFixture(options) {
+  const version = '0.2.1-beta.1', tag = 'v' + version, source = 'a'.repeat(40);
+  const fixture = currentDualFixture(version, true, true, options);
+  const { state, readbacks, transport, config } = fixture;
+  const publisher = state.jobs.find(job => job.name.startsWith('Verify signed artifacts'));
+  publisher.status = 'queued';
+  const seal = { ...state.jobs[0], name: candidateSealJob, id: 9000,
+    status: 'in_progress', conclusion: null, started_at: '2026-10-21T01:01:00Z', completed_at: null };
+  state.jobs.push(seal, { ...state.jobs[0], name: 'Source acceptance / Darwin native foundations',
+    id: 9001, status: 'completed', conclusion: 'skipped' });
+  readbacks.source = { schema_version: 1, source_revision: source, run_id: 7001, run_attempt: 1,
+    mode: 'source-acceptance', desktop_targets: ['linux-x86_64', 'windows-x86_64'],
+    jobs: Object.fromEntries(['frontend', 'rust-development', 'go-development', 'ci-desktop-plan', 'tauri']
+      .map(job => [job, 'success'])) };
+  const reports = ['source-acceptance-1', 'verified-desktop-assets-1', 'verified-standalone-assets-1',
+    'windows-candidate-tauri-1', 'windows-candidate-mygo-1', 'linux-runtime-linux-x86_64-1', 'linux-runtime-linux-aarch64-1'];
+  const others = [
+    'release-desktop-windows-x86_64-1', 'release-desktop-windows-aarch64-1',
+    ...desktopReleaseTargets.map(target => 'release-cli-1-' + target),
+  ];
+  state.artifacts.push(...[...reports, ...others].map((name, index) => ({
+    ...state.artifacts[0], id: 1000 + index, name,
+  })));
+  for (const artifact of state.artifacts) {
+    Object.assign(artifact, { created_at: '2026-10-21T00:20:00Z', size_in_bytes: 1000 });
+  }
+  const windowsId = state.artifacts.find(artifact => artifact.name === others[0]).id;
+  for (const report of readbacks.windows) report.producer_artifact_id = String(windowsId);
+  const reportIds = reports.map(name => state.artifacts.find(artifact => artifact.name === name).id);
+  return { ...fixture, publisher, seal,
+    inputIds: () => releaseSealInputIds(tag, source, 7001, 1, transport),
+    recoveryId: () => releaseSealReceiptId(tag, 7001, 1, transport),
+    reportIds,
+    attach: (ids = reportIds) => sealReleaseCandidate(tag, 7001, 1, readbacks, ids.join(','), transport),
+    sealSucceeded() {
+      Object.assign(seal, { status: 'completed', conclusion: 'success', completed_at: '2026-10-21T01:10:00Z' });
+      publisher.status = 'in_progress';
+      state.artifacts.push({ ...state.artifacts[0], name: 'release-seal-attempt-1',
+        id: 1788, created_at: '2026-10-21T01:07:00Z' });
+    },
+    publish: (mode, identity, trace) => publishDual(mode, tag, config, 7001, 1, () => {}, transport, undefined,
+      identity && { id: identity.id, sha256: identity.sha256, releaseId: identity.release_id }, trace),
+  };
+}
+
+test('the independent sealing job freezes 40 products and reuses its original attachment after a lost response', () => {
+  const fixture = sealFixture({ loseResponseAfter: 'upload:candidate' });
+  assert.deepEqual(fixture.inputIds(), fixture.reportIds);
+  const first = fixture.attach();
+  assert.deepEqual(fixture.attach(), first);
+  assert.deepEqual(fixture.state.mutations, ['upload:candidate']);
+  assert.equal(fixture.state.product.assets.length, 41);
+  assert.equal(fixture.state.product.draft, true);
+  fixture.sealSucceeded();
+  const stages = [];
+  const result = fixture.publish('publish-dual', first, stage => stages.push(stage));
+  assert.equal(result.status, 'synchronized');
+  assert.equal(result.sealed_candidate.id, first.id);
+  assert.deepEqual(stages, ['candidate-verified', 'publish-product-requested', 'product-public-readback',
+    'channel-observed', 'channel-staging-readback', 'channel-activation-requested',
+    'channel-active-readback', 'channel-public-readback']);
+});
+
+test('a successful seal permits publisher-only cancellation recovery', () => {
+  const fixture = sealFixture();
+  const original = fixture.attach();
+  fixture.sealSucceeded();
+  Object.assign(fixture.publisher, { status: 'completed', conclusion: 'cancelled' });
+  Object.assign(fixture.state.run, { status: 'completed', conclusion: 'cancelled' });
+  fixture.state.latestRun = { ...fixture.state.run, run_attempt: 2, conclusion: 'failure' };
+  assert.equal(fixture.recoveryId(), 1788);
+  assert.throws(() => fixture.publish('resume-dual-draft'), /original frozen candidate receipt/);
+  assert.throws(() => fixture.publish('resume-dual-draft', { ...original, id: original.id + 1 }), /seal job outputs/);
+  assert.equal(fixture.publish('resume-dual-draft', original).sealed_candidate.id, original.id);
+  assert.equal(fixture.publish('sync-dual-channel', original).sealed_candidate.id, original.id);
+});
+
+test('an interrupted sealing process leaves the original bytes recoverable but grants no publication authority', () => {
+  const fixture = sealFixture({ stopAfter: 'upload:candidate' });
+  assert.throws(() => fixture.attach(), /Synthetic publisher interruption/);
+  fixture.state.interrupted = false;
+  const saved = fixture.state.product.assets.at(-1).id;
+  assert.throws(() => fixture.publish('publish-dual'), /gates/);
+  const checked = fixture.attach();
+  assert.equal(checked.id, saved);
+  assert.deepEqual(fixture.state.mutations, ['upload:candidate']);
+  fixture.sealSucceeded();
+  assert.equal(fixture.publish('publish-dual', checked).sealed_candidate.id, saved);
+});
+
+for (const [name, change] of [
+  ['bad source receipt', fixture => { fixture.readbacks.source.source_revision = 'f'.repeat(40); }],
+  ['missing report', fixture => { fixture.state.artifacts = fixture.state.artifacts.filter(artifact => artifact.id !== fixture.reportIds[0]); }],
+  ['wrong Windows producer', fixture => fixture.readbacks.windows.forEach(report => { report.producer_artifact_id = '1'; })],
+  ['late producer artifact', fixture => { fixture.state.artifacts[0].created_at = '2026-10-21T01:15:00Z'; }],
+  ['late standalone product', fixture => {
+    fixture.state.jobs.find(job => job.name === 'Upload verified desktop assets').completed_at = '2026-10-21T01:20:00Z';
+    fixture.state.product.assets.find(asset => asset.name.startsWith('dzc-')).updated_at = '2026-10-21T01:05:00Z';
+  }],
+  ['unverified native package', fixture => {
+    fixture.state.jobs.find(job => job.name === 'Verify final Windows installer (tauri)').conclusion = 'failure';
+  }],
+]) {
+  test('seal refuses ' + name, () => {
+    const fixture = sealFixture();
+    change(fixture);
+    assert.throws(() => fixture.attach());
+    assert.deepEqual(fixture.state.mutations, []);
+  });
+}
+
+for (const [name, change] of [
+  ['missing evidence', fixture => { fixture.state.product.assets.pop(); }],
+  ['conflicting evidence bytes', fixture => {
+    fixture.state.product.assets.at(-1).digest = 'sha256:' + 'f'.repeat(64);
+  }],
+  ['unknown extra attachment', fixture => {
+    fixture.state.product.assets.push({ ...fixture.state.product.assets[0], id: 2222, name: 'other.json' });
+  }],
+  ['evidence moved after the seal', fixture => {
+    fixture.state.product.assets.at(-1).updated_at = '2026-10-21T01:11:00Z';
+  }],
+  ['producer replaced after seal', fixture => { fixture.state.artifacts[0].id = 9999; }],
+  ['cancelled seal', fixture => { fixture.seal.conclusion = 'cancelled'; }],
+]) {
+  test('publication refuses ' + name, () => {
+    const fixture = sealFixture();
+    fixture.attach();
+    fixture.sealSucceeded();
+    change(fixture);
+    assert.throws(() => fixture.publish('publish-dual'));
+    assert.deepEqual(fixture.state.mutations, ['upload:candidate']);
+  });
+}
 
 test('desktop download resolves only unique artifacts from the exact candidate attempt', () => {
   const candidate = { source: 'a'.repeat(40), runId: '7001', attempt: '2' };

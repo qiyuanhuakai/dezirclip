@@ -165,3 +165,6 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **C7 历史发布入口退役**。远端确认 alpha.2 的原 release 早已公开，alpha.9 的 MyGo 安装器也已具备 GitHub 资产摘要。删除两项手动菜单及对应 jobs，保留历史验收材料和最新版的 tag、双桌面恢复及更新通道入口。YAML 校验覆盖 11 个发布任务的依赖，打包与 updater 两套 Node 测试 146 项通过。 [alpha.2](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.2) [alpha.9](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.9)
 
 - **C6 双桌面更新通道恢复**。首次创建草稿时写入候选归属，staging 名绑定候选、manifest 内容和旧 active 的资产 ID 与哈希。恢复可复用原 staging 或已激活的同一资产，拒绝归属未知的草稿、staging 及缺失 active 的未识别状态。在离线 GitHub API 模型中分别中断产品公开、草稿创建、上传、备份改名、激活和草稿公开，原 run 的成功前置仍受既有检查。126 项 updater 测试通过。取消的原 run 准入和独立候选封存仍待接入。
+
+- **M2 Swift 握手与帧约束**。Swift package 从现有 JSON Schema 生成握手 DTO 和传输上限。macOS 26 ARM64 托管运行通过有界读写、取消、嵌套、非法权限、整数边界以及缺失和 null 的区分。签名 Swift helper 在核对实际 Rust 进程身份后使用这套握手，并验证实例和权限。Host 响应来自原型。历史、订阅、snapshot 和生产 grant 仍在后续范围。 [Darwin 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46111989195)
+- **C5/C6 候选冻结与发布恢复**。正常发布先在独立 job 封存 40 项产品和固定名称的候选附件。附件绑定原 release ID、原源码验收及构建/验收/上传 artifact、各产品上传截止时间和待发布通道摘要。公开任务核对成功封存 job 的资产 ID 与 hash。恢复任务从原成功封存 job 按 ID 下载凭据，在全部原前置均成功的情况下可继续 publisher 取消后的发布。离线模拟验证上传响应丢失与原字节复用、错误 producer、额外附件、不同截止时间及取消门槛。独立复核被取消的封存 job 与真实 tag 链仍待验证。

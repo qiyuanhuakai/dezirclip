@@ -44,12 +44,21 @@ function assertReleaseSourceRouting(workflow) {
   assert.match(create, /^      source: \$\{\{ github\.sha \}\}$/m);
   assert.match(create, /^      release_id: \$\{\{ steps\.release\.outputs\.release_id \}\}$/m);
   assert.doesNotMatch(workflow, /resume-existing-alpha2|publish-mygo-installer|publish-historical-recovery/);
+  const seal = releaseJob(workflow, "seal-candidate");
+  assert.match(seal, /RELEASE_SOURCE: \$\{\{ needs\.create-release\.outputs\.source \}\}/);
+  assert.match(seal, /ACCEPTED_SOURCE: \$\{\{ needs\.accept-source\.outputs\.accepted_source \}\}/);
+  assert.match(seal, /needs: \[create-release, upload-desktop, publish-standalone-cli, accept-source, verify-windows-candidate, verify-linux-runtime\]/);
+  assert.match(seal, /updater-release\.mjs seal-dual/);
   const promote = releaseJob(workflow, "verify-publish-and-promote");
-  assert.match(promote, /RELEASE_SOURCE: \$\{\{ needs\.create-release\.outputs\.source \}\}/);
+  assert.match(promote, /needs: \[create-release, seal-candidate\]/);
+  assert.match(promote, /SEAL_ID: \$\{\{ needs\.seal-candidate\.outputs\.asset_id \}\}/);
+  assert.match(promote, /SEAL_SHA256: \$\{\{ needs\.seal-candidate\.outputs\.sha256 \}\}/);
+  assert.match(promote, /updater-release\.mjs publish-sealed-dual/);
   const recover = releaseJob(workflow, "recover-dual-release");
   assert.match(recover, /inputs\.mode == 'resume-dual-draft'/);
-  assert.match(recover, /RELEASE_RUN: \$\{\{ inputs\.release-run-id \}\}/);
-  assert.match(recover, /RELEASE_ATTEMPT: \$\{\{ inputs\.release-run-attempt \}\}/);
+  assert.equal([...recover.matchAll(/RELEASE_RUN: \$\{\{ inputs\.release-run-id \}\}/g)].length, 2);
+  assert.equal([...recover.matchAll(/RELEASE_ATTEMPT: \$\{\{ inputs\.release-run-attempt \}\}/g)].length, 2);
+  assert.match(recover, /artifact-ids: \$\{\{ steps\.receipt\.outputs\.artifact_id \}\}/);
 }
 
 function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = "release", portable = false, omitOutput = false, withDesktop = false } = {}) {
@@ -212,7 +221,6 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(rpmStep, /echo "rpm=\$rpm_path" >> "\$GITHUB_OUTPUT"/);
   assert.match(rpmStep, /--reuse-sidecars/);
   assertReleaseSourceRouting(workflow);
-  const promotion = releaseJob(workflow, "verify-publish-and-promote");
   const desktop = releaseJob(workflow, "publish-desktop");
   for (const target of ["linux-x86_64", "linux-aarch64", "windows-x86_64", "windows-aarch64"]) {
     assert(desktop.includes(`- name: ${target}`));
@@ -228,8 +236,6 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(releaseJob(workflow, 'upload-desktop'), /updater-release\.mjs attach-desktop/);
   assert.match(releaseJob(workflow, 'build-standalone-cli'), /package-only: true/);
   assert.match(releaseJob(workflow, 'accept-source'), /uses: \.\/\.github\/workflows\/ci\.yml/);
-  assert.match(promotion, /needs: \[create-release, upload-desktop, publish-standalone-cli, accept-source, verify-windows-candidate, verify-linux-runtime\]/);
-  assert.match(promotion, /updater-release\.mjs publish-dual/);
   assert.doesNotMatch(workflow, /publish-flatpak/);
 });
 
@@ -238,6 +244,8 @@ test("release source routing rejects tag mismatch, lost recovery identity or ret
   const changes = [
     ["changed tag source", value => value.replace("source: ${{ github.sha }}", "source: ${{ github.ref_name }}")],
     ["lost prerequisite source", value => value.replace("RELEASE_SOURCE: ${{ needs.create-release.outputs.source }}", "RELEASE_SOURCE: ${{ github.ref_name }}")],
+    ["publishes around seal", value => value.replace("needs: [create-release, seal-candidate]", "needs: [create-release]")],
+    ["lost immutable asset identity", value => value.replace("SEAL_ID: ${{ needs.seal-candidate.outputs.asset_id }}", "SEAL_ID: 1")],
     ["lost original attempt", value => value.replace("RELEASE_ATTEMPT: ${{ inputs.release-run-attempt }}", "RELEASE_ATTEMPT: 1")],
     ["retired operation", value => value.replace("resume-dual-draft,", "resume-dual-draft, resume-existing-alpha2,")],
   ];
