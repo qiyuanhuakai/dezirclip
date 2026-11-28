@@ -1,9 +1,9 @@
 import AppKit
 import Darwin
 import DzcProtocol
+import DzcSession
 import DzcTransport
 import Foundation
-import Security
 
 struct ProbeFailure: Error {
     let message: String
@@ -42,100 +42,8 @@ func require(_ condition: Bool, _ message: String) throws {
     if !condition { throw ProbeFailure(message) }
 }
 
-func connect(to path: String, until deadline: Date) throws -> Int32 {
-    var address = sockaddr_un()
-    let bytes = path.utf8CString.map(UInt8.init(bitPattern:))
-    try require(bytes.count <= MemoryLayout.size(ofValue: address.sun_path), "socket path too long")
-    let length = MemoryLayout.size(ofValue: address.sun_len) + MemoryLayout.size(ofValue: address.sun_family) + bytes.count
-    address.sun_family = sa_family_t(AF_UNIX)
-    address.sun_len = UInt8(length)
-    withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: bytes) }
-    repeat {
-        let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
-        try require(fd >= 0, "socket creation failed")
-        let status = withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.connect(fd, $0, socklen_t(length))
-            }
-        }
-        if status == 0 {
-            var timeout = timeval(tv_sec: 2, tv_usec: 0)
-            var noSignal: Int32 = 1
-            if setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size)) == 0,
-               setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size)) == 0,
-               setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size)) == 0 {
-                return fd
-            }
-            Darwin.close(fd)
-            throw ProbeFailure("could not bound socket I/O")
-        }
-        let error = errno
-        Darwin.close(fd)
-        try require(error == ENOENT || error == ECONNREFUSED, "socket connection failed")
-        Thread.sleep(forTimeInterval: 0.025)
-    } while Date() < deadline
-    throw ProbeFailure("helper did not open its socket")
-}
-
-func requireChild(_ fd: Int32, pid: Int32, executable: URL) throws {
-    var uid: uid_t = 0
-    var gid: gid_t = 0
-    try require(getpeereid(fd, &uid, &gid) == 0 && uid == geteuid(), "incorrect socket user")
-    var peerPID: pid_t = 0
-    var length = socklen_t(MemoryLayout<pid_t>.size)
-    try require(getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &peerPID, &length) == 0
-                && length == MemoryLayout<pid_t>.size && peerPID == pid, "incorrect socket process")
-
-    // Ask Security.framework about the live peer identified by the kernel's
-    // audit token. The PID by itself may have been reused.
-    var token = [UInt32](repeating: 0, count: 8)
-    let audit: Data = try token.withUnsafeMutableBytes { storage in
-        var count = socklen_t(storage.count)
-        try require(getsockopt(fd, SOL_LOCAL, LOCAL_PEERTOKEN, storage.baseAddress, &count) == 0
-                    && count == storage.count, "socket audit token unavailable")
-        return Data(storage)
-    }
-    var process: SecCode?
-    let attributes = [kSecGuestAttributeAudit as String: audit] as CFDictionary
-    try require(SecCodeCopyGuestWithAttributes(nil, attributes, [], &process) == errSecSuccess, "unrecognized signed process")
-    guard let process else { throw ProbeFailure("missing signed process") }
-    try require(SecCodeCheckValidity(process, [], nil) == errSecSuccess, "invalid live helper signature")
-
-    var live: SecStaticCode?
-    var installed: SecStaticCode?
-    try require(SecCodeCopyStaticCode(process, [], &live) == errSecSuccess, "missing live helper code")
-    try require(SecStaticCodeCreateWithPath(executable as CFURL, [], &installed) == errSecSuccess, "missing expected helper code")
-    guard let live, let installed else { throw ProbeFailure("missing comparable helper code") }
-    try require(SecStaticCodeCheckValidity(installed, [], nil) == errSecSuccess, "invalid expected helper signature")
-    func codeHash(_ code: SecStaticCode) throws -> Data {
-        var information: CFDictionary?
-        try require(SecCodeCopySigningInformation(code, SecCSFlags(rawValue: UInt32(kSecCSSigningInformation)), &information) == errSecSuccess,
-                    "missing signing information")
-        guard let hash = (information as? [String: Any])?[kSecCodeInfoUnique as String] as? Data, !hash.isEmpty else {
-            throw ProbeFailure("missing code directory hash")
-        }
-        return hash
-    }
-    let liveHash = try codeHash(live)
-    let installedHash = try codeHash(installed)
-    try require(liveHash == installedHash, "helper code identity differs")
-}
-
-private func bundledHost() throws -> URL {
-    let bundle = Bundle.main.bundleURL.resolvingSymlinksInPath()
-    try require(bundle.pathExtension == "app", "the Host must be launched from the signed app bundle")
-    let helper = bundle.appendingPathComponent("Contents/Helpers/dzc-darwin-host", isDirectory: false)
-    try require(helper.resolvingSymlinksInPath().path == helper.path, "the bundled Host path contains a symbolic link")
-    let values = try helper.resourceValues(forKeys: [.isRegularFileKey, .isExecutableKey])
-    try require(values.isRegularFile == true && values.isExecutable == true, "the bundle does not contain an executable Host")
-    var signedBundle: SecStaticCode?
-    try require(SecStaticCodeCreateWithPath(bundle as CFURL, [], &signedBundle) == errSecSuccess,
-                "the app bundle signature is unavailable")
-    guard let signedBundle else { throw ProbeFailure("the app bundle code object is missing") }
-    let flags = SecCSFlags(rawValue: UInt32(kSecCSCheckNestedCode) | UInt32(kSecCSStrictValidate))
-    try require(SecStaticCodeCheckValidity(signedBundle, flags, nil) == errSecSuccess,
-                "the app bundle or nested Host signature is invalid")
-    return helper
+private func requireChild(_ fd: Int32, pid: Int32, executable: URL) throws {
+    try DarwinHostPeer.requireChild(fd, pid: pid, expectedHash: DarwinHostPeer.installedCodeHash(executable))
 }
 
 @MainActor
@@ -150,7 +58,7 @@ func request(_ connection: LocalFrameConnection, id: String, method: String, par
     return result
 }
 
-func verifyCancelledRead(helper: URL, directory: String, socket: String) throws {
+func verifyCancelledRead(helper: URL, directory: String, socket: String) async throws {
     let child = Process()
     let lifetime = Pipe()
     child.executableURL = helper
@@ -161,14 +69,14 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
         if child.isRunning { child.terminate() }
         child.waitUntilExit()
     }
-    let fd = try connect(to: socket, until: Date().addingTimeInterval(5))
+    let fd = try await DarwinHostPeer.connect(to: socket, timeout: .seconds(5))
     defer { Darwin.close(fd) }
     try requireChild(fd, pid: child.processIdentifier, executable: helper)
     var partialHeader: UInt8 = 0
     try require(Darwin.write(fd, &partialHeader, 1) == 1, "failed to start a partial frame")
     try lifetime.fileHandleForWriting.close()
     let deadline = Date().addingTimeInterval(2)
-    while child.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+    while child.isRunning && Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
     try require(!child.isRunning && child.terminationStatus == 0, "closing the parent did not cancel the partial frame")
 }
 
@@ -177,15 +85,14 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
     static func main() async throws {
         let args = CommandLine.arguments
         if args.count == 3, args[1] == "--foreign-host" {
-            try verifyForeignProcessRejected(socket: args[2])
+            try await verifyForeignProcessRejected(socket: args[2])
             return
         }
         if args.count == 3, args[1] == "--bundled-host" {
             do {
-                let helper = try bundledHost()
-                try await verifySharedHost(helper: helper, directory: URL(fileURLWithPath: args[2], isDirectory: true))
+                try await verifySharedHost(directory: URL(fileURLWithPath: args[2], isDirectory: true))
             } catch {
-                let message = (error as? ProbeFailure)?.message ?? String(describing: error)
+                let message = (error as? DarwinHostLaunchError)?.message ?? (error as? ProbeFailure)?.message ?? String(describing: error)
                 FileHandle.standardError.write(Data((message + "\n").utf8))
                 exit(EXIT_FAILURE)
             }
@@ -204,17 +111,17 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
             if child.isRunning { child.terminate() }
             child.waitUntilExit()
         }
-        let fd = try connect(to: socket, until: Date().addingTimeInterval(5))
+        let fd = try await DarwinHostPeer.connect(to: socket, timeout: .seconds(5))
         var adopted = false
         defer { if !adopted { Darwin.close(fd) } }
         do {
             try requireChild(fd, pid: getpid(), executable: helper)
             throw ProbeFailure("accepted unexpected process")
-        } catch let failure as ProbeFailure where failure.message == "incorrect socket process" {}
+        } catch let failure as DarwinHostLaunchError where failure.message == "incorrect socket process" {}
         do {
             try requireChild(fd, pid: child.processIdentifier, executable: URL(fileURLWithPath: "/usr/bin/true"))
             throw ProbeFailure("accepted unexpected code")
-        } catch let failure as ProbeFailure where failure.message == "helper code identity differs" {}
+        } catch let failure as DarwinHostLaunchError where failure.message == "helper code identity differs" {}
         try requireChild(fd, pid: child.processIdentifier, executable: helper)
         let connection = LocalFrameConnection(verifiedSocket: fd)
         adopted = true
@@ -249,7 +156,7 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
         try require(list["keychain_verified"] as? Bool == true, "missing helper keychain proof")
         child.waitUntilExit()
         try require(child.terminationStatus == 0, "helper exited unsuccessfully")
-        try verifyCancelledRead(helper: helper, directory: args[2], socket: socket)
+        try await verifyCancelledRead(helper: helper, directory: args[2], socket: socket)
         print("Verified the Darwin UID, live signed helper, framed Rust wire responses, system pasteboard, isolated Keychain and cancelled partial read")
     }
 }

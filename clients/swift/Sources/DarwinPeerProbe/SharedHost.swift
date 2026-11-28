@@ -1,20 +1,17 @@
 import AppKit
 import Darwin
-import Dispatch
 import DzcProtocol
 import DzcSession
-import DzcTransport
 import Foundation
 
 private struct Bootstrap: Decodable {
     let instance: String
-    let grant: String
     let entryId: Int64
     let marker: String
     let socket: String
 
     private enum CodingKeys: String, CodingKey {
-        case instance, grant, marker, socket
+        case instance, marker, socket
         case entryId = "entry_id"
     }
 }
@@ -28,29 +25,9 @@ private struct RevokeReceipt: Decodable {
     let revoked: Bool
 }
 
-private func receipt<T: Decodable>(_ pipe: Pipe) throws -> T {
-    let fd = pipe.fileHandleForReading.fileDescriptor
-    let deadline = DispatchTime.now().uptimeNanoseconds + 5_000_000_000
-    var data = Data()
-    while data.count < 4096 {
-        let now = DispatchTime.now().uptimeNanoseconds
-        guard now < deadline else { throw ProbeFailure("helper receipt timed out") }
-        let remaining = Int32((deadline - now + 999_999) / 1_000_000)
-        var interest = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
-        let ready = Darwin.poll(&interest, 1, remaining)
-        if ready == 0 || (ready == -1 && errno == EINTR) { continue }
-        try require(ready > 0, "helper receipt pipe unavailable")
-        var byte: UInt8 = 0
-        try require(Darwin.read(fd, &byte, 1) == 1, "incomplete helper receipt")
-        if byte == 10 { return try JSONDecoder().decode(T.self, from: data) }
-        data.append(byte)
-    }
-    throw ProbeFailure("helper receipt exceeded its limit")
-}
-
 /// Runs in a same-user process other than the helper's actual launcher.
-func verifyForeignProcessRejected(socket: String) throws {
-    let fd = try connect(to: socket, until: Date().addingTimeInterval(2))
+func verifyForeignProcessRejected(socket: String) async throws {
+    let fd = try await DarwinHostPeer.connect(to: socket, timeout: .seconds(2))
     defer { Darwin.close(fd) }
     // The listener checks the actual parent PID before reading a frame. An
     // accepted peer would stay open here until the Host's read deadline.
@@ -62,39 +39,23 @@ func verifyForeignProcessRejected(socket: String) throws {
 }
 
 @MainActor
-func verifySharedHost(helper: URL, directory: URL) async throws {
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
-                                            attributes: [.posixPermissions: 0o700])
-    let child = Process()
-    let lifetime = Pipe()
-    let output = Pipe()
-    child.executableURL = helper
-    child.arguments = [directory.path]
-    child.standardInput = lifetime
-    child.standardOutput = output
-    try child.run()
-    defer {
-        try? lifetime.fileHandleForWriting.close()
-        if child.isRunning { child.terminate() }
-        child.waitUntilExit()
+func verifySharedHost(directory: URL) async throws {
+    let (host, receipt) = try await BundledDesktopHost.launchWithReceipt(in: directory, clientVersion: "darwin-host-fixture")
+    do {
+        let credentials = try JSONDecoder().decode(Bootstrap.self, from: receipt)
+        try await verifyStartedHost(host, credentials: credentials)
+    } catch {
+        try? await host.stop()
+        throw error
     }
-    let credentials: Bootstrap = try receipt(output)
+}
+
+@MainActor
+private func verifyStartedHost(_ host: BundledDesktopHost, credentials: Bootstrap) async throws {
     let socket = credentials.socket
     let control = URL(fileURLWithPath: socket).deletingLastPathComponent().appendingPathComponent("host.control.json")
     try require(!FileManager.default.fileExists(atPath: control.path),
                 "inherited grant was written into discovery")
-    func open(grant: String, requireCopy: Bool = false) async throws -> DesktopSession {
-        let fd = try connect(to: socket, until: Date().addingTimeInterval(3))
-        do {
-            try requireChild(fd, pid: child.processIdentifier, executable: helper)
-        } catch {
-            Darwin.close(fd)
-            throw error
-        }
-        return try await DesktopSession.open(verifiedSocket: fd, expectedInstance: credentials.instance,
-                                             grant: grant, clientVersion: "darwin-host-fixture", requireCopy: requireCopy)
-    }
-
     let foreign = Process()
     foreign.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
     foreign.arguments = ["--foreign-host", socket]
@@ -102,13 +63,15 @@ func verifySharedHost(helper: URL, directory: URL) async throws {
     foreign.waitUntilExit()
     try require(foreign.terminationStatus == 0, "Host accepted an unrelated process")
     do {
-        _ = try await open(grant: String(repeating: "a", count: 64))
+        let fd = try await host.verifiedSocket()
+        _ = try await DesktopSession.open(verifiedSocket: fd, expectedInstance: credentials.instance,
+                                          grant: String(repeating: "a", count: 64), clientVersion: "darwin-host-fixture")
         throw ProbeFailure("Host accepted an invalid Desktop grant")
     } catch DesktopSessionError.remote(.permissionDenied) {}
 
-    let query = try await open(grant: credentials.grant)
-    let events = try await open(grant: credentials.grant)
-    let actions = try await open(grant: credentials.grant, requireCopy: true)
+    let query = try await host.openSession()
+    let events = try await host.openSession()
+    let actions = try await host.openSession(requireCopy: true)
     try require(Set(actions.hello.permissions) == [.historyRead, .desktopHistory, .clipboardCopy],
                 "fixture received unexpected permission")
     try require(Set([query.hello.sessionId, events.hello.sessionId, actions.hello.sessionId]).count == 3,
@@ -139,12 +102,12 @@ func verifySharedHost(helper: URL, directory: URL) async throws {
         throw ProbeFailure("cancelled subscription returned success")
     } catch is CancellationError {}
     await events.close()
-    let resumed = try await open(grant: credentials.grant)
+    let resumed = try await host.openSession()
     try require(resumed.hello.state.serviceInstanceId == events.hello.state.serviceInstanceId &&
                 resumed.hello.sessionId != events.hello.sessionId, "reconnect reused the retired session")
 
-    try lifetime.fileHandleForWriting.write(contentsOf: Data([UInt8(ascii: "p")]))
-    let privacy: PrivacyReceipt = try receipt(output)
+    try await host.sendCommand(UInt8(ascii: "p"))
+    let privacy = try await JSONDecoder().decode(PrivacyReceipt.self, from: host.readReceipt())
     try require(privacy.privacyEpoch > selected.state.privacyEpoch, "privacy epoch did not advance")
     let previousClipboard = clipboard.changeCount
     do {
@@ -153,8 +116,8 @@ func verifySharedHost(helper: URL, directory: URL) async throws {
     } catch DesktopSessionError.remote(.privacyEpochChanged) {}
     try require(clipboard.changeCount == previousClipboard, "rejected copy changed the system clipboard")
 
-    try lifetime.fileHandleForWriting.write(contentsOf: Data([UInt8(ascii: "r")]))
-    let revoked: RevokeReceipt = try receipt(output)
+    try await host.sendCommand(UInt8(ascii: "r"))
+    let revoked = try await JSONDecoder().decode(RevokeReceipt.self, from: host.readReceipt())
     try require(revoked.revoked, "helper did not revoke the grant")
     do {
         _ = try await query.historyPage(DesktopPageParams(limit: 20, offset: 0))
@@ -163,9 +126,15 @@ func verifySharedHost(helper: URL, directory: URL) async throws {
     await query.close()
     await actions.close()
     await resumed.close()
-    try lifetime.fileHandleForWriting.close()
-    let deadline = Date().addingTimeInterval(3)
-    while child.isRunning && Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
-    try require(!child.isRunning && child.terminationStatus == 0, "shared Host did not drain on launcher pipe closure")
+    let partial = try await host.verifiedSocket()
+    defer { Darwin.close(partial) }
+    var firstByte: UInt8 = 0
+    try require(Darwin.write(partial, &firstByte, 1) == 1, "could not start a partial frame before shutdown")
+    try await host.stop()
+    try await host.stop()
+    do {
+        _ = try await host.openSession()
+        throw ProbeFailure("a stopped launcher opened a new session")
+    } catch DesktopSessionError.disconnected {}
     print("Verified signed Swift sessions against the shared Host: parent restriction, grant, inline page, chunked history, events, actual pasteboard, stale epoch, revocation and shutdown")
 }

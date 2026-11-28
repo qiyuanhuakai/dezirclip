@@ -177,7 +177,14 @@ jobs:
           fi
           grep -Fx 'the Host must be launched from the signed app bundle' "$socket_dir/outer-launch.log"
           test ! -e "$socket_dir/rejected"
-          "$RUNNER_TEMP/DezirClipHostProbe.app/Contents/MacOS/DarwinPeerProbe" --bundled-host "$socket_dir/desktop"
+          probe="$RUNNER_TEMP/DezirClipHostProbe.app/Contents/MacOS/DarwinPeerProbe"
+          ln -s "$socket_dir" "$socket_dir/linked-profile"
+          if "$probe" --bundled-host "$socket_dir/linked-profile" 2>"$socket_dir/linked-profile.log"; then
+            echo "The bundled launcher accepted a linked profile directory"
+            exit 1
+          fi
+          grep -Fx 'helper directory must be private and owned by the current user' "$socket_dir/linked-profile.log"
+          "$probe" --bundled-host "$socket_dir/desktop"
 
   windows-release-memory:
     name: Published Windows memory comparison
