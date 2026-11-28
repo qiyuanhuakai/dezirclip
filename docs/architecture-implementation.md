@@ -223,6 +223,16 @@ X11 原生验收从独立干净检出构建 `1bfd186e`。构建证明记录 `ver
 
 Windows、Linux Go 套件和 Linux 竞态测试通过。隔离 Service 验收用真实断开的事件 socket 复现重连，检查原 Host、cursor 和粘贴目标的作废，同时在挂起事件连接时验证目标捕获独立完成。Darwin 编译探查确认 Go SDK 仍依赖 Windows/Linux 本地传输，macOS 的生产路径继续使用 Swift SDK 与 Rust helper。
 
+从干净检出的 `af71a8f1` 构建了 MyGo Native x64，实际程序 SHA-256 为 `ec01cccfc1e3e8578b8e52d621819ca2d73f05eb01135156ce1ff34d07bfd3a6`。独立 X11 会话验证恢复默认设置、历史及重新唤起，以及后台顺序粘贴、空队列和最新一条 HTML 粘贴。
+
+`af71a8f1` 的 GitHub 源码准入首次用时 12 分 49 秒。Windows x64 和 Linux x64 通过。下载 artifact ID `15261977336`，复核原始 ZIP 摘要、提交、run/attempt 和双目标，并用同轮 job 记录复算全部 65 项结果。43 项成功，其余按计划跳过。 [源码准入实跑](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46141969232)
+
+### M1 Darwin 主线程剪贴板
+
+`b5b0b8bd` 将文本剪贴板调度移入 Host 库。Darwin 主线程独占系统剪贴板，Host worker 通过有界队列发送写入并等待真实结果。主线程直接调用同步 Host copy 会返回 Unavailable，避免等待自己处理队列。关闭要求保持主线程轮询，直到已接收的 Host 请求排空。
+
+macOS 26 ARM64 第一次托管验收通过。15 项 Swift 测试和 47 项 Host 测试通过，1 项 Host 兼容用例按既有条件忽略。真实临时签名测试包覆盖主线程直接调用的拒绝、独立订阅期间的系统剪贴板写入与读回、持久 profile、隐私 epoch、授权撤销和关闭。Linux Host 套件通过 88 项，1 项按既有条件忽略。macOS 13 的真实运行及 Developer ID 更新后对 Keychain 的访问仍待独立验证。 [Darwin 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46142341897)
+
 ### R8 维护量中间复算
 
 按规范原基线 `1f1641a0` 与 `d2291d7b` 的 Git blob 统计。使用 `git ls-tree -r -z` 取得两次提交的常规文件，按对象 ID 批量读取，计入末尾没有换行的最后一行。范围沿用原统计的 Rust、Go、Python、JSON、TS、TSX、MJS、JS，加上当前提交中的 Swift。基线复算与规范原表的八种后缀计数一致。
