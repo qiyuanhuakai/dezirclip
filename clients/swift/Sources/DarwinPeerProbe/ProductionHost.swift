@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import DzcProtocol
 import DzcSession
 import DzcTransport
@@ -13,15 +14,19 @@ func verifyProductionHost(directory: URL, version: String) async throws {
     let clipboard = NSPasteboard.general
     clipboard.clearContents()
     try require(clipboard.setString("Clipboard from before launch", forType: .string), "could not prepare the initial pasteboard")
+    let launcherBeforeLaunch = try DarwinProcessUsage(getpid())
+    let launchStarted = mach_absolute_time()
     let (host, bootstrap) = try await BundledDesktopHost.launchWithReceipt(in: directory, clientVersion: version)
     let marker = "DezirClip production helper " + UUID().uuidString
     let entryID: Int64
     let instance: String
+    let resources: DarwinResourceReport
     do {
-        try await verifySessionLimit(host)
         let read = try await host.openSession(requireCopy: true)
         let privacy = try await host.openSession(requirePrivacyWrite: true)
         let initial = try await read.historyPage(DesktopPageParams(limit: 20, offset: 0))
+        let launchToFirstPage = mach_absolute_time() - launchStarted
+        let launcherAtFirstPage = try DarwinProcessUsage(getpid())
         try require(initial.value.entries.isEmpty, "production helper added fixture history during startup")
         try require(Set(read.hello.permissions) == [.historyRead, .desktopHistory, .clipboardCopy, .privacyWrite],
                     "production helper reported unexpected permissions")
@@ -35,7 +40,19 @@ func verifyProductionHost(directory: URL, version: String) async throws {
         await control.invalidate()
         await read.close()
         await privacy.close()
+        try await verifySessionLimit(host)
+        // Give the last capture and recently closed sessions time to settle.
+        try await Task.sleep(for: .milliseconds(500))
+        let helper = try await host.idleHelperIdentifier()
+        let idle = try await DarwinIdleResources.measure(helper: helper, clipboard: clipboard)
+        let sameHelper = try await host.idleHelperIdentifier()
+        try require(sameHelper == helper, "the idle helper was replaced")
+        let stopping = mach_absolute_time()
         try await host.stop()
+        resources = try DarwinResourceReport(version: version, launchToFirstPageTicks: launchToFirstPage,
+                                             stopTicks: mach_absolute_time() - stopping,
+                                             launcherBeforeLaunch: launcherBeforeLaunch, launcherAtFirstPage: launcherAtFirstPage,
+                                             idle: idle)
         clipboard.clearContents()
         try require(clipboard.setString("Clipboard from while helper was stopped", forType: .string),
                     "could not prepare the stopped pasteboard")
@@ -66,6 +83,7 @@ func verifyProductionHost(directory: URL, version: String) async throws {
         try? await reopened.stop()
         throw error
     }
+    try resources.write()
     print("Verified bundled production Host: empty startup, manual history, persistent Keychain and profile, new instance, system pasteboard and drain")
 }
 

@@ -75,6 +75,14 @@ public actor BundledDesktopHost {
 
     private func releaseSession(_ id: UUID) { sessions.remove(id) }
 
+    package func idleHelperIdentifier() throws -> Int32 {
+        guard bootstrap != nil, !inputClosed, process.isRunning else {
+            throw DesktopSessionError.disconnected
+        }
+        guard sessions.isEmpty else { throw DesktopSessionError.exchangeInProgress }
+        return process.processIdentifier
+    }
+
     /// Closes the inherited pipe and gives admitted requests time to drain.
     public func stop() async throws {
         closeInput()

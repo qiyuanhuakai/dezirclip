@@ -213,7 +213,13 @@ jobs:
           security unlock-keychain -p "$password" "$keychain"
           security default-keychain -d user -s "$keychain"
           production_probe="$production/Contents/MacOS/DarwinPeerProbe"
-          "$production_probe" --bundled-production "$socket_dir/production"
+          DZC_DARWIN_RESOURCE_REPORT="$RUNNER_TEMP/darwin-resources.json" "$production_probe" --bundled-production "$socket_dir/production"
+      - name: Preserve signed Darwin helper measurements
+        uses: actions/upload-artifact@v4
+        with:
+          name: darwin-resources-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/darwin-resources.json
+          if-no-files-found: error
 
   windows-release-memory:
     name: Published Windows memory comparison
