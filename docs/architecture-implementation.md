@@ -198,4 +198,23 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **C1 托管 Linux 原生执行**。提交 `c221e826` 的首次源码准入通过，GitHub 记录从启动到完成用时 15 分 01 秒。Linux Core job 从同一轮 Cargo 构建取得测试程序，输出该程序的 SHA-256 和全部 15 项实跑清单，含 Xvfb 服务重启后的 XFixes 恢复。 [源码准入](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46132022480)
 - **C3 MyGo 测试安装包复用**。`5d5fdd14` 的托管 Windows x64 专项通过。安装包直接复用已完成桌面验收的 MyGo 构建，安装验收通过。GitHub 保留安装器 artifact `15258555516`，记录实际恢复、升级、锁定、卸载和重装。 [Windows 安装包复验](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46129167214)
 - **C5 Linux DEB/RPM 包管理器事务**。下载并验证公开 `v0.2.0-rc5` 和 `v0.2.0` 的 Linux x64 资产，核对 GitHub 内容摘要和 Debian 更新签名。在网络隔离的 Ubuntu 24.04 和 Fedora 44 容器中，以实际 `dpkg`、`rpm` 完成 Tauri、MyGo 共四组安装、升级、重装和卸载，核对三份安装程序、包管理器的登记和文件校验、历史及设置留存。发布验收复用原有 Linux runtime job，并行执行两个包管理器和原 X11 验收。候选封存必须收到四组事务结果，并将安装后程序的哈希与候选解包结果逐一匹配。本地合并报告通过四组事务和六个发布包的真实 GUI/Service 运行，SHA-256 为 `3f3da054ed13dbdb126869c3d498fe7a7fcaf01d632b96528d871052553f9244`。对提交 `d4879a3b` 的只读重放在 Linux x64 和 ARM64 分别通过六个真实发布包的运行和四组包管理器事务，耗时 1 分 37 秒。按 artifact ID `15258830810` 及 `15257933825` 下载两个报告，逐项核对事务完成标记、程序哈希、上一版本和运行身份。 [双架构只读重放](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46133365670)
-- **C5 Arch 事务验证**。在 release 的固定 Arch 构建镜像里，以经过签名核对的 v0.2.0-rc5 和 v0.2.0 对应 Debian 资产，用生产 `bundle-archlinux.sh` 各生成两个 x64 包和 AUR recipe。网络隔离的 Arch 容器对两种桌面执行真实 `pacman` 安装、升级、重装和卸载，核对了版本排序、文件和依赖登记、历史可读及卸载后的 profile 保留。历史的 Arch 包由已发布 Debian 字节重建。当前 Linux x64 生产验收接入 pacman 门槛，候选路径直接安装暂存的两份 Arch 文件，并比对候选包和三个安装程序的摘要。升级起点的 Arch 安装文件逐一比对已经 dpkg 实装的历史签名 Debian 包。Windows 和 ARM64 的包矩阵不新增 Arch。WSL 实际通过完整只读重放和独立暂存的 x64 候选路径，两份归档在候选路径均直接安装。GitHub 只读重放与真实 tag 封存另行记录。
+- **C5 Arch 事务验证**。在 release 的固定 Arch 构建镜像里，以经过签名核对的 v0.2.0-rc5 和 v0.2.0 对应 Debian 资产，用生产 `bundle-archlinux.sh` 各生成两个 x64 包和 AUR recipe。网络隔离的 Arch 容器对两种桌面执行真实 `pacman` 安装、升级、重装和卸载，核对了版本排序、文件和依赖登记、历史可读及卸载后的 profile 保留。历史的 Arch 包由已发布 Debian 字节重建。当前 Linux x64 生产验收接入 pacman 门槛，候选路径直接安装暂存的两份 Arch 文件，并比对候选包和三个安装程序的摘要。升级起点的 Arch 安装文件逐一比对已经 dpkg 实装的历史签名 Debian 包。Windows 和 ARM64 的包矩阵不新增 Arch。WSL 实际通过完整只读重放和独立暂存的 x64 候选路径，两份归档在候选路径均直接安装。提交 `d2291d7b` 的 GitHub 只读重放首次用时 2 分 09 秒，Linux x64 的 6 组事务和 ARM64 的 4 组事务全部通过，双架构各验证 6 份公开发布包在 X11 中运行。按 artifact ID `15259445609` 和 `15259460557` 下载报告，核对 x64 的两组 pacman 结果及当前、历史两个阶段都与相应 dpkg 实装文件一致。真实 tag 封存仍需独立验收。 [托管只读重放](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46134465121)
+
+
+### R8 维护量中间复算
+
+按规范原基线 `1f1641a0` 与 `d2291d7b` 的 Git blob 统计。使用 `git ls-tree -r -z` 取得两次提交的常规文件，按对象 ID 批量读取，计入末尾没有换行的最后一行。范围沿用原统计的 Rust、Go、Python、JSON、TS、TSX、MJS、JS，加上当前提交中的 Swift。基线复算与规范原表的八种后缀计数一致。
+
+| 分类 | 基线物理行 | 当前物理行 | 变化 |
+|---|---:|---:|---:|
+| 产品源码文件中剩余的行 | 110,559 | 115,386 | +4,827 |
+| 工具文件中剩余的行 | 13,419 | 16,622 | +3,203 |
+| 独立测试及 fixture | 35,644 | 39,302 | +3,658 |
+| Rust 显式内联测试区域 | 32,046 | 33,298 | +1,252 |
+| 生成文件及镜像 | 39,219 | 19,846 | −19,373 |
+| 协议作者源、资产及其它配置 | 8,808 | 8,956 | +148 |
+| 历史证据文件 | 6,304 | 6,304 | 0 |
+
+先按生成标记和已知镜像、历史证据目录、测试目录与文件名归类，再按工具目录和产品目录归类。对工具和产品中的 Rust 文件，用语法树将匹配 `#[cfg(test)]` 或 `#[test]` 等测试属性的完整 item 行区间取并集，连同其前置属性移入内联测试列。两次解析均未出现错误。测试专用的其它共用 helper 仍按所在文件计算。物理行包含注释和空行。
+
+用 `git diff --name-status -M100%` 在同一范围识别了 8 个原样移动的文件、共 1,780 行。另有 104 个路径被删除，其中 21,073 行来自生成文件。基线中 21,019 行的 `builtin-widget-styles.json` 已由版本固定的 Deziro UI presets 提供。删除的源码路径仍包含搬迁后顺带修改或拆分的条目，不能把这些路径的行数计为移除的职责。原 `legacy-bridge` 及其 Core 导出已退役，CLI 与 Service 迁入自己的可执行包。
