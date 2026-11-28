@@ -206,7 +206,19 @@ function publisherFixture(options = {}) {
       ] };
   }
   const json = value => JSON.stringify(value);
+  function recordMutation(stage) {
+    state.mutations.push(stage);
+    if (options.stopAfter === stage && !state.stoppedOnce) {
+      state.stoppedOnce = state.interrupted = true;
+      throw new Error('Synthetic publisher interruption');
+    }
+    if (options.loseResponseAfter === stage && !state.lostStageResponse) {
+      state.lostStageResponse = true;
+      throw new Error('Synthetic lost channel response');
+    }
+  }
   const transport = (args, binary = false) => {
+    if (state.interrupted) throw new Error('Synthetic publisher interruption');
     state.calls.push([...args]);
     if (args[0] === 'api') {
       const path = args[1].replace(`repos/${repository}/`, '');
@@ -261,13 +273,14 @@ function publisherFixture(options = {}) {
           assert.equal(args[5], `name=${name}`);
           const found = state.channel.assets.find(value => value.id === id);
           assert.ok(found);
-          const activating = name === 'preview.json' && found.name.startsWith('preview-0.2.0');
+          const activating = name === 'preview.json' && /^preview-(0\.2\.0|pending-)/.test(found.name);
           if (activating && options.failRename && !state.renameFailure) {
             state.renameFailure = true;
             throw new Error('Synthetic rename rejected');
           }
           found.name = name;
-          state.mutations.push(`rename:${name}`);
+          recordMutation(name.startsWith('preview-previous-') && options.stopAfter === 'backup:preview'
+            ? 'backup:preview' : `rename:${name}`);
           if (name.startsWith('preview-previous-') && options.lostOldRenameResponse && !state.lostOldResponse) {
             state.lostOldResponse = true;
             throw new Error('Synthetic lost old rename response');
@@ -293,8 +306,9 @@ function publisherFixture(options = {}) {
       assert.equal(state.channel, null);
       assert.ok(args.includes('--draft') && args.includes('--prerelease') && args.includes('--latest=false'));
       assert.equal(args[args.indexOf('--target') + 1], 'a'.repeat(40));
-      state.channel = { id: 20, tag_name: target, draft: true, prerelease: true, assets: [] };
-      state.mutations.push('create:channel-draft');
+      state.channel = { id: 20, tag_name: target, draft: true, prerelease: true, assets: [],
+        body: args[args.indexOf('--notes') + 1] };
+      recordMutation('create:channel-draft');
       return '';
     }
     if (action === 'upload' && target === 'updater-channels') {
@@ -302,7 +316,7 @@ function publisherFixture(options = {}) {
       const path = args[3];
       state.uploadPaths.push(path);
       state.channel.assets.push(asset(basename(path), readFileSync(path)));
-      state.mutations.push('upload:channel');
+      recordMutation('upload:channel');
       options.afterUpload?.(state, bytes);
       return '';
     }
@@ -310,7 +324,7 @@ function publisherFixture(options = {}) {
       assert.ok(args.includes('--draft=false') && args.includes(target === tag && !state.product.prerelease ? '--latest' : '--latest=false'));
       const release = target === tag ? state.product : state.channel;
       release.draft = false;
-      state.mutations.push(target === tag ? 'publish:product' : 'publish:channel');
+      recordMutation(target === tag ? 'publish:product' : 'publish:channel');
       return '';
     }
     assert.fail('Unexpected fake release command: ' + args.join(' '));
@@ -344,6 +358,85 @@ test('one atomic channel index carries both verified desktop variants without Fl
   assert.match(manifest.platforms['linux-aarch64'].url, /DezirClip_.*_aarch64\.AppImage$/);
   assert.match(manifest.mygo_platforms['linux-aarch64'].url, /DezirClip-MyGo_.*_aarch64\.AppImage$/);
   assert.match(manifest.mygo_platforms['windows-aarch64'].url, /windows-arm64-MyGo-setup\.exe$/);
+});
+
+test('dual channel publication resumes the same assets after interruption at each remote transition', () => {
+  const version = '0.2.0-beta.4';
+  for (const [stopAfter, channel] of [
+    ['publish:product', undefined], ['create:channel-draft', undefined],
+    ['upload:channel', undefined], ['backup:preview', 'published'],
+    ['rename:preview.json', undefined], ['publish:channel', undefined],
+  ]) {
+    const fixture = publisherFixture({ version, sync: true, dual: true, running: true, channel, stopAfter });
+    const { state, config, transport, active } = fixture;
+    const publish = mode => publishDual(mode, version, config, 7001, 1, () => {}, transport);
+    assert.throws(() => publish('publish-dual'), /Synthetic publisher interruption/, stopAfter);
+    const previouslyStaged = state.channel?.assets.find(value => value.name.startsWith('preview-pending-'));
+    const previouslyActivated = state.channel?.assets.find(value => value.name === 'preview.json');
+    state.interrupted = false;
+    state.run.status = 'completed';
+    state.run.conclusion = 'failure';
+    Object.assign(state.jobs.at(-1), { status: 'completed', conclusion: 'failure' });
+    const result = publish('sync-dual-channel');
+    assert.equal(result.channel_version, version, stopAfter);
+    assert.equal(state.product.draft, false);
+    assert.equal(state.channel.draft, false);
+    assert.equal(active('preview.json').version, version);
+    assert.equal(state.mutations.filter(value => value === 'upload:channel').length, 1);
+    assert.equal(state.mutations.filter(value => value === 'publish:product').length, 1);
+    const activated = state.channel.assets.find(value => value.name === 'preview.json');
+    if (previouslyStaged || (previouslyActivated && !channel)) {
+      assert.equal(activated.id, (previouslyStaged ?? previouslyActivated).id, stopAfter);
+    }
+    const before = state.mutations.length;
+    assert.equal(publish('sync-dual-channel').status, 'already_synchronized');
+    assert.equal(state.mutations.length, before);
+  }
+});
+
+test('dual channel writes refuse unexplained drafts, missing active manifests and foreign staging', () => {
+  const version = '0.2.0-beta.4';
+  for (const change of [
+    state => { state.channel.draft = true; },
+    state => { state.channel.assets.find(value => value.name === 'preview.json').name = 'preview-previous-89.json'; },
+    state => { state.channel.assets.push({ ...state.channel.assets[0], name: 'preview-pending-foreign.json' }); },
+  ]) {
+    const { state, config, transport } = publisherFixture({ version, sync: true, dual: true, running: true, channel: 'published' });
+    change(state);
+    assert.throws(() => publishDual('publish-dual', version, config, 7001, 1, () => {}, transport),
+      /ownership is unknown|no matching candidate|another candidate/);
+    assert.deepEqual(state.mutations, []);
+  }
+});
+
+test('dual channel resolves lost draft, upload and activation responses on the original IDs', () => {
+  const version = '0.2.0-beta.4';
+  for (const loseResponseAfter of ['create:channel-draft', 'upload:channel', 'rename:preview.json', 'publish:channel']) {
+    const { state, config, transport, active } = publisherFixture({ version, sync: true, dual: true, running: true, loseResponseAfter });
+    const result = publishDual('publish-dual', version, config, 7001, 1, () => {}, transport);
+    assert.equal(result.status, 'synchronized', loseResponseAfter);
+    assert.equal(state.channel.id, 20);
+    assert.equal(state.mutations.filter(value => value === 'upload:channel').length, 1);
+    assert.equal(active('preview.json').version, version);
+  }
+});
+
+test('dual channel refuses to resume with modified staged bytes', () => {
+  const version = '0.2.0-beta.4';
+  const { state, config, transport, replaceIndex } = publisherFixture({
+    version, sync: true, dual: true, running: true, channel: 'published', stopAfter: 'backup:preview',
+  });
+  const publish = mode => publishDual(mode, version, config, 7001, 1, () => {}, transport);
+  assert.throws(() => publish('publish-dual'), /Synthetic publisher interruption/);
+  state.interrupted = false;
+  const staged = state.channel.assets.find(value => value.name.startsWith('preview-pending-'));
+  replaceIndex(staged.name, { version });
+  state.run.status = 'completed';
+  state.run.conclusion = 'failure';
+  Object.assign(state.jobs.at(-1), { status: 'completed', conclusion: 'failure' });
+  const before = state.mutations.length;
+  assert.throws(() => publish('sync-dual-channel'), /differs from its verified content/);
+  assert.equal(state.mutations.length, before);
 });
 
 test('missing MyGo targets, wrong signatures and incomplete desktop jobs block release and channel writes', () => {

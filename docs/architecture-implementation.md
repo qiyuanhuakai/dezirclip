@@ -163,3 +163,5 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **R6/R7a Core 兼容出口退役**。删除现行 `legacy-bridge`、仓库重导出与仅供桥接使用的方法。捕获性能适配器使用公开 `HistoryService`、`CaptureStore` 和类型化设置，独立 SQLite 连接只验证合成数据。Windows 分别以旧单包基线 `802808b` 和拆分后的 `90ba9960` 运行三个真实适配器，各核对六种新建、去重和加密转换场景。拆分基线的复验使用已删除兼容层的当前 Core。Linux Core 496 项通过，独立 IPC 样件编译通过。功能验收未采集性能样本。
 
 - **C7 历史发布入口退役**。远端确认 alpha.2 的原 release 早已公开，alpha.9 的 MyGo 安装器也已具备 GitHub 资产摘要。删除两项手动菜单及对应 jobs，保留历史验收材料和最新版的 tag、双桌面恢复及更新通道入口。YAML 校验覆盖 11 个发布任务的依赖，打包与 updater 两套 Node 测试 146 项通过。 [alpha.2](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.2) [alpha.9](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.9)
+
+- **C6 双桌面更新通道恢复**。首次创建草稿时写入候选归属，staging 名绑定候选、manifest 内容和旧 active 的资产 ID 与哈希。恢复可复用原 staging 或已激活的同一资产，拒绝归属未知的草稿、staging 及缺失 active 的未识别状态。在离线 GitHub API 模型中分别中断产品公开、草稿创建、上传、备份改名、激活和草稿公开，原 run 的成功前置仍受既有检查。126 项 updater 测试通过。取消的原 run 准入和独立候选封存仍待接入。

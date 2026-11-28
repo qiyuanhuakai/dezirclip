@@ -7,6 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { rpmBundleConfig } from './bundle-rpm.mjs';
 import { compareVersions, parseVersion } from './release-semver.mjs';
+import { dualChannelUpdate } from './release-channel.mjs';
 
 export { compareVersions, parseVersion } from './release-semver.mjs';
 
@@ -842,6 +843,7 @@ function sameManifest(value, expected) {
 function channelWriteIdentity(release) {
   if (release === null) return null;
   return { id: release.id, tag_name: release.tag_name, draft: release.draft, prerelease: release.prerelease,
+    ...(release.draft ? { body: release.body } : {}),
     assets: release.assets.map(({ id, name, size, state, digest, updated_at }) =>
       ({ id, name, size, state, digest, updated_at })).sort((a, b) => a.name.localeCompare(b.name)) };
 }
@@ -951,13 +953,20 @@ function publication(mode, version, config, log, transport, bundle) {
     }
   }
   let channels = mode !== 'publish-only' ? client.releaseByTag(channelTag, true) : null;
-  if (channels?.draft) throw new Error('Existing channel release is still a draft; inspect it before retrying');
-  if (synchronize && channels && channels.assets.filter(asset => asset.name === `${channel}.json`).length > 1) {
-    throw new Error('Updater channel contains duplicate active manifests');
+  const channelUpdate = dual ? dualChannelUpdate({ channel, manifest, sameManifest,
+    identity: { releaseId: release.id, source: commit, runId: run.run_id, attempt: run.run_attempt, assets: releaseAssets } }) : null;
+  let old, currentBytes, current;
+  if (channelUpdate) {
+    channelUpdate.inspect(client, channels);
+  } else {
+    if (channels?.draft) throw new Error('Existing channel release is still a draft; inspect it before retrying');
+    if (synchronize && channels && channels.assets.filter(asset => asset.name === `${channel}.json`).length > 1) {
+      throw new Error('Updater channel contains duplicate active manifests');
+    }
+    old = channels?.assets.find(asset => asset.name === `${channel}.json`);
+    currentBytes = old ? client.downloadAsset(old) : null;
+    current = currentBytes ? JSON.parse(currentBytes.toString('utf8')) : null;
   }
-  const old = channels?.assets.find(asset => asset.name === `${channel}.json`);
-  const currentBytes = old ? client.downloadAsset(old) : null;
-  const current = currentBytes ? JSON.parse(currentBytes.toString('utf8')) : null;
   if (current) {
     parseVersion(current.version);
     if (channel === 'stable' && parseVersion(current.version).pre.length) {
@@ -1006,6 +1015,14 @@ function publication(mode, version, config, log, transport, bundle) {
   if (mode === 'publish-only') {
     log(`Published ${tag}; updater channels await separate public acceptance.`);
     return { ...receipt, status: 'awaiting_acceptance' };
+  }
+  if (channelUpdate) {
+    const observed = client.releaseByTag(channelTag, true);
+    if (JSON.stringify(channelWriteIdentity(observed)) !== JSON.stringify(channelWriteIdentity(channels))) {
+      throw new Error('Updater channel changed before activation');
+    }
+    const outcome = channelUpdate.synchronize({ client, tag: channelTag, repository, release: observed, transport, log });
+    return { ...syncReceipt, ...outcome, channel };
   }
   if (!shouldPromote(current?.version, parsed.value)) {
     log(`Published ${tag}; ${channel} already points to an equal or newer version.`);
