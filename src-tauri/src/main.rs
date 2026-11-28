@@ -142,6 +142,30 @@ mod startup_probe_tests {
         let profile = Profile::new();
         let path = profile.database();
         let connection = settings_database(&path);
+        let before = profile.snapshot();
+        assert_eq!(before.len(), 1);
+        connection.execute_batch("BEGIN").unwrap();
+        let value: String = connection.query_row(
+            "SELECT value FROM settings WHERE key = 'app.disable_webview_gpu'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(value, "TRUE");
+        // On Linux, closing a second descriptor in the SQLite process can
+        // drop its POSIX locks. Probe from a separate process, as at startup.
+        let test = "startup_probe_tests::startup_probe_rejects_reader_lock_child";
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "--exact", test])
+            .env("DZC_TEST_STARTUP_PROBE_DATABASE", &path)
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&child.stdout);
+        assert!(child.status.success() && output.contains(&format!("test {test} ... ok")),
+                "{output}\n{}", String::from_utf8_lossy(&child.stderr));
+        connection.execute_batch("ROLLBACK").unwrap();
+        assert_eq!(profile.snapshot(), before);
+        assert!(probe_disable_webview_gpu(&path));
+
         connection.execute_batch("BEGIN IMMEDIATE; UPDATE settings SET value = 'false';").unwrap();
         let before = profile.snapshot();
         assert!(!probe_disable_webview_gpu(&path));
@@ -153,6 +177,13 @@ mod startup_probe_tests {
         assert_eq!(profile.snapshot(), before);
         drop(connection);
         assert!(probe_disable_webview_gpu(&path));
+    }
+
+    #[test]
+    #[ignore = "launched by the parent test holding a private SQLite reader lock"]
+    fn startup_probe_rejects_reader_lock_child() {
+        let path = PathBuf::from(std::env::var_os("DZC_TEST_STARTUP_PROBE_DATABASE").unwrap());
+        assert!(!probe_disable_webview_gpu(&path));
     }
 }
 

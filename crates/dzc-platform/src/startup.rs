@@ -5,6 +5,7 @@ use std::{fs::File, path::Path};
 const SQLITE_LOCK_START: u32 = 0x4000_0000;
 const SQLITE_LOCK_LENGTH: u32 = 512;
 
+/// Read the setting before this process opens its own SQLite connection.
 pub fn probe_disable_webview_gpu(path: &Path) -> bool {
     dzc_core::api::probe_startup_disable_webview_gpu(path, lock_database)
 }

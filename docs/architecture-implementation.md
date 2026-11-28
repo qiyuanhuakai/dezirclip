@@ -185,9 +185,12 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 
 - **C3 合并重复构建和测试**。在并行的 Frontend job 执行一次可移植工具契约。各平台仍使用实际二进制运行 BuildInfo、独立归档和 SQLite 验收，Linux 保留私有挂载与凭据隔离负控。一次 Cargo 调用生成 CLI 和 Service，随后验证 Tauri 构建前后的两个文件哈希。Windows 将 5 项真实剪贴板测试合为一次串行调用，并复用已构建的 Go 测试程序验证中键钩子。原源码准入首次运行 15 分 31 秒，修正后的 `8a4c2e89` 首次运行 12 分 29 秒。Windows 剪贴板步骤从 40 秒降到 13 秒。整体差值也包含缓存影响，两次 Windows Rust cache 保存步骤分别为 106 秒和 0 秒。已下载后一次准入凭据，核对 SHA、run/attempt、双 x64 目标及 GitHub 记录中的 42 项必需结果。tag 的首轮发布耗时仍待实测。 [源码准入实跑](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46124948797)
 - **C3 当前 Windows MyGo 安装包**。`d7d64c59` 的专项在托管 Windows x64 运行 4 项真实 NSIS 钩子用例，随后验证当前安装器的恢复、升级、文件锁、卸载和重装。产物以 artifact ID `15255544468` 留在该次测试运行。 [安装包专项](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46125125204)
+- **C4 直接验证真实实现**。Windows 点击规划的 11 个用例直接导入运行时模块，另保留 75 项注入 OS 的测试。PowerShell 开发检查使用实际进程环境验证缺失、空值、文本和值恢复失败。当前 NSIS 的原 GUI 与升级测试仍由六场景验收。退役无人调用的 `test:e2e` 和 `@playwright/test`，保留 Playwright 的生产 WebView 冒烟。本地生产构建和实际 Chromium 页面设置、字符目录搜索通过。 [PowerShell 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46128671130)
+- **C2/C4 全量矩阵复核**。`d7d64c59` 的四平台桌面、四份 standalone、两架构 Flatpak、六项 NSIS 和开发任务实际通过。历史 alpha.9 验收把已发布的 WebView 窗口当成当前 Native 窗口，因此原运行和汇总失败。`a8675bf9` 的 Windows 托管复验执行了普通及非 ANSI 路径的真实安装、粘贴、升级、文件锁、卸载与重装，两个路径都通过。 [首轮全量矩阵](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46127684498) [历史包复验](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46128671130)
+- **R3 GPU 启动读探针**。Windows 和 Linux x64 各运行 3 项 Tauri 启动探针测试。新增父进程持有无 sidecar 的 SQLite 读取事务、子进程执行真实探针的检查，父测试核对子用例确实执行。释放锁后同一个数据库恢复正常读值。原有坏库、回滚事务、活跃 WAL、已 checkpoint WAL 和文件字节完整性检查均通过。
 
 ### Darwin 首发拓扑
 
 首发按直接分发的 macOS ARM64 `.app` 设计，沿用 Swift package 声明的 macOS 13 编译目标。Swift 启动器从 `Contents/Helpers` 启动同一包内的 Rust Host，继承管道传递短期授权并绑定 helper 生命周期。私有 Unix socket 只传现有帧协议。Host 继续持有 Core、profile 和采集所有权。应用包由内向外签名，启动器核对应用包与内嵌代码后再启动，并在连接上核对实际 helper 的签名身份。暂按用户会话内运行、Hardened Runtime 和 Developer ID 直接分发准备，发行阶段再核对公证和对用户 Keychain 的访问。 [Apple 嵌套代码签名](https://developer.apple.com/library/archive/technotes/tn2206/_index.html#//apple_ref/doc/uid/DTS40007919-CH1-TNTAG201)
 
-现有 macOS 26 专项将真实 Host 放到测试 `.app`，按相同目录布局临时签名，分别验证裸启动器拒绝、持久 profile 和经应用包启动的系统剪贴板及 Swift 会话。macOS 13 的运行验证、Developer ID 签名与升级后的 Keychain ACL 仍需取得独立证据。
+`5d5fdd14` 的 macOS 26 ARM64 托管专项实际构建并临时签名测试 `.app`，通过裸启动器拒绝、独立进程持久 profile，以及经签名包发现并启动真实 Host 的 Swift 会话。该会话验证对端身份、授权、历史、快照、事件、系统剪贴板和退出。macOS 13 的运行验证、Developer ID 签名与升级后的 Keychain ACL 仍需取得独立证据。 [签名应用包验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46128925341)
