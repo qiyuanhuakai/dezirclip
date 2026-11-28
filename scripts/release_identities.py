@@ -31,7 +31,7 @@ def sha(path):
             digest.update(block)
     return digest.hexdigest()
 
-def validate_info(info, role, target, revision, version=VERSION):
+def validate_info(info, role, target, revision, *, version):
     require(isinstance(info, dict) and set(info) == FIELDS, 'BuildInfo fields differ')
     require(info['component'] == role and info['component_version'] == version, 'BuildInfo role/version differs')
     require(info['source_revision'] == revision and info['build_id'] == version + '@' + revision, 'BuildInfo source differs')

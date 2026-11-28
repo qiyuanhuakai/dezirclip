@@ -6,7 +6,7 @@ import re
 import shutil
 import sqlite3
 import sys
-from release_identities import ROOT, json_output, require, run, sha, validate_info
+from release_identities import ROOT, VERSION, json_output, require, run, sha, validate_info
 
 def inspector_address(value):
     require(isinstance(value,str),'Explicit loopback inspector address required')
@@ -169,7 +169,7 @@ def desktop_build_info(driver,root,plan,request):
     try:
         with driver:
             entered=True
-            return validate_info(driver.invoke('get_build_info'),'desktop',plan['target'],plan['source_revision'])
+            return validate_info(driver.invoke('get_build_info'),'desktop',plan['target'],plan['source_revision'],version=VERSION)
     except Exception as error:
         if not entered:
             try:retain_webview_failure(driver,root,plan,error,request)
@@ -231,7 +231,7 @@ def sandbox_info(args,members,extracted,logs,flatpak):
                 'Original private Flatpak transport proof differs')
         boundary['flatpak_transport']=transport
     (logs/'boundary.json').write_text(json.dumps(boundary,indent=2))
-    return {role:validate_info(info,role,args.target,args.source) for role,info in result['build_info'].items()}
+    return {role:validate_info(info,role,args.target,args.source,version=VERSION) for role,info in result['build_info'].items()}
 
 def inside():
     import release_identity_guard
@@ -249,7 +249,7 @@ def inside():
     result={}
     for role,args in [('cli',['build-info','--json']),('service',['--build-info'])]:
         if role in plan['members']:
-            result[role]=validate_info(json_output(run(command(role,args),root,role)),role,plan['target'],plan['source_revision'])
+            result[role]=validate_info(json_output(run(command(role,args),root,role)),role,plan['target'],plan['source_revision'],version=VERSION)
     if 'desktop' in plan['members']:
         run(command('cli',['count','--json']),root,'empty-database')
         require(database.is_file(),'Synthetic metadata profile database missing')

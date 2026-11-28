@@ -9,7 +9,7 @@ import sqlite3
 import struct
 import sys
 import tempfile
-from release_identities import ROOT, ROLES, TARGETS, expected_assets, find_members, inspect_machine, json_output, require, run, safe_member, sha, validate_info
+from release_identities import ROOT, ROLES, TARGETS, VERSION, expected_assets, find_members, inspect_machine, json_output, require, run, safe_member, sha, validate_info
 from release_version import rpm_parts
 
 def standalone(archive, root):
@@ -185,14 +185,14 @@ def windows_info(members,logs,target,revision):
     env=windows_preflight(logs,revision)
     result={}
     for role,arguments in [('cli',['build-info','--json']),('service',['--build-info'])]:
-        result[role]=validate_info(json_output(run([members[role],*arguments],logs,role,env)),role,target,revision)
+        result[role]=validate_info(json_output(run([members[role],*arguments],logs,role,env)),role,target,revision,version=VERSION)
     run([members['cli'],'count','--json'],logs,'empty-database',env)
     database=Path(env['DEZIRCLIP_DB_PATH']);require(database.is_file(),'Synthetic receipt profile missing')
     with sqlite3.connect(database) as connection:
         require(connection.execute('SELECT COUNT(*) FROM clipboard_history').fetchone()==(0,),'Receipt profile must be empty')
         connection.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',{'app.silent_start':'false','app.idle_destroy_enabled':'false','app.update_auto_check':'false','app.ocr_enabled':'false','app.classification_enabled':'false','app.sequential_mode':'false'}.items())
     raw=run(['node',ROOT/'scripts/release-identity-desktop.mjs',members['desktop'],logs/'desktop-profile',sys.executable,revision],logs,'desktop',env,timeout=180)
-    result['desktop']=validate_info(json_output(raw),'desktop',target,revision);return result
+    result['desktop']=validate_info(json_output(raw),'desktop',target,revision,version=VERSION);return result
 
 def native_info(args,members,extracted,logs,flatpak=False):
     before={role:sha(path) for role,path in members.items()}
@@ -212,7 +212,7 @@ def collect(args,report):
             standalone(archive,root);path=root/('dzc.exe' if args.target.startswith('windows-') else 'dzc');inspect_machine(path,args.target)
             binary_digest=sha(path)
             if args.target.startswith('windows-'):
-                info=validate_info(json_output(run([path,'build-info','--json'],logs,'cli',windows_preflight(logs,args.source))),'cli',args.target,args.source)
+                info=validate_info(json_output(run([path,'build-info','--json'],logs,'cli',windows_preflight(logs,args.source))),'cli',args.target,args.source,version=VERSION)
             else:
                 from release_identity_linux import sandbox_info
                 info=sandbox_info(args,{'cli':path},root,logs,False)['cli']

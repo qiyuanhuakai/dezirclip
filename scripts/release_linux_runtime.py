@@ -187,7 +187,7 @@ def tauri_smoke(launcher, info, marker, digest, logs, env):
                 const done=arguments[arguments.length-1];
                 window.__TAURI_INTERNALS__.invoke("get_build_info").then(done, error=>done({error:String(error)}));
             ''', 'args': []})
-            validate_info(details, 'desktop', info['target'], info['source_revision'], info['tag'][1:])
+            validate_info(details, 'desktop', info['target'], info['source_revision'], version=info['tag'][1:])
             require(desktop_pid('dezirclip', digest) is not None, 'Tauri ran different desktop bytes')
         finally:
             webdriver_call(port, route, method='DELETE')
@@ -213,7 +213,7 @@ def exercise(fixture, result_dir, index):
     env = profile_environment(Path('/tmp/profile'))
     marker = 'dzcfinalarchive' + package['sha256'][:12]
     for role, command in (('cli', [cli, 'build-info', '--json']), ('service', [service, '--build-info'])):
-        validate_info(json_output(run(command, logs, role, env)), role, target, source, version)
+        validate_info(json_output(run(command, logs, role, env)), role, target, source, version=version)
     run([cli, 'add', marker], logs, 'seed-history', env)
     settings(Path(env['DEZIRCLIP_DB_PATH']))
 

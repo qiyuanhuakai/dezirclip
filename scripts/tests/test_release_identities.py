@@ -273,21 +273,21 @@ print(json.dumps(proof))
                     arch = 'aarch64' if target.endswith('aarch64') else 'x86_64'
                     self.assertIn(f'DezirClip-0.2.0-0.alpha.3.{arch}.rpm', containers)
                 for role in identity.ROLES:
-                    identity.validate_info(info(role,target),role,target,REVISION)
+                    identity.validate_info(info(role,target),role,target,REVISION,version=identity.VERSION)
                     stale=info(role,target);stale['component_version']='0.2.0-alpha.2'
                     with self.assertRaises(ValueError):
-                        identity.validate_info(stale,role,target,REVISION)
+                        identity.validate_info(stale,role,target,REVISION,version=identity.VERSION)
 
     def test_actual_schema_inventory_source_and_types_are_required(self):
         for target in identity.TARGETS:
             for role in identity.ROLES:
-                identity.validate_info(info(role,target),role,target,REVISION)
+                identity.validate_info(info(role,target),role,target,REVISION,version=identity.VERSION)
                 changes=[('source_revision','c'*40),('build_id','unrelated'),('database_schema_version',True),('database_schema_version',23),('metadata_version',True),('source_state','modified_checkout'),('target','other'),('protocol_version',{'major':True,'minor':0}),('linked_components',[])]
                 for name,value in changes:
                     malformed=info(role,target);malformed[name]=value
-                    with self.subTest(target=target,role=role,field=name),self.assertRaises(ValueError):identity.validate_info(malformed,role,target,REVISION)
+                    with self.subTest(target=target,role=role,field=name),self.assertRaises(ValueError):identity.validate_info(malformed,role,target,REVISION,version=identity.VERSION)
                 malformed=info(role,target);malformed['linked_components'][-1]=copy.deepcopy(malformed['linked_components'][0])
-                with self.assertRaises(ValueError):identity.validate_info(malformed,role,target,REVISION)
+                with self.assertRaises(ValueError):identity.validate_info(malformed,role,target,REVISION,version=identity.VERSION)
 
     def test_merge_binds_original_report_hashes_and_never_changes_target(self):
         with tempfile.TemporaryDirectory(prefix='dezirclip-receipt-test-') as temp:

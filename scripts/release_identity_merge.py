@@ -61,7 +61,7 @@ def merge(paths,revision,workflow_source=None,source_authority=None):
         require(cli.get('platform')==target and cli.get('asset')==standalone,'Standalone target/name differs')
         require(cli.get('path')==('dzc.exe' if target.startswith('windows-') else 'dzc')
                 and type(cli.get('bytes')) is int and cli['bytes']>0,'Standalone member path/bytes missing')
-        validate_info(cli.get('build_info'),'cli',target,revision)
+        validate_info(cli.get('build_info'),'cli',target,revision,version=VERSION)
         for value in (cli.get('asset_sha256'),cli.get('binary_sha256')):require(isinstance(value,str) and re.fullmatch('[0-9a-f]{64}',value),'Standalone digest missing')
         result['standalone'].append(dict(cli,proof=proof))
         for container in record['containers']:
@@ -69,7 +69,7 @@ def merge(paths,revision,workflow_source=None,source_authority=None):
             contents=container.get('contents');require(isinstance(contents,list) and len(contents)==3 and sorted(x.get('component','') for x in contents)==['cli','desktop','service'],'Container role inventory differs')
             for member in contents:
                 safe_member(member.get('path'));require(type(member.get('bytes')) is int and member['bytes']>0 and re.fullmatch('[0-9a-f]{64}',member.get('binary_sha256','')),'Container member bytes differ')
-                validate_info(member.get('build_info'),member['component'],target,revision)
+                validate_info(member.get('build_info'),member['component'],target,revision,version=VERSION)
             result['containers'].append(dict(container,proof=proof))
     require(targets==set(TARGETS) and len(result['containers'])==10,'Incomplete final provenance')
     return result
