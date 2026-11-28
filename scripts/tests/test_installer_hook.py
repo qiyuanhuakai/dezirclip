@@ -20,7 +20,10 @@ class InstallerHookTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         local = Path(os.environ.get("LOCALAPPDATA", "")) / "tauri" / "NSIS" / "makensis.exe"
-        cls.makensis = shutil.which("makensis") or (str(local) if local.is_file() else None)
+        installed = Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "NSIS" / "makensis.exe"
+        cls.makensis = shutil.which("makensis") or next(
+            (str(path) for path in (local, installed) if path.is_file()), None
+        )
         cls.rustc = shutil.which("rustc")
         if not cls.makensis or not cls.rustc:
             raise unittest.SkipTest("NSIS and rustc are required for the disposable installer fixture")

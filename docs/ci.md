@@ -16,6 +16,8 @@
 | `mode=source-acceptance` 或 Release 复用调用 | 前端、Rust 与 Go 开发检查，Linux / Windows x64 的源码、真实客户端和桌面验收，写出绑定候选提交和 attempt 的凭据 | 正常 tag 的独立打包和最终包验收按下文执行 |
 | `v*` tag push | draft、四目标 standalone、四目标双桌面构建与验收、候选封存、公开与通道同步 | 以本页“正常 tag 发布”部分的实际门槛为准 |
 
+桌面专项同时运行轻量的前端工具契约步骤。生成检查、前端安装、单测和构建仍随开发、全量和源码准入模式执行。
+
 日常的历史 MyGo 安装验收使用 **alpha.9 已发布 payload + 当前 checkout 的安装器源码**。范围比较 CI/Release workflow、MyGo 安装器、打包、测试夹具、进程凭据和图标等路径。缺少可靠基线时也执行。实际来源见 [历史 payload 准备器](../scripts/package-published-mygo.py)。
 
 | 专项模式 | 当前执行范围 |
@@ -35,6 +37,16 @@
 tag 源码准入的 Tauri 任务会恢复可用的 Rust 缓存，跳过本 tag 独占缓存的保存步骤。手动源码准入实跑中，Windows 桌面任务最后的 Rust 缓存保存耗时 1 分 46 秒。跨 tag 的缓存访问范围见 [GitHub 缓存说明](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)。 [手动源码准入](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46122651572)
 
 PR 更新和新的 master push 会取消同组旧 CI。手动 full 不适用该取消条件。普通日常检查的耗时目标仍为 10 分钟以内；排队、外部下载和真实原生验收耗时须分别记录，超时或取消不能算成功。
+
+### 源码工具与平台验收分工
+
+| 条件 | 主执行位置 | 执行边界 |
+|---|---|---|
+| 可移植的打包、发布恢复、Flatpak 验证器和诊断脚本契约 | 前端任务的共享工具检查 | 同一轮运行一次。Standalone 与 Flatpak 仍执行对应包的实际运行、ABI、运行时和安装验收 |
+| 真实 SQLite 夹具、Rust 构建身份和平台打包工具 | Linux、Windows 可执行的桌面任务 | 保留对应 Python、SQLite、Rust 工具。Linux 的私有挂载和凭据负例须实际通过 |
+| Windows NSIS 卸载钩子夹具 | 当前 MyGo 包的打包验收 | 安装 NSIS 后必跑，零用例或跳过视为失败 |
+| Standalone Companion 归属 | Tauri 桌面任务 | CLI 与 Service 一次构建。Tauri 测试和实际 Desktop 链接前后核对两个可执行文件的 SHA-256 |
+| Windows 原生剪贴板和阻塞 UI 的中键钩子 | Windows 桌面任务 | 真实剪贴板用例在同一测试进程串行执行。中键钩子复用 MyGo 库验收使用的 Go 测试程序，并确认用例实际通过 |
 
 ## 测试入口与证据种类
 
