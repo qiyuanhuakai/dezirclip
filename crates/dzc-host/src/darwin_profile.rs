@@ -108,7 +108,11 @@ impl DarwinProfile {
         } else {
             // Commit the initial schema under Core's standalone policy before
             // claiming a durable database identity, then use desktop WAL policy.
-            drop(HistoryService::open(&database).map_err(io::Error::other)?);
+            let bootstrap = HistoryService::open(&database).map_err(io::Error::other)?;
+            if bootstrap.get_count().map_err(io::Error::other)? != 0 {
+                return Err(invalid_profile());
+            }
+            drop(bootstrap);
             let proof = provider
                 .seal_text(&database_proof(&database)?)
                 .map_err(io::Error::other)?;

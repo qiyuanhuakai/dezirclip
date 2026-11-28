@@ -198,6 +198,11 @@ pub fn verify() -> Result<()> {
     if empty_provider.verify_existing().is_ok() {
         return Err("existing profile provisioned a replacement key".into());
     }
+    empty_provider.provision_new_profile()?;
+    expect_denial(
+        launch("read", &profile, &empty_keychain, &secret)?.wait_with_output()?,
+        "KeyUnavailable",
+    )?;
 
     let identity = profile.join("profile-id");
     let saved_identity = root.join("saved-profile-id");

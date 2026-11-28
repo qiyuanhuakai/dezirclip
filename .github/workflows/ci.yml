@@ -109,18 +109,23 @@ jobs:
           cargo test --locked -p dzc-platform --features ipc --lib -- ipc:: darwin_clipboard::
       - name: Exercise shared Host authorization, history and snapshots
         run: cargo test --locked -p dzc-host --lib
-      - name: Verify signed Swift sessions against the local Rust Host and platform fixture
+      - name: Build and sign Darwin probe binaries
         run: |
           cargo build --locked -p dzc-platform -p dzc-host --features dzc-platform/ipc --example ipc_protocol_fixture --example darwin_desktop_fixture
-          socket_dir=$(mktemp -d /private/tmp/dzc-m0.XXXXXX)
           swift build --package-path clients/swift --product DarwinPeerProbe
           swift_bin=$(swift build --package-path clients/swift --show-bin-path)
           cp "$swift_bin/DarwinPeerProbe" "$RUNNER_TEMP/dzc-darwin-peer"
           codesign --force --sign - target/debug/examples/ipc_protocol_fixture
           codesign --force --sign - target/debug/examples/darwin_desktop_fixture
           codesign --force --sign - "$RUNNER_TEMP/dzc-darwin-peer"
+      - name: Verify profile persistence across signed helper processes
+        run: |
+          root=$(mktemp -d /private/tmp/dzc-profile.XXXXXX)
+          "$PWD/target/debug/examples/darwin_desktop_fixture" --verify-profile "$root"
+      - name: Verify signed Swift sessions against the local Rust Host and platform fixture
+        run: |
+          socket_dir=$(mktemp -d /private/tmp/dzc-m0.XXXXXX)
           "$RUNNER_TEMP/dzc-darwin-peer" "$PWD/target/debug/examples/ipc_protocol_fixture" "$socket_dir" "$PWD/target/debug/examples/darwin_desktop_fixture"
-          "$PWD/target/debug/examples/darwin_desktop_fixture" --verify-profile "$socket_dir/profiles"
 
   windows-release-memory:
     name: Published Windows memory comparison

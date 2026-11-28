@@ -160,7 +160,7 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
     static func main() async throws {
         let args = CommandLine.arguments
         if args.count == 3, args[1] == "--foreign-host" {
-            try await verifyForeignProcessRejected(socket: args[2])
+            try verifyForeignProcessRejected(socket: args[2])
             return
         }
         try require(args.count == 3 || args.count == 4, "expected helper, private directory and optional shared Host fixture")

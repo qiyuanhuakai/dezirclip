@@ -49,18 +49,16 @@ private func receipt<T: Decodable>(_ pipe: Pipe) throws -> T {
 }
 
 /// Runs in a same-user process other than the helper's actual launcher.
-func verifyForeignProcessRejected(socket: String) async throws {
+func verifyForeignProcessRejected(socket: String) throws {
     let fd = try connect(to: socket, until: Date().addingTimeInterval(2))
-    let connection = LocalFrameConnection(verifiedSocket: fd)
-    let request = Data(#"{"request_id":"foreign","method":"hello","params":{"protocol_version":{"major":1,"minor":0},"client_version":"foreign","client_role":"desktop","capabilities":[],"required_capabilities":[]}}"#.utf8)
-    do {
-        _ = try await connection.exchange(request)
-    } catch LocalFrameError.disconnected {
-        return
-    } catch LocalFrameError.socket(let code) where code == ECONNRESET || code == EPIPE {
-        return
-    }
-    throw ProbeFailure("unrelated process received a Host response")
+    defer { Darwin.close(fd) }
+    // The listener checks the actual parent PID before reading a frame. An
+    // accepted peer would stay open here until the Host's read deadline.
+    var interest = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+    try require(Darwin.poll(&interest, 1, 1_500) > 0, "Host kept an unrelated socket open")
+    var byte: UInt8 = 0
+    let count = Darwin.recv(fd, &byte, 1, MSG_DONTWAIT)
+    try require(count == 0 || (count < 0 && errno == ECONNRESET), "Host did not close the unrelated socket")
 }
 
 @MainActor
