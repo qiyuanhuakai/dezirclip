@@ -74,6 +74,20 @@ class ModeTests(unittest.TestCase):
             self.assertEqual([row["name"] for row in ci_policy.desktop_targets(mode)], targets.get(mode, []))
         self.assertFalse(ci_policy.desktop_targets("full")[-1]["can_test"])
 
+    def test_web_build_is_required_for_embedded_frontend_consumers(self):
+        for mode, expected in {
+            "full": ["windows-x86_64"],
+            "source-acceptance": ["windows-x86_64"],
+            "mygo-package": ["windows-x86_64"],
+            "linux-release-inputs": ["linux-x86_64"],
+        }.items():
+            with self.subTest(mode=mode):
+                rows = ci_policy.desktop_targets(mode)
+                self.assertEqual([row["name"] for row in rows if row["build_web"]], expected)
+                jobs = ci_policy.job_requirements(mode, False)
+                self.assertEqual([row["name"] for row in rows if "Prepare actual frontend for native Surface acceptance"
+                                  in jobs[f"Tauri backend ({row['name']})"]], expected)
+
     def test_desktop_focused_requests_keep_the_portable_tooling_contract_only(self):
         for mode in ("mygo-package", "linux-release-inputs"):
             jobs = ci_policy.job_requirements(mode, False)

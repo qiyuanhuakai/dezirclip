@@ -94,7 +94,8 @@ def desktop_targets(mode):
     }.get(mode, set())
     return [
         dict(name=name, platform=platform, rust_target=triple, msvc_arch=arch,
-             can_test=not triple, cargo_args=f"--target {triple}" if triple else "")
+             can_test=not triple, cargo_args=f"--target {triple}" if triple else "",
+             build_web=(name.startswith("windows-") and not triple) or mode == "linux-release-inputs")
         for name, platform, triple, arch in TARGETS
         if mode == "full" or name in names
     ]
@@ -150,6 +151,8 @@ def job_requirements(mode, legacy_installer, crash_profile="release"):
     for item in desktop:
         name = item["name"]
         steps = ("Build standalone CLI and Service for desktop acceptance",)
+        if item["build_web"]:
+            steps += ("Prepare actual frontend for native Surface acceptance",)
         steps += (NATIVE_DESKTOP_STEPS if item["can_test"] else (
             "Build Tauri crate", "Check cross-built Tauri targets preserving standalone companions"))
         if item["can_test"]:
@@ -160,6 +163,7 @@ def job_requirements(mode, legacy_installer, crash_profile="release"):
                           "Verify Windows clipboard reader window ownership",
                           "Verify middle-button hook survives a blocked resident UI",
                           "Build actual Windows desktop with embedded frontend for Surface acceptance",
+                          "Verify experimental Surface on disposable Windows desktop",
                           "Verify real Service-mode paste target binding on disposable Windows")
         if name == "windows-x86_64" and mode in ("full", "mygo-package"):
             steps += CURRENT_MYGO_STEPS
