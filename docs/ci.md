@@ -92,7 +92,9 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 
 `release.yml` 并行创建 draft、构建产物与执行候选源码验收。standalone 上传等待其构建和 draft，按当前 attempt 的固定 artifact ID 下载四份归档，核对校验文件、绑定 draft ID 并读回已上传 asset。桌面上传任务按源码 SHA 和 attempt 下载四个生产 artifact ID 对应的文件，先验证 12 个签名和 20 份桌面归档，再绑定 draft ID 上传。归档检查核对安装路径、可执行文件架构和适用的包元数据，并确认 Arch 二进制和 AUR 配方对应候选中的 Debian 包。Windows x64 的 Tauri 和 MyGo 安装包各交给独立 runner。验证从固定签名旧版 v0.2.0 升级、三个安装文件的 SHA-256、启动、重装、卸载和数据保留。独立封存任务按固定 artifact ID 下载源码记录、上传读回以及 Windows 和 Linux 的原生验收。封存附件绑定原 draft ID、每项资产的摘要、原 producer 及预期更新 manifest。正常 tag 的公开任务需要封存 job 成功，并独立核对原封存资产身份、签名与写入前后的远端状态。 [发布脚本](../scripts/updater-release.mjs)
 
-每个目标用一次 Cargo 构建产出 Tauri、桌面配套 CLI 和 Service，随后 Tauri 打包阶段复用已暂存的二进制，MyGo 使用相同目录。独立 CLI 下载保持原 ABI 构建边界。生产 Web bundle 的浏览器测试在源码验收执行一次。本地以同一路径构建并解包 Windows x64 NSIS 和 Linux x64 deb，两个 helper 的 SHA-256 和实际 CLI/MCP 集成通过。Release 首次运行计时仍需候选实测。
+每个目标用一次 Cargo 构建产出 Tauri、桌面配套 CLI 和 Service，随后 Tauri 打包阶段复用已暂存的二进制，MyGo 使用相同目录。独立 CLI 下载保持原 ABI 构建边界。生产 Web bundle 的浏览器测试在源码验收执行一次。本地以同一路径构建并解包 Windows x64 NSIS 和 Linux x64 deb，两个 helper 的 SHA-256 和实际 CLI/MCP 集成通过。
+
+历史基线 `v0.2.0` 的 tag push 首次运行，从触发到公开和更新通道同步任务完成用时 18 分 09 秒。当前架构候选的首次发布总耗时仍需实测。 [v0.2.0 发布运行](https://github.com/qiyuanhuakai/dezirclip/actions/runs/45952455038)
 
 当前门槛保留仓库/tag/SHA/run/attempt、必需 job、资产目录及时间、签名/版本/文件名、updater 下载读回和防降级检查。恢复含 Arch 资产的候选时也核对原 Release run 的源码验收工作。只读的 `replay-windows-candidate` 已用公开签名安装包验证两个桌面从 v0.2.0-rc5 升到 v0.2.0。未创建新 release，也未切换更新通道。Linux x64 和 ARM64 已对 v0.2.0 的 AppImage、DEB 和 RPM 执行隔离启动验收。Linux 最终包检查并行启动 Ubuntu 和 Fedora 的隔离容器，用 `dpkg`、`rpm` 验证两个桌面的安装、从固定上一版本升级、重装、卸载及 profile 保留。候选封存核对这四组包管理器结果及安装后程序的哈希。只读重放使用 v0.2.0-rc5 和 v0.2.0，已在 Linux x64 和 ARM64 各通过四组原生事务和六份最终包的 X11 运行。正常 tag 使用 v0.2.0 作为基线。Linux x64 tag 验收另用无网络 Arch 容器对两份原始候选包执行 pacman 安装、升级、重装和卸载，封存核对原始归档摘要与三个已安装程序的摘要。已发布的 v0.2.0 没有 Arch 包，升级起点沿用验证过签名的 Debian 字节和同一生产配方，三个旧程序与 dpkg 实装结果逐一比对。只读重放也从已验证的 Debian 包重建当前侧的 Arch 包。真实 40+1 tag 链路和首次总耗时仍待实测。 [双桌面 Windows 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46040562056) [双架构 Linux 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46133365670)
 

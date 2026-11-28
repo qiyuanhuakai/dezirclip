@@ -1,6 +1,9 @@
 use super::{CoreResult, HistoryService};
 use crate::capture::CaptureSettings;
-use dzc_protocol::settings::{QUICK_PASTE_LAYOUT, UPDATE_AUTO_CHECK, UPDATE_CHANNEL};
+use dzc_protocol::settings::{
+    APPLICATION_SETTING_KEYS, CAPTURE_SETTING_KEYS, QUICK_PASTE_LAYOUT, UPDATE_AUTO_CHECK,
+    UPDATE_CHANNEL, VIEW_SETTING_KEYS,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuickPastePresentation {
@@ -189,14 +192,7 @@ impl HistoryService {
     }
 
     pub fn is_view_setting(key: &str) -> bool {
-        Self::is_update_preference(key) || key == QUICK_PASTE_LAYOUT.key
-        || matches!(key, "app.use_win_v_shortcut" | "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
-            | "app.show_scroll_top_button" | "app.show_search_box" | "app.tag_manager_enabled" | "app.rich_text_snapshot_preview" | "app.rich_text_snapshot_cache_limit" | "app.arrow_key_selection" | "app.preview_keyboard_enabled" | "app.silent_start" | "app.hide_tray_icon" | "app.edge_docking" | "app.follow_mouse" | "app.disable_webview_gpu"
-            | "app.idle_destroy_enabled" | "app.idle_destroy_seconds"
-            | "app.quick_paste_enabled" | "app.quick_paste_full_sectors" | "app.quick_paste_half_sectors" | "app.screenshot_enabled"
-            | "app.sound_enabled" | "app.sound_paste_enabled" | "app.sound_volume"
-            | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.preview_opacity" | "app.font_main" | "app.font_mono"
-            | "app.custom_background" | "app.custom_background_opacity" | "app.emoji_panel_enabled" | "app.emoji_panel_tab" | "app.emoji_favorites")
+        VIEW_SETTING_KEYS.contains(&key)
     }
 
     pub fn is_update_preference(key: &str) -> bool {
@@ -234,7 +230,7 @@ impl HistoryService {
     }
 
     pub fn set_default_application(&self, key: &str, application: &str, epoch: u64) -> CoreResult<()> {
-        if !matches!(key, "app.text" | "app.rich_text" | "app.image" | "app.video" | "app.code" | "app.url")
+        if !APPLICATION_SETTING_KEYS.contains(&key)
             || application.len() > 32768 || application.contains('\0') {
             return Err(super::CoreError::validation("InvalidDefaultApplication"));
         }
@@ -242,9 +238,7 @@ impl HistoryService {
     }
 
     pub fn is_capture_setting(key: &str) -> bool {
-        matches!(key, "app.persistent" | "app.persistent_limit_enabled" | "app.persistent_limit" | "app.deduplicate" | "app.capture_files" | "app.capture_rich_text"
-            | "app.privacy_protection" | "app.privacy_protection_kinds" | "app.privacy_protection_custom_rules"
-            | "app.excluded_source_apps" | "app.ocr_enabled")
+        CAPTURE_SETTING_KEYS.contains(&key)
     }
 
     pub fn update_capture_setting(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
