@@ -21,8 +21,14 @@ public actor LocalFrameConnection {
     private var inFlight = false
     private var usable = true
 
-    /// Takes ownership of the already authenticated socket descriptor.
-    public init(verifiedSocket: Int32) {
+    /// Takes ownership of the already authenticated socket descriptor, even on failure.
+    public init(verifiedSocket: Int32) throws {
+        var noSignal: Int32 = 1
+        guard setsockopt(verifiedSocket, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size)) == 0 else {
+            let failure = LocalFrameError.socket(errno)
+            Darwin.close(verifiedSocket)
+            throw failure
+        }
         descriptor = verifiedSocket
     }
 
@@ -75,10 +81,6 @@ public actor LocalFrameConnection {
     }
 
     private static func transact(_ fd: Int32, _ payload: Data, until deadline: UInt64) throws -> Data {
-        var noSignal: Int32 = 1
-        guard setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size)) == 0 else {
-            throw LocalFrameError.socket(errno)
-        }
         var length = UInt32(payload.count).bigEndian
         var request = Data(bytes: &length, count: 4)
         request.append(payload)

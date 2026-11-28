@@ -129,8 +129,8 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) async t
             throw ProbeFailure("accepted unexpected code")
         } catch let failure as DarwinHostLaunchError where failure.message == "helper code identity differs" {}
         try requireChild(fd, pid: child.processIdentifier, executable: helper)
-        let connection = LocalFrameConnection(verifiedSocket: fd)
         adopted = true
+        let connection = try LocalFrameConnection(verifiedSocket: fd)
         let contender = Process()
         contender.executableURL = helper
         contender.arguments = ["--capture-lease-check"]

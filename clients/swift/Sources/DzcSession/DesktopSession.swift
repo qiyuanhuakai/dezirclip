@@ -93,7 +93,7 @@ public actor DesktopSession {
         verifiedSocket: Int32, expectedInstance: String, grant: String, clientVersion: String,
         requireCopy: Bool, requirePrivacyWrite: Bool, onClose: (@Sendable () async -> Void)?
     ) async throws -> DesktopSession {
-        let transport = LocalFrameConnection(verifiedSocket: verifiedSocket)
+        let transport = try LocalFrameConnection(verifiedSocket: verifiedSocket)
         let version = try ProtocolVersion(major: 1, minor: 0)
         var methods: [DzcProtocol.Method] = [.desktopHistoryPage, .desktopHistoryGet, .desktopSnapshotRead, .eventsSubscribe, .privacyGet]
         if requireCopy { methods.append(.desktopClipboardCopy) }

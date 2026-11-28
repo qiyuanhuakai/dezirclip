@@ -134,7 +134,7 @@ private func verifySessionLimit(_ host: BundledDesktopHost) async throws {
 @MainActor
 private func productionControl(_ host: BundledDesktopHost, grant: String) async throws -> LocalFrameConnection {
     let fd = try await host.verifiedSocket()
-    let connection = LocalFrameConnection(verifiedSocket: fd)
+    let connection = try LocalFrameConnection(verifiedSocket: fd)
     _ = try await request(connection, id: "hello", method: "hello", params: [
         "protocol_version": ["major": 1, "minor": 0], "client_version": "darwin-production-probe",
         "client_role": "desktop", "capabilities": [String](), "required_capabilities": [String](), "grant": grant,

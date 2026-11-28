@@ -23,7 +23,12 @@ private func socketPair() throws -> (Int32, Int32) {
 
 private func sockets() throws -> (LocalFrameConnection, Int32) {
     let (client, peer) = try socketPair()
-    return (LocalFrameConnection(verifiedSocket: client), peer)
+    do {
+        return (try LocalFrameConnection(verifiedSocket: client), peer)
+    } catch {
+        Darwin.close(peer)
+        throw error
+    }
 }
 
 private func write(_ fd: Int32, _ data: Data) throws {
@@ -55,6 +60,12 @@ private func write(_ fd: Int32, _ data: Data) throws {
         await #expect(throws: expected) { try await stream.exchange(Data("{}".utf8)) }
         await #expect(throws: LocalFrameError.disconnected) { try await stream.exchange(Data("{}".utf8)) }
     }
+}
+
+@Test func exchangeOnAnAdoptedSocketReportsPeerClosure() async throws {
+    let (stream, peer) = try sockets()
+    try #require(Darwin.close(peer) == 0)
+    await #expect(throws: LocalFrameError.disconnected) { try await stream.exchange(Data("{}".utf8)) }
 }
 
 @Test func partialFrameUsesOneDeadline() async throws {
