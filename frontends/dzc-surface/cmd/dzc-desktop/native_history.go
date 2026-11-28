@@ -38,18 +38,11 @@ func (l *Library) nativeHistoryPage(ctx context.Context, request nativeHistoryRe
 	if request.filter.kind != "" {
 		params.Kind = &request.filter.kind
 	}
-	var result nativeHistoryPage
-	err := readLibrarySnapshot(ctx, func(ctx context.Context) error {
-		var page protocol.DesktopEntries
-		state, err := l.readSnapshotState(ctx, protocol.MethodDesktopHistoryPage, params, "DesktopEntries", &page, request.state.PrivacyEpoch)
-		if err == nil {
-			result = nativeHistoryPage{
-				state: state, rows: page.Entries[:min(pageSize, len(page.Entries))], more: len(page.Entries) > pageSize,
-			}
-		}
-		return err
-	})
-	return result, err
+	entries, state, err := l.reader().HistoryPage(ctx, params, request.state)
+	if err != nil {
+		return nativeHistoryPage{}, err
+	}
+	return nativeHistoryPage{state: state, rows: entries[:min(pageSize, len(entries))], more: len(entries) > pageSize}, nil
 }
 
 func (l *Library) nativeTagPage(ctx context.Context, request nativeHistoryRequest) (nativeHistoryPage, error) {
@@ -60,21 +53,11 @@ func (l *Library) nativeTagPage(ctx context.Context, request nativeHistoryReques
 	if request.filter.kind != "" {
 		params.Kind = &request.filter.kind
 	}
-	var result nativeHistoryPage
-	err := readLibrarySnapshot(ctx, func(ctx context.Context) error {
-		var page protocol.DesktopTagItemsPage
-		state, err := l.readSnapshotState(ctx, protocol.MethodDesktopTagsPage, params, "DesktopTagItemsPage", &page, request.state.PrivacyEpoch)
-		if err != nil {
-			return err
-		}
-		if page.HasMore && (len(page.Items) == 0 || page.NextOffset == nil ||
-			*page.NextOffset != request.offset+uint32(len(page.Items))) {
-			return client.ErrProtocol
-		}
-		result = nativeHistoryPage{state: state, rows: page.Items, more: page.HasMore, total: page.Total}
-		return nil
-	})
-	return result, err
+	page, state, err := l.reader().TagPage(ctx, params)
+	if err != nil {
+		return nativeHistoryPage{}, err
+	}
+	return nativeHistoryPage{state: state, rows: page.Items, more: page.HasMore, total: page.Total}, nil
 }
 
 // nativeHistory owns the rows for one live main-window presentation. A

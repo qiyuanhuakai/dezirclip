@@ -5,8 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
-	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/desktop/application"
 )
 
 func desktopTimingEnabled() bool { return os.Getenv("DZC_DESKTOP_TIMING") == "1" }
@@ -18,8 +17,8 @@ func desktopTiming(stage string, started time.Time) {
 	}
 }
 
-func desktopSnapshotTiming(method protocol.Method, bytes uint32, started, connected, described time.Time, metrics client.SnapshotReadMetrics, complete bool) {
+func desktopSnapshotTiming(sample application.SnapshotMeasurement) {
 	log.Printf("Desktop snapshot: %s bytes=%d elapsed=%dms snapshot_calls=%d connect_us=%d descriptor_us=%d transfer_us=%d decode_us=%d complete=%t",
-		method, bytes, time.Since(started).Milliseconds(), 1+metrics.Chunks, connected.Sub(started).Microseconds(),
-		described.Sub(connected).Microseconds(), metrics.Transfer.Microseconds(), metrics.Decode.Microseconds(), complete)
+		sample.Method, sample.Bytes, sample.Elapsed.Milliseconds(), 1+sample.Metrics.Chunks, sample.Connect.Microseconds(),
+		sample.Descriptor.Microseconds(), sample.Metrics.Transfer.Microseconds(), sample.Metrics.Decode.Microseconds(), sample.Complete)
 }

@@ -2,17 +2,15 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"time"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/desktop/application"
 )
 
-// Library is the shared React window's authenticated view of the Rust Host.
+// Library adapts authenticated Host results to desktop callers and the Web bridge contract.
 type Library struct {
 	owner *client.Client
 }
@@ -75,59 +73,37 @@ func (l *Library) SetPrivacyHotkey(ctx context.Context, hotkey string) (string, 
 	return result.Hotkey, err
 }
 
-// The descriptor and its chunks must be read on the same authenticated stream.
-func (l *Library) snapshot(ctx context.Context, method protocol.Method, params any, schema string, result any, epoch uint64) error {
-	return readLibrarySnapshot(ctx, func(ctx context.Context) error {
-		return l.readSnapshot(ctx, method, params, schema, result, epoch)
-	})
+func (l *Library) reader() application.LibraryReader {
+	if desktopTimingEnabled() {
+		return application.NewLibraryReader(l.owner, desktopSnapshotTiming)
+	}
+	return application.NewLibraryReader(l.owner, nil)
 }
 
-func (l *Library) readSnapshot(ctx context.Context, method protocol.Method, params any, schema string, result any, epoch uint64) error {
-	_, err := l.readSnapshotState(ctx, method, params, schema, result, epoch)
+func (l *Library) snapshot(ctx context.Context, method protocol.Method, params any, schema string, result any, epoch uint64) error {
+	_, err := l.reader().ReadSnapshot(ctx, method, params, schema, result, epoch)
 	return err
 }
 
-func (l *Library) readSnapshotState(ctx context.Context, method protocol.Method, params any, schema string, result any, epoch uint64) (protocol.RuntimeState, error) {
-	started := time.Now()
-	host, err := l.owner.DesktopConnection(ctx)
-	if err != nil {
-		return protocol.RuntimeState{}, err
-	}
-	defer host.Close()
-	connected := time.Now()
-	var body protocol.BodySnapshot
-	if err := host.Call(ctx, method, params, "BodySnapshot", &body); err != nil {
-		return protocol.RuntimeState{}, err
-	}
-	if body.State.PrivacyEpoch != epoch {
-		return protocol.RuntimeState{}, errors.New("PrivacyEpochChanged")
-	}
-	if !desktopTimingEnabled() {
-		err = host.ReadSnapshot(ctx, body, schema, result)
-	} else {
-		described := time.Now()
-		var metrics client.SnapshotReadMetrics
-		metrics, err = host.ReadSnapshotMeasured(ctx, body, schema, result)
-		desktopSnapshotTiming(method, body.TotalBytes, started, connected, described, metrics, err == nil)
-	}
-	if err != nil {
-		return protocol.RuntimeState{}, err
-	}
-	return body.State, nil
+func (l *Library) readSnapshot(ctx context.Context, method protocol.Method, params any, schema string, result any, epoch uint64) error {
+	_, err := l.reader().ReadSnapshotOnce(ctx, method, params, schema, result, epoch)
+	return err
 }
 
 func (l *Library) Page(ctx context.Context, params protocol.DesktopPageParams, epoch uint64) ([]hostedEntry, error) {
-	var page protocol.DesktopEntries
-	if err := l.snapshot(ctx, protocol.MethodDesktopHistoryPage, params, "DesktopEntries", &page, epoch); err != nil {
+	expected := l.owner.Hello().State
+	expected.PrivacyEpoch = epoch
+	entries, state, err := l.reader().HistoryPage(ctx, params, expected)
+	if err != nil {
 		return nil, err
 	}
-	return l.rows(page.Entries), nil
+	return hostedRows(entries, state.ServiceInstanceId), nil
 }
 
-func (l *Library) rows(entries []protocol.DesktopEntry) []hostedEntry {
+func hostedRows(entries []protocol.DesktopEntry, instance string) []hostedEntry {
 	rows := make([]hostedEntry, len(entries))
 	for i, entry := range entries {
-		rows[i] = hostedEntry{entry, l.owner.Hello().State.ServiceInstanceId}
+		rows[i] = hostedEntry{entry, instance}
 	}
 	return rows
 }
@@ -141,15 +117,16 @@ type tagPage struct {
 
 func (l *Library) TagPage(ctx context.Context, params protocol.DesktopTagPageParams) (tagPage, error) {
 	params.ServiceInstanceId = l.owner.Hello().State.ServiceInstanceId
-	var page protocol.DesktopTagItemsPage
-	if err := l.snapshot(ctx, protocol.MethodDesktopTagsPage, params, "DesktopTagItemsPage", &page, params.ExpectedEpoch); err != nil {
+	page, state, err := l.reader().TagPage(ctx, params)
+	if err != nil {
 		return tagPage{}, err
 	}
-	return tagPage{l.rows(page.Items), page.Total, page.HasMore, page.NextOffset}, nil
+	return tagPage{hostedRows(page.Items, state.ServiceInstanceId), page.Total, page.HasMore, page.NextOffset}, nil
 }
 
 func (l *Library) Entry(ctx context.Context, params protocol.DesktopEntryParams) (hostedEntry, error) {
-	return l.entry(ctx, protocol.MethodDesktopHistoryGet, params)
+	entry, state, err := l.reader().Entry(ctx, params)
+	return hostedEntry{entry, state.ServiceInstanceId}, err
 }
 
 func (l *Library) OpenEntry(ctx context.Context, params protocol.ExternalOpenParams) error {
@@ -176,9 +153,8 @@ func (l *Library) ShareEntry(ctx context.Context, params protocol.ShareEntryPara
 }
 
 func (l *Library) Summary(ctx context.Context, params protocol.DesktopEntryParams) (hostedEntry, error) {
-	params.Reveal = false
-	params.ThumbnailDimension = nil
-	return l.entry(ctx, protocol.MethodDesktopHistorySummary, params)
+	entry, state, err := l.reader().Summary(ctx, params)
+	return hostedEntry{entry, state.ServiceInstanceId}, err
 }
 
 func (l *Library) TagCounts(ctx context.Context, epoch uint64) (json.RawMessage, error) {
@@ -190,61 +166,12 @@ func (l *Library) TagCounts(ctx context.Context, epoch uint64) (json.RawMessage,
 	return counts.Values, nil
 }
 
-// MutateEntry uses the identity and privacy epoch of the row the user acted on.
 func (l *Library) MutateEntry(ctx context.Context, params protocol.DesktopMutationParams) (int64, error) {
-	if params.ServiceInstanceId != l.owner.Hello().State.ServiceInstanceId || params.Id == 0 {
-		return 0, client.ErrProtocol
-	}
-	switch params.Action {
-	case "pin", "tags", "edit", "delete":
-	default:
-		return 0, client.ErrProtocol
-	}
-	var result protocol.DesktopMutationResult
-	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopHistoryMutate, params, "DesktopMutationResult", &result)
-	if err == nil && (!result.Performed || result.Id == 0) {
-		return 0, client.ErrProtocol
-	}
-	return result.Id, err
+	return application.MutateEntry(ctx, l.owner, params)
 }
 
 func (l *Library) AddManual(ctx context.Context, content string, params protocol.ManualEntryParams) (int64, error) {
-	if len(content) > 32*1024*1024 {
-		return 0, errors.New("ManualEntryTooLarge")
-	}
-	params.ServiceInstanceId = l.owner.Hello().State.ServiceInstanceId
-	host, err := l.owner.DesktopConnection(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer host.Close()
-	var begin protocol.CaptureBeginResult
-	if err := host.Call(ctx, protocol.MethodDesktopHistoryManualBegin, params, "CaptureBeginResult", &begin); err != nil {
-		return 0, err
-	}
-	if begin.CaptureId == nil || begin.State.ServiceInstanceId != params.ServiceInstanceId || begin.State.PrivacyEpoch != params.ExpectedEpoch {
-		return 0, client.ErrProtocol
-	}
-	const chunkSize = 192 * 1024
-	for offset := 0; offset < len(content); offset += chunkSize {
-		chunk := content[offset:min(offset+chunkSize, len(content))]
-		write := protocol.CaptureWriteParams{CaptureId: *begin.CaptureId, Offset: uint32(offset), DataBase64: base64.StdEncoding.EncodeToString([]byte(chunk))}
-		var result protocol.OperationResult
-		if err := host.Call(ctx, protocol.MethodDesktopCaptureWrite, write, "OperationResult", &result); err != nil {
-			return 0, err
-		}
-		if !result.Performed {
-			return 0, client.ErrProtocol
-		}
-	}
-	var saved protocol.DesktopMutationResult
-	if err := host.Call(ctx, protocol.MethodDesktopHistoryManualFinish, protocol.ManualEntryFinish{CaptureId: *begin.CaptureId}, "DesktopMutationResult", &saved); err != nil {
-		return 0, err
-	}
-	if !saved.Performed || saved.Id <= 0 {
-		return 0, client.ErrProtocol
-	}
-	return saved.Id, nil
+	return application.AddManual(ctx, l.owner, content, params)
 }
 
 func (l *Library) TagColors(ctx context.Context, epoch uint64) (json.RawMessage, error) {
@@ -378,20 +305,4 @@ func (l *Library) SourceIcon(ctx context.Context, params protocol.DesktopEntryPa
 	var icon protocol.SourceAppIcon
 	err := l.snapshot(ctx, protocol.MethodDesktopHistorySourceIcon, params, "SourceAppIcon", &icon, params.ExpectedEpoch)
 	return icon.Src, err
-}
-
-func (l *Library) entry(ctx context.Context, method protocol.Method, params protocol.DesktopEntryParams) (hostedEntry, error) {
-	instance := l.owner.Hello().State.ServiceInstanceId
-	if (params.Id < 0 || params.ServiceInstanceId != "") && params.ServiceInstanceId != instance {
-		return hostedEntry{}, errors.New("ClipboardHostInstanceChanged")
-	}
-	params.ServiceInstanceId = instance
-	var entry protocol.DesktopEntry
-	if err := l.snapshot(ctx, method, params, "DesktopEntry", &entry, params.ExpectedEpoch); err != nil {
-		return hostedEntry{}, err
-	}
-	if entry.Id != params.Id {
-		return hostedEntry{}, client.ErrProtocol
-	}
-	return hostedEntry{entry, instance}, nil
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/base64"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"image"
@@ -679,6 +680,35 @@ func TestReactLibraryWithService(t *testing.T) {
 	if err != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].Id != rows[0].Id {
 		t.Fatalf("tag page: %+v %v", page, err)
 	}
+	t.Run("native and bridge history share authenticated page reads", func(t *testing.T) {
+		ownerState, err := library.Status(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, filter := range []nativeHistoryFilter{{query: query}, {tag: "fixture", sort: "time"}} {
+			request := nativeHistoryRequest{state: ownerState.State, filter: filter}
+			native, err := library.nativeHistoryPage(ctx, request)
+			if err != nil || len(native.rows) != 1 || native.rows[0].Id != rows[0].Id || native.more ||
+				native.state.ServiceInstanceId != instance || native.state.PrivacyEpoch != epoch {
+				t.Fatalf("native query %v differs from bridge row identity or scope: %+v %v", filter, native.state, err)
+			}
+			request.state.ServiceInstanceId = "other-original-host"
+			if native, err := library.nativeHistoryPage(ctx, request); err == nil || err.Error() != "ClipboardHostInstanceChanged" || len(native.rows) != 0 {
+				t.Fatalf("native query used another host: %d %v", len(native.rows), err)
+			}
+		}
+		encoded, err := json.Marshal(page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload struct {
+			Items      []map[string]any `json:"items"`
+			NextOffset jsontext.Value   `json:"next_offset"`
+		}
+		if err := json.Unmarshal(encoded, &payload); err != nil || len(payload.Items) != 1 || payload.Items[0]["host_instance_id"] != instance || string(payload.NextOffset) != "null" {
+			t.Fatalf("compatibility bridge payload lost provenance or required null: %s %v", encoded, err)
+		}
+	})
 	params := protocol.DesktopEntryParams{Id: rows[0].Id, ExpectedEpoch: epoch, ServiceInstanceId: instance}
 	icon, err := library.SourceIcon(ctx, params)
 	if err != nil || icon == nil || !strings.HasPrefix(*icon, "data:image/png;base64,") {

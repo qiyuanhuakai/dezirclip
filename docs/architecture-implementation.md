@@ -209,6 +209,12 @@ Tauri 的内嵌历史查询使用同一个 Host 持有的 `HistoryService` 和 R
 
 React 主列表、标签页、标签建议和快贴调用类型化历史接口。读取使用调用方捕获的列表权限，并在返回时检查权限是否仍有效。MyGo 兼容桥沿用 `Library.Page`、`Library.TagPage` 和 `Library.TagCounts` 的原序列化格式，Tauri 适配器统一传递 `contentType`。`ServiceStatus` 和相关请求类型由现有协议生成器生成。React 470 项测试、Linux Tauri X11 269 项测试、Linux Host 88 项测试、Windows 和 Linux 的 Core 分页回归以及 Windows Tauri 测试目标类型检查通过。两套 React 生产构建通过。以生产前端资源构建的 Tauri 在隔离 X11 会话中通过可访问性树读到两条写入临时 SQLite 的历史。该环境的 WebDriver 建连超时，键盘搜索未能完成端到端复核。MyGo 在 RC1 已移除打包的 WebView 主窗口，独立 MyGo Web 构建及模拟桥接可用于兼容验证。 [RC1 变更](https://github.com/qiyuanhuakai/dezirclip/commit/89fb2fe91fc03fab910af1dd1a5936d44ac20a0b)
 
+### R5a MyGo 历史应用层
+
+MyGo Native 和兼容桥通过同一个 Go 应用层读取历史页、标签页、正文与摘要。快照描述符和各分块沿用同一条认证连接，并按调用者捕获的 Host 身份和隐私 epoch 校验。两个共享并发槽限制常规快照读取，只有 Host 明确返回 Busy 才重试。OCR 仍使用单次读取和独立预算。手工添加、历史变更和分块提交进入应用层，写入沿用已有的权限校验和确认回执。
+
+Native 控制器继续持有列表选择、页码及界面刷新状态。兼容桥的 53 个导出方法签名保持一致，历史条目继续返回 `host_instance_id`，标签末页继续序列化 `next_offset: null`。Windows 与 Linux Go 套件及 Linux 应用层竞态检查通过。隔离的 Linux Secret Service 实测覆盖 Native 与兼容桥读取同一历史、拒绝过期权限和异宿主、并发缩略图与解保护，以及实际 Tesseract OCR。
+
 ### R8 维护量中间复算
 
 按规范原基线 `1f1641a0` 与 `d2291d7b` 的 Git blob 统计。使用 `git ls-tree -r -z` 取得两次提交的常规文件，按对象 ID 批量读取，计入末尾没有换行的最后一行。范围沿用原统计的 Rust、Go、Python、JSON、TS、TSX、MJS、JS，加上当前提交中的 Swift。基线复算与规范原表的八种后缀计数一致。
