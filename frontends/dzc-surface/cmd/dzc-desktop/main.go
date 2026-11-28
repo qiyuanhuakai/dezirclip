@@ -19,6 +19,7 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
+	desktopruntime "github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/desktop/runtime"
 )
 
 //go:embed tray-icon.png
@@ -26,8 +27,7 @@ var trayIcon []byte
 
 type History struct {
 	actions       *client.Client
-	events        *client.Client
-	eventMu       sync.Mutex
+	events        *desktopruntime.EventStream
 	target        *client.Client
 	targetMu      sync.Mutex
 	targetInvalid atomic.Bool
@@ -81,49 +81,25 @@ func (h *History) Copy(ctx context.Context, id int64, state protocol.RuntimeStat
 	return err
 }
 
-func (h *History) Changes(ctx context.Context, cursor *uint64) (protocol.EventsResult, error) {
-	wait := uint16(1000)
-	var events protocol.EventsResult
-	h.eventMu.Lock()
-	defer h.eventMu.Unlock()
-	var lastReadError error
-	err := readEventStream(ctx, func(fresh bool) error {
-		if fresh && h.events != nil {
-			h.events.Close()
-			h.events = nil
-			h.targetInvalid.Store(true)
-			h.diagnostics.record("events-reconnect", 0, lastReadError)
-		}
-		if h.events == nil {
-			host, err := h.actions.DesktopConnection(ctx)
-			if err != nil {
-				return err
-			}
-			h.events = host
-		}
-		events = protocol.EventsResult{}
-		if cursor == nil {
-			// A new WebView loads current history and settings. Subscribe from that
-			// point without replaying another window's edits into its first render.
-			lastReadError = h.events.Call(ctx, protocol.MethodHealth, struct{}{}, "RuntimeState", &events.State)
-			events.Events = []protocol.Event{}
-			return lastReadError
-		}
-		lastReadError = h.events.Call(ctx, protocol.MethodEventsSubscribe, protocol.SubscribeParams{AfterSequence: *cursor, WaitMs: &wait}, "EventsResult", &events)
-		return lastReadError
-	})
-	if err != nil {
+func newHistory(actions *client.Client, diagnostics *desktopDiagnostics, dialEvents func(context.Context) (*client.Client, error)) *History {
+	h := &History{actions: actions, diagnostics: diagnostics}
+	h.events = desktopruntime.NewEventStream(dialEvents, func(err error) {
 		h.targetInvalid.Store(true)
-		if h.events != nil {
-			h.events.Close()
+		diagnostics.record("events-reconnect", 0, err)
+	}, func(ctx context.Context, err error) {
+		if err != nil {
+			h.targetInvalid.Store(true)
 		}
-		h.events = nil
-	}
-	h.diagnostics.eventRead(err)
-	if err == nil {
-		h.keepTargetAlive(ctx)
-	}
-	return events, err
+		diagnostics.eventRead(err)
+		if err == nil {
+			h.keepTargetAlive(ctx)
+		}
+	})
+	return h
+}
+
+func (h *History) Changes(ctx context.Context, cursor *uint64) (protocol.EventsResult, error) {
+	return h.events.Read(ctx, cursor)
 }
 
 // The target has its own authenticated stream: a long event poll must not
@@ -275,7 +251,8 @@ func run() error {
 	diagnostics := newDesktopDiagnostics(actions, "main")
 	diagnostics.record("start", 0, nil)
 	defer diagnostics.record("run-returned", 0, nil)
-	history := &History{actions: actions, diagnostics: diagnostics}
+	history := newHistory(actions, diagnostics, actions.DesktopConnection)
+	defer history.events.Close()
 	library := &Library{owner: actions}
 	shell := &DesktopShell{diagnostics: diagnostics, resident: residentBridge{output: os.Stdout, grantFocus: grantResidentFocus}}
 	preview := &Preview{owner: actions, resident: &shell.resident}

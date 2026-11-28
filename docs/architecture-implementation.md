@@ -215,6 +215,14 @@ MyGo Native 和兼容桥通过同一个 Go 应用层读取历史页、标签页�
 
 Native 控制器继续持有列表选择、页码及界面刷新状态。兼容桥的 53 个导出方法签名保持一致，历史条目继续返回 `host_instance_id`，标签末页继续序列化 `next_offset: null`。Windows 与 Linux Go 套件及 Linux 应用层竞态检查通过。隔离的 Linux Secret Service 实测覆盖 Native 与兼容桥读取同一历史、拒绝过期权限和异宿主、并发缩略图与解保护，以及实际 Tesseract OCR。
 
+X11 原生验收从独立干净检出构建 `1bfd186e`。构建证明记录 `verified_checkout`，实际可执行文件 SHA-256 为 `4443b313bf6d2215ba7b655c41ef8aa6290376501363276017b762cb3177afcd`。实际进程从 Rust Service 读取历史，恢复默认设置后仍显示原记录，默认快捷键可以再次唤起同一窗口。
+
+### R5a MyGo 窗口事件连接
+
+`internal/desktop/runtime` 持有每个主窗口的事件连接，串行处理读取、重连和显式关闭。连接断开后只按现有 cursor 重读一次，权限拒绝、协议错误和取消直接返回。粘贴目标仍由桌面前台动作管理，事件连接断开时立即作废，以免在新连接上使用旧目标。运行时包无需导入 MyGo，现有 `History.Changes` 绑定及事件 JSON 沿用。
+
+Windows、Linux Go 套件和 Linux 竞态测试通过。隔离 Service 验收用真实断开的事件 socket 复现重连，检查原 Host、cursor 和粘贴目标的作废，同时在挂起事件连接时验证目标捕获独立完成。Darwin 编译探查确认 Go SDK 仍依赖 Windows/Linux 本地传输，macOS 的生产路径继续使用 Swift SDK 与 Rust helper。
+
 ### R8 维护量中间复算
 
 按规范原基线 `1f1641a0` 与 `d2291d7b` 的 Git blob 统计。使用 `git ls-tree -r -z` 取得两次提交的常规文件，按对象 ID 批量读取，计入末尾没有换行的最后一行。范围沿用原统计的 Rust、Go、Python、JSON、TS、TSX、MJS、JS，加上当前提交中的 Swift。基线复算与规范原表的八种后缀计数一致。

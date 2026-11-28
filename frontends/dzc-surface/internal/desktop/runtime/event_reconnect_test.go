@@ -1,4 +1,4 @@
-package main
+package runtime
 
 import (
 	"context"
@@ -53,5 +53,17 @@ func TestEventReadNeverRetriesPrivacyProtocolOrCancellation(t *testing.T) {
 	_ = readEventStream(ctx, func(bool) error { calls++; return io.EOF })
 	if calls != 1 {
 		t.Fatal("cancelled read reconnected")
+	}
+}
+
+func TestClosedEventStreamDoesNotDialAgain(t *testing.T) {
+	stream := NewEventStream(func(context.Context) (*client.Client, error) {
+		t.Fatal("closed event stream dialed the Host")
+		return nil, nil
+	}, nil, nil)
+	stream.Close()
+	stream.Close()
+	if _, err := stream.Read(t.Context(), nil); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("read after close: %v", err)
 	}
 }

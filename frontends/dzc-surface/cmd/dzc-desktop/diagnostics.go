@@ -13,6 +13,7 @@ import (
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
+	desktopruntime "github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/desktop/runtime"
 )
 
 type desktopDiagnostics struct {
@@ -59,7 +60,7 @@ func diagnosticError(err error) string {
 	if errors.As(err, &timeout) && timeout.Timeout() {
 		return "transport-timeout"
 	}
-	if eventTransportFailure(err) {
+	if desktopruntime.EventTransportFailure(err) {
 		return "transport"
 	}
 	return "other"

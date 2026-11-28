@@ -8,6 +8,7 @@ import (
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
+	desktopruntime "github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/desktop/runtime"
 )
 
 func retryablePrivacyStatus(err error) bool {
@@ -15,7 +16,7 @@ func retryablePrivacyStatus(err error) bool {
 	if errors.As(err, &remote) {
 		return remote.Code == protocol.WireErrorCodeBusy
 	}
-	return eventTransportFailure(err)
+	return desktopruntime.EventTransportFailure(err)
 }
 
 // ServiceStatus rejects a snapshot if history changes while it is assembled.

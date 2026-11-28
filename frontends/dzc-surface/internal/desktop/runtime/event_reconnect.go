@@ -1,4 +1,4 @@
-package main
+package runtime
 
 import (
 	"context"
@@ -15,13 +15,13 @@ import (
 // Only that transport is replaced; protocol and privacy failures stay visible.
 func readEventStream(ctx context.Context, read func(fresh bool) error) error {
 	err := read(false)
-	if err == nil || ctx.Err() != nil || !eventTransportFailure(err) {
+	if err == nil || ctx.Err() != nil || !EventTransportFailure(err) {
 		return err
 	}
 	return read(true)
 }
 
-func eventTransportFailure(err error) bool {
+func EventTransportFailure(err error) bool {
 	var remote *client.RemoteError
 	if errors.As(err, &remote) || errors.Is(err, client.ErrProtocol) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false

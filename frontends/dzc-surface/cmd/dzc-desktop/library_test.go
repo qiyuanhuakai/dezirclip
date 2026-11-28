@@ -81,33 +81,61 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	owner.Close()
 	library := Library{owner}
+	newEventWatcher := func(t *testing.T) (*History, func()) {
+		t.Helper()
+		var conn *client.Client
+		history := newHistory(owner, nil, func(ctx context.Context) (*client.Client, error) {
+			var err error
+			conn, err = owner.DesktopConnection(ctx)
+			return conn, err
+		})
+		t.Cleanup(history.events.Close)
+		return history, func() {
+			t.Helper()
+			if conn == nil {
+				t.Fatal("no authenticated event stream was opened")
+			}
+			conn.Close()
+		}
+	}
 	t.Run("expired event stream reconnects to the same Host and cursor", func(t *testing.T) {
-		history := History{actions: owner}
+		history, disconnect := newEventWatcher(t)
 		first, err := history.Changes(ctx, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		history.events.Close()
+		disconnect()
 		next, err := history.Changes(ctx, &first.State.EventSequence)
-		if history.events != nil {
-			defer history.events.Close()
-		}
 		if err != nil || next.State.ServiceInstanceId != first.State.ServiceInstanceId || next.State.EventSequence < first.State.EventSequence {
 			t.Fatalf("event stream failed to resume on original Host: %v", err)
 		}
 	})
 	t.Run("target capture does not wait for event poll", func(t *testing.T) {
-		history := History{actions: owner}
-		history.eventMu.Lock()
+		dialing, release := make(chan struct{}), make(chan struct{})
+		history := newHistory(owner, nil, func(ctx context.Context) (*client.Client, error) {
+			close(dialing)
+			<-release
+			return owner.DesktopConnection(ctx)
+		})
+		defer history.events.Close()
+		poll := make(chan error, 1)
+		go func() {
+			_, err := history.Changes(ctx, nil)
+			poll <- err
+		}()
+		<-dialing
 		done := make(chan struct{})
 		go func() { history.rememberTarget(ctx); close(done) }()
 		select {
 		case <-done:
-			history.eventMu.Unlock()
+			close(release)
 		case <-time.After(2 * time.Second):
-			history.eventMu.Unlock()
+			close(release)
 			<-done
 			t.Error("foreground capture waited for the unrelated event stream")
+		}
+		if err := <-poll; err != nil {
+			t.Fatal(err)
 		}
 		if history.target == nil {
 			t.Fatal("target capture did not open its own authenticated stream")
@@ -454,12 +482,7 @@ func TestReactLibraryWithService(t *testing.T) {
 			t.Fatalf("remove selections: %v %v", remaining, err)
 		}
 	})
-	watcher := History{actions: owner}
-	defer func() {
-		if watcher.events != nil {
-			watcher.events.Close()
-		}
-	}()
+	watcher, disconnectWatcher := newEventWatcher(t)
 	baseline, err := watcher.Changes(ctx, nil)
 	if err != nil || baseline.State.ServiceInstanceId != instance || len(baseline.Events) != 0 {
 		t.Fatalf("new WebView event baseline: %+v %v", baseline, err)
@@ -852,7 +875,7 @@ func TestReactLibraryWithService(t *testing.T) {
 	// Reproduce a connection loss after the UI had a valid target. Retire
 	// its real Service socket and reconnect before the user's first click.
 	watcher.targetInvalid.Store(false)
-	watcher.events.Close()
+	disconnectWatcher()
 	resumed, err := watcher.Changes(ctx, &changes.State.EventSequence)
 	if err != nil || !watcher.targetInvalid.Load() || resumed.State.ServiceInstanceId != instance || resumed.State.EventSequence < changes.State.EventSequence {
 		t.Fatalf("subscription recovery failed or retained the paste target: %v", err)
