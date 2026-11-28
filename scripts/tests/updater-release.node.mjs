@@ -631,8 +631,12 @@ function sealFixture(options) {
   publisher.status = 'queued';
   const seal = { ...state.jobs[0], name: candidateSealJob, id: 9000,
     status: 'in_progress', conclusion: null, started_at: '2026-10-21T01:01:00Z', completed_at: null };
-  state.jobs.push(seal, { ...state.jobs[0], name: 'Source acceptance / Darwin native foundations',
-    id: 9001, status: 'completed', conclusion: 'skipped' });
+  state.jobs.push(seal, ...[
+    'Darwin native foundations',
+    'Windows Surface comparison or crash diagnostics',
+    'Diagnose Windows Service startup',
+  ].map((name, index) => ({ ...state.jobs[0], name: `Source acceptance / ${name}`,
+    id: 9001 + index, status: 'completed', conclusion: 'skipped' })));
   readbacks.source = { schema_version: 1, source_revision: source, run_id: 7001, run_attempt: 1,
     mode: 'source-acceptance', desktop_targets: ['linux-x86_64', 'windows-x86_64'],
     jobs: Object.fromEntries(['frontend', 'rust-development', 'go-development', 'ci-desktop-plan', 'tauri']

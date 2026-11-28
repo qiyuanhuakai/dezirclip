@@ -247,7 +247,14 @@ def workflow_jobs(env, exact_attempt):
     endpoint = (f"{run}/attempts/{env['GITHUB_RUN_ATTEMPT']}/jobs?per_page=100" if exact_attempt
                 else f"{run}/jobs?filter=latest&per_page=100")
     pages = json.loads(subprocess.check_output(["gh", "api", "--paginate", "--slurp", endpoint], text=True))
-    return [job for page in pages for job in page["jobs"]]
+    if not isinstance(pages, list) or not pages:
+        raise ValueError("GitHub returned no CI job listing")
+    count = pages[0]["total_count"]
+    jobs = [job for page in pages for job in page["jobs"]]
+    if (len(jobs) != count or any(page["total_count"] != count for page in pages)
+            or len({job["id"] for job in jobs}) != count):
+        raise ValueError("GitHub returned an incomplete or duplicated CI job listing")
+    return jobs
 
 
 def summarize():

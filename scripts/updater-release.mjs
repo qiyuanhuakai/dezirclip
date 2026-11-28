@@ -285,7 +285,8 @@ const optionalReleaseJobs = [
   'Full source acceptance / Optional Windows Surface comparison or crash diagnostics',
   ...['Published Windows memory comparison', 'native-file-drag', 'Compatible standalone CLI', 'Darwin native foundations',
     'Build shared native NSIS fixtures', 'Native NSIS (${{ matrix.scenario }})', 'Verified Flatpak', 'MyGo installer acceptance',
-    'Optional Windows Surface comparison or crash diagnostics'].map(name => `Source acceptance / ${name}`),
+    'Optional Windows Surface comparison or crash diagnostics', 'Windows Surface comparison or crash diagnostics',
+    'Diagnose Windows Service startup'].map(name => `Source acceptance / ${name}`),
 ];
 
 function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = false, dual = false, sealing = false) {

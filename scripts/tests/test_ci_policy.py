@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import re
 import unittest
 from unittest.mock import patch
@@ -96,6 +97,17 @@ class AcceptanceTests(unittest.TestCase):
             for profile in ("release", "debug"):
                 for steps in ci_policy.job_requirements(mode, mode == "full", profile).values():
                     self.assertTrue(set(steps) <= declared, set(steps) - declared)
+
+    def test_incomplete_github_job_pages_cannot_approve_ci(self):
+        env = dict(GITHUB_REPOSITORY="test/ci", GITHUB_RUN_ID=str(RUN), GITHUB_RUN_ATTEMPT=str(ATTEMPT))
+        for pages in (
+            [{"total_count": 2, "jobs": [{"id": 1}]}],
+            [{"total_count": 2, "jobs": [{"id": 1}, {"id": 1}]}],
+        ):
+            with self.subTest(pages=pages):
+                with patch("scripts.ci_policy.subprocess.check_output", return_value=json.dumps(pages)):
+                    with self.assertRaisesRegex(ValueError, "incomplete or duplicated"):
+                        ci_policy.workflow_jobs(env, exact_attempt=True)
 
     def test_each_mode_passes_its_exact_job_set(self):
         for mode in ci_policy.ALL_MODES:
