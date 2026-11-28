@@ -15,34 +15,14 @@ mod profile_fixture;
 #[cfg(target_os = "macos")]
 mod darwin {
     use dzc_core::{api::{ClipboardEntry, PrivacySessionCommand}, ports::ClipboardPayload};
-    use dzc_host::{Host, HostActions, HostOptions, serve_listener, wire::*};
+    use dzc_host::{Host, HostOptions, serve_listener, wire::*};
+    use dzc_host::darwin_clipboard::DarwinClipboardPump;
     use dzc_host::darwin_profile::DarwinProfile;
-    use dzc_platform::{darwin_clipboard::MainThreadClipboard, darwin_keychain::DarwinKeyProvider};
+    use dzc_platform::darwin_keychain::DarwinKeyProvider;
     use security_framework::os::macos::keychain::CreateOptions;
     use serde_json::{Value, json};
-    use std::{io::{self, Read, Write}, path::PathBuf, sync::{Arc, mpsc as reply}, time::Duration};
+    use std::{io::{self, Read, Write}, path::PathBuf, time::Duration};
     use tokio::sync::{mpsc, watch};
-
-    struct WriteText {
-        text: String,
-        completed: reply::SyncSender<Result<(), WireErrorCode>>,
-    }
-
-    struct Clipboard(mpsc::Sender<WriteText>);
-    impl HostActions for Clipboard {
-        fn platform_capabilities(&self) -> Value { json!({"native_text_clipboard": true}) }
-        fn can_copy(&self) -> bool { true }
-        fn copy(&self, payload: ClipboardPayload) -> Result<(), WireErrorCode> {
-            let ClipboardPayload::Text(text) = payload else { return Err(WireErrorCode::UnsupportedCapability); };
-            let (completed, result) = reply::sync_channel(1);
-            self.0.try_send(WriteText { text, completed }).map_err(|_| WireErrorCode::Unavailable)?;
-            result.recv().map_err(|_| WireErrorCode::Unavailable)?
-        }
-        fn can_paste(&self) -> bool { false }
-        fn paste(&self) -> Result<(), WireErrorCode> { Err(WireErrorCode::UnsupportedCapability) }
-        fn stop_helpers(&self) -> Result<(), WireErrorCode> { Ok(()) }
-        fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
-    }
 
     fn wire_error(code: WireErrorCode) -> io::Error { io::Error::other(format!("{code:?}")) }
 
@@ -72,7 +52,10 @@ mod darwin {
             _ => {}
         }
         let directory = PathBuf::from(first);
-        let mut clipboard = MainThreadClipboard::open()?;
+        let (mut clipboard, actions) = DarwinClipboardPump::open()?;
+        if actions.copy(ClipboardPayload::Text(String::new())) != Err(WireErrorCode::Unavailable) {
+            return Err("main-thread copy dispatch did not refuse a blocking wait".into());
+        }
         let password = uuid::Uuid::new_v4().simple().to_string();
         let keychain = CreateOptions::new().password(&password).prompt_user(false)
             .create(directory.join("fixture.keychain-db"))?;
@@ -87,9 +70,8 @@ mod darwin {
             "source_app": "Darwin Host fixture", "timestamp": 1, "is_pinned": false, "tags": []
         }))?;
         let id = history.save(&entry, None)?;
-        let (writer, mut writes) = mpsc::channel(1);
         let host = Host::new(HostOptions {
-            mode: HostMode::Service, history: history.clone(), directory: profile.directory.clone(), actions: Arc::new(Clipboard(writer)),
+            mode: HostMode::Service, history: history.clone(), directory: profile.directory.clone(), actions,
         }).map_err(wire_error)?;
         host.publish(EventKind::EntryAdded, EventData { entry_id: Some(id), status: None }).map_err(wire_error)?;
         let grant = host.grants().issue(ClientRole::Desktop, vec![
@@ -113,10 +95,7 @@ mod darwin {
                         }
                         return Ok(());
                     },
-                    Some(write) = writes.recv() => {
-                        let result = clipboard.write_text(&write.text).map_err(|_| WireErrorCode::Unavailable);
-                        let _ = write.completed.send(result);
-                    },
+                    true = clipboard.process_next_write() => {},
                     command = commands.recv(), if drain.is_none() => match command {
                         Some(b'p') => {
                             let now = unix_milliseconds()?;
