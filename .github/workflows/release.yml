@@ -114,6 +114,7 @@ jobs:
     if: github.event_name == 'push'
     permissions:
       contents: read
+      actions: read
     uses: ./.github/workflows/ci.yml
     with:
       full_validation: false

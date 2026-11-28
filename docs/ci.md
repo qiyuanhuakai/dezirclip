@@ -8,26 +8,29 @@
 
 入口见 [CI 工作流](../.github/workflows/ci.yml) 和 [Release 工作流](../.github/workflows/release.yml)。实例数按矩阵展开后的实际 job 计算，不计被跳过的模板或复用工作流的外层名称。
 
-| 触发 | 当前选择的任务 | 覆盖限制 |
+| 入口 | 当前要求的任务 | 覆盖限制 |
 |---|---|---|
-| `master` push / 任意 PR | `frontend` 1、`rust-development` 4、`go-development` 2，共 7 个基础实例；特定路径变更再加 `mygo-installer` | 没有 full 的四目标桌面、standalone、六场景 NSIS 和 Flatpak |
-| 手动 CI，`full_validation=false`，其它开关关闭 | 上述 7 个基础实例，加历史 `mygo-installer`，共 8 个 | 手动触发没有 diff 基线，历史 installer 的 scope 默认要求执行 |
-| 手动 CI，默认 `full_validation=true`，其它开关关闭 | 基础 7 + 历史 installer 1 + 矩阵选择 1 + Tauri 4 + standalone 4 + NSIS 构建 1 与验收 6 + Flatpak 2，共 26 个 | Windows ARM64 是交叉构建；历史/合成 installer 与当前发布包各有验收入口 |
-| Darwin 基础 `macos_native_probe=true` | 手动在 GitHub 的 macOS ARM64 runner 验证原生文件、IPC 和签名对端，命令同时设置 `full_validation=false` | 不计入 Windows/Linux 发版门槛 |
-| 复用 `ci.yml` | `workflow_call` 的 `full_validation` 默认 true。Release 显式调用候选源码模式 | 不运行完整的打包测试矩阵 |
-| 候选源码验收 `source_acceptance=true` | 前端、Rust 与 Go 开发测试，Linux/Windows x64 真实客户端和桌面验收，汇总绑定被测 SHA | 可单独运行，与全量安装和升级验收互补 |
+| `master` push / 任意 PR | 前端、Rust 与 Go 开发检查，特定路径变更时增加历史 MyGo 安装验收 | 开发检查随正常 PR 和 push 自动执行 |
+| 手动 `mode=development` | 开发检查及历史 MyGo 安装验收 | 手动触发缺少可靠 diff 基线，历史安装器按需执行规则要求运行 |
+| 手动 `mode=full`（未指定专项时的默认模式） | 开发检查、历史 MyGo 安装验收、四目标桌面和当前 Windows x64 MyGo 安装验收、四目标 standalone、六场景 NSIS、两个 Flatpak | Windows ARM64 的桌面和 standalone 任务是交叉构建 |
+| `mode=source-acceptance` 或 Release 复用调用 | 前端、Rust 与 Go 开发检查，Linux / Windows x64 的源码、真实客户端和桌面验收，写出绑定候选提交和 attempt 的凭据 | 正常 tag 的独立打包和最终包验收按下文执行 |
 | `v*` tag push | draft、四目标 standalone、四目标双桌面构建与验收、候选封存、公开与通道同步 | 以本页“正常 tag 发布”部分的实际门槛为准 |
 
-日常 `mygo-installer` 检查的是**固定 alpha.9 已发布 payload + 当前 checkout 的安装器源码**。scope 比较 CI/Release workflow、MyGo installer/packaging/harness、进程 receipt 和图标等路径；没有有效 diff 基线或比较失败时也要求执行。它不是当前 beta.4 payload 的安装验收。实际来源见 [历史 payload 准备器](../scripts/package-published-mygo.py)。
+日常的历史 MyGo 安装验收使用 **alpha.9 已发布 payload + 当前 checkout 的安装器源码**。范围比较 CI/Release workflow、MyGo 安装器、打包、测试夹具、进程凭据和图标等路径。缺少可靠基线时也执行。实际来源见 [历史 payload 准备器](../scripts/package-published-mygo.py)。
 
-专项输入可以叠加。候选源码验收使用自己的两个 x64 目标，遇到同时请求专项的配置会明确失败。
-
-| 输入 | 当前调度事实 |
+| 专项模式 | 当前执行范围 |
 |---|---|
-| `native_file_drag_only`、`windows_release_memory` | 分别增加原生文件拖放/截图检查、已发布 alpha.8/alpha.9 内存比较；不会自动关闭基础任务或默认 full |
-| `windows_x64_mygo_test_package`、`windows_service_crash_stacks`、`linux_release_inputs` | full=false 时各自只选 Windows x64 或 Linux x64；同时请求时取目标并集 |
-| `windows_surface_performance` | full=false 时也选择 Windows x64 前置验收，frontend 和所选桌面任务成功后执行性能比较 |
-| `windows_surface_crash_diagnostics` | 有独立的手动诊断条件；不等同于性能比较或完整原生验收 |
+| `darwin-native` | macOS ARM64 文件、IPC、签名对端、持久化 profile 与 Swift 会话 |
+| `native-file-drag` | Linux x64 和 Windows x64 原生文件拖放、目标互动及现有截图验收 |
+| `historical-windows-memory` | 固定 alpha.8 / alpha.9 的 Windows 内存比较 |
+| `mygo-package` | Windows x64 当前 MyGo 候选安装、运行验收和安装包归档 |
+| `linux-release-inputs` | Linux x64 桌面检查后生成绑定源码和产物身份的构建输入 |
+| `windows-performance` | 构建 Windows 比较用产物，对同一份产物执行功能验收和 ABBA 采样 |
+| `windows-crash` | 选择 `windows_crash_target=service-startup` 或 `surface`。只有 `surface` 可选 `windows_crash_build_profile=debug` |
+
+每次手动触发只接受一个模式。脚本迁移期间，`mode=auto` 继续接受一个旧专项开关。旧 `full_validation` 只在未选择专项时决定默认范围，`false` 选择 development。旧输入供已经使用 `gh workflow run` 的专项调用迁移，仓库内的 Release 暂时继续传 `source_acceptance=true`。调用迁至命名模式并核实旧接口已无消费者后移除对应参数。命名模式和旧专项开关同时出现时，前置任务会拒绝请求。
+
+结果汇总通过 GitHub Actions 的任务记录核对固定清单。每个必需矩阵实例和所列的关键步骤都要实际成功，缺失、跳过、取消和失败分别显示。普通 CI 的部分重跑沿用 GitHub 认定的同一 run 最新结果。候选源码验收核对当前 attempt，核对通过后才生成既有格式的凭据。
 
 PR 更新和新的 master push 会取消同组旧 CI。手动 full 不适用该取消条件。普通日常检查的耗时目标仍为 10 分钟以内；排队、外部下载和真实原生验收耗时须分别记录，超时或取消不能算成功。
 

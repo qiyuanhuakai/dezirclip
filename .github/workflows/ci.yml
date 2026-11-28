@@ -23,6 +23,30 @@ on:
         value: ${{ jobs.source-acceptance.outputs.artifact }}
   workflow_dispatch:
     inputs:
+      mode:
+        description: Acceptance mode. Auto supports legacy inputs during migration.
+        type: choice
+        default: auto
+        options:
+          - auto
+          - development
+          - full
+          - source-acceptance
+          - darwin-native
+          - native-file-drag
+          - historical-windows-memory
+          - mygo-package
+          - linux-release-inputs
+          - windows-performance
+          - windows-crash
+      windows_crash_target:
+        description: Target for the named Windows crash mode
+        type: choice
+        default: auto
+        options:
+          - auto
+          - service-startup
+          - surface
       macos_native_probe:
         description: Run the opt-in Darwin native foundations before SwiftUI integration
         type: boolean
@@ -36,7 +60,7 @@ on:
         type: boolean
         default: false
       full_validation:
-        description: Run complete multi-platform native and packaging acceptance
+        description: Legacy auto-mode default for requests without a focused input
         type: boolean
         default: true
       source_acceptance:
@@ -81,7 +105,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ inputs.source_acceptance && 'source-acceptance' || github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ (inputs.source_acceptance || inputs.mode == 'source-acceptance') && 'source-acceptance' || github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ !inputs.source_acceptance && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master')) }}
 
 env:
@@ -92,7 +116,8 @@ env:
 jobs:
   darwin-native:
     name: Darwin native foundations
-    if: github.event_name == 'workflow_dispatch' && inputs.macos_native_probe && !inputs.source_acceptance
+    needs: ci-desktop-plan
+    if: needs.ci-desktop-plan.outputs.mode == 'darwin-native'
     runs-on: macos-26
     timeout-minutes: 18
     steps:
@@ -129,7 +154,8 @@ jobs:
 
   windows-release-memory:
     name: Published Windows memory comparison
-    if: github.event_name == 'workflow_dispatch' && inputs.windows_release_memory == true
+    needs: ci-desktop-plan
+    if: needs.ci-desktop-plan.outputs.mode == 'historical-windows-memory'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -158,39 +184,13 @@ jobs:
           retention-days: 14
 
   frontend:
-    if: '!inputs.macos_native_probe'
+    needs: ci-desktop-plan
+    if: needs.ci-desktop-plan.outputs.development == 'true'
     name: Frontend
     runs-on: ubuntu-22.04
-    outputs:
-      mygo_installer_required: ${{ steps.mygo-installer-scope.outputs.required }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Check whether the legacy MyGo installer needs acceptance
-        id: mygo-installer-scope
-        shell: bash
-        env:
-          PUSH_BEFORE: ${{ github.event.before }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          FULL_VALIDATION: ${{ inputs.full_validation }}
-        run: |
-          case "$GITHUB_EVENT_NAME" in
-            push) base="$PUSH_BEFORE" ;;
-            pull_request) base="$PR_BASE_SHA" ;;
-            *) base= ;;
-          esac
-
-          # The runner tests the published alpha.9 payload with installer sources from this checkout.
-          required=true
-          if [[ "$FULL_VALIDATION" != true && "$base" =~ ^[0-9a-f]{40}$ && "$base" != 0000000000000000000000000000000000000000 ]] &&
-            { git cat-file -e "$base^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "$base"; } &&
-            git diff --quiet "$base" HEAD -- .github/workflows/ci.yml .github/workflows/release.yml \
-              scripts/build-mygo-installer.py scripts/mygo-installer.nsi scripts/package-published-mygo.py \
-              'scripts/tests/mygo-*-windows.*' scripts/tests/service-process-receipt.ps1 src-tauri/icons/icon.ico; then
-            required=false
-          fi
-          echo "required=$required" >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -275,7 +275,8 @@ jobs:
           node scripts/tests/verify-desktop-web.mjs
 
   native-file-drag:
-    if: github.event_name == 'workflow_dispatch' && inputs.native_file_drag_only && !inputs.source_acceptance
+    needs: ci-desktop-plan
+    if: needs.ci-desktop-plan.outputs.mode == 'native-file-drag'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -354,53 +355,30 @@ jobs:
 
   ci-desktop-plan:
     name: Select desktop acceptance targets
-    if: inputs.source_acceptance || inputs.full_validation || inputs.windows_x64_mygo_test_package || inputs.windows_service_crash_stacks || inputs.linux_release_inputs || inputs.windows_surface_performance
     runs-on: ubuntu-24.04
+    timeout-minutes: 3
     outputs:
+      mode: ${{ steps.targets.outputs.mode }}
+      desktop: ${{ steps.targets.outputs.desktop }}
       matrix: ${{ steps.targets.outputs.matrix }}
+      development: ${{ steps.targets.outputs.development }}
+      legacy_installer: ${{ steps.targets.outputs.legacy_installer }}
+      crash_profile: ${{ steps.targets.outputs.crash_profile }}
     steps:
-      - name: Select desktop targets for the request
+      - uses: actions/checkout@v4
+      - name: Test the mode and scenario policy
+        run: python -B -m unittest discover -s scripts/tests -p test_ci_policy.py
+      - name: Select desktop targets and required checks
         id: targets
-        shell: python
         env:
-          FULL_VALIDATION: ${{ inputs.full_validation }}
-          SOURCE_ACCEPTANCE: ${{ inputs.source_acceptance }}
-          FOCUSED_REQUEST: ${{ inputs.native_file_drag_only || inputs.windows_release_memory || inputs.windows_service_crash_stacks || inputs.windows_x64_mygo_test_package || inputs.linux_release_inputs || inputs.windows_surface_performance || inputs.windows_surface_crash_diagnostics }}
-          LINUX_RELEASE_INPUTS: ${{ inputs.linux_release_inputs }}
-          WINDOWS_X64: ${{ inputs.windows_x64_mygo_test_package || inputs.windows_service_crash_stacks || inputs.windows_surface_performance }}
-        run: |
-          import json, os
-          def target(name, platform, rust_target="", msvc_arch="", can_test=True):
-              return {
-                  "name": name, "platform": platform, "rust_target": rust_target, "msvc_arch": msvc_arch,
-                  "can_test": can_test, "cargo_args": "--target " + rust_target if rust_target else "",
-              }
-          targets = [
-              target("linux-x86_64", "ubuntu-24.04"),
-              target("linux-aarch64", "ubuntu-24.04-arm"),
-              target("windows-x86_64", "windows-latest"),
-              target("windows-aarch64", "windows-latest", "aarch64-pc-windows-msvc", "amd64_arm64", False),
-          ]
-          if os.environ["SOURCE_ACCEPTANCE"] == "true":
-              if os.environ["FOCUSED_REQUEST"] == "true":
-                  raise SystemExit("Source acceptance cannot be combined with a focused request")
-              targets = [row for row in targets if row["name"] in {"linux-x86_64", "windows-x86_64"}]
-          elif os.environ["FULL_VALIDATION"] != "true":
-              requested = set()
-              if os.environ["LINUX_RELEASE_INPUTS"] == "true":
-                  requested.add("linux-x86_64")
-              if os.environ["WINDOWS_X64"] == "true":
-                  requested.add("windows-x86_64")
-              targets = [row for row in targets if row["name"] in requested]
-          if not targets:
-              raise RuntimeError("Desktop acceptance was requested without a target")
-          print("Selected desktop targets:", ", ".join(row["name"] for row in targets))
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              print("matrix=" + json.dumps({"include": targets}, separators=(",", ":")), file=output)
+          CI_INPUTS: ${{ toJSON(inputs) }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python -B scripts/ci_policy.py plan
 
   tauri:
     needs: ci-desktop-plan
-    if: needs.ci-desktop-plan.result == 'success'
+    if: needs.ci-desktop-plan.outputs.desktop == 'true'
     # GitHub displays this template literally when the job is skipped before matrix expansion.
     name: Tauri backend (${{ matrix.name }})
     runs-on: ${{ matrix.platform }}
@@ -658,7 +636,7 @@ jobs:
           subprocess.run(command, check=True)
 
       - name: Build Tauri crate
-        if: '!inputs.source_acceptance'
+        if: needs.ci-desktop-plan.outputs.mode != 'source-acceptance'
         working-directory: src-tauri
         run: cargo build ${{ matrix.cargo_args }}
 
@@ -795,10 +773,10 @@ jobs:
           ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -TrayPaste
 
       - name: Verify repeated MyGo emoji paste and Windows Service startup
-        if: runner.os == 'Windows' && matrix.can_test && !inputs.windows_service_crash_stacks
+        if: runner.os == 'Windows' && matrix.can_test
         shell: powershell
         env:
-          MYGO_EMOJI_RUNS: ${{ inputs.source_acceptance && '1' || '8' }}
+          MYGO_EMOJI_RUNS: ${{ needs.ci-desktop-plan.outputs.mode == 'source-acceptance' && '1' || '8' }}
         run: |
           $cycles = [int]$env:MYGO_EMOJI_RUNS
           1..$cycles | ForEach-Object {
@@ -824,12 +802,6 @@ jobs:
           cargo test --locked -p dzc-platform native_clipboard::windows_public::tests::own_notification_is_identified_without_acquiring_the_clipboard -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked -p dzc-platform native_clipboard::windows_image::tests
-
-      - name: Diagnose Windows Service startup crashes with local symbols
-        if: runner.os == 'Windows' && matrix.can_test && inputs.windows_service_crash_stacks
-        timeout-minutes: 20
-        shell: powershell
-        run: ./scripts/tests/mygo-service-crash-stacks.ps1 -Desktop target/debug/dzc-desktop.exe
 
       - name: Verify MyGo elevated Service and desktop handoff
         if: runner.os == 'Windows' && matrix.can_test
@@ -990,7 +962,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Stage Windows x64 MyGo package for testing
-        if: "!inputs.source_acceptance && matrix.name == 'windows-x86_64' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.windows_x64_mygo_test_package))"
+        if: matrix.name == 'windows-x86_64' && (needs.ci-desktop-plan.outputs.mode == 'full' || needs.ci-desktop-plan.outputs.mode == 'mygo-package')
         shell: pwsh
         run: |
           pnpm run build:mygo:web
@@ -1011,7 +983,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - name: Upload Windows x64 MyGo test installer
-        if: "!inputs.source_acceptance && matrix.name == 'windows-x86_64' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.windows_x64_mygo_test_package))"
+        if: matrix.name == 'windows-x86_64' && (needs.ci-desktop-plan.outputs.mode == 'full' || needs.ci-desktop-plan.outputs.mode == 'mygo-package')
         uses: actions/upload-artifact@v4
         with:
           name: DezirClip-windows-x64-MyGo-${{ github.sha }}
@@ -1038,14 +1010,14 @@ jobs:
           subprocess.run([sys.executable, '-I', '-B', 'scripts/tests/test_release_identities.py', 'ReleaseIdentities.test_real_readonly_directory_requires_the_nested_file_mountpoint', '-v'], check=True)
 
       - name: Supply optional Linux x64 release inputs
-        if: github.event_name == 'workflow_dispatch' && inputs.linux_release_inputs && !inputs.source_acceptance && runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
+        if: needs.ci-desktop-plan.outputs.mode == 'linux-release-inputs' && runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
         timeout-minutes: 60
         env:
           DEZIRCLIP_LINUX_RELEASE_INPUTS: 'true'
         run: python -B scripts/build-linux-release-inputs.py
 
       - name: Preserve optional Linux x64 release inputs and original build failures
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.linux_release_inputs && !inputs.source_acceptance && runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
+        if: always() && needs.ci-desktop-plan.outputs.mode == 'linux-release-inputs' && runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
         uses: actions/upload-artifact@v4
         with:
           name: linux-release-inputs-${{ github.sha }}-${{ github.run_attempt }}
@@ -1076,20 +1048,50 @@ jobs:
           assert len(encoded.encode('ascii')) <= 2048, 'Bounded disk summary required'
           print('DEZIRCLIP_CI_DISK', encoded, flush=True)
 
+  windows-service-startup:
+    name: Diagnose Windows Service startup
+    needs: ci-desktop-plan
+    if: needs.ci-desktop-plan.outputs.mode == 'windows-service-startup'
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          key: windows-service-startup-symbols
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: frontends/dzc-surface/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the symbolized Service and its actual MyGo launcher
+        shell: pwsh
+        run: |
+          cargo build --locked -p dzc-cli -p dzc-service --no-default-features --features dzc-cli/native-screen,dzc-service/native-screen --bin dzc --bin dzc-service
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/build-surface.mjs --desktop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item artifacts/dzc-desktop/x86_64-pc-windows-msvc/dzc-desktop.exe target/debug/ -ErrorAction Stop
+      - name: Diagnose Windows Service startup crashes with local symbols
+        timeout-minutes: 20
+        shell: powershell
+        run: ./scripts/tests/mygo-service-crash-stacks.ps1 -Desktop target/debug/dzc-desktop.exe
+
   windows-surface-performance:
-    name: Optional Windows Surface comparison or crash diagnostics
-    if: >-
-      ${{ !cancelled() && github.event_name == 'workflow_dispatch' &&
-          (inputs.windows_surface_crash_diagnostics == true ||
-           (inputs.windows_surface_performance == true &&
-            needs.frontend.result == 'success' && needs.tauri.result == 'success')) }}
-    needs: [frontend, tauri]
+    name: Windows Surface comparison or crash diagnostics
+    needs: ci-desktop-plan
+    if: needs.ci-desktop-plan.outputs.mode == 'windows-performance' || needs.ci-desktop-plan.outputs.mode == 'windows-surface-crash'
     runs-on: windows-latest
     timeout-minutes: 150
     env:
-      DZC_WINDOWS_PERFORMANCE_ENABLED: ${{ inputs.windows_surface_performance && 'true' || 'false' }}
-      DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED: ${{ inputs.windows_surface_crash_diagnostics && 'true' || 'false' }}
-      DZC_WINDOWS_CRASH_BUILD_PROFILE: ${{ inputs.windows_crash_build_profile || 'release' }}
+      DZC_WINDOWS_PERFORMANCE_ENABLED: ${{ needs.ci-desktop-plan.outputs.mode == 'windows-performance' && 'true' || 'false' }}
+      DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED: ${{ needs.ci-desktop-plan.outputs.mode == 'windows-surface-crash' && 'true' || 'false' }}
+      DZC_WINDOWS_CRASH_BUILD_PROFILE: ${{ needs.ci-desktop-plan.outputs.crash_profile }}
       GOTOOLCHAIN: local
     steps:
       - name: Require exactly one optional Windows mode
@@ -1129,7 +1131,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
-          key: windows-surface-${{ inputs.windows_surface_crash_diagnostics && inputs.windows_crash_build_profile == 'debug' && 'debug-diagnostics' || 'release-performance' }}
+          key: windows-surface-${{ env.DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED == 'true' && env.DZC_WINDOWS_CRASH_BUILD_PROFILE == 'debug' && 'debug-diagnostics' || 'release-performance' }}
 
       - name: Setup pinned Go toolchain
         uses: actions/setup-go@v6
@@ -1148,11 +1150,11 @@ jobs:
           pnpm run surface:build
 
       - name: Build the actual release Desktop with embedded frontend
-        if: inputs.windows_surface_crash_diagnostics != true || inputs.windows_crash_build_profile != 'debug'
+        if: env.DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED != 'true' || env.DZC_WINDOWS_CRASH_BUILD_PROFILE != 'debug'
         run: cargo build --release --locked --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --bin dezirclip
 
       - name: Build the exact debug Desktop and retain its symbol receipt
-        if: inputs.windows_surface_crash_diagnostics && inputs.windows_crash_build_profile == 'debug'
+        if: env.DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED == 'true' && env.DZC_WINDOWS_CRASH_BUILD_PROFILE == 'debug'
         shell: pwsh
         env:
           CARGO_PROFILE_DEV_DEBUG: '2'
@@ -1164,12 +1166,12 @@ jobs:
           exit $LASTEXITCODE
 
       - name: Derive the comparison fixture from reviewed functional sources
-        if: inputs.windows_surface_performance
+        if: env.DZC_WINDOWS_PERFORMANCE_ENABLED == 'true'
         run: python -B scripts/tests/windows-performance/derive.py --output-dir .harness/windows-performance-runtime
 
       - name: Verify these release bytes before the sequential ABBA comparison
         id: performance-prerequisite
-        if: inputs.windows_surface_performance
+        if: env.DZC_WINDOWS_PERFORMANCE_ENABLED == 'true'
         timeout-minutes: 12
         shell: python
         run: |
@@ -1203,7 +1205,7 @@ jobs:
                   stream.write(name + '=' + str(value) + '\n')
 
       - name: Run the complete sequential release ABBA comparison
-        if: inputs.windows_surface_performance
+        if: env.DZC_WINDOWS_PERFORMANCE_ENABLED == 'true'
         shell: python
         env:
           DZC_FUNCTIONAL_ROOT: ${{ steps.performance-prerequisite.outputs.functional_root }}
@@ -1222,23 +1224,23 @@ jobs:
 
       - name: Run up to five success-only diagnostic cases on the selected build
         id: crash-diagnostics
-        if: inputs.windows_surface_crash_diagnostics
+        if: env.DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED == 'true'
         timeout-minutes: 55
         shell: pwsh
         run: ./scripts/tests/windows-crash-diagnostics.ps1 -Mode run -Profile $env:DZC_WINDOWS_CRASH_BUILD_PROFILE
 
       - name: Restore only the matching owned WER child key
-        if: always() && inputs.windows_surface_crash_diagnostics && steps.crash-diagnostics.outputs.root != ''
+        if: always() && env.DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED == 'true' && steps.crash-diagnostics.outputs.root != ''
         shell: pwsh
         env:
           DZC_CRASH_DIAGNOSTICS_ROOT: ${{ steps.crash-diagnostics.outputs.root }}
         run: ./scripts/tests/windows-crash-diagnostics.ps1 -Mode cleanup -Root $env:DZC_CRASH_DIAGNOSTICS_ROOT
 
       - name: Preserve original functional failures and crash metadata
-        if: always() && inputs.windows_surface_crash_diagnostics && (steps.crash-diagnostics.outputs.sequence_root != '' || steps.crash-diagnostics.outputs.root != '')
+        if: always() && env.DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED == 'true' && (steps.crash-diagnostics.outputs.sequence_root != '' || steps.crash-diagnostics.outputs.root != '')
         uses: actions/upload-artifact@v4
         with:
-          name: windows-surface-${{ inputs.windows_crash_build_profile == 'debug' && 'debug' || 'release' }}-crash-metadata-${{ github.run_attempt }}
+          name: windows-surface-${{ env.DZC_WINDOWS_CRASH_BUILD_PROFILE == 'debug' && 'debug' || 'release' }}-crash-metadata-${{ github.run_attempt }}
           retention-days: 3
           path: |
             ${{ steps.crash-diagnostics.outputs.sequence_root != '' && format('{0}/**/*', steps.crash-diagnostics.outputs.sequence_root) || '' }}
@@ -1249,17 +1251,17 @@ jobs:
           if-no-files-found: error
 
       - name: Preserve only the identity-bound original Desktop dump
-        if: always() && inputs.windows_surface_crash_diagnostics && steps.crash-diagnostics.outputs.accepted_dump != ''
+        if: always() && env.DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED == 'true' && steps.crash-diagnostics.outputs.accepted_dump != ''
         uses: actions/upload-artifact@v4
         with:
-          name: windows-surface-${{ inputs.windows_crash_build_profile == 'debug' && 'debug' || 'release' }}-owned-crash-dump-${{ github.run_attempt }}
+          name: windows-surface-${{ env.DZC_WINDOWS_CRASH_BUILD_PROFILE == 'debug' && 'debug' || 'release' }}-owned-crash-dump-${{ github.run_attempt }}
           retention-days: 3
           compression-level: 1
           path: ${{ steps.crash-diagnostics.outputs.accepted_dump }}
           if-no-files-found: error
 
       - name: Preserve the exact debug EXE, PDB and build receipt
-        if: always() && inputs.windows_surface_crash_diagnostics && inputs.windows_crash_build_profile == 'debug'
+        if: always() && env.DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED == 'true' && env.DZC_WINDOWS_CRASH_BUILD_PROFILE == 'debug'
         uses: actions/upload-artifact@v4
         with:
           name: windows-surface-debug-build-symbols-${{ github.run_attempt }}
@@ -1272,7 +1274,7 @@ jobs:
           if-no-files-found: error
 
       - name: Preserve original comparison sources, observations and failures
-        if: always() && inputs.windows_surface_performance
+        if: always() && env.DZC_WINDOWS_PERFORMANCE_ENABLED == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: windows-surface-release-performance-${{ github.run_attempt }}
@@ -1290,15 +1292,17 @@ jobs:
           if-no-files-found: warn
 
   standalone-cli:
-    if: inputs.full_validation && !inputs.source_acceptance
+    needs: ci-desktop-plan
+    if: needs.ci-desktop-plan.outputs.mode == 'full'
     name: Compatible standalone CLI
     uses: ./.github/workflows/standalone-cli.yml
     with:
       artifact-prefix: acceptance-cli
 
   native-nsis-fixtures:
+    needs: ci-desktop-plan
     name: Build shared native NSIS fixtures
-    if: inputs.full_validation && !inputs.source_acceptance
+    if: needs.ci-desktop-plan.outputs.mode == 'full'
     runs-on: windows-latest
     timeout-minutes: 30
     outputs:
@@ -1350,8 +1354,8 @@ jobs:
           retention-days: 7
 
   native-windows-upgrade:
-    needs: native-nsis-fixtures
-    if: inputs.full_validation && !inputs.source_acceptance
+    needs: [ci-desktop-plan, native-nsis-fixtures]
+    if: needs.ci-desktop-plan.outputs.mode == 'full'
     # Keep scenario identities distinct for the full release acceptance gate.
     name: Native NSIS (${{ matrix.scenario }})
     runs-on: windows-latest
@@ -1410,7 +1414,8 @@ jobs:
           if-no-files-found: ignore
 
   flatpak:
-    if: inputs.full_validation && !inputs.source_acceptance
+    needs: ci-desktop-plan
+    if: needs.ci-desktop-plan.outputs.mode == 'full'
     name: Verified Flatpak
     uses: ./.github/workflows/flatpak.yml
     with:
@@ -1418,8 +1423,8 @@ jobs:
 
   mygo-installer:
     name: MyGo installer acceptance
-    needs: frontend
-    if: "!inputs.source_acceptance && needs.frontend.outputs.mygo_installer_required == 'true'"
+    needs: ci-desktop-plan
+    if: needs.ci-desktop-plan.outputs.legacy_installer == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -1453,7 +1458,8 @@ jobs:
           if-no-files-found: error
 
   rust-development:
-    if: '!inputs.macos_native_probe'
+    needs: ci-desktop-plan
+    if: needs.ci-desktop-plan.outputs.development == 'true'
     name: Rust development (${{ matrix.os }}, ${{ matrix.mode }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -1525,7 +1531,8 @@ jobs:
         run: cargo check --locked --workspace --all-targets
 
   go-development:
-    if: '!inputs.macos_native_probe'
+    needs: ci-desktop-plan
+    if: needs.ci-desktop-plan.outputs.development == 'true'
     name: Go development (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
@@ -1600,10 +1607,29 @@ jobs:
           if-no-files-found: warn
 
   source-acceptance:
-    name: Bind candidate source
-    needs: [frontend, rust-development, go-development, ci-desktop-plan, tauri]
-    if: always() && inputs.source_acceptance
+    name: ${{ needs.ci-desktop-plan.outputs.mode == 'source-acceptance' && 'Bind candidate source' || 'Summarize CI acceptance' }}
+    needs:
+      - ci-desktop-plan
+      - frontend
+      - rust-development
+      - go-development
+      - tauri
+      - darwin-native
+      - windows-release-memory
+      - native-file-drag
+      - windows-service-startup
+      - windows-surface-performance
+      - standalone-cli
+      - native-nsis-fixtures
+      - native-windows-upgrade
+      - flatpak
+      - mygo-installer
+    if: always()
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-24.04
+    timeout-minutes: 3
     outputs:
       source: ${{ steps.bind.outputs.source }}
       artifact: ${{ steps.upload-source.outputs.artifact-id }}
@@ -1611,35 +1637,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Bind passed source jobs to the candidate
+      - name: Check required job and step results
         id: bind
-        shell: python
         env:
           DEPENDENCIES: ${{ toJSON(needs) }}
-        run: |
-          import json, os, subprocess
-          from pathlib import Path
-          source = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-          if source != os.environ["GITHUB_SHA"]:
-              raise SystemExit("The tested source does not match the candidate")
-          needs = json.loads(os.environ["DEPENDENCIES"])
-          results = {name: info["result"] for name, info in needs.items()}
-          if any(result != "success" for result in results.values()):
-              raise SystemExit(f"Required source jobs did not pass: {results}")
-          matrix = json.loads(needs["ci-desktop-plan"]["outputs"]["matrix"])
-          targets = sorted(row["name"] for row in matrix["include"])
-          if targets != ["linux-x86_64", "windows-x86_64"]:
-              raise SystemExit(f"Source acceptance selected unexpected targets: {targets}")
-          receipt = {
-              "schema_version": 1, "mode": "source-acceptance", "source_revision": source,
-              "run_id": int(os.environ["GITHUB_RUN_ID"]), "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
-              "jobs": results, "desktop_targets": targets,
-          }
-          path = Path(os.environ["RUNNER_TEMP"]) / "source-acceptance.json"
-          path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              print(f"source={source}", file=output)
+          CI_REPORTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: python -B scripts/ci_policy.py summarize
       - uses: actions/upload-artifact@v4
+        if: needs.ci-desktop-plan.outputs.mode == 'source-acceptance'
         id: upload-source
         with:
           name: source-acceptance-${{ github.run_attempt }}

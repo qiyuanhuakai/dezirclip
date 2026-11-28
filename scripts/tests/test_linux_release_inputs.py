@@ -410,7 +410,7 @@ class Inputs(unittest.TestCase):
         self.assertLess(text.index('      - name: Verify actual private Linux release receipt mounts'), start)
         for line in block.splitlines():
             if line.strip().startswith('if:'):
-                for condition in ["github.event_name == 'workflow_dispatch'", 'inputs.linux_release_inputs',
+                for condition in ["needs.ci-desktop-plan.outputs.mode == 'linux-release-inputs'",
                                   "runner.os == 'Linux'", "runner.arch == 'X64'", "matrix.name == 'linux-x86_64'"]:
                     self.assertIn(condition, line)
         self.assertNotIn('continue-on-error', block)
