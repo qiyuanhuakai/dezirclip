@@ -10,6 +10,9 @@ private struct ProductionReceipt: Decodable {
 
 @MainActor
 func verifyProductionHost(directory: URL) async throws {
+    let clipboard = NSPasteboard.general
+    clipboard.clearContents()
+    try require(clipboard.setString("Clipboard from before launch", forType: .string), "could not prepare the initial pasteboard")
     let (host, bootstrap) = try await BundledDesktopHost.launchWithReceipt(in: directory, clientVersion: "darwin-production-probe")
     let marker = "DezirClip production helper " + UUID().uuidString
     let entryID: Int64
@@ -18,15 +21,21 @@ func verifyProductionHost(directory: URL) async throws {
         let read = try await host.openSession(requireCopy: true)
         let initial = try await read.historyPage(DesktopPageParams(limit: 20, offset: 0))
         try require(initial.value.entries.isEmpty, "production helper added fixture history during startup")
-        try require(Set(read.hello.permissions) == [.historyRead, .desktopHistory, .clipboardCopy],
+        try require(Set(read.hello.permissions) == [.historyRead, .desktopHistory, .clipboardCopy, .privacyWrite],
                     "production helper reported unexpected permissions")
         instance = read.hello.state.serviceInstanceId
         let receipt = try JSONDecoder().decode(ProductionReceipt.self, from: bootstrap)
-        entryID = try await addProductionEntry(host, grant: receipt.grant, state: initial.state, text: marker)
+        let control = try await productionControl(host, grant: receipt.grant)
+        entryID = try await addProductionEntry(control, state: initial.state, text: marker)
         let page = try await read.historyPage(DesktopPageParams(limit: 20, offset: 0))
         try require(page.value.entries.map(\.id) == [entryID], "the manual entry did not reach production history")
+        try await verifyCapture(read, control: control, page: page, originalID: entryID, originalText: marker)
+        await control.invalidate()
         await read.close()
         try await host.stop()
+        clipboard.clearContents()
+        try require(clipboard.setString("Clipboard from while helper was stopped", forType: .string),
+                    "could not prepare the stopped pasteboard")
     } catch {
         try? await host.stop()
         throw error
@@ -58,13 +67,18 @@ func verifyProductionHost(directory: URL) async throws {
 }
 
 @MainActor
-private func addProductionEntry(_ host: BundledDesktopHost, grant: String, state: RuntimeState, text: String) async throws -> Int64 {
+private func productionControl(_ host: BundledDesktopHost, grant: String) async throws -> LocalFrameConnection {
     let fd = try await host.verifiedSocket()
     let connection = LocalFrameConnection(verifiedSocket: fd)
     _ = try await request(connection, id: "hello", method: "hello", params: [
         "protocol_version": ["major": 1, "minor": 0], "client_version": "darwin-production-probe",
         "client_role": "desktop", "capabilities": [String](), "required_capabilities": [String](), "grant": grant,
     ])
+    return connection
+}
+
+@MainActor
+private func addProductionEntry(_ connection: LocalFrameConnection, state: RuntimeState, text: String) async throws -> Int64 {
     let upload = try await request(connection, id: "manual-begin", method: "desktop.history.manual.begin", params: [
         "service_instance_id": state.serviceInstanceId, "expected_epoch": state.privacyEpoch, "content_type": "text",
         "tags": [String](), "confirm_persistence": false,
@@ -78,6 +92,99 @@ private func addProductionEntry(_ host: BundledDesktopHost, grant: String, state
     guard saved["performed"] as? Bool == true, let id = saved["id"] as? Int64, id > 0 else {
         throw ProbeFailure("manual entry was not persisted")
     }
-    await connection.invalidate()
     return id
+}
+
+@MainActor
+private func verifyCapture(
+    _ session: DesktopSession, control: LocalFrameConnection, page: HistorySnapshot<DesktopEntries>,
+    originalID: Int64, originalText: String
+) async throws {
+    let status = try await request(control, id: "capture-status", method: "service.status", params: [:])
+    try require(status["capture_owner"] as? Bool == true, "production helper did not acquire the capture lease")
+    let settings = try await request(control, id: "capture-duplicates", method: "desktop.settings.capture.set", params: [
+        "key": "app.deduplicate", "value": "false",
+        "service_instance_id": page.state.serviceInstanceId, "expected_epoch": page.state.privacyEpoch,
+    ])
+    try require(settings["performed"] as? Bool == true, "could not disable deduplication for the feedback test")
+    let clipboard = NSPasteboard.general
+
+    func publish(_ text: String) throws {
+        clipboard.clearContents()
+        try require(clipboard.setString(text, forType: .string), "could not write the external pasteboard")
+    }
+
+    func history() async throws -> HistorySnapshot<DesktopEntries> {
+        try await session.historyPage(DesktopPageParams(limit: 20, offset: 0))
+    }
+
+    func waitForCapture(_ content: String, previous: Set<Int64>) async throws -> HistorySnapshot<DesktopEntries> {
+        let deadline = ContinuousClock.now + .seconds(5)
+        repeat {
+            let page = try await history()
+            if let item = page.value.entries.first(where: { !previous.contains($0.id) }) {
+                let entry = try await session.historyEntry(DesktopEntryParams(
+                    id: item.id, serviceInstanceId: page.state.serviceInstanceId, expectedEpoch: page.state.privacyEpoch, reveal: false
+                ))
+                try require(item.id < 0 && entry.value.content == content, "Darwin captured incorrect clipboard content")
+                return page
+            }
+            try await Task.sleep(for: .milliseconds(45))
+        } while ContinuousClock.now < deadline
+        throw ProbeFailure("Darwin did not capture changed external text")
+    }
+
+    let expected = "Darwin external copy " + UUID().uuidString
+    let external = Process()
+    let input = Pipe()
+    external.executableURL = URL(fileURLWithPath: "/usr/bin/pbcopy")
+    external.standardInput = input
+    try external.run()
+    try input.fileHandleForWriting.write(contentsOf: Data(expected.utf8))
+    try input.fileHandleForWriting.close()
+    external.waitUntilExit()
+    try require(external.terminationStatus == 0, "the external pasteboard writer failed")
+    let captured = try await waitForCapture(expected, previous: [originalID])
+    let ids = Set(captured.value.entries.map(\.id))
+    let events = try await session.subscribe(SubscribeParams(afterSequence: page.state.eventSequence, waitMs: 0))
+    try require(events.events.contains { $0.event == .entryAdded && $0.data.entryId != originalID },
+                "Darwin capture did not emit an entry event")
+
+    let copied = try await session.copy(id: originalID, state: captured.state)
+    try require(copied.performed && clipboard.string(forType: .string) == originalText, "history copy did not reach the pasteboard")
+    try await Task.sleep(for: .milliseconds(500))
+    let afterCopy = try await history()
+    try require(Set(afterCopy.value.entries.map(\.id)) == ids, "Darwin recaptured its own clipboard write")
+
+    let item = NSPasteboardItem()
+    try require(item.setString("Temporary concealed clipboard", forType: .string)
+                && item.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")),
+                "could not create the concealed pasteboard fixture")
+    clipboard.clearContents()
+    try require(clipboard.writeObjects([item]), "could not write the concealed pasteboard fixture")
+    try await Task.sleep(for: .milliseconds(500))
+    let afterHint = try await history()
+    try require(Set(afterHint.value.entries.map(\.id)) == ids, "Darwin captured a concealed clipboard selection")
+
+    _ = try await request(control, id: "private-on", method: "privacy.set", params: ["active": true])
+    try publish("Text copied in a private session")
+    try await Task.sleep(for: .milliseconds(500))
+    _ = try await request(control, id: "private-off", method: "privacy.set", params: ["active": false])
+    try await Task.sleep(for: .milliseconds(500))
+    let afterPrivacy = try await history()
+    try require(Set(afterPrivacy.value.entries.map(\.id)) == ids, "Darwin retained or replayed private clipboard content")
+    let resumed = "Darwin public copy after privacy " + UUID().uuidString
+    try publish(resumed)
+    let afterResume = try await waitForCapture(resumed, previous: ids)
+    let resumedIDs = Set(afterResume.value.entries.map(\.id))
+    let excluded = try await request(control, id: "source-exclusion", method: "desktop.settings.capture.set", params: [
+        "key": "app.excluded_source_apps", "value": "Example Excluded Source",
+        "service_instance_id": afterResume.state.serviceInstanceId, "expected_epoch": afterResume.state.privacyEpoch,
+    ])
+    try require(excluded["performed"] as? Bool == true, "could not configure the source exclusion")
+    try publish("Text with no verifiable source")
+    try await Task.sleep(for: .milliseconds(500))
+    let afterExclusion = try await history()
+    try require(Set(afterExclusion.value.entries.map(\.id)) == resumedIDs, "Darwin ignored a source exclusion")
+    print("Verified native Darwin text capture, history event, own-write suppression, concealed content, privacy, resume and source exclusion")
 }

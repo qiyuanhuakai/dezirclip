@@ -1,9 +1,10 @@
 //! Window-independent lifecycle shared by the Darwin helper and the signed probe.
 use crate::{
-    Grant, Host, darwin_clipboard::DarwinClipboardPump, serve_listener, wire::WireErrorCode,
+    Grant, Host, darwin_capture::DarwinCapture, darwin_clipboard::DarwinClipboardPump,
+    serve_listener, wire::WireErrorCode,
 };
 use dzc_platform::ipc::Listener;
-use std::{future::Future, io, sync::Arc};
+use std::{future::Future, io, sync::Arc, time::Duration};
 use tokio::sync::watch;
 
 /// Continue clipboard dispatch until the listener has drained admitted requests.
@@ -11,18 +12,26 @@ pub async fn serve_darwin_desktop(
     host: Arc<Host>,
     listener: Listener,
     mut clipboard: DarwinClipboardPump,
+    mut capture: Option<DarwinCapture>,
     grant: Grant,
     parent: impl Future<Output = io::Result<()>>,
 ) -> io::Result<()> {
     let (shutdown, receiver) = watch::channel(false);
     let server = serve_listener(host.clone(), listener, receiver);
     tokio::pin!(server, parent);
+    let mut interval = tokio::time::interval(Duration::from_millis(150));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut drain = None;
     let mut parent_result = Ok(());
     let server_result = loop {
         tokio::select! {
             result = &mut server => break result,
             true = clipboard.process_next_write() => {},
+            _ = interval.tick(), if capture.is_some() && drain.is_none() => {
+                if let Some(capture) = &mut capture {
+                    capture.sample(&host, &clipboard);
+                }
+            },
             result = &mut parent, if drain.is_none() => {
                 parent_result = result;
                 host.grants().revoke(&grant);
@@ -42,6 +51,9 @@ pub async fn serve_darwin_desktop(
         } else {
             stopped.map_err(wire_error)?;
         }
+    }
+    if let Some(capture) = &mut capture {
+        capture.finish().await?;
     }
     server_result.and(parent_result)
 }

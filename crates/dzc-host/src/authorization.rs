@@ -23,7 +23,7 @@ impl GrantAuthority {
     #[cfg(target_os = "macos")]
     pub fn issue_bundled_desktop(&self) -> Result<Grant, WireErrorCode> {
         self.issue_inner(ClientRole::Desktop, vec![
-            Permission::HistoryRead, Permission::DesktopHistory, Permission::ClipboardCopy,
+            Permission::HistoryRead, Permission::DesktopHistory, Permission::ClipboardCopy, Permission::PrivacyWrite,
         ], None)
     }
     /// A local private control credential lives only for this Host instance.

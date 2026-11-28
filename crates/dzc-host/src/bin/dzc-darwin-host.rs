@@ -2,6 +2,7 @@
 fn main() -> std::io::Result<()> {
     use dzc_host::{
         Host, HostOptions,
+        darwin_capture::DarwinCapture,
         darwin_clipboard::DarwinClipboardPump,
         darwin_desktop::{serve_darwin_desktop, wire_error},
         darwin_profile::DarwinProfile,
@@ -47,6 +48,15 @@ fn main() -> std::io::Result<()> {
     })
     .map_err(wire_error)?;
     let grant = host.grants().issue_bundled_desktop().map_err(wire_error)?;
+    let capture = match DarwinCapture::start(&host, &clipboard) {
+        Ok(capture) => Some(capture),
+        Err(dzc_host::wire::WireErrorCode::Busy) => {
+            host.set_capture_diagnostic("capture_ownership_unavailable")
+                .map_err(wire_error)?;
+            None
+        }
+        Err(error) => return Err(wire_error(error)),
+    };
 
     {
         let mut output = io::stdout().lock();
@@ -77,6 +87,7 @@ fn main() -> std::io::Result<()> {
         host,
         profile.listener,
         clipboard,
+        capture,
         grant,
         async { parent.await.map_err(io::Error::other)? },
     ))

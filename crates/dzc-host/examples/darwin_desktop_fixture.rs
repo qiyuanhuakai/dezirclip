@@ -80,7 +80,7 @@ mod darwin {
         send_receipt(&json!({"instance": host.instance_id(), "grant": grant.token(), "entry_id": id, "marker": marker, "socket": profile.endpoint.address()}))?;
         let owner = host.clone();
         let fixture_grant = grant.clone();
-        runtime.block_on(serve_darwin_desktop(host, profile.listener, clipboard, grant, async move {
+        runtime.block_on(serve_darwin_desktop(host, profile.listener, clipboard, None, grant, async move {
             while let Some(command) = commands.recv().await {
                 match command {
                     b'p' => {
