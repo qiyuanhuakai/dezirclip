@@ -35,6 +35,8 @@
 
 结果汇总通过 GitHub Actions 的任务记录核对固定清单。每个必需矩阵实例和所列的关键步骤都要实际成功，缺失、跳过、取消和失败分别显示。普通 CI 的部分重跑沿用 GitHub 认定的同一 run 最新结果。候选源码验收核对当前 attempt，核对通过后才生成既有格式的凭据。
 
+使用 `gh workflow run release.yml --ref <branch> -f mode=verify-source-candidate` 验收分支候选。提交 `e6e0bf53` 从触发到凭据任务完成用时 14 分 36 秒，为首次运行。按本轮记录核对了 44 项必需结果、Linux 和 Windows x64、提交、run 和 attempt。凭据 artifact ID 为 `15276564469`，ZIP SHA-256 为 `f6181d1437628d0ffe6aea96d0cb1dc9c020fd50421234cd36db863c368bb90c`。发布层的 12 项任务全部跳过，包括最终包构建、封存及通道同步。 [Release 源码验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46178076606)
+
 tag 源码准入的 Tauri 任务会恢复可用的 Rust 缓存，跳过本 tag 独占缓存的保存步骤。手动源码准入实跑中，Windows 桌面任务最后的 Rust 缓存保存耗时 1 分 46 秒。跨 tag 的缓存访问范围见 [GitHub 缓存说明](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)。 [手动源码准入](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46122651572)
 
 PR 更新和新的 master push 会取消同组旧 CI。手动 full 不适用该取消条件。Darwin 专项使用独立的并发组，可与同一分支的 Windows/Linux 检查同时运行。普通日常检查的耗时目标仍为 10 分钟以内；排队、外部下载和真实原生验收耗时须分别记录，超时或取消不能算成功。
@@ -73,6 +75,8 @@ Darwin 专项以 macOS 13.0 为 Swift 和 Rust 的编译目标。签名后核对
 | 性能与诊断 | `scripts/performance/tests` / frontend 的比较器与 fixture 单测；手动性能或崩溃入口 | 工具单测、崩溃诊断与真实性能测量分别报告，不互相代替 |
 
 Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rust 客户端和原生桌面。Tauri 测试任务只运行其 Cargo 包的套件。侧车和发布路由的可移植测试由 Frontend 执行，日常与源码验收都能发现问题。Windows NSIS 样件任务保留平台专属脚本及本机误运行拒绝用例。完整验证的跨目标 Python discovery 仍待收口。
+
+`4182ba55` 的首次开发 CI 在 4 分 14 秒完成。Frontend 日志确认执行 353 项 Python 工具测试，并运行侧车及发布路由契约。Windows 本机误运行拒绝用例在 Linux 入口按平台跳过，并在本地 Windows 上单独通过。 [开发 CI](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46179388833)
 
 提交 `a81310d6` 的 Windows ConPTY 验收首次执行通过全部 11 项用例，核对了工作区测试产出的 CLI 摘要。该步骤用时 84 秒。上一提交 `3b41e951` 首跑中，同一验收步骤用时 105 秒，其中独立 CLI 构建用时 19.83 秒。较早运行的 CI 汇总因历史 alpha.9 编辑器粘贴时剪贴板被占用而失败。新提交的历史安装器和汇总均通过，开发 CI 从触发到汇总结束用时 4 分 24 秒。 [优化前 ConPTY](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46174831115/job/141071146734) [历史安装器失败日志](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46174831115/job/141071146661) [优化后首轮开发 CI](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46175490062)
 

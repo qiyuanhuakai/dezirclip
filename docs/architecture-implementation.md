@@ -339,3 +339,9 @@ React 直接从固定版本的 Deziro UI 导入虚拟列表、附件预览、设
 AppImage 验收入口、隔离子进程和十项工具测试直接导入同一个版本、三组件身份和场景模块。子进程只读挂载该模块，验收报告记录其哈希。可移植工具套件 353 项通过。
 
 实际回放已发布的 `v0.2.0-alpha.2` 到 `v0.2.0` Linux x64 AppImage。候选核对发布提交 `ba0ad71f7b9d8caddac45d0bc5588254a8273482`，使用公开签名和公钥完成离线验签、拒绝只读安装、拒绝篡改包内容或版本、正式 updater 替换和实际 WebView 历史读回。两个 GUI 场景分别验证可写和只读安装能力。五个场景全部通过，用时约 25 秒。隔离报告 SHA-256 为 `0eac405dc7d7cc42ec7c627de61f07232fbcdbf4035db5713e37245666db0c4a`。 [来源版本](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.2) [目标版本](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0)
+
+### C2/C5 Release 候选源码验收
+
+正式 tag 与新增的只读 `verify-source-candidate` 调用相同的 `mode=source-acceptance`。汇总根据调用工作流核对实际 job 名称。`e6e0bf53` 首轮通过，按固定 artifact ID 核对凭据及 44 项必需结果。Windows x64 桌面任务用时 14 分 08 秒，Linux x64 用时 6 分 09 秒，整体 14 分 36 秒。与较早直接触发的源码验收相比，Windows Tauri 测试步骤由 84 秒变为 117 秒，Surface 构建由 37 秒变为 49 秒，Python 环境初始化由 37 秒变为 46 秒。40+1 正式候选、首次总耗时及托管恢复仍待单独验收。 [本轮 Release 源码门禁](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46178076606) [前序源码验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46159389727)
+
+`4182ba55` 把可移植的侧车和发布路由契约移入 Frontend 的通用工具检查，并保留 Windows NSIS 任务的本机安全拒绝用例。退休操作的反例可插入任意选项列表顺序，避免新增模式碰到逗号位置便提前失败。开发 CI 首次通过，运行日志确认执行了发布路由契约。 [开发 CI](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46179388833)
