@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import UpdateSettingsSection from "./UpdateSettingsSection";
-import SettingsDisclosure from "../SettingsDisclosure";
+import SettingsDisclosure from "@deziro/ui-react/components/SettingsDisclosure";
 
 interface BuildInfo {
     readonly component_version: string;

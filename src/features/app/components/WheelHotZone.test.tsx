@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { WheelHotZone } from "./WheelHotZone";
+import { WheelHotZone } from "@deziro/ui-react/components/WheelHotZone";
 
 describe("WheelHotZone", () => {
   it("wraps children in a flex column container so descendants retain flex item behavior", () => {

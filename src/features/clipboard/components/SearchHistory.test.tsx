@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
-import { SearchHistory } from "./SearchHistory";
+import { SearchHistory } from "@deziro/ui-react/components/SearchHistory";
 
 describe("SearchHistory", () => {
   it("test_renders_history: 3 history items → renders 3 buttons", () => {

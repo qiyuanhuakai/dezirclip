@@ -1,5 +1,5 @@
 import { PreviewText } from "@deziro/ui-react/components/PreviewText";
-import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
+import { AttachmentPreview } from "@deziro/ui-react/components/AttachmentPreview";
 import { attachmentTiles } from "../../../shared/lib/attachmentPreview";
 import { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";

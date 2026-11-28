@@ -3,7 +3,7 @@ import { SettingsField } from "@deziro/ui-react/components/SettingsField";
 import { SettingsChoices } from "@deziro/ui-react/components/SettingsChoices";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { SettingHelp, SettingsLabel } from "../SettingHelp";
-import SettingsDisclosure from "../SettingsDisclosure";
+import SettingsDisclosure from "@deziro/ui-react/components/SettingsDisclosure";
 import { UpdateAction, UpdateActions, UpdateProgress, UpdateVersionRow } from "@deziro/ui-react/components/SettingsUpdate";
 import { checkForUpdate, getUpdaterSnapshot, installAvailableUpdate, openUpdateRelease, saveUpdatePreference, subscribeUpdater } from "../../utils/updaterClient";
 import { updateAutoCheckSetting, updateChannelSetting } from "../../../../shared/protocol/settings";

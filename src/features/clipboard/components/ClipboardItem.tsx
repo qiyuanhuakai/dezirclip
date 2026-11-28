@@ -1,6 +1,6 @@
 import { HistoryOCRBadge, HistoryOCRResult } from "@deziro/ui-react/components/HistoryOCR";
 import { HistoryCard, HistoryCardAction, HistoryCardContent, HistoryCardMeta, HistoryCardTag, HistoryCardTags, HistoryImagePreview, HistoryPreviewPlaceholder, HistoryRichTextPreview } from "@deziro/ui-react/components/HistoryCard";
-import { AttachmentPreview } from "../../../shared/components/AttachmentPreview";
+import { AttachmentPreview } from "@deziro/ui-react/components/AttachmentPreview";
 import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
 import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
 import { derivedCopySource, invoke } from "../../../shared/lib/desktopInvoke";

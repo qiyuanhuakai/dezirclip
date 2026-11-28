@@ -29,7 +29,7 @@ The signed updater is the permitted networking exception. Future macOS/Swift wor
 | `src-tauri` | Tauri commands, window/tray/hotkey wiring, desktop lifecycle and transitional legacy adapters |
 | `src` | React product features, hooks, desktop adapters, locales and visual styles |
 | `clients/go` / `frontends/dzc-surface` | Host client SDK and MyGo Native desktop. React compatibility code has a separate Web build |
-| `packages/ui-react` and versioned Deziro UI dependencies | Local React integration plus shared React/Native components and generated presets from Deziro UI. Retain license boundaries |
+| Versioned Deziro UI dependencies | Shared React/Native components and generated presets. DezirClip integrates them under `src` and `frontends/dzc-surface`. Retain license boundaries |
 | `scripts` / `integrations` | Build, package, release, native acceptance, performance and compatibility tools |
 | `.github/workflows` | Six current CI/release workflows; actual triggers and evidence are documented in `docs/ci.md` |
 | `docs/specs` | Current behavior contracts and the staged architecture cleanup specification |

@@ -6,7 +6,7 @@ import type { DragControls } from "framer-motion";
 import { Clipboard } from "lucide-react";
 import { ScrollToTopButton } from "@deziro/ui-react/components/ScrollToTopButton";
 import { sameIdOrder } from "../../../shared/lib/idOrder";
-import { VirtualClipboardList } from "../../clipboard/components/VirtualClipboardList";
+import { VirtualClipboardList } from "@deziro/ui-react/components/VirtualClipboardList";
 import type { ClipboardEntry, Locale } from "../../../shared/types";
 import type { VirtualClipboardListHandle } from "../../clipboard/types";
 

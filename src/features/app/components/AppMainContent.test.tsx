@@ -23,7 +23,7 @@ vi.mock("../../settings/components/SettingsPanel", async () => {
   return { default: React.memo(SettingsPanelMock) };
 });
 
-vi.mock("../../clipboard/components/VirtualClipboardList", async () => {
+vi.mock("@deziro/ui-react/components/VirtualClipboardList", async () => {
   const React = await import("react");
   return {
     VirtualClipboardList: function VirtualClipboardListMock() {
