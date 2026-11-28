@@ -124,7 +124,7 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 
 - 发布 verifier 以 job 显示名称作精确匹配：当前 `dualReleaseJobs`、以及历史 `fullSourceJobs`、`nativeReleaseJobs`、`releaseGateJobs`、`optionalReleaseJobs` 均在 `updater-release.mjs`。改名、复用前缀、skip 规则或新增后置 job 时要同步该消费者及 [updater-release.node.mjs](../scripts/tests/updater-release.node.mjs)、[packaging-sidecars.node.mjs](../scripts/tests/packaging-sidecars.node.mjs) 等连接契约，不能把所有 skipped 一概视为通过。
 - `ci.yml` 的复用验收 artifact 使用 `acceptance-cli-*`、`acceptance-flatpak-*`；正常 Release 的 standalone 使用 `release-cli-<attempt>-<target>`，通过固定 ID 下载。当前正常 tag 没有 `release-flatpak-*` 生产者。
-- [release-identities.yml](../.github/workflows/release-identities.yml)、[release-windows-upgrade.yml](../.github/workflows/release-windows-upgrade.yml) 当前仅由 `resume-existing-alpha2` 历史分支调用。beta.4 checkout 不满足该恢复路径的版本/来源约束；菜单存在不代表当前可执行。它们及旧脚本仍有公共 helper/历史行为消费者，不能仅按年代删除。
+- Release 菜单已退役 alpha.2 草稿恢复和 alpha.9 MyGo 安装器补传。两项资产已经公开，草稿恢复和同名补传各自会拒绝该状态。当前双桌面恢复仍绑定原 tag、run ID 和 attempt。两个历史 reusable workflow 及其回归脚本保留，供公共 helper 迁移和离线复核。 [alpha.2](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.2) [alpha.9](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.9)
 - branch/tag protection、外部 required checks、environment 审批、组织 token 策略及 runner 配额未在本次本地核对中取得；不能声称已经设置。更改 check 名称前须只读核对实际规则及消费者。当前没有统一“计划与实际执行集合”汇总 gate，绿色界面本身不能证明请求的所有场景均已执行。
 
 ## 耗时与验证记录

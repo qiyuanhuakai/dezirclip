@@ -161,3 +161,5 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **R6 Tauri 退出旧 Core 兼容层**。Tauri 的产品入口和测试使用公开 Core API，备份检查继续支持既有文件格式入口。搜索、队列、备份和历史测试保留真实存储和权限边界，Windows 迁移使用旧版 SQLite 文件中的真实 DPAPI 字段。Linux Core 单测 496 项通过，Linux X11 Tauri 269 项通过、3 项忽略，备份集成 9 项通过。Windows 的 DPAPI 迁移回归通过。无兼容特性的独立 Platform IPC 样件也已在 Linux 编译通过。
 
 - **R6/R7a Core 兼容出口退役**。删除现行 `legacy-bridge`、仓库重导出与仅供桥接使用的方法。捕获性能适配器使用公开 `HistoryService`、`CaptureStore` 和类型化设置，独立 SQLite 连接只验证合成数据。Windows 分别以旧单包基线 `802808b` 和拆分后的 `90ba9960` 运行三个真实适配器，各核对六种新建、去重和加密转换场景。拆分基线的复验使用已删除兼容层的当前 Core。Linux Core 496 项通过，独立 IPC 样件编译通过。功能验收未采集性能样本。
+
+- **C7 历史发布入口退役**。远端确认 alpha.2 的原 release 早已公开，alpha.9 的 MyGo 安装器也已具备 GitHub 资产摘要。删除两项手动菜单及对应 jobs，保留历史验收材料和最新版的 tag、双桌面恢复及更新通道入口。YAML 校验覆盖 11 个发布任务的依赖，打包与 updater 两套 Node 测试 146 项通过。 [alpha.2](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.2) [alpha.9](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.9)
