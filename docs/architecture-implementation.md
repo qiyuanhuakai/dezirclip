@@ -243,6 +243,8 @@ Windows、Linux Go 套件和 Linux 竞态测试通过。隔离 Service 验收用
 
 `f84fe2ee` 的首次准入从首个 job 到汇总用时 14 分 58 秒，另有 6 分 38 秒排队。双 x64 目标通过，按 artifact ID `15268606832` 核对 ZIP 摘要、提交、run/attempt，并复算全部 67 项结果。Linux x64 跳过了不消费的 Vite 生产构建，保留 Surface 与 MyGo 的 token 依赖检查。Windows 统一 Cargo feature 后，间隔其它测试再构建实窗程序仍重新编译工作区 crate，耗时 52 秒。后续改为直接保留 Tauri 单测调用生成的普通可执行文件，实窗启动前核对该文件的 SHA-256。 [首次准入与重复构建记录](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46156643039)
 
+`a11af290` 的首次准入从首个 job 到汇总用时 12 分 21 秒，排队 4 秒。Windows 与 Linux x64 通过，复算 66 项结果，其中 44 项成功。源码凭据 artifact `15269342785` 的 ZIP 摘要、提交、attempt 和目标均已核对。Windows 实窗凭据 artifact `15268733768` 的 13 项检查通过，其实际程序摘要与 Tauri 单测产物交接记录一致。移除的构建步骤在上一轮耗时 52 秒，两轮总耗时之差也包含其它步骤和缓存的变化。 [源准入与实窗凭据](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46159389727)
+
 ### M1 Darwin 主线程剪贴板
 
 `b5b0b8bd` 将文本剪贴板调度移入 Host 库。Darwin 主线程独占系统剪贴板，Host worker 通过有界队列发送写入并等待真实结果。主线程直接调用同步 Host copy 会返回 Unavailable，避免等待自己处理队列。关闭要求保持主线程轮询，直到已接收的 Host 请求排空。
