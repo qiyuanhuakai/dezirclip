@@ -6,7 +6,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_TYPES = ("DesktopProfileInfo", "EventKind", "RuntimeState", "EventData", "Event", "EventsResult", "PrivacyState")
-SWIFT_TYPES = ("ProtocolVersion", "ClientRole", "Permission", "RuntimeState", "HelloParams", "HelloResult")
+SWIFT_TYPES = (
+    "ProtocolVersion", "ClientRole", "Permission", "RuntimeState", "HelloParams", "HelloResult",
+    "WireErrorCode", "WireError", "EventKind", "EventData", "Event", "SubscribeParams", "EventsResult",
+    "DesktopPageParams", "DesktopEntryParams", "DesktopEntry", "DesktopEntries",
+    "BodySnapshot", "SnapshotReadParams", "SnapshotChunk", "WindowsPasteTarget", "DesktopCopyParams",
+    "OperationResult",
+)
 
 
 def pascal(value):
@@ -83,15 +89,15 @@ def swift_type(schema):
 
 
 def swift_constraint(schema, value):
-    """Generate validation for the hello and runtime subgraph only."""
+    """Only emit types whose schema constraints are enforced by the Swift mirror."""
     if "$ref" in schema:
         if set(schema) != {"$ref"}:
             raise ValueError(f"unsupported Swift reference keywords: {schema}")
         return []
     kind = schema["type"]
     allowed = {
-        "string": {"maxLength", "pattern"},
-        "integer": {"minimum", "maximum", "x-rust-type"},
+        "string": {"minLength", "maxLength", "pattern"},
+        "integer": {"minimum", "maximum", "not", "x-rust-type"},
         "array": {"items", "maxItems"},
         "boolean": set(),
     }[kind]
@@ -107,6 +113,13 @@ def swift_constraint(schema, value):
         checks.append(f"{value} >= {schema['minimum']}")
     if "maximum" in schema and schema["maximum"] < native[1]:
         checks.append(f"{value} <= {schema['maximum']}")
+    if "not" in schema:
+        excluded = schema["not"]
+        if set(excluded) != {"const"} or type(excluded["const"]) is not int:
+            raise ValueError(f"unsupported Swift integer exclusion: {schema}")
+        checks.append(f"{value} != {excluded['const']}")
+    if "minLength" in schema:
+        checks.append(f"{value}.unicodeScalars.count >= {schema['minLength']}")
     if "maxLength" in schema:
         checks.append(f"{value}.unicodeScalars.count <= {schema['maxLength']}")
     if "maxItems" in schema:
@@ -132,20 +145,30 @@ def swift_values(definitions, envelope):
         "public struct InvalidWireField: Error, Equatable, Sendable {",
         "    public let field: String",
         "}", "",
+        "private struct WireCodingKey: CodingKey {",
+        "    let stringValue: String",
+        "    var intValue: Int? { nil }",
+        "    init?(stringValue: String) { self.stringValue = stringValue }",
+        "    init?(intValue: Int) { return nil }",
+        "}", "",
     ]
     for name in SWIFT_TYPES:
         schema = definitions[name]
         if "enum" in schema:
             lines.append(f"public enum {name}: String, Codable, Sendable {{")
             for value in schema["enum"]:
-                lines.append(f"    case {swift_name(value)} = {json.dumps(value)}")
+                case = swift_name(value)
+                if case == "internal":
+                    case = "`internal`"
+                lines.append(f"    case {case} = {json.dumps(value)}")
             lines += ["}", ""]
             continue
-        if schema["type"] != "object" or schema.get("additionalProperties") is not True:
+        if schema["type"] != "object" or type(schema.get("additionalProperties")) is not bool:
             raise ValueError(f"unsupported Swift object constraints: {name}")
         if set(schema) != {"type", "properties", "required", "additionalProperties"}:
             raise ValueError(f"unsupported Swift schema keywords: {name}")
-        lines.append(f"public struct {name}: Codable, Sendable {{")
+        strict = not schema["additionalProperties"]
+        lines.append(f"public struct {name}: Codable, Equatable, Sendable {{")
         fields = [(wire, swift_name(wire), swift_type(prop), wire in schema["required"], prop)
                   for wire, prop in schema["properties"].items()]
         validation = [(wire, field, required, swift_constraint(prop, field))
@@ -153,7 +176,8 @@ def swift_values(definitions, envelope):
         validation = [entry for entry in validation if entry[3]]
         for _, field, kind, required, _ in fields:
             lines.append(f"    public let {field}: {kind}" + ("" if required else "?"))
-        lines += ["", "    private enum CodingKeys: String, CodingKey {"]
+        all_keys = ", CaseIterable" if strict else ""
+        lines += ["", f"    private enum CodingKeys: String, CodingKey{all_keys} {{"]
         for wire, field, _, _, _ in fields:
             lines.append(f"        case {field} = {json.dumps(wire)}")
         lines += ["    }", "", "    public init("]
@@ -164,9 +188,16 @@ def swift_values(definitions, envelope):
             lines.append(f"        self.{field} = {field}")
         if validation:
             lines.append("        try validate()")
-        lines += ["    }", "", "    public init(from decoder: Decoder) throws {",
-                  "        let container = try decoder.container(keyedBy: CodingKeys.self)",
-                  "        try self.init("]
+        lines += ["    }", "", "    public init(from decoder: Decoder) throws {"]
+        if strict:
+            lines += [
+                "        let fields = try decoder.container(keyedBy: WireCodingKey.self)",
+                "        let allowed = Set(CodingKeys.allCases.map(\\.stringValue))",
+                "        if let unknown = fields.allKeys.first(where: { !allowed.contains($0.stringValue) }) {",
+                f"            throw InvalidWireField(field: {json.dumps(name + '.')} + unknown.stringValue)",
+                "        }",
+            ]
+        lines += ["        let container = try decoder.container(keyedBy: CodingKeys.self)", "        try self.init("]
         args = []
         for _, field, kind, required, _ in fields:
             decode = f"container.decode({kind}.self, forKey: .{field})"

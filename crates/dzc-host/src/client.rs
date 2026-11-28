@@ -190,10 +190,7 @@ mod tests {
         let encoded = wire::encode("Request", &request).unwrap();
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
             for limit in [1, encoded.len() - 1, encoded.len(), wire::MAX_FRAME_BYTES] {
-                let directory = std::env::temp_dir().join(format!("dzc-peer-cap-{}", uuid::Uuid::new_v4()));
-                std::fs::create_dir(&directory).unwrap();
-                #[cfg(target_os = "linux")]
-                { use std::os::unix::fs::PermissionsExt; std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap(); }
+                let directory = crate::fixtures::socket_directory();
                 let endpoint = Endpoint::in_directory(&directory).unwrap();
                 let mut listener = endpoint.bind().unwrap();
                 let expected = encoded.clone();
@@ -243,10 +240,7 @@ mod tests {
                 serde_json::json!({"supported":true,"version":2}),serde_json::json!({"supported":false,"version":1}),
                 serde_json::json!({"supported":true,"version":1})] {
                 let accepted=feature==serde_json::json!({"supported":true,"version":1});
-                let directory=std::env::temp_dir().join(format!("dzc-generated-peer-{}",uuid::Uuid::new_v4()));
-                std::fs::create_dir(&directory).unwrap();
-                #[cfg(target_os="linux")]
-                {use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(&directory,std::fs::Permissions::from_mode(0o700)).unwrap();}
+                let directory = crate::fixtures::socket_directory();
                 let endpoint=Endpoint::in_directory(&directory).unwrap();
                 let mut listener=endpoint.bind().unwrap();
                 let server=tokio::spawn(async move {

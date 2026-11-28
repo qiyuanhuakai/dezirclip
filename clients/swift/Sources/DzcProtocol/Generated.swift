@@ -10,7 +10,14 @@ public struct InvalidWireField: Error, Equatable, Sendable {
     public let field: String
 }
 
-public struct ProtocolVersion: Codable, Sendable {
+private struct WireCodingKey: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { return nil }
+}
+
+public struct ProtocolVersion: Codable, Equatable, Sendable {
     public let major: UInt16
     public let minor: UInt16
 
@@ -54,7 +61,7 @@ public enum Permission: String, Codable, Sendable {
     case desktopHistory = "desktop_history"
 }
 
-public struct RuntimeState: Codable, Sendable {
+public struct RuntimeState: Codable, Equatable, Sendable {
     public let serviceInstanceId: String
     public let historyRevision: UInt64
     public let privacyEpoch: UInt64
@@ -98,7 +105,7 @@ public struct RuntimeState: Codable, Sendable {
     }
 }
 
-public struct HelloParams: Codable, Sendable {
+public struct HelloParams: Codable, Equatable, Sendable {
     public let protocolVersion: ProtocolVersion
     public let clientVersion: String
     public let clientRole: ClientRole
@@ -154,7 +161,7 @@ public struct HelloParams: Codable, Sendable {
     }
 }
 
-public struct HelloResult: Codable, Sendable {
+public struct HelloResult: Codable, Equatable, Sendable {
     public let sessionId: String
     public let protocolVersion: ProtocolVersion
     public let coreVersion: String
@@ -205,5 +212,764 @@ public struct HelloResult: Codable, Sendable {
         guard coreVersion.unicodeScalars.count <= 128 else { throw InvalidWireField(field: "HelloResult.core_version") }
         guard permissions.count <= 16 else { throw InvalidWireField(field: "HelloResult.permissions") }
         guard maxFrameBytes >= 1, maxFrameBytes <= 1048576 else { throw InvalidWireField(field: "HelloResult.max_frame_bytes") }
+    }
+}
+
+public enum WireErrorCode: String, Codable, Sendable {
+    case invalidRequest = "invalid_request"
+    case invalidFrame = "invalid_frame"
+    case frameTooLarge = "frame_too_large"
+    case protocolMismatch = "protocol_mismatch"
+    case handshakeRequired = "handshake_required"
+    case unsupportedCapability = "unsupported_capability"
+    case permissionDenied = "permission_denied"
+    case unavailable = "unavailable"
+    case notFound = "not_found"
+    case busy = "busy"
+    case privacyBlocked = "privacy_blocked"
+    case `internal` = "internal"
+    case deadlineExceeded = "deadline_exceeded"
+    case privacyStateUnavailable = "privacy_state_unavailable"
+    case privacyEpochChanged = "privacy_epoch_changed"
+    case privacySessionActive = "privacy_session_active"
+    case sensitiveAccessDenied = "sensitive_access_denied"
+    case manualPersistenceConfirmationRequired = "manual_persistence_confirmation_required"
+    case privacyDurationInvalid = "privacy_duration_invalid"
+    case historyRevisionChanged = "history_revision_changed"
+}
+
+public struct WireError: Codable, Equatable, Sendable {
+    public let code: WireErrorCode
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case code = "code"
+        case message = "message"
+    }
+
+    public init(
+        code: WireErrorCode,
+        message: String
+    ) throws {
+        self.code = code
+        self.message = message
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            code: container.decode(WireErrorCode.self, forKey: .code),
+            message: container.decode(String.self, forKey: .message)
+        )
+    }
+
+    private func validate() throws {
+        guard message.unicodeScalars.count <= 128 else { throw InvalidWireField(field: "WireError.message") }
+    }
+}
+
+public enum EventKind: String, Codable, Sendable {
+    case entryAdded = "EntryAdded"
+    case entryUpdated = "EntryUpdated"
+    case entryDeleted = "EntryDeleted"
+    case historyReset = "HistoryReset"
+    case privacyStateChanged = "PrivacyStateChanged"
+    case capabilitiesChanged = "CapabilitiesChanged"
+    case serviceStateChanged = "ServiceStateChanged"
+}
+
+public struct EventData: Codable, Equatable, Sendable {
+    public let entryId: Int64?
+    public let status: String?
+
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case entryId = "entry_id"
+        case status = "status"
+    }
+
+    public init(
+        entryId: Int64? = nil,
+        status: String? = nil
+    ) throws {
+        self.entryId = entryId
+        self.status = status
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: WireCodingKey.self)
+        let allowed = Set(CodingKeys.allCases.map(\.stringValue))
+        if let unknown = fields.allKeys.first(where: { !allowed.contains($0.stringValue) }) {
+            throw InvalidWireField(field: "EventData." + unknown.stringValue)
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            entryId: container.contains(.entryId) ? container.decode(Int64.self, forKey: .entryId) : nil,
+            status: container.contains(.status) ? container.decode(String.self, forKey: .status) : nil
+        )
+    }
+
+    private func validate() throws {
+        if let entryId {
+            guard entryId >= -9007199254740991, entryId <= 9007199254740991, entryId != 0 else { throw InvalidWireField(field: "EventData.entry_id") }
+        }
+        if let status {
+            guard status.unicodeScalars.count <= 64 else { throw InvalidWireField(field: "EventData.status") }
+        }
+    }
+}
+
+public struct Event: Codable, Equatable, Sendable {
+    public let event: EventKind
+    public let state: RuntimeState
+    public let data: EventData
+
+    private enum CodingKeys: String, CodingKey {
+        case event = "event"
+        case state = "state"
+        case data = "data"
+    }
+
+    public init(
+        event: EventKind,
+        state: RuntimeState,
+        data: EventData
+    ) throws {
+        self.event = event
+        self.state = state
+        self.data = data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            event: container.decode(EventKind.self, forKey: .event),
+            state: container.decode(RuntimeState.self, forKey: .state),
+            data: container.decode(EventData.self, forKey: .data)
+        )
+    }
+}
+
+public struct SubscribeParams: Codable, Equatable, Sendable {
+    public let afterSequence: UInt64
+    public let waitMs: UInt16?
+    public let settingsOnly: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case afterSequence = "after_sequence"
+        case waitMs = "wait_ms"
+        case settingsOnly = "settings_only"
+    }
+
+    public init(
+        afterSequence: UInt64,
+        waitMs: UInt16? = nil,
+        settingsOnly: Bool? = nil
+    ) throws {
+        self.afterSequence = afterSequence
+        self.waitMs = waitMs
+        self.settingsOnly = settingsOnly
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            afterSequence: container.decode(UInt64.self, forKey: .afterSequence),
+            waitMs: container.contains(.waitMs) ? container.decode(UInt16.self, forKey: .waitMs) : nil,
+            settingsOnly: container.contains(.settingsOnly) ? container.decode(Bool.self, forKey: .settingsOnly) : nil
+        )
+    }
+
+    private func validate() throws {
+        guard afterSequence <= 9007199254740991 else { throw InvalidWireField(field: "SubscribeParams.after_sequence") }
+        if let waitMs {
+            guard waitMs <= 60000 else { throw InvalidWireField(field: "SubscribeParams.wait_ms") }
+        }
+    }
+}
+
+public struct EventsResult: Codable, Equatable, Sendable {
+    public let events: [Event]
+    public let state: RuntimeState
+    public let resyncRequired: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case events = "events"
+        case state = "state"
+        case resyncRequired = "resync_required"
+    }
+
+    public init(
+        events: [Event],
+        state: RuntimeState,
+        resyncRequired: Bool
+    ) throws {
+        self.events = events
+        self.state = state
+        self.resyncRequired = resyncRequired
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            events: container.decode([Event].self, forKey: .events),
+            state: container.decode(RuntimeState.self, forKey: .state),
+            resyncRequired: container.decode(Bool.self, forKey: .resyncRequired)
+        )
+    }
+
+    private func validate() throws {
+        guard events.count <= 256 else { throw InvalidWireField(field: "EventsResult.events") }
+    }
+}
+
+public struct DesktopPageParams: Codable, Equatable, Sendable {
+    public let limit: UInt16
+    public let offset: UInt32
+    public let kind: String?
+    public let query: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case limit = "limit"
+        case offset = "offset"
+        case kind = "kind"
+        case query = "query"
+    }
+
+    public init(
+        limit: UInt16,
+        offset: UInt32,
+        kind: String? = nil,
+        query: String? = nil
+    ) throws {
+        self.limit = limit
+        self.offset = offset
+        self.kind = kind
+        self.query = query
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            limit: container.decode(UInt16.self, forKey: .limit),
+            offset: container.decode(UInt32.self, forKey: .offset),
+            kind: container.contains(.kind) ? container.decode(String.self, forKey: .kind) : nil,
+            query: container.contains(.query) ? container.decode(String.self, forKey: .query) : nil
+        )
+    }
+
+    private func validate() throws {
+        guard limit >= 1, limit <= 150 else { throw InvalidWireField(field: "DesktopPageParams.limit") }
+        guard offset <= 1000000 else { throw InvalidWireField(field: "DesktopPageParams.offset") }
+        if let kind {
+            guard kind.unicodeScalars.count <= 128 else { throw InvalidWireField(field: "DesktopPageParams.kind") }
+        }
+        if let query {
+            guard query.unicodeScalars.count <= 16384 else { throw InvalidWireField(field: "DesktopPageParams.query") }
+        }
+    }
+}
+
+public struct DesktopEntryParams: Codable, Equatable, Sendable {
+    public let id: Int64
+    public let serviceInstanceId: String
+    public let expectedEpoch: UInt64
+    public let reveal: Bool
+    public let thumbnailDimension: UInt32?
+    public let includeVideoFrame: Bool?
+    public let omitOcrText: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case id = "id"
+        case serviceInstanceId = "service_instance_id"
+        case expectedEpoch = "expected_epoch"
+        case reveal = "reveal"
+        case thumbnailDimension = "thumbnail_dimension"
+        case includeVideoFrame = "include_video_frame"
+        case omitOcrText = "omit_ocr_text"
+    }
+
+    public init(
+        id: Int64,
+        serviceInstanceId: String,
+        expectedEpoch: UInt64,
+        reveal: Bool,
+        thumbnailDimension: UInt32? = nil,
+        includeVideoFrame: Bool? = nil,
+        omitOcrText: Bool? = nil
+    ) throws {
+        self.id = id
+        self.serviceInstanceId = serviceInstanceId
+        self.expectedEpoch = expectedEpoch
+        self.reveal = reveal
+        self.thumbnailDimension = thumbnailDimension
+        self.includeVideoFrame = includeVideoFrame
+        self.omitOcrText = omitOcrText
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            id: container.decode(Int64.self, forKey: .id),
+            serviceInstanceId: container.decode(String.self, forKey: .serviceInstanceId),
+            expectedEpoch: container.decode(UInt64.self, forKey: .expectedEpoch),
+            reveal: container.decode(Bool.self, forKey: .reveal),
+            thumbnailDimension: container.contains(.thumbnailDimension) ? container.decode(UInt32.self, forKey: .thumbnailDimension) : nil,
+            includeVideoFrame: container.contains(.includeVideoFrame) ? container.decode(Bool.self, forKey: .includeVideoFrame) : nil,
+            omitOcrText: container.contains(.omitOcrText) ? container.decode(Bool.self, forKey: .omitOcrText) : nil
+        )
+    }
+
+    private func validate() throws {
+        guard id >= -9007199254740991, id <= 9007199254740991, id != 0 else { throw InvalidWireField(field: "DesktopEntryParams.id") }
+        guard serviceInstanceId.unicodeScalars.count <= 64 else { throw InvalidWireField(field: "DesktopEntryParams.service_instance_id") }
+        guard expectedEpoch <= 9007199254740991 else { throw InvalidWireField(field: "DesktopEntryParams.expected_epoch") }
+        if let thumbnailDimension {
+            guard thumbnailDimension >= 64, thumbnailDimension <= 1024 else { throw InvalidWireField(field: "DesktopEntryParams.thumbnail_dimension") }
+        }
+    }
+}
+
+public struct DesktopEntry: Codable, Equatable, Sendable {
+    public let id: Int64
+    public let contentType: String
+    public let content: String
+    public let htmlContent: String?
+    public let sourceApp: String
+    public let timestamp: Int64
+    public let preview: String
+    public let isPinned: Bool
+    public let tags: [String]
+    public let useCount: Int64
+    public let isExternal: Bool
+    public let pinnedOrder: Int64
+    public let filePreviewExists: Bool
+    public let contentKinds: [String]
+    public let ocrText: String?
+    public let ocrStatus: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id = "id"
+        case contentType = "content_type"
+        case content = "content"
+        case htmlContent = "html_content"
+        case sourceApp = "source_app"
+        case timestamp = "timestamp"
+        case preview = "preview"
+        case isPinned = "is_pinned"
+        case tags = "tags"
+        case useCount = "use_count"
+        case isExternal = "is_external"
+        case pinnedOrder = "pinned_order"
+        case filePreviewExists = "file_preview_exists"
+        case contentKinds = "content_kinds"
+        case ocrText = "ocr_text"
+        case ocrStatus = "ocr_status"
+    }
+
+    public init(
+        id: Int64,
+        contentType: String,
+        content: String,
+        htmlContent: String? = nil,
+        sourceApp: String,
+        timestamp: Int64,
+        preview: String,
+        isPinned: Bool,
+        tags: [String],
+        useCount: Int64,
+        isExternal: Bool,
+        pinnedOrder: Int64,
+        filePreviewExists: Bool,
+        contentKinds: [String],
+        ocrText: String? = nil,
+        ocrStatus: String? = nil
+    ) throws {
+        self.id = id
+        self.contentType = contentType
+        self.content = content
+        self.htmlContent = htmlContent
+        self.sourceApp = sourceApp
+        self.timestamp = timestamp
+        self.preview = preview
+        self.isPinned = isPinned
+        self.tags = tags
+        self.useCount = useCount
+        self.isExternal = isExternal
+        self.pinnedOrder = pinnedOrder
+        self.filePreviewExists = filePreviewExists
+        self.contentKinds = contentKinds
+        self.ocrText = ocrText
+        self.ocrStatus = ocrStatus
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            id: container.decode(Int64.self, forKey: .id),
+            contentType: container.decode(String.self, forKey: .contentType),
+            content: container.decode(String.self, forKey: .content),
+            htmlContent: container.contains(.htmlContent) ? container.decode(String.self, forKey: .htmlContent) : nil,
+            sourceApp: container.decode(String.self, forKey: .sourceApp),
+            timestamp: container.decode(Int64.self, forKey: .timestamp),
+            preview: container.decode(String.self, forKey: .preview),
+            isPinned: container.decode(Bool.self, forKey: .isPinned),
+            tags: container.decode([String].self, forKey: .tags),
+            useCount: container.decode(Int64.self, forKey: .useCount),
+            isExternal: container.decode(Bool.self, forKey: .isExternal),
+            pinnedOrder: container.decode(Int64.self, forKey: .pinnedOrder),
+            filePreviewExists: container.decode(Bool.self, forKey: .filePreviewExists),
+            contentKinds: container.decode([String].self, forKey: .contentKinds),
+            ocrText: container.contains(.ocrText) ? container.decode(String.self, forKey: .ocrText) : nil,
+            ocrStatus: container.contains(.ocrStatus) ? container.decode(String.self, forKey: .ocrStatus) : nil
+        )
+    }
+
+    private func validate() throws {
+        guard id >= -9007199254740991, id <= 9007199254740991 else { throw InvalidWireField(field: "DesktopEntry.id") }
+        guard contentType.unicodeScalars.count <= 128 else { throw InvalidWireField(field: "DesktopEntry.content_type") }
+        guard content.unicodeScalars.count <= 33554432 else { throw InvalidWireField(field: "DesktopEntry.content") }
+        if let htmlContent {
+            guard htmlContent.unicodeScalars.count <= 33554432 else { throw InvalidWireField(field: "DesktopEntry.html_content") }
+        }
+        guard sourceApp.unicodeScalars.count <= 256 else { throw InvalidWireField(field: "DesktopEntry.source_app") }
+        guard timestamp >= -9007199254740991, timestamp <= 9007199254740991 else { throw InvalidWireField(field: "DesktopEntry.timestamp") }
+        guard preview.unicodeScalars.count <= 33554432 else { throw InvalidWireField(field: "DesktopEntry.preview") }
+        guard tags.count <= 128, tags.allSatisfy({ $0.unicodeScalars.count <= 256 }) else { throw InvalidWireField(field: "DesktopEntry.tags") }
+        guard useCount >= -2147483648, useCount <= 2147483647 else { throw InvalidWireField(field: "DesktopEntry.use_count") }
+        guard pinnedOrder >= -9007199254740991, pinnedOrder <= 9007199254740991 else { throw InvalidWireField(field: "DesktopEntry.pinned_order") }
+        guard contentKinds.count <= 128, contentKinds.allSatisfy({ $0.unicodeScalars.count <= 128 }) else { throw InvalidWireField(field: "DesktopEntry.content_kinds") }
+        if let ocrText {
+            guard ocrText.unicodeScalars.count <= 33554432 else { throw InvalidWireField(field: "DesktopEntry.ocr_text") }
+        }
+        if let ocrStatus {
+            guard ocrStatus.unicodeScalars.count <= 128 else { throw InvalidWireField(field: "DesktopEntry.ocr_status") }
+        }
+    }
+}
+
+public struct DesktopEntries: Codable, Equatable, Sendable {
+    public let entries: [DesktopEntry]
+
+    private enum CodingKeys: String, CodingKey {
+        case entries = "entries"
+    }
+
+    public init(
+        entries: [DesktopEntry]
+    ) throws {
+        self.entries = entries
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            entries: container.decode([DesktopEntry].self, forKey: .entries)
+        )
+    }
+
+    private func validate() throws {
+        guard entries.count <= 150 else { throw InvalidWireField(field: "DesktopEntries.entries") }
+    }
+}
+
+public struct BodySnapshot: Codable, Equatable, Sendable {
+    public let snapshotId: String
+    public let totalBytes: UInt32
+    public let state: RuntimeState
+    public let inlineJson: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case snapshotId = "snapshot_id"
+        case totalBytes = "total_bytes"
+        case state = "state"
+        case inlineJson = "inline_json"
+    }
+
+    public init(
+        snapshotId: String,
+        totalBytes: UInt32,
+        state: RuntimeState,
+        inlineJson: String? = nil
+    ) throws {
+        self.snapshotId = snapshotId
+        self.totalBytes = totalBytes
+        self.state = state
+        self.inlineJson = inlineJson
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            snapshotId: container.decode(String.self, forKey: .snapshotId),
+            totalBytes: container.decode(UInt32.self, forKey: .totalBytes),
+            state: container.decode(RuntimeState.self, forKey: .state),
+            inlineJson: container.contains(.inlineJson) ? container.decode(String.self, forKey: .inlineJson) : nil
+        )
+    }
+
+    private func validate() throws {
+        guard snapshotId.range(of: "^[a-f0-9]{32}$", options: .regularExpression) == (snapshotId.startIndex..<snapshotId.endIndex) else { throw InvalidWireField(field: "BodySnapshot.snapshot_id") }
+        guard totalBytes <= 33554432 else { throw InvalidWireField(field: "BodySnapshot.total_bytes") }
+        if let inlineJson {
+            guard inlineJson.unicodeScalars.count >= 1, inlineJson.unicodeScalars.count <= 32768 else { throw InvalidWireField(field: "BodySnapshot.inline_json") }
+        }
+    }
+}
+
+public struct SnapshotReadParams: Codable, Equatable, Sendable {
+    public let snapshotId: String
+    public let offset: UInt32
+    public let expectedEpoch: UInt64
+    public let serviceInstanceId: String
+
+    private enum CodingKeys: String, CodingKey {
+        case snapshotId = "snapshot_id"
+        case offset = "offset"
+        case expectedEpoch = "expected_epoch"
+        case serviceInstanceId = "service_instance_id"
+    }
+
+    public init(
+        snapshotId: String,
+        offset: UInt32,
+        expectedEpoch: UInt64,
+        serviceInstanceId: String
+    ) throws {
+        self.snapshotId = snapshotId
+        self.offset = offset
+        self.expectedEpoch = expectedEpoch
+        self.serviceInstanceId = serviceInstanceId
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            snapshotId: container.decode(String.self, forKey: .snapshotId),
+            offset: container.decode(UInt32.self, forKey: .offset),
+            expectedEpoch: container.decode(UInt64.self, forKey: .expectedEpoch),
+            serviceInstanceId: container.decode(String.self, forKey: .serviceInstanceId)
+        )
+    }
+
+    private func validate() throws {
+        guard snapshotId.range(of: "^[a-f0-9]{32}$", options: .regularExpression) == (snapshotId.startIndex..<snapshotId.endIndex) else { throw InvalidWireField(field: "SnapshotReadParams.snapshot_id") }
+        guard offset <= 33554432 else { throw InvalidWireField(field: "SnapshotReadParams.offset") }
+        guard expectedEpoch <= 9007199254740991 else { throw InvalidWireField(field: "SnapshotReadParams.expected_epoch") }
+        guard serviceInstanceId.unicodeScalars.count <= 64 else { throw InvalidWireField(field: "SnapshotReadParams.service_instance_id") }
+    }
+}
+
+public struct SnapshotChunk: Codable, Equatable, Sendable {
+    public let dataBase64: String
+    public let offset: UInt32
+    public let nextOffset: UInt32
+    public let finished: Bool
+    public let state: RuntimeState
+
+    private enum CodingKeys: String, CodingKey {
+        case dataBase64 = "data_base64"
+        case offset = "offset"
+        case nextOffset = "next_offset"
+        case finished = "finished"
+        case state = "state"
+    }
+
+    public init(
+        dataBase64: String,
+        offset: UInt32,
+        nextOffset: UInt32,
+        finished: Bool,
+        state: RuntimeState
+    ) throws {
+        self.dataBase64 = dataBase64
+        self.offset = offset
+        self.nextOffset = nextOffset
+        self.finished = finished
+        self.state = state
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            dataBase64: container.decode(String.self, forKey: .dataBase64),
+            offset: container.decode(UInt32.self, forKey: .offset),
+            nextOffset: container.decode(UInt32.self, forKey: .nextOffset),
+            finished: container.decode(Bool.self, forKey: .finished),
+            state: container.decode(RuntimeState.self, forKey: .state)
+        )
+    }
+
+    private func validate() throws {
+        guard dataBase64.unicodeScalars.count <= 262144, dataBase64.range(of: "^[A-Za-z0-9+/]*={0,2}$", options: .regularExpression) == (dataBase64.startIndex..<dataBase64.endIndex) else { throw InvalidWireField(field: "SnapshotChunk.data_base64") }
+        guard offset <= 33554432 else { throw InvalidWireField(field: "SnapshotChunk.offset") }
+        guard nextOffset <= 33554432 else { throw InvalidWireField(field: "SnapshotChunk.next_offset") }
+    }
+}
+
+public struct WindowsPasteTarget: Codable, Equatable, Sendable {
+    public let hwnd: String
+    public let rootHwnd: String
+    public let pid: UInt32
+    public let threadId: UInt32
+    public let creationTime100ns: String
+
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case hwnd = "hwnd"
+        case rootHwnd = "root_hwnd"
+        case pid = "pid"
+        case threadId = "thread_id"
+        case creationTime100ns = "creation_time_100ns"
+    }
+
+    public init(
+        hwnd: String,
+        rootHwnd: String,
+        pid: UInt32,
+        threadId: UInt32,
+        creationTime100ns: String
+    ) throws {
+        self.hwnd = hwnd
+        self.rootHwnd = rootHwnd
+        self.pid = pid
+        self.threadId = threadId
+        self.creationTime100ns = creationTime100ns
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: WireCodingKey.self)
+        let allowed = Set(CodingKeys.allCases.map(\.stringValue))
+        if let unknown = fields.allKeys.first(where: { !allowed.contains($0.stringValue) }) {
+            throw InvalidWireField(field: "WindowsPasteTarget." + unknown.stringValue)
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            hwnd: container.decode(String.self, forKey: .hwnd),
+            rootHwnd: container.decode(String.self, forKey: .rootHwnd),
+            pid: container.decode(UInt32.self, forKey: .pid),
+            threadId: container.decode(UInt32.self, forKey: .threadId),
+            creationTime100ns: container.decode(String.self, forKey: .creationTime100ns)
+        )
+    }
+
+    private func validate() throws {
+        guard hwnd.unicodeScalars.count <= 20, hwnd.range(of: "^[1-9][0-9]{0,19}$", options: .regularExpression) == (hwnd.startIndex..<hwnd.endIndex) else { throw InvalidWireField(field: "WindowsPasteTarget.hwnd") }
+        guard rootHwnd.unicodeScalars.count <= 20, rootHwnd.range(of: "^[1-9][0-9]{0,19}$", options: .regularExpression) == (rootHwnd.startIndex..<rootHwnd.endIndex) else { throw InvalidWireField(field: "WindowsPasteTarget.root_hwnd") }
+        guard pid >= 1 else { throw InvalidWireField(field: "WindowsPasteTarget.pid") }
+        guard threadId >= 1 else { throw InvalidWireField(field: "WindowsPasteTarget.thread_id") }
+        guard creationTime100ns.unicodeScalars.count <= 20, creationTime100ns.range(of: "^[1-9][0-9]{0,19}$", options: .regularExpression) == (creationTime100ns.startIndex..<creationTime100ns.endIndex) else { throw InvalidWireField(field: "WindowsPasteTarget.creation_time_100ns") }
+    }
+}
+
+public struct DesktopCopyParams: Codable, Equatable, Sendable {
+    public let id: Int64
+    public let serviceInstanceId: String
+    public let expectedEpoch: UInt64
+    public let reveal: Bool
+    public let paste: Bool
+    public let withFormat: Bool?
+    public let derivedText: String?
+    public let imageAsBase64: Bool?
+    public let deleteAfterUse: Bool?
+    public let moveToTop: Bool?
+    public let expectedPasteTarget: WindowsPasteTarget?
+
+    private enum CodingKeys: String, CodingKey {
+        case id = "id"
+        case serviceInstanceId = "service_instance_id"
+        case expectedEpoch = "expected_epoch"
+        case reveal = "reveal"
+        case paste = "paste"
+        case withFormat = "with_format"
+        case derivedText = "derived_text"
+        case imageAsBase64 = "image_as_base64"
+        case deleteAfterUse = "delete_after_use"
+        case moveToTop = "move_to_top"
+        case expectedPasteTarget = "expected_paste_target"
+    }
+
+    public init(
+        id: Int64,
+        serviceInstanceId: String,
+        expectedEpoch: UInt64,
+        reveal: Bool,
+        paste: Bool,
+        withFormat: Bool? = nil,
+        derivedText: String? = nil,
+        imageAsBase64: Bool? = nil,
+        deleteAfterUse: Bool? = nil,
+        moveToTop: Bool? = nil,
+        expectedPasteTarget: WindowsPasteTarget? = nil
+    ) throws {
+        self.id = id
+        self.serviceInstanceId = serviceInstanceId
+        self.expectedEpoch = expectedEpoch
+        self.reveal = reveal
+        self.paste = paste
+        self.withFormat = withFormat
+        self.derivedText = derivedText
+        self.imageAsBase64 = imageAsBase64
+        self.deleteAfterUse = deleteAfterUse
+        self.moveToTop = moveToTop
+        self.expectedPasteTarget = expectedPasteTarget
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            id: container.decode(Int64.self, forKey: .id),
+            serviceInstanceId: container.decode(String.self, forKey: .serviceInstanceId),
+            expectedEpoch: container.decode(UInt64.self, forKey: .expectedEpoch),
+            reveal: container.decode(Bool.self, forKey: .reveal),
+            paste: container.decode(Bool.self, forKey: .paste),
+            withFormat: container.contains(.withFormat) ? container.decode(Bool.self, forKey: .withFormat) : nil,
+            derivedText: container.contains(.derivedText) ? container.decode(String.self, forKey: .derivedText) : nil,
+            imageAsBase64: container.contains(.imageAsBase64) ? container.decode(Bool.self, forKey: .imageAsBase64) : nil,
+            deleteAfterUse: container.contains(.deleteAfterUse) ? container.decode(Bool.self, forKey: .deleteAfterUse) : nil,
+            moveToTop: container.contains(.moveToTop) ? container.decode(Bool.self, forKey: .moveToTop) : nil,
+            expectedPasteTarget: container.contains(.expectedPasteTarget) ? container.decode(WindowsPasteTarget.self, forKey: .expectedPasteTarget) : nil
+        )
+    }
+
+    private func validate() throws {
+        guard id >= -9007199254740991, id <= 9007199254740991, id != 0 else { throw InvalidWireField(field: "DesktopCopyParams.id") }
+        guard serviceInstanceId.unicodeScalars.count >= 1, serviceInstanceId.unicodeScalars.count <= 64 else { throw InvalidWireField(field: "DesktopCopyParams.service_instance_id") }
+        guard expectedEpoch <= 9007199254740991 else { throw InvalidWireField(field: "DesktopCopyParams.expected_epoch") }
+        if let derivedText {
+            guard derivedText.unicodeScalars.count <= 524288 else { throw InvalidWireField(field: "DesktopCopyParams.derived_text") }
+        }
+    }
+}
+
+public struct OperationResult: Codable, Equatable, Sendable {
+    public let performed: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case performed = "performed"
+    }
+
+    public init(
+        performed: Bool
+    ) throws {
+        self.performed = performed
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            performed: container.decode(Bool.self, forKey: .performed)
+        )
     }
 }
