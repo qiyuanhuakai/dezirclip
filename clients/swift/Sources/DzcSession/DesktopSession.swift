@@ -78,7 +78,8 @@ public actor DesktopSession {
     }
 
     /// Takes ownership of a socket after the launcher verifies the native
-    /// peer. The expected instance and grant come from the trusted bootstrap.
+    /// peer. The instance and grant come from the trusted bootstrap.
+    /// The Desktop and its bundled Host must have the same component version.
     public static func open(
         verifiedSocket: Int32, expectedInstance: String, grant: String, clientVersion: String,
         requireCopy: Bool = false, requirePrivacyWrite: Bool = false
@@ -104,7 +105,9 @@ public actor DesktopSession {
         let request = Request(id: "1", method: .hello, params: params)
         let response = try await transport.exchange(JSONEncoder().encode(request))
         let hello: HelloResult = try decode(response, expectedID: request.id)
-        guard hello.protocolVersion.major == version.major, !hello.sessionId.isEmpty else {
+        guard hello.protocolVersion.major == version.major, hello.coreVersion == clientVersion,
+              !hello.sessionId.isEmpty else {
+            await transport.invalidate()
             throw DesktopSessionError.incompatibleHost
         }
         guard !expectedInstance.isEmpty, hello.state.serviceInstanceId == expectedInstance else {

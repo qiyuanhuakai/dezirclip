@@ -9,11 +9,11 @@ private struct ProductionReceipt: Decodable {
 }
 
 @MainActor
-func verifyProductionHost(directory: URL) async throws {
+func verifyProductionHost(directory: URL, version: String) async throws {
     let clipboard = NSPasteboard.general
     clipboard.clearContents()
     try require(clipboard.setString("Clipboard from before launch", forType: .string), "could not prepare the initial pasteboard")
-    let (host, bootstrap) = try await BundledDesktopHost.launchWithReceipt(in: directory, clientVersion: "darwin-production-probe")
+    let (host, bootstrap) = try await BundledDesktopHost.launchWithReceipt(in: directory, clientVersion: version)
     let marker = "DezirClip production helper " + UUID().uuidString
     let entryID: Int64
     let instance: String
@@ -45,7 +45,7 @@ func verifyProductionHost(directory: URL) async throws {
     }
 
     // The same signed executable reopens the saved profile and existing key.
-    let reopened = try await BundledDesktopHost.launch(in: directory, clientVersion: "darwin-production-probe")
+    let reopened = try await BundledDesktopHost.launch(in: directory, clientVersion: version)
     do {
         let session = try await reopened.openSession(requireCopy: true)
         try require(session.hello.state.serviceInstanceId != instance, "the Host instance did not change after restart")

@@ -110,16 +110,24 @@ private func respond(_ peer: Int32, id: String, result: [String: Any]) throws {
     try write(peer, Data(bytes: &length, count: 4) + body)
 }
 
-private func hello(_ peer: Int32, permissions: [String] = ["history_read", "desktop_history", "clipboard_copy"]) throws {
+private func hello(_ peer: Int32, permissions: [String] = ["history_read", "desktop_history", "clipboard_copy"],
+                   coreVersion: String = "0.2.0") throws {
     try respond(peer, id: "1", result: [
-        "session_id": "test-session", "protocol_version": ["major": 1, "minor": 0], "core_version": "0.2.0",
+        "session_id": "test-session", "protocol_version": ["major": 1, "minor": 0], "core_version": coreVersion,
         "permissions": permissions, "state": hostState(), "max_frame_bytes": WireLimits.maximumFrameBytes,
     ])
 }
 
 private func openDesktop(_ socket: Int32, expectedInstance: String = "fixture") async throws -> DesktopSession {
     try await DesktopSession.open(verifiedSocket: socket, expectedInstance: expectedInstance,
-                                  grant: String(repeating: "a", count: 64), clientVersion: "test", requireCopy: true)
+                                  grant: String(repeating: "a", count: 64), clientVersion: "0.2.0", requireCopy: true)
+}
+
+@Test func desktopSessionRejectsAnOlderHostWithTheSameWireVersion() async throws {
+    let (socket, peer) = try socketPair()
+    defer { Darwin.close(peer) }
+    try hello(peer, coreVersion: "0.1.0")
+    await #expect(throws: DesktopSessionError.incompatibleHost) { try await openDesktop(socket) }
 }
 
 @Test func desktopSessionRejectsWrongInstanceAndMissingPermissions() async throws {

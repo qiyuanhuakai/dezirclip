@@ -90,11 +90,12 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) async t
         }
         if args.count == 3, ["--bundled-host", "--bundled-production"].contains(args[1]) {
             do {
+                let version = Bundle.main.object(forInfoDictionaryKey: "DezirClipCoreVersion") as? String ?? ""
                 let directory = URL(fileURLWithPath: args[2], isDirectory: true)
                 if args[1] == "--bundled-production" {
-                    try await verifyProductionHost(directory: directory)
+                    try await verifyProductionHost(directory: directory, version: version)
                 } else {
-                    try await verifySharedHost(directory: directory)
+                    try await verifySharedHost(directory: directory, version: version)
                 }
             } catch {
                 let message = (error as? DarwinHostLaunchError)?.message ?? (error as? ProbeFailure)?.message ?? String(describing: error)

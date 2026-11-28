@@ -6,12 +6,13 @@ import Foundation
 
 private struct Bootstrap: Decodable {
     let instance: String
+    let grant: String
     let entryId: Int64
     let marker: String
     let socket: String
 
     private enum CodingKeys: String, CodingKey {
-        case instance, marker, socket
+        case instance, grant, marker, socket
         case entryId = "entry_id"
     }
 }
@@ -39,11 +40,11 @@ func verifyForeignProcessRejected(socket: String) async throws {
 }
 
 @MainActor
-func verifySharedHost(directory: URL) async throws {
-    let (host, receipt) = try await BundledDesktopHost.launchWithReceipt(in: directory, clientVersion: "darwin-host-fixture")
+func verifySharedHost(directory: URL, version: String) async throws {
+    let (host, receipt) = try await BundledDesktopHost.launchWithReceipt(in: directory, clientVersion: version)
     do {
         let credentials = try JSONDecoder().decode(Bootstrap.self, from: receipt)
-        try await verifyStartedHost(host, credentials: credentials)
+        try await verifyStartedHost(host, credentials: credentials, version: version)
     } catch {
         try? await host.stop()
         throw error
@@ -51,7 +52,7 @@ func verifySharedHost(directory: URL) async throws {
 }
 
 @MainActor
-private func verifyStartedHost(_ host: BundledDesktopHost, credentials: Bootstrap) async throws {
+private func verifyStartedHost(_ host: BundledDesktopHost, credentials: Bootstrap, version: String) async throws {
     let socket = credentials.socket
     let control = URL(fileURLWithPath: socket).deletingLastPathComponent().appendingPathComponent("host.control.json")
     try require(!FileManager.default.fileExists(atPath: control.path),
@@ -65,9 +66,15 @@ private func verifyStartedHost(_ host: BundledDesktopHost, credentials: Bootstra
     do {
         let fd = try await host.verifiedSocket()
         _ = try await DesktopSession.open(verifiedSocket: fd, expectedInstance: credentials.instance,
-                                          grant: String(repeating: "a", count: 64), clientVersion: "darwin-host-fixture")
+                                          grant: String(repeating: "a", count: 64), clientVersion: version)
         throw ProbeFailure("Host accepted an invalid Desktop grant")
     } catch DesktopSessionError.remote(.permissionDenied) {}
+    do {
+        let fd = try await host.verifiedSocket()
+        _ = try await DesktopSession.open(verifiedSocket: fd, expectedInstance: credentials.instance,
+                                          grant: credentials.grant, clientVersion: version + "-mismatch")
+        throw ProbeFailure("Desktop accepted a signed Host from a different version")
+    } catch DesktopSessionError.incompatibleHost {}
     do {
         _ = try await host.openSession(requirePrivacyWrite: true)
         throw ProbeFailure("a grant without privacy permission opened a privacy mutation session")
@@ -145,5 +152,5 @@ private func verifyStartedHost(_ host: BundledDesktopHost, credentials: Bootstra
         _ = try await host.openSession()
         throw ProbeFailure("a stopped launcher opened a new session")
     } catch DesktopSessionError.disconnected {}
-    print("Verified signed Swift sessions against the shared Host: parent restriction, grant, inline page, chunked history, events, actual pasteboard, stale epoch, revocation and shutdown")
+    print("Verified signed Swift sessions against the shared Host: parent restriction, grant, matching component version, inline page, chunked history, events, actual pasteboard, stale epoch, revocation and shutdown")
 }

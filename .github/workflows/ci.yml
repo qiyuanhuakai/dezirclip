@@ -159,6 +159,8 @@ jobs:
             <key>LSUIElement</key><true/>
           </dict></plist>
           PLIST
+          version=$(python3 -c 'import json; print(json.load(open("package.json", encoding="utf-8"))["version"])')
+          /usr/libexec/PlistBuddy -c "Add :DezirClipCoreVersion string $version" "$app/Contents/Info.plist"
           plutil -lint "$app/Contents/Info.plist"
           codesign --force --sign - --options runtime --identifier io.github.qiyuanhuakai.dezirclip.host-probe.helper "$app/Contents/Helpers/dzc-darwin-host"
           codesign --force --sign - --options runtime "$app"

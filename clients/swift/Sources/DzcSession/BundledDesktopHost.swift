@@ -36,6 +36,7 @@ public actor BundledDesktopHost {
 
     deinit { try? lifetime.fileHandleForWriting.close() }
 
+    /// Use the DezirClip component version expected from the bundled helper.
     public static func launch(in directory: URL, clientVersion: String) async throws -> BundledDesktopHost {
         try await launchWithReceipt(in: directory, clientVersion: clientVersion).host
     }
