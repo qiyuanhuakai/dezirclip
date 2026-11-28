@@ -16,6 +16,8 @@ try {
   const page = await browser.newPage();
   page.on("pageerror", (error) => errors.push(error.stack ?? error.message));
   await page.addInitScript(() => {
+    localStorage.setItem("dezirclip_theme", "liquid-glass");
+    localStorage.setItem("dezirclip_color_mode", "dark");
     window.__TAURI_INTERNALS__ = {
       metadata: {
         currentWindow: { label: "main" },
@@ -25,7 +27,10 @@ try {
       unregisterCallback() {},
       invoke: async (command) => {
         if (command === "get_settings") {
-          return { "app.language": "en", "app.update_auto_check": "false", "app.emoji_panel_enabled": "true" };
+          return {
+            "app.language": "en", "app.update_auto_check": "false", "app.emoji_panel_enabled": "true",
+            "app.theme": "liquid-glass", "app.color_mode": "dark",
+          };
         }
         if (command === "get_clipboard_host_status") {
           return {
@@ -45,6 +50,17 @@ try {
   await settings.click();
   await page.getByText("Settings", { exact: true }).waitFor({ timeout: 5000 });
   await page.locator(".settings-view .settings-layout").waitFor({ state: "attached", timeout: 5000 });
+  await page.locator("html.theme-liquid-glass.dark-mode").waitFor({ state: "attached", timeout: 5000 });
+  await page.getByRole("button", { name: "Data Management", exact: true }).click({ timeout: 5000 });
+  await page.getByRole("button", { name: "Export Clipboard History", exact: true }).click({ timeout: 5000 });
+  const backup = page.getByRole("dialog", { name: "Export Clipboard History" });
+  const fonts = await backup.locator(".data-input").first().evaluate(input => ({
+    field: getComputedStyle(input).fontFamily,
+    shell: getComputedStyle(document.body).fontFamily,
+  }));
+  assert.equal(fonts.field, fonts.shell, "the backup field should use the settings interface font");
+  await page.keyboard.press("Escape");
+  await backup.waitFor({ state: "detached", timeout: 5000 });
   await page.locator("header").getByRole("button", { name: "Close", exact: true }).click();
   const [catalog] = await Promise.all([
     page.waitForResponse(response => /\/assets\/emoji-[^/]+\.json$/.test(response.url()), { timeout: 5000 }),
@@ -56,7 +72,7 @@ try {
   await emoji.getByRole("searchbox").fill("slnted equal");
   await emoji.getByRole("button", { name: "⩽", exact: true }).first().waitFor({ timeout: 5000 });
   assert.deepEqual(errors, []);
-  console.log("The production WebView opens Settings and searches the packaged character catalog.");
+  console.log("The production WebView opens Settings, styles the backup dialog and searches the packaged character catalog.");
 } catch (error) {
   if (errors.length) console.error(errors.join("\n"));
   throw error;

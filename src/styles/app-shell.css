@@ -1,0 +1,72 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-main);
+  user-select: none;
+}
+
+body {
+  background-color: transparent;
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+}
+
+html,
+body {
+  border-radius: var(--radius-window);
+  overflow: hidden;
+  background-color: transparent;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-window);
+  border: 2px solid var(--border-dark);
+  border-radius: var(--radius-window);
+  overflow: hidden;
+  box-shadow: 4px 4px 0 0 var(--shadow-color);
+  /* Refined Brutalist shadow */
+}
+
+:root.hide-app-border,
+body.hide-app-border,
+:root.hide-app-border #root,
+body.hide-app-border #root {
+  border-radius: 0 !important;
+}
+
+:root.hide-app-border #root,
+body.hide-app-border #root {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Linux renders through the same layer stack as Windows: the wallpaper lives on
+   `body::before` at z-index -1, which paints *behind* the body background, and
+   `#root` carries the single shell surface. An extra body background here would
+   hide the wallpaper, double up the shell alpha, and force an opaque backdrop
+   under the region-select capture overlay — so neither element paints one. */
+:root.linux,
+body.linux,
+:root.linux #root,
+body.linux #root {
+  border-radius: var(--radius-window) !important;
+}
+
+/* Texture overlay - subtle noise */
+#root::before {
+  display: none;
+  /* Removing previous glass noise */
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}

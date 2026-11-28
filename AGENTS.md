@@ -53,7 +53,7 @@ Generated files, inline tests and historical evidence are counted separately fro
 `src/main.tsx` checks `?window=compact-preview` and renders `<CompactPreviewWindow />` vs `<App />` in a single bundle. Adding a new window = add URL param branch, not a new HTML file.
 
 ### Theme preloading before React hydration
-`main.tsx` reads `localStorage.tiez_theme` synchronously, then `import.meta.glob("./styles/themes/*.css")` lazy-loads the chosen CSS **before** React renders. Avoids flash of default theme. **Never inline theme CSS** — keep it in `src/styles/themes/`.
+`main.tsx` applies the saved theme and color mode before React renders. The theme runtime reads `dezirclip_theme` with the legacy `tiez_theme` fallback and starts loading the selected theme through Deziro UI's public theme entry.
 
 ### Feature-sliced frontend, no global state library
 Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows via props or custom events emitted from Tauri (`app.emit(...)` ↔ `listen(...)` on the frontend).
@@ -105,10 +105,11 @@ Generated build output and session artifacts remain ignored. The tracked `AGENTS
 ## UNIQUE STYLES
 
 ### Tailwind-free, hand-rolled CSS architecture
-- `src/styles/tokens/` — CSS custom properties (`global.tokens.css`, `theme.tokens.css`, `mode.tokens.css`)
-- `src/styles/themes/` — full theme variants (`retro`, `mica`, `acrylic`, `macos`, `scifi`, `liquid-glass`)
-- `src/styles/theme-core/` — cross-theme shared rules (`*.shell.shared.css`, `*.dialog.shared.css`)
-- `src/styles/components/` — per-component CSS (`clipboard.css`, `settings.css`, `tags.css`, etc.)
+- `src/styles/tokens.css` — shared Deziro UI CSS custom properties
+- `src/styles/app-shell.css` — desktop reset, window and root layout
+- `src/styles/components.css` — shared components loaded by the desktop entry
+- `src/styles/settings.css` — backup dialogs and settings typography in cascade order
+- The product entry and feature modules select their styles explicitly. Deziro UI supplies full theme variants and shared material rules through public exports.
 - Theme switch is runtime-only; no build-time theme stripping
 
 ### WebView2 memory hint + idle-destroy as the memory-pressure strategy
