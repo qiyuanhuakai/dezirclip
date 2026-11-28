@@ -39,15 +39,17 @@ def protect_companions(command, target, stdout=None):
         raise RuntimeError(f"Desktop build replaced the tested standalone companions: {', '.join(changed)}")
 
 
-def desktop_from_test(lines, expected):
+def binary_from_test(lines, expected, source, feature):
     normal_binary = None
     for line in lines:
         if not line.startswith('{"reason":'):
             print(line, end="")
             continue
         message = json.loads(line)
-        if (message["reason"] == "compiler-artifact" and message["target"]["name"] == "dezirclip"
+        if (message["reason"] == "compiler-artifact" and message["target"]["name"] == expected.stem
                 and message["target"]["kind"] == ["bin"] and message["profile"]["test"] is False
+                and Path(message["target"]["src_path"]).resolve() == source
+                and feature in message["features"]
                 and message["executable"] and Path(message["executable"]).resolve() == expected):
             normal_binary = expected
     return normal_binary
@@ -66,11 +68,31 @@ def test_windows_desktop():
             protect_companions(command, "", stdout=log)
         finally:
             log.seek(0)
-            desktop = desktop_from_test(log, executable)
+            desktop = binary_from_test(log, executable, (ROOT / "src-tauri/src/main.rs").resolve(), "desktop")
     if desktop is None:
         raise RuntimeError("The Tauri test invocation did not produce the embedded desktop")
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         print(f"desktop_sha256={executable_digest(desktop)}", file=output)
+
+
+def test_windows_workspace():
+    if os.name != "nt":
+        raise RuntimeError("The workspace CLI fixture requires a native Windows test")
+    executable = (ROOT / "target/debug/dzc.exe").resolve()
+    command = ["cargo", "test", "--locked", "--workspace", "--all-targets", "--no-default-features",
+               "--features", "dzc-cli/native-screen,dzc-service/native-screen",
+               "--message-format=json-render-diagnostics"]
+    with tempfile.TemporaryFile(mode="w+t", encoding="utf-8", errors="replace") as log:
+        try:
+            subprocess.run(command, cwd=ROOT, stdout=log, check=True)
+        finally:
+            log.seek(0)
+            cli = binary_from_test(log, executable, (ROOT / "crates/dzc-cli/src/main.rs").resolve(), "native-screen")
+    if cli is None:
+        raise RuntimeError("The workspace test invocation did not produce the normal dzc executable")
+    with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+        print(f"cli_path={cli}", file=output)
+        print(f"cli_sha256={executable_digest(cli)}", file=output)
 
 
 if __name__ == "__main__":
@@ -79,7 +101,9 @@ if __name__ == "__main__":
         build_companions(target)
     elif sys.argv[1:] == ["test-windows-desktop"]:
         test_windows_desktop()
+    elif sys.argv[1:] == ["test-windows-workspace"]:
+        test_windows_workspace()
     elif len(sys.argv) > 2 and sys.argv[1] == "protect":
         protect_companions(sys.argv[2:], target)
     else:
-        sys.exit("Expected build, test-windows-desktop, or protect <command>")
+        sys.exit("Expected build, test-windows-desktop, test-windows-workspace, or protect <command>")

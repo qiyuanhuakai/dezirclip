@@ -1612,19 +1612,26 @@ jobs:
           cache-workspace-crates: true
       - name: Test shared core, protocol, Host, Service and CLI
         if: matrix.mode == 'core-tests' && runner.os == 'Windows'
-        run: cargo test --locked --workspace --all-targets --no-default-features --features dzc-cli/native-screen,dzc-service/native-screen
+        id: windows-workspace
+        run: python -B scripts/ci_desktop_binaries.py test-windows-workspace
       - name: Test Linux workspace and isolated Platform
         if: matrix.mode == 'core-tests' && runner.os == 'Linux'
         run: python3 -B scripts/test-linux-platform.py --workspace
       - name: Verify the bare CLI in a real Windows pseudoterminal
         if: matrix.mode == 'core-tests' && runner.os == 'Windows'
         shell: pwsh
+        env:
+          DZC_TEST_BIN: ${{ steps.windows-workspace.outputs.cli_path }}
+          DZC_TEST_BIN_SHA256: ${{ steps.windows-workspace.outputs.cli_sha256 }}
         run: |
-          cargo build --locked -p dzc-cli --no-default-features --features native-screen --bin dzc
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $cli = Get-Item -LiteralPath $env:DZC_TEST_BIN -ErrorAction Stop
+          $sha = (Get-FileHash -LiteralPath $cli.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -cne $env:DZC_TEST_BIN_SHA256) {
+            throw 'The CLI changed after the workspace tests'
+          }
+          Write-Output "Using workspace test CLI SHA-256 $sha"
           python -m pip install --disable-pip-version-check pywinpty==3.1.0 pyte==0.8.2
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $env:DZC_TEST_BIN = (Resolve-Path target/debug/dzc.exe).Path
           @'
           import unittest
           from integrations.tests.test_native_tui import NativeTuiPasteTests

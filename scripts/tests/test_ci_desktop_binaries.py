@@ -10,19 +10,31 @@ from scripts import ci_desktop_binaries
 
 
 class DesktopCompanionGuardTests(unittest.TestCase):
-    def test_surface_desktop_must_come_from_normal_cargo_test_binary(self):
-        expected = Path("target/debug/dezirclip.exe").resolve()
-        artifact = {
-            "reason": "compiler-artifact",
-            "target": {"name": "dezirclip", "kind": ["bin"]},
-            "profile": {"test": True},
-            "executable": str(expected),
-        }
-        self.assertIsNone(ci_desktop_binaries.desktop_from_test([json.dumps(artifact)], expected))
-        artifact["profile"]["test"] = False
-        self.assertIsNone(ci_desktop_binaries.desktop_from_test(
-            [json.dumps(artifact)], expected.with_name("unrelated.exe")))
-        self.assertEqual(ci_desktop_binaries.desktop_from_test([json.dumps(artifact)], expected), expected)
+    def test_desktop_and_cli_must_come_from_normal_cargo_test_binaries(self):
+        for binary, crate, feature in (
+            ("dezirclip", "src-tauri", "desktop"),
+            ("dzc", "crates/dzc-cli", "native-screen"),
+        ):
+            with self.subTest(binary=binary):
+                expected = Path(f"target/debug/{binary}.exe").resolve()
+                source = Path(crate, "src/main.rs").resolve()
+                artifact = {
+                    "reason": "compiler-artifact",
+                    "target": {"name": binary, "kind": ["bin"], "src_path": str(source)},
+                    "profile": {"test": True},
+                    "features": [feature],
+                    "executable": str(expected),
+                }
+                self.assertIsNone(ci_desktop_binaries.binary_from_test([json.dumps(artifact)], expected, source, feature))
+                artifact["profile"]["test"] = False
+                self.assertIsNone(ci_desktop_binaries.binary_from_test(
+                    [json.dumps(artifact)], expected.with_name("unrelated.exe"), source, feature))
+                self.assertIsNone(ci_desktop_binaries.binary_from_test(
+                    [json.dumps(artifact)], expected, source.with_name("foreign.rs"), feature))
+                self.assertIsNone(ci_desktop_binaries.binary_from_test(
+                    [json.dumps(artifact)], expected, source, "unrelated-feature"))
+                self.assertEqual(ci_desktop_binaries.binary_from_test(
+                    [json.dumps(artifact)], expected, source, feature), expected)
 
     def test_real_command_can_write_other_outputs_without_replacing_companions(self):
         with tempfile.TemporaryDirectory() as temporary:
