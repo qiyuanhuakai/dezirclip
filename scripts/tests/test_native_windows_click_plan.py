@@ -1,22 +1,17 @@
-"""AST-loaded click planning checks; no native module import or input execution."""
-import ast
+"""Exercise the native target's click planning with a synthetic desktop."""
+import importlib.util
 import json
 from pathlib import Path
 import unittest
 
 
-SOURCE = Path(__file__).with_name('native-windows-surface-target.py')
-FUNCTIONS = {'require', 'absolute_mouse_point', 'alternate_click_candidates',
-             'plan_alternate_click', 'send_planned_click'}
-TREE = ast.parse(SOURCE.read_text(encoding='utf-8'))
-DEFINITIONS = [node for node in TREE.body if isinstance(node, ast.FunctionDef) and node.name in FUNCTIONS]
-if len(DEFINITIONS) != len(FUNCTIONS) or {node.name for node in DEFINITIONS} != FUNCTIONS:
-    raise RuntimeError('The exact pure click-planning functions are required')
-NAMESPACE = {'json': json}
-exec(compile(ast.Module(body=DEFINITIONS, type_ignores=[]), str(SOURCE), 'exec'), NAMESPACE)
-CANDIDATES = NAMESPACE['alternate_click_candidates']
-PLAN = NAMESPACE['plan_alternate_click']
-SEND = NAMESPACE['send_planned_click']
+SPEC = importlib.util.spec_from_file_location(
+    'surface_target', Path(__file__).with_name('native-windows-surface-target.py'))
+TARGET = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(TARGET)
+CANDIDATES = TARGET.alternate_click_candidates
+PLAN = TARGET.plan_alternate_click
+SEND = TARGET.send_planned_click
 
 
 class ClickPlanTests(unittest.TestCase):

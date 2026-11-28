@@ -29,6 +29,26 @@ mygo = load("mygo_package", "stage-mygo-windows.py")
 
 
 class MyGoArchiveTests(unittest.TestCase):
+    def test_reused_desktop_requires_native_proof_for_the_staged_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            built = Path(tmp) / "artifacts/dzc-desktop.exe"
+            staged = Path(tmp) / "stage/dzc-desktop.exe"
+            staged.parent.mkdir()
+            staged.write_bytes(b"tested executable")
+            expected = {"component": "mygo-desktop", "source_revision": "a" * 40}
+            proof = built.with_suffix(".exe.proof.json")
+            proof.parent.mkdir()
+            record = {"schema_version": 1, "kind": "mygo-desktop-build",
+                      "identity_verification": "executed_native_build_info", "executable": str(built),
+                      "build_info": expected, "sha256": hashlib.sha256(staged.read_bytes()).hexdigest()}
+            proof.write_text(json.dumps(record), encoding="utf-8")
+            mygo.verify_desktop_proof(built, staged, expected)
+            with self.assertRaisesRegex(ValueError, "different candidate"):
+                mygo.verify_desktop_proof(built, staged, {**expected, "source_revision": "b" * 40})
+            staged.write_bytes(b"other executable")
+            with self.assertRaisesRegex(ValueError, "differs from the tested build"):
+                mygo.verify_desktop_proof(built, staged, expected)
+
     def test_archive_requires_the_tested_executables_and_guide_bytes(self):
         with tempfile.TemporaryDirectory() as tmp:
             stage = Path(tmp) / "stage"

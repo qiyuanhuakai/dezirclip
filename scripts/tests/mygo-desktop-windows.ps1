@@ -1517,13 +1517,20 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         }
         return
     }
-    $mainLifecycleLog = Join-Path $dir.FullName 'desktop-lifecycle-main.log'
-    $null = Wait-Until {
-        (Test-Path -LiteralPath $mainLifecycleLog) -and
-        (Select-String -LiteralPath $mainLifecycleLog -Pattern '"event":"native-content-ready"' -Quiet)
-    } 'MyGo did not render the native main window'
-    if (Get-DesktopProcesses @($main.Id) | Where-Object Name -eq 'msedgewebview2.exe') {
-        throw 'The MyGo main window started a WebView2 process'
+    if ($LegacyCloseAfterPaste) {
+        # The pinned alpha.9 payload has a WebView main window and native panels.
+        $null = Wait-Until {
+            Get-DesktopProcesses @($main.Id) -Since $main.StartTime | Where-Object Name -eq 'msedgewebview2.exe'
+        } 'The published alpha.9 main window did not start WebView2'
+    } else {
+        $mainLifecycleLog = Join-Path $dir.FullName 'desktop-lifecycle-main.log'
+        $null = Wait-Until {
+            (Test-Path -LiteralPath $mainLifecycleLog) -and
+            (Select-String -LiteralPath $mainLifecycleLog -Pattern '"event":"native-content-ready"' -Quiet)
+        } 'MyGo did not render the native main window'
+        if (Get-DesktopProcesses @($main.Id) | Where-Object Name -eq 'msedgewebview2.exe') {
+            throw 'The MyGo main window started a WebView2 process'
+        }
     }
     $build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuildNumber
     if ($build -ge 22621) {

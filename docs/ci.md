@@ -18,7 +18,7 @@
 
 桌面专项同时运行轻量的前端工具契约步骤。生成检查、前端安装、单测和构建仍随开发、全量和源码准入模式执行。
 
-日常的历史 MyGo 安装验收使用 **alpha.9 已发布 payload + 当前 checkout 的安装器源码**。范围比较 CI/Release workflow、MyGo 安装器、打包、测试夹具、进程凭据和图标等路径。缺少可靠基线时也执行。实际来源见 [历史 payload 准备器](../scripts/package-published-mygo.py)。
+日常的历史 MyGo 安装验收使用 **alpha.9 已发布 payload + 当前 checkout 的安装器源码**，实际检查该版本的 WebView 主窗口、原生面板、粘贴和安装周期。范围比较 CI/Release workflow、MyGo 安装器、打包、测试夹具、进程凭据和图标等路径。缺少可靠基线时也执行。实际来源见 [历史 payload 准备器](../scripts/package-published-mygo.py)。
 
 | 专项模式 | 当前执行范围 |
 |---|---|
@@ -42,9 +42,11 @@ PR 更新和新的 master push 会取消同组旧 CI。手动 full 不适用该�
 
 | 条件 | 主执行位置 | 执行边界 |
 |---|---|---|
-| 可移植的打包、发布恢复、Flatpak 验证器和诊断脚本契约 | 前端任务的共享工具检查 | 同一轮运行一次。Standalone 与 Flatpak 仍执行对应包的实际运行、ABI、运行时和安装验收 |
+| 可移植的打包、发布恢复、Flatpak 验证器和诊断脚本契约 | 前端任务的共享工具检查 | 同一轮运行一次。Standalone 保留归档 ABI、解包与实际运行验收。Flatpak 保留实际包的安装和运行验证 |
 | 真实 SQLite 夹具、Rust 构建身份和平台打包工具 | Linux、Windows 可执行的桌面任务 | 保留对应 Python、SQLite、Rust 工具。Linux 的私有挂载和凭据负例须实际通过 |
 | Windows NSIS 卸载钩子夹具 | 当前 MyGo 包的打包验收 | 安装 NSIS 后必跑，零用例或跳过视为失败 |
+| Windows MyGo Native 测试安装包 | Windows x64 桌面任务 | 复用本轮原生验收的 Go 可执行文件，暂存后核对实际 BuildInfo 和构建证明的 SHA-256。Rust CLI、Service 仍按 release profile 构建 |
+| Windows WebView 环境恢复 | Windows 开发任务和六场景 NSIS | 开发任务直接调用共享 PowerShell helper，使用真实进程环境测试缺失、空值、文本和失败。完整 NSIS 验收继续检查原 GUI 生命周期和升级 |
 | Standalone Companion 归属 | Tauri 桌面任务 | CLI 与 Service 一次构建。Tauri 测试和实际 Desktop 链接前后核对两个可执行文件的 SHA-256 |
 | Windows 原生剪贴板和阻塞 UI 的中键钩子 | Windows 桌面任务 | 真实剪贴板用例在同一测试进程串行执行。中键钩子复用 MyGo 库验收使用的 Go 测试程序，并确认用例实际通过 |
 
@@ -130,7 +132,6 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 
 | 缺口 | 定位与解释 |
 |---|---|
-| Schema 24 验收尚未接入真实 CLI | [test_sqlite_history_fixture.py](../scripts/tests/test_sqlite_history_fixture.py) 的跨连接用例和 seeder 需要 `DZC_TEST_BIN`，部分 seeder 还依赖 Pillow/psutil。BuildInfo 已安排在本次 CLI 构建后单独运行 |
 | 原生测试的“未执行”可能显示通过 | [capture/subscription.rs](../crates/dzc-platform/src/capture/subscription.rs)、[shortcut/x11.rs](../crates/dzc-platform/src/shortcut/x11.rs) 部分测试缺 opt-in 时直接 return；普通 Rust test 成功不能计为这些原生行为成功 |
 | Wayland 自动覆盖未接入 | 当前 Linux 产品 harness 是 X11；[Wayland 实验支持](./wayland-experimental.md) 的手工脚本不能算作本次 CI 已执行 |
 | 当前候选与发布闭环仍有缺口 | 仍需实测新 tag 的完整发布链和 Linux 系统级安装，并为封存 job 本身取消后提供独立的复核入口 |
@@ -142,7 +143,7 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 - 发布 verifier 以 job 显示名称作精确匹配：当前 `dualReleaseJobs`、以及历史 `fullSourceJobs`、`nativeReleaseJobs`、`releaseGateJobs`、`optionalReleaseJobs` 均在 `updater-release.mjs`。改名、复用前缀、skip 规则或新增后置 job 时要同步该消费者及 [updater-release.node.mjs](../scripts/tests/updater-release.node.mjs)、[packaging-sidecars.node.mjs](../scripts/tests/packaging-sidecars.node.mjs) 等连接契约，不能把所有 skipped 一概视为通过。
 - `ci.yml` 的复用验收 artifact 使用 `acceptance-cli-*`、`acceptance-flatpak-*`；正常 Release 的 standalone 使用 `release-cli-<attempt>-<target>`，通过固定 ID 下载。当前正常 tag 没有 `release-flatpak-*` 生产者。
 - Release 菜单已退役 alpha.2 草稿恢复和 alpha.9 MyGo 安装器补传。两项资产已经公开，草稿恢复和同名补传各自会拒绝该状态。当前双桌面恢复仍绑定原 tag、run ID 和 attempt。两个历史 reusable workflow 及其回归脚本保留，供公共 helper 迁移和离线复核。 [alpha.2](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.2) [alpha.9](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.9)
-- branch/tag protection、外部 required checks、environment 审批、组织 token 策略及 runner 配额未在本次本地核对中取得；不能声称已经设置。更改 check 名称前须只读核对实际规则及消费者。当前没有统一“计划与实际执行集合”汇总 gate，绿色界面本身不能证明请求的所有场景均已执行。
+- 仓库 API 核对时，`master` 没有经典分支保护或适用规则集。统一的计划与实际执行汇总由 [CI policy](../scripts/ci_policy.py) 实施。外部 required checks、组织 token 策略、environment 审批和 runner 配额仍需按实际配置核对。
 
 ## 耗时与验证记录
 

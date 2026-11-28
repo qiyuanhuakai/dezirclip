@@ -162,8 +162,6 @@ pnpm run i18n:check
 cargo test --locked -p dzc-core --lib
 cargo test --locked --workspace --all-targets
 
-# Frontend E2E (currently unconfigured — would fail)
-pnpm run test:e2e
 ```
 
 ## NOTES

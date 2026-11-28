@@ -966,10 +966,6 @@ jobs:
         if: matrix.name == 'windows-x86_64' && (needs.ci-desktop-plan.outputs.mode == 'full' || needs.ci-desktop-plan.outputs.mode == 'mygo-package')
         shell: pwsh
         run: |
-          pnpm run build:mygo:web
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          pnpm run desktop:mygo:build --target x86_64-pc-windows-msvc
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo build --locked --release -p dzc-cli -p dzc-service --no-default-features --features dzc-cli/native-screen,dzc-service/native-screen --bin dzc --bin dzc-service
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/stage-mygo-windows.py --revision "$env:GITHUB_SHA" --output "$env:RUNNER_TEMP/mygo-test-package"
@@ -1602,6 +1598,10 @@ jobs:
       - name: Test local protocol client
         working-directory: clients/go
         run: go test ./...
+      - name: Verify WebView fixture environment restoration
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/tests/native-webview-environment.ps1
       - name: Test MyGo desktop and native surfaces
         working-directory: frontends/dzc-surface
         env:

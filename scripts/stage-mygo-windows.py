@@ -15,6 +15,18 @@ def report(command, env=None):
     return json.loads(subprocess.check_output(command, env=env, timeout=30, text=True, encoding="utf-8"))
 
 
+def verify_desktop_proof(built, staged, expected):
+    proof = json.loads(built.with_suffix(".exe.proof.json").read_text(encoding="utf-8"))
+    if (proof["schema_version"] != 1 or proof["kind"] != "mygo-desktop-build"
+            or proof["identity_verification"] != "executed_native_build_info"
+            or Path(proof["executable"]).resolve() != built.resolve()
+            or any(proof["build_info"].get(key) != value for key, value in expected.items())):
+        raise ValueError("The MyGo Desktop build proof is for a different candidate")
+    with staged.open("rb") as binary:
+        if hashlib.file_digest(binary, "sha256").hexdigest() != proof["sha256"]:
+            raise ValueError("Staged MyGo Desktop differs from the tested build")
+
+
 def verify_archive(archive, stage):
     expected = {path.relative_to(stage).as_posix(): path for path in stage.rglob("*") if path.is_file()}
     required = {"dzc.exe", "dzc-desktop.exe", "dzc-service.exe",
@@ -40,7 +52,8 @@ def stage(root, output, revision, version):
     desktop = output / "dzc-desktop.exe"
     cli = output / "dzc.exe"
     service = output / "dzc-service.exe"
-    shutil.copy2(root / "artifacts/dzc-desktop" / target / desktop.name, desktop)
+    built_desktop = root / "artifacts/dzc-desktop" / target / desktop.name
+    shutil.copy2(built_desktop, desktop)
     for binary in (cli, service):
         shutil.copy2(root / "target/release" / binary.name, binary)
     resources = runpy.run_path(str(root / "scripts/package-dzc.py"))["skill_files"](root)
@@ -63,6 +76,8 @@ def stage(root, output, revision, version):
                     "source_revision":revision, "source_state":"verified_checkout", "build_id":f"{version}@{revision}"}
         if any(info.get(key) != value for key, value in expected.items()):
             raise RuntimeError(f"Unexpected {role} build identity")
+        if role == "mygo-desktop":
+            verify_desktop_proof(built_desktop, desktop, expected)
     with tempfile.TemporaryDirectory(prefix="dzc-mygo-package-") as temp:
         env = {**os.environ, "DEZIRCLIP_DB_PATH":str(Path(temp) / "clipboard.db")}
         started = report([cli, "service", "start", "--no-capture", "--json"], env)

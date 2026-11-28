@@ -121,6 +121,8 @@ def job_requirements(mode, legacy_installer, crash_profile="release"):
                              "Build frontend", "Verify production WebView startup")
         for runner in DEVELOPMENT_RUNNERS:
             jobs[f"Go development ({runner})"] = ("Test local protocol client", "Test MyGo desktop and native surfaces")
+            if runner == "windows-latest":
+                jobs[f"Go development ({runner})"] += ("Verify WebView fixture environment restoration",)
             core = ("Test shared core, protocol, Host, Service and CLI",)
             if runner == "windows-latest":
                 core += ("Verify the bare CLI in a real Windows pseudoterminal",)
