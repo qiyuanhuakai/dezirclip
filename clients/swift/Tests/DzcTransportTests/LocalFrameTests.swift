@@ -1,4 +1,5 @@
 import Darwin
+import DzcProtocol
 import DzcTransport
 import Foundation
 import Testing
@@ -70,5 +71,25 @@ private func write(_ fd: Int32, _ data: Data) throws {
     worker.cancel()
     await #expect(throws: CancellationError.self) { try await worker.value }
     #expect(clock.now - start < .seconds(1))
+    await #expect(throws: LocalFrameError.disconnected) { try await stream.exchange(Data("{}".utf8)) }
+}
+
+@Test func framingRejectsDeepJSONAndIgnoresBracketsInsideStrings() async throws {
+    let (stream, peer) = try sockets()
+    defer { Darwin.close(peer) }
+
+    let depth = WireLimits.maximumJSONDepth + 1
+    let nested = Data((String(repeating: "[", count: depth) + "0" + String(repeating: "]", count: depth)).utf8)
+    await #expect(throws: LocalFrameError.nestingLimit) { try await stream.exchange(nested) }
+
+    let quoted = Data(("\"" + String(repeating: #"\"[{"#, count: depth) + "\"").utf8)
+    var length = UInt32(quoted.count).bigEndian
+    try write(peer, Data(bytes: &length, count: 4) + quoted)
+    let result = try await stream.exchange(Data("{}".utf8))
+    #expect(result == quoted)
+
+    length = UInt32(nested.count).bigEndian
+    try write(peer, Data(bytes: &length, count: 4) + nested)
+    await #expect(throws: LocalFrameError.nestingLimit) { try await stream.exchange(Data("{}".utf8)) }
     await #expect(throws: LocalFrameError.disconnected) { try await stream.exchange(Data("{}".utf8)) }
 }

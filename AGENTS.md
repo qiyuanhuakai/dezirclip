@@ -34,7 +34,7 @@ The signed updater is the permitted networking exception. Future macOS/Swift wor
 | `.github/workflows` | Six current CI/release workflows; actual triggers and evidence are documented in `docs/ci.md` |
 | `docs/specs` | Current behavior contracts and the staged architecture cleanup specification |
 
-Generated files, inline tests and historical evidence are counted separately from handwritten product behavior. Do not use total physical lines as a deletion target. The Swift packages are future targets in the spec.
+Generated files, inline tests and historical evidence are counted separately from handwritten product behavior. Do not use total physical lines as a deletion target. `clients/swift` contains the pre-SwiftUI handshake and transport package and the signed Darwin helper acceptance client.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |

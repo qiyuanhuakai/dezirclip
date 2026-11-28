@@ -12,9 +12,11 @@ as the only allowed action; cancellation never deletes original files or
 injects a paste shortcut. File drops preserve the existing capture policy.
 
 `schema/*.schema.json` is the wire contract. `scripts/generate-protocol.py`
-generates Rust/Go DTOs and their offline schema bundle. Run it with `--check`
-to detect drift. Shared accepted/rejected messages live in
-`fixtures/messages.json`; both language implementations validate these against
+generates Rust/Go DTOs and their offline schema bundle, plus the Swift
+handshake types and frame limits. Swift checks the generated handshake
+constraints when decoding or constructing those types. Run the generator
+with `--check` to detect drift. Shared accepted/rejected messages live in
+`fixtures/messages.json`; Rust and Go validate these against
 the same schema before decoding DTOs. Existing CLI JSON and MCP JSON-RPC remain
 separate interfaces.
 

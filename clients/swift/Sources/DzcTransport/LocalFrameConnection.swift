@@ -1,10 +1,12 @@
 import Darwin
 import Dispatch
+import DzcProtocol
 import Foundation
 
 public enum LocalFrameError: Error, Equatable {
     case invalidLength
     case invalidUTF8
+    case nestingLimit
     case timedOut
     case disconnected
     case exchangeInProgress
@@ -14,7 +16,7 @@ public enum LocalFrameError: Error, Equatable {
 /// Framed transport after the launcher verifies the operating system peer.
 /// The caller must use an independent connection for a concurrent long poll.
 public actor LocalFrameConnection {
-    public static let maximumFrameBytes = 1_048_576
+    public static let maximumFrameBytes = WireLimits.maximumFrameBytes
     private let descriptor: Int32
     private var inFlight = false
     private var usable = true
@@ -32,7 +34,7 @@ public actor LocalFrameConnection {
         guard usable else { throw LocalFrameError.disconnected }
         guard !inFlight else { throw LocalFrameError.exchangeInProgress }
         guard !request.isEmpty, request.count <= Self.maximumFrameBytes else { throw LocalFrameError.invalidLength }
-        guard String(data: request, encoding: .utf8) != nil else { throw LocalFrameError.invalidUTF8 }
+        try Self.validatePayload(request)
         try Task.checkCancellation()
         inFlight = true
         defer { inFlight = false }
@@ -43,11 +45,13 @@ public actor LocalFrameConnection {
             try Self.transact(socket, request, until: deadline)
         }
         do {
-            return try await withTaskCancellationHandler {
+            let response = try await withTaskCancellationHandler {
                 try await worker.value
             } onCancel: {
                 worker.cancel()
             }
+            try Task.checkCancellation()
+            return response
         } catch {
             usable = false
             _ = Darwin.shutdown(descriptor, SHUT_RDWR)
@@ -73,8 +77,31 @@ public actor LocalFrameConnection {
         let count = header.reduce(0) { ($0 << 8) | Int($1) }
         guard count > 0, count <= maximumFrameBytes else { throw LocalFrameError.invalidLength }
         let response = try receive(fd, count: count, until: deadline)
-        guard String(data: response, encoding: .utf8) != nil else { throw LocalFrameError.invalidUTF8 }
+        try validatePayload(response)
         return response
+    }
+
+    private static func validatePayload(_ bytes: Data) throws {
+        guard String(data: bytes, encoding: .utf8) != nil else { throw LocalFrameError.invalidUTF8 }
+        var depth = 0
+        var quoted = false
+        var escaped = false
+        for byte in bytes {
+            if quoted {
+                if escaped { escaped = false }
+                else if byte == 92 { escaped = true }
+                else if byte == 34 { quoted = false }
+            } else {
+                switch byte {
+                case 34: quoted = true
+                case 91, 123:
+                    depth += 1
+                    if depth > WireLimits.maximumJSONDepth { throw LocalFrameError.nestingLimit }
+                case 93, 125: depth = max(0, depth - 1)
+                default: break
+                }
+            }
+        }
     }
 
     private static func receive(_ fd: Int32, count: Int, until deadline: UInt64) throws -> Data {

@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import DzcProtocol
 import DzcTransport
 import Foundation
 import Security
@@ -7,6 +8,34 @@ import Security
 struct ProbeFailure: Error {
     let message: String
     init(_ message: String) { self.message = message }
+}
+
+private struct HelloRequest: Encodable {
+    let requestID = "swift-hello"
+    let method = "hello"
+    let params: HelloParams
+
+    private enum CodingKeys: String, CodingKey {
+        case requestID = "request_id"
+        case method, params
+    }
+}
+
+private struct HelloResponse: Decodable {
+    let requestID: String
+    let result: HelloResult
+
+    private enum CodingKeys: String, CodingKey {
+        case requestID = "request_id"
+        case result, error
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try require(!container.contains(.error), "hello returned an error")
+        requestID = try container.decode(String.self, forKey: .requestID)
+        result = try container.decode(HelloResult.self, forKey: .result)
+    }
 }
 
 func require(_ condition: Bool, _ message: String) throws {
@@ -164,13 +193,17 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
         try contender.run()
         contender.waitUntilExit()
         try require(contender.terminationStatus == 3, "second helper acquired the capture lease")
-        let hello = try await request(connection, id: "swift-hello", method: "hello", params: [
-            "protocol_version": ["major": 1, "minor": 0],
-            "client_version": "darwin-fixture", "client_role": "cli",
-            "capabilities": [], "required_capabilities": [],
-        ])
-        let state = hello["state"] as? [String: Any]
-        try require(state?["service_instance_id"] as? String == "synthetic-instance", "wrong fixture instance")
+        let helloRequest = try HelloRequest(params: HelloParams(
+            protocolVersion: ProtocolVersion(major: 1, minor: 0),
+            clientVersion: "darwin-fixture", clientRole: .cli,
+            capabilities: [], requiredCapabilities: []
+        ))
+        let reply = try await connection.exchange(JSONEncoder().encode(helloRequest))
+        let hello = try JSONDecoder().decode(HelloResponse.self, from: reply)
+        try require(hello.requestID == helloRequest.requestID && hello.result.protocolVersion.major == 1,
+                    "handshake request ID or version differs")
+        try require(hello.result.permissions == [.historyRead], "wrong fixture permissions")
+        try require(hello.result.state.serviceInstanceId == "synthetic-instance", "wrong fixture instance")
         let clipboard = NSPasteboard.general
         let before = clipboard.changeCount
         let health = try await request(connection, id: "swift-health", method: "health", params: [:])
