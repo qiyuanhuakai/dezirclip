@@ -165,7 +165,6 @@ impl Host {
     /// Immutable identity needs no history/database locks or state observation.
     pub fn instance_id(&self)->&str {&self.instance}
     #[cfg(test)]
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) fn waiting_subscriptions(&self) -> usize { self.events.waiters() }
     pub fn is_stopping(&self) -> bool { self.stop_requested.load(Ordering::Acquire) }
     pub fn capture_stopped(&self) -> bool { self.stopped.load(Ordering::Acquire) }
