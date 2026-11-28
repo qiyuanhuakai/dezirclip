@@ -23,7 +23,7 @@ public struct HistorySnapshot<Value: Sendable>: Sendable {
 
 private struct Request<Params: Encodable>: Encodable {
     let id: String
-    let method: Method
+    let method: DzcProtocol.Method
     let params: Params
 
     private enum CodingKeys: String, CodingKey {
@@ -77,7 +77,7 @@ public actor DesktopSession {
     ) async throws -> DesktopSession {
         let transport = LocalFrameConnection(verifiedSocket: verifiedSocket)
         let version = try ProtocolVersion(major: 1, minor: 0)
-        let readMethods: [Method] = [.desktopHistoryPage, .desktopHistoryGet, .desktopSnapshotRead, .eventsSubscribe]
+        let readMethods: [DzcProtocol.Method] = [.desktopHistoryPage, .desktopHistoryGet, .desktopSnapshotRead, .eventsSubscribe]
         let methods = requireCopy ? readMethods + [.desktopClipboardCopy] : readMethods
         let params = try HelloParams(
             protocolVersion: version, clientVersion: clientVersion, clientRole: .desktop,
@@ -147,7 +147,7 @@ public actor DesktopSession {
     }
 
     private func call<Params: Encodable, Result: Decodable & Sendable>(
-        _ method: Method, _ params: Params, timeoutMilliseconds: UInt32 = 2_000
+        _ method: DzcProtocol.Method, _ params: Params, timeoutMilliseconds: UInt32 = 2_000
     ) async throws -> Result {
         guard !closed, nextID < UInt64.max else { throw DesktopSessionError.disconnected }
         let request = Request(id: String(nextID), method: method, params: params)
@@ -177,7 +177,7 @@ public actor DesktopSession {
     }
 
     private func snapshot<Params: Encodable, Value: Decodable & Sendable>(
-        _ method: Method, _ params: Params, expectedEpoch: UInt64?, validate: (Value) -> Bool
+        _ method: DzcProtocol.Method, _ params: Params, expectedEpoch: UInt64?, validate: (Value) -> Bool
     ) async throws -> HistorySnapshot<Value> {
         try begin()
         defer { busy = false }
@@ -191,8 +191,10 @@ public actor DesktopSession {
         }
         do {
             let bytes = try await snapshotBytes(descriptor)
+            try Task.checkCancellation()
             try LocalFrameConnection.validateJSONPayload(bytes)
             let value = try JSONDecoder().decode(Value.self, from: bytes)
+            try Task.checkCancellation()
             guard validate(value) else { throw DesktopSessionError.invalidSnapshot }
             return HistorySnapshot(state: descriptor.state, value: value)
         } catch DesktopSessionError.remote(let code) {

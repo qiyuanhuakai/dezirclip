@@ -87,15 +87,21 @@ mod darwin {
             let (shutdown, receiver) = watch::channel(false);
             let server = serve_listener(host.clone(), listener, receiver);
             tokio::pin!(server);
-            let mut parent_open = true;
+            let mut drain: Option<tokio::task::JoinHandle<Result<(), WireErrorCode>>> = None;
             loop {
                 tokio::select! {
-                    result = &mut server => return result,
+                    result = &mut server => {
+                        result?;
+                        if let Some(worker) = drain {
+                            worker.await.map_err(io::Error::other)?.map_err(wire_error)?;
+                        }
+                        return Ok(());
+                    },
                     Some(write) = writes.recv() => {
                         let result = clipboard.write_text(&write.text).map_err(|_| WireErrorCode::Unavailable);
                         let _ = write.completed.send(result);
                     },
-                    command = commands.recv(), if parent_open => match command {
+                    command = commands.recv(), if drain.is_none() => match command {
                         Some(b'p') => {
                             let now = unix_milliseconds()?;
                             history.privacy().set_session(PrivacySessionCommand::On { duration_ms: None }, now)
@@ -108,11 +114,10 @@ mod darwin {
                             send_receipt(&json!({"revoked": true}))?;
                         },
                         None => {
-                            parent_open = false;
                             host.grants().revoke(&grant);
                             let _ = shutdown.send(true);
                             let shutting_down = host.clone();
-                            tokio::task::spawn_blocking(move || shutting_down.shutdown());
+                            drain = Some(tokio::task::spawn_blocking(move || shutting_down.shutdown()));
                         },
                         Some(_) => return Err(io::Error::from(io::ErrorKind::InvalidData)),
                     },

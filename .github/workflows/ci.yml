@@ -101,19 +101,17 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           key: darwin-native
+      - name: Test Swift framing, protocol and sessions
+        run: swift test --package-path clients/swift
       - name: Exercise real Darwin path and transport guards
         run: |
           cargo test --locked -p dzc-core --lib infrastructure::local_file::tests
-          cargo test --locked -p dzc-platform --features ipc --lib ipc::
-          cargo test --locked -p dzc-platform --features ipc --lib darwin_clipboard::
+          cargo test --locked -p dzc-platform --features ipc --lib -- ipc:: darwin_clipboard::
       - name: Exercise shared Host authorization, history and snapshots
         run: cargo test --locked -p dzc-host --lib
-      - name: Test the Swift local framed transport
-        run: swift test --package-path clients/swift
       - name: Verify signed Swift sessions against the local Rust Host and platform fixture
         run: |
-          cargo build --locked -p dzc-platform --features ipc --example ipc_protocol_fixture
-          cargo build --locked -p dzc-host --example darwin_desktop_fixture
+          cargo build --locked -p dzc-platform -p dzc-host --features dzc-platform/ipc --example ipc_protocol_fixture --example darwin_desktop_fixture
           socket_dir=$(mktemp -d /private/tmp/dzc-m0.XXXXXX)
           swift build --package-path clients/swift --product DarwinPeerProbe
           swift_bin=$(swift build --package-path clients/swift --show-bin-path)
