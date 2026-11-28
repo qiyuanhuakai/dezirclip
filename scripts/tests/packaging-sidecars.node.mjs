@@ -44,6 +44,10 @@ function assertReleaseSourceRouting(workflow) {
   assert.match(create, /^      source: \$\{\{ github\.sha \}\}$/m);
   assert.match(create, /^      release_id: \$\{\{ steps\.release\.outputs\.release_id \}\}$/m);
   assert.doesNotMatch(workflow, /resume-existing-alpha2|publish-mygo-installer|publish-historical-recovery/);
+  const source = releaseJob(workflow, "accept-source");
+  assert.match(source, /inputs\.mode == 'verify-source-candidate'/);
+  assert.match(source, /permissions:\n      contents: read\n      actions: read\n/);
+  assert.match(source, /with:\n      mode: source-acceptance\n/);
   const seal = releaseJob(workflow, "seal-candidate");
   assert.match(seal, /RELEASE_SOURCE: \$\{\{ needs\.create-release\.outputs\.source \}\}/);
   assert.match(seal, /ACCEPTED_SOURCE: \$\{\{ needs\.accept-source\.outputs\.accepted_source \}\}/);
@@ -260,11 +264,12 @@ test("release source routing rejects tag mismatch, lost recovery identity or ret
     ["lost immutable asset identity", value => value.replace("SEAL_ID: ${{ needs.seal-candidate.outputs.asset_id }}", "SEAL_ID: 1")],
     ["lost original attempt", value => value.replace("RELEASE_ATTEMPT: ${{ inputs.release-run-attempt }}", "RELEASE_ATTEMPT: 1")],
     ["publication bypasses interrupted seal review", value => value.replace("    needs: review-dual-seal", "")],
-    ["retired operation", value => value.replace("resume-dual-draft,", "resume-dual-draft, resume-existing-alpha2,")],
+    ["candidate read permission elevated", value => value.replace("      contents: read\n      actions: read\n    uses: ./.github/workflows/ci.yml", "      contents: write\n      actions: read\n    uses: ./.github/workflows/ci.yml")],
+    ["retired operation", value => value.replace(/^(        options: \[[^\n]+)\]$/m, "$1, resume-existing-alpha2]")],
   ];
   for (const [name, change] of changes) {
     const value = change(workflow);
-    assert.notEqual(value, workflow, name);
+    assert(value !== workflow, `mutation did not apply: ${name}`);
     assert.throws(() => assertReleaseSourceRouting(value), undefined, name);
   }
 });

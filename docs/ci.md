@@ -72,7 +72,7 @@ Darwin 专项以 macOS 13.0 为 Swift 和 Rust 的编译目标。签名后核对
 | Flatpak 最终环境 | [flatpak.yml](../.github/workflows/flatpak.yml)：Linux x64/ARM64，构建并经 `verify-flatpak.py` 验证后导出 | 在 org.gnome.Platform runtime 验证 OCR/paste；是 full 的验收 artifact，当前 tag 不发布 |
 | 性能与诊断 | `scripts/performance/tests` / frontend 的比较器与 fixture 单测；手动性能或崩溃入口 | 工具单测、崩溃诊断与真实性能测量分别报告，不互相代替 |
 
-Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rust 客户端和原生桌面。Tauri 测试任务只运行其 Cargo 包的套件。Windows NSIS 的纯打包检查集中到 fixture 构建任务，完整验证的跨目标 Python discovery 仍待收口。
+Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rust 客户端和原生桌面。Tauri 测试任务只运行其 Cargo 包的套件。侧车和发布路由的可移植测试由 Frontend 执行，日常与源码验收都能发现问题。Windows NSIS 样件任务保留平台专属脚本及本机误运行拒绝用例。完整验证的跨目标 Python discovery 仍待收口。
 
 提交 `a81310d6` 的 Windows ConPTY 验收首次执行通过全部 11 项用例，核对了工作区测试产出的 CLI 摘要。该步骤用时 84 秒。上一提交 `3b41e951` 首跑中，同一验收步骤用时 105 秒，其中独立 CLI 构建用时 19.83 秒。较早运行的 CI 汇总因历史 alpha.9 编辑器粘贴时剪贴板被占用而失败。新提交的历史安装器和汇总均通过，开发 CI 从触发到汇总结束用时 4 分 24 秒。 [优化前 ConPTY](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46174831115/job/141071146734) [历史安装器失败日志](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46174831115/job/141071146661) [优化后首轮开发 CI](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46175490062)
 

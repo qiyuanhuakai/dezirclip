@@ -308,6 +308,7 @@ jobs:
           python -B -m scripts.ci_contracts portable
           python -I -B -m unittest discover -s scripts -p test_release_recovery.py -v
           python -B -m unittest discover -s scripts/performance/tests -v
+          node --test scripts/tests/packaging-sidecars.node.mjs
 
       - name: Check pinned MyGo dependency before installing frontend packages
         if: needs.ci-desktop-plan.outputs.development == 'true'
@@ -1430,7 +1431,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -B -m unittest discover -s scripts/tests -p test_native_windows_nsis_webview.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test scripts/tests/packaging-sidecars.node.mjs
+          node --test --test-name-pattern '^native acceptance refuses local execution before any product operation$' scripts/tests/packaging-sidecars.node.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./scripts/tests/native-packaging-proof.ps1
           ./scripts/tests/native-process-identity.ps1
