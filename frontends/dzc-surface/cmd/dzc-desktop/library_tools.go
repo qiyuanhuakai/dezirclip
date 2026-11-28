@@ -2,17 +2,11 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
-	"errors"
-	"io"
-	"os"
-	"path/filepath"
-	"slices"
-	"strings"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/desktop/application"
 )
 
 func (*DesktopShell) PackageTool(ctx context.Context, action string) (json.RawMessage, error) {
@@ -41,44 +35,19 @@ func (l *Library) BackgroundSelected(ctx context.Context, epoch uint64, expected
 }
 
 func (l *Library) PreviewBackup(ctx context.Context, epoch uint64, path string) ([]protocol.BackupPreviewRow, error) {
-	var result protocol.BackupPreview
-	params := protocol.BackupPreviewParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path}
-	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopBackupPreview, params, "BackupPreview", &result)
-	return result.Entries, err
+	return application.PreviewBackup(ctx, l.owner, epoch, path)
 }
 
 func (l *Library) InspectBackup(ctx context.Context, epoch uint64, path string) (protocol.BackupInspection, error) {
-	var result protocol.BackupInspection
-	var capabilities protocol.CapabilityReport
-	if err := l.owner.DesktopCall(ctx, protocol.MethodCapabilities, struct{}{}, "CapabilityReport", &capabilities); err != nil {
-		return result, err
-	}
-	if !slices.Contains(capabilities.Methods, string(protocol.MethodDesktopBackupInspect)) {
-		switch strings.ToLower(filepath.Ext(path)) {
-		case ".dzc", ".tiez":
-			return protocol.BackupInspection{Encrypted: true, Entries: []protocol.BackupPreviewRow{}}, nil
-		}
-		var err error
-		result.Entries, err = l.PreviewBackup(ctx, epoch, path)
-		return result, err
-	}
-	params := protocol.BackupPreviewParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path}
-	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopBackupInspect, params, "BackupInspection", &result)
-	return result, err
+	return application.InspectBackup(ctx, l.owner, epoch, path)
 }
 
 func (l *Library) ImportBackup(ctx context.Context, epoch uint64, path, mode string, passphrase *string) (protocol.BackupImportResult, error) {
-	var result protocol.BackupImportResult
-	params := protocol.BackupImportParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path, Mode: mode, Passphrase: passphrase}
-	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopBackupImport, params, "BackupImportResult", &result)
-	return result, err
+	return application.ImportBackup(ctx, l.owner, epoch, path, mode, passphrase)
 }
 
 func (l *Library) ExportBackup(ctx context.Context, epoch uint64, path, format string, passphrase *string) (protocol.BackupExportResult, error) {
-	var result protocol.BackupExportResult
-	params := protocol.BackupExportParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path, Format: format, Passphrase: passphrase}
-	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopBackupExport, params, "BackupExportResult", &result)
-	return result, err
+	return application.ExportBackup(ctx, l.owner, epoch, path, format, passphrase)
 }
 
 func (l *Library) ToolCatalog(ctx context.Context) (protocol.ToolCatalog, error) {
@@ -94,49 +63,15 @@ func (l *Library) SystemFonts(ctx context.Context) ([]protocol.DesktopFont, erro
 }
 
 func (l *Library) EmojiFavorites(ctx context.Context, epoch uint64, path *string) (protocol.EmojiFavoritesResult, error) {
-	var result protocol.EmojiFavoritesResult
-	params := protocol.EmojiFavoritesParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path}
-	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopEmojiFavorites, params, "EmojiFavoritesResult", &result)
-	return result, err
+	return application.EmojiFavorites(ctx, l.owner, epoch, path)
 }
 
 func (l *Library) MutateFavorite(ctx context.Context, epoch uint64, action, path string) (string, error) {
-	var result protocol.EmojiFavoritesResult
-	params := protocol.EmojiFavoritesParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: &path, Mutation: &action}
-	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopEmojiFavorites, params, "EmojiFavoritesResult", &result)
-	if err != nil || action == "remove" {
-		return "", err
-	}
-	if len(result.Paths) != 1 {
-		return "", client.ErrProtocol
-	}
-	return result.Paths[0], nil
+	return application.MutateFavorite(ctx, l.owner, epoch, action, path)
 }
 
-// Browser drops may supply bytes without a filesystem path. Only the temporary path crosses IPC.
 func (l *Library) ImportFavoriteData(ctx context.Context, epoch uint64, dataURL string) (string, error) {
-	header, payload, ok := strings.Cut(dataURL, ",")
-	const limit = 16 << 20
-	if !ok || !strings.HasPrefix(header, "data:image/") || !strings.HasSuffix(header, ";base64") || len(payload) > base64.StdEncoding.EncodedLen(limit) {
-		return "", errors.New("invalid favorite image")
-	}
-	staging, err := os.CreateTemp("", "dzc-emoji-*")
-	if err != nil {
-		return "", err
-	}
-	defer os.Remove(staging.Name())
-	n, copyErr := io.Copy(staging, io.LimitReader(base64.NewDecoder(base64.StdEncoding, strings.NewReader(payload)), limit+1))
-	closeErr := staging.Close()
-	if copyErr != nil {
-		return "", copyErr
-	}
-	if closeErr != nil {
-		return "", closeErr
-	}
-	if n == 0 || n > limit {
-		return "", errors.New("invalid favorite image size")
-	}
-	return l.MutateFavorite(ctx, epoch, "import", staging.Name())
+	return application.ImportFavoriteData(ctx, l.owner, epoch, dataURL)
 }
 
 func (l *Library) Classify(ctx context.Context, text string) ([]string, error) {
