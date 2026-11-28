@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import sys
@@ -9,6 +10,20 @@ from scripts import ci_desktop_binaries
 
 
 class DesktopCompanionGuardTests(unittest.TestCase):
+    def test_surface_desktop_must_come_from_normal_cargo_test_binary(self):
+        expected = Path("target/debug/dezirclip.exe").resolve()
+        artifact = {
+            "reason": "compiler-artifact",
+            "target": {"name": "dezirclip", "kind": ["bin"]},
+            "profile": {"test": True},
+            "executable": str(expected),
+        }
+        self.assertIsNone(ci_desktop_binaries.desktop_from_test([json.dumps(artifact)], expected))
+        artifact["profile"]["test"] = False
+        self.assertIsNone(ci_desktop_binaries.desktop_from_test(
+            [json.dumps(artifact)], expected.with_name("unrelated.exe")))
+        self.assertEqual(ci_desktop_binaries.desktop_from_test([json.dumps(artifact)], expected), expected)
+
     def test_real_command_can_write_other_outputs_without_replacing_companions(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

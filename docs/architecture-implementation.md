@@ -239,6 +239,10 @@ Windows、Linux Go 套件和 Linux 竞态测试通过。隔离 Service 验收用
 
 `af71a8f1` 的 GitHub 源码准入首次用时 12 分 49 秒。Windows x64 和 Linux x64 通过。下载 artifact ID `15261977336`，复核原始 ZIP 摘要、提交、run/attempt 和双目标，并用同轮 job 记录复算全部 65 项结果。43 项成功，其余按计划跳过。 [源码准入实跑](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46141969232)
 
+### C3 Tauri 原生验收复用
+
+`f84fe2ee` 的首次准入从首个 job 到汇总用时 14 分 58 秒，另有 6 分 38 秒排队。双 x64 目标通过，按 artifact ID `15268606832` 核对 ZIP 摘要、提交、run/attempt，并复算全部 67 项结果。Linux x64 跳过了不消费的 Vite 生产构建，保留 Surface 与 MyGo 的 token 依赖检查。Windows 统一 Cargo feature 后，间隔其它测试再构建实窗程序仍重新编译工作区 crate，耗时 52 秒。后续改为直接保留 Tauri 单测调用生成的普通可执行文件，实窗启动前核对该文件的 SHA-256。 [首次准入与重复构建记录](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46156643039)
+
 ### M1 Darwin 主线程剪贴板
 
 `b5b0b8bd` 将文本剪贴板调度移入 Host 库。Darwin 主线程独占系统剪贴板，Host worker 通过有界队列发送写入并等待真实结果。主线程直接调用同步 Host copy 会返回 Unavailable，避免等待自己处理队列。关闭要求保持主线程轮询，直到已接收的 Host 请求排空。
@@ -268,6 +272,8 @@ macOS 26 ARM64 的第一次托管验收用时 2 分 59 秒。正式签名 helper
 `74a006bb` 为每个签名 helper 启动器保留最多 8 条正在建立或已打开的 SDK 会话。每条连接独立验签及授权。关闭会话回收名额，重复关闭不会多还名额。传输取消时先中断在途读写，待 worker 退出后关闭描述符。隐私读取和写入使用共享 Schema 生成的 DTO。写入需要独立确认隐私授权。回执丢失时返回结果未知，调用方可在新连接查询状态。
 
 macOS 26 ARM64 的托管验收通过 Swift 协议、路径、授权和签名 helper 步骤。正式 helper 以并发连接达到上限，验证超限拒绝和关闭后复用，并通过 SDK 切换隐私会话、核对 epoch 和剪贴板暂停与恢复。共享 Host 夹具拒绝了要求隐私写权限的未授权连接。Swift 测试也覆盖了隐私写回执丢失，以及 `expires_at_ms` 的必填 null。 [Swift 与签名 helper 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46149642199/job/140993308576)
+
+`178fa683` 为 Swift Desktop 握手增加与 Go SDK 一致的 Host 组件版本核对。即使 wire major、签名进程、实例和授权符合预期，组件版本不一致也会关闭连接。诊断应用从统一发布版本写入签名包元数据，版本升级时不需修改探针。macOS 26 ARM64 首轮通过 17 项 Swift 测试，并以实际签名 helper 验证版本不匹配被拒绝。匹配版本继续通过历史、系统剪贴板、Keychain 和关闭排空。 [组件版本验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46157330247/job/141016822000)
 
 ### R8 维护量中间复算
 

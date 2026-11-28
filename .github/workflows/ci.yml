@@ -699,6 +699,7 @@ jobs:
         run: python -B scripts/ci_desktop_binaries.py build
 
       - name: Test Tauri crate
+        id: tauri-tests
         if: matrix.can_test
         shell: python
         # Include the standalone backup-inspect example alongside the backup integration suite.
@@ -707,8 +708,7 @@ jobs:
           command = [sys.executable, "-B", "scripts/ci_desktop_binaries.py", "protect",
                      "cargo", "test", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "-p", "dezirclip", "--all-targets"]
           if sys.platform == "win32":
-              # Share the Tauri feature graph with the executable used by the Windows Surface fixture.
-              command.extend(["--features", "tauri/custom-protocol"])
+              command = [sys.executable, "-B", "scripts/ci_desktop_binaries.py", "test-windows-desktop"]
           if sys.platform == "linux":
               command = ["xvfb-run", "-a", *command]
               os.environ["XDG_SESSION_TYPE"] = "x11"
@@ -953,21 +953,24 @@ jobs:
         if: '!matrix.can_test'
         run: python -B scripts/ci_desktop_binaries.py protect cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets ${{ matrix.cargo_args }}
 
-      - name: Build actual Windows desktop with embedded frontend for Surface acceptance
-        if: runner.os == 'Windows' && matrix.can_test
-        run: python -B scripts/ci_desktop_binaries.py protect cargo build --locked --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --bin dezirclip
-
       - name: Verify experimental Surface on disposable Windows desktop
         if: runner.os == 'Windows' && matrix.can_test
         timeout-minutes: 12
+        env:
+          DZC_TESTED_TAURI_SHA256: ${{ steps.tauri-tests.outputs.desktop_sha256 }}
         shell: python
         run: |
-          import os, pathlib, sys, uuid
+          import hashlib, os, pathlib, sys, uuid
           sys.path.insert(0, 'scripts/tests')
           from native_windows_supervisor import run_controller
           assert sys.platform == 'win32' and os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
           root = pathlib.Path(os.environ['RUNNER_TEMP']) / ('dezirclip-surface-' + uuid.uuid4().hex)
           helper = pathlib.Path('artifacts/dzc-surface/x86_64-pc-windows-msvc/dzc-surface.exe')
+          with pathlib.Path('target/debug/dezirclip.exe').open('rb') as desktop:
+              measured = hashlib.file_digest(desktop, 'sha256').hexdigest()
+          if measured != os.environ.get('DZC_TESTED_TAURI_SHA256'):
+              raise SystemExit('The Windows desktop differs from the executable produced by the Tauri tests')
+          print(f'Tauri test executable SHA-256: {measured}', flush=True)
           sys.exit(run_controller(['node', 'scripts/tests/native-windows-surface.mjs',
               '--desktop', 'target/debug/dezirclip.exe', '--helper', str(helper),
               '--helper-proof', str(helper) + '.proof.json', '--python', sys.executable,

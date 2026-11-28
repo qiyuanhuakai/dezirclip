@@ -162,7 +162,6 @@ def job_requirements(mode, legacy_installer, crash_profile="release"):
                 steps += ("Verify MyGo Native paste into an independent Windows editor",
                           "Verify Windows clipboard reader window ownership",
                           "Verify middle-button hook survives a blocked resident UI",
-                          "Build actual Windows desktop with embedded frontend for Surface acceptance",
                           "Verify experimental Surface on disposable Windows desktop",
                           "Verify real Service-mode paste target binding on disposable Windows")
         if name == "windows-x86_64" and mode in ("full", "mygo-package"):
