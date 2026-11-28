@@ -145,6 +145,33 @@ private func openDesktop(_ socket: Int32, expectedInstance: String = "fixture") 
     await #expect(throws: DesktopSessionError.disconnected) { try await session.subscribe(params) }
 }
 
+@Test func privacyMutationRequiresPermissionAndLostReplyIsAmbiguous() async throws {
+    let (readSocket, readPeer) = try socketPair()
+    defer { Darwin.close(readPeer) }
+    try hello(readPeer)
+    let read = try await openDesktop(readSocket)
+    let enable = try PrivacySetParams(active: true)
+    await #expect(throws: DesktopSessionError.missingPermission(.privacyWrite)) { try await read.setPrivacy(enable) }
+    try respond(readPeer, id: "2", result: ["active": false, "privacy_epoch": 2, "expires_at_ms": NSNull()])
+    let unchanged = try await read.privacyState()
+    #expect(!unchanged.active && unchanged.privacyEpoch == 2 && unchanged.expiresAtMs == nil)
+    let encoded = try JSONEncoder().encode(unchanged)
+    let fields = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    #expect(fields["expires_at_ms"] is NSNull)
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(PrivacyState.self, from: Data(#"{"active":false,"privacy_epoch":2}"#.utf8))
+    }
+    await read.close()
+
+    let (writeSocket, writePeer) = try socketPair()
+    defer { Darwin.close(writePeer) }
+    try hello(writePeer, permissions: ["history_read", "desktop_history", "clipboard_copy", "privacy_write"])
+    let write = try await openDesktop(writeSocket)
+    #expect(Darwin.shutdown(writePeer, SHUT_WR) == 0)
+    await #expect(throws: DesktopSessionError.privacyOutcomeUnknown) { try await write.setPrivacy(enable) }
+    await #expect(throws: DesktopSessionError.disconnected) { try await write.privacyState() }
+}
+
 @Test func desktopSessionReturnsResyncAndRejectsInvalidSnapshotChunks() async throws {
     let (socket, peer) = try socketPair()
     defer { Darwin.close(peer) }

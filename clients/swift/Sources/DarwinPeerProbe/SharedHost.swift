@@ -68,6 +68,10 @@ private func verifyStartedHost(_ host: BundledDesktopHost, credentials: Bootstra
                                           grant: String(repeating: "a", count: 64), clientVersion: "darwin-host-fixture")
         throw ProbeFailure("Host accepted an invalid Desktop grant")
     } catch DesktopSessionError.remote(.permissionDenied) {}
+    do {
+        _ = try await host.openSession(requirePrivacyWrite: true)
+        throw ProbeFailure("a grant without privacy permission opened a privacy mutation session")
+    } catch DesktopSessionError.remote(.unsupportedCapability) {}
 
     // An identity probe can close before the server reads the peer credentials.
     for _ in 0..<8 {

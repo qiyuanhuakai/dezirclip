@@ -1099,3 +1099,82 @@ public struct OperationResult: Codable, Equatable, Sendable {
         )
     }
 }
+
+public struct PrivacySetParams: Codable, Equatable, Sendable {
+    public let active: Bool
+    public let durationMs: UInt64?
+
+    private enum CodingKeys: String, CodingKey {
+        case active = "active"
+        case durationMs = "duration_ms"
+    }
+
+    public init(
+        active: Bool,
+        durationMs: UInt64? = nil
+    ) throws {
+        self.active = active
+        self.durationMs = durationMs
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            active: container.decode(Bool.self, forKey: .active),
+            durationMs: container.contains(.durationMs) ? container.decode(UInt64.self, forKey: .durationMs) : nil
+        )
+    }
+
+    private func validate() throws {
+        if let durationMs {
+            guard durationMs >= 1, durationMs <= 86400000 else { throw InvalidWireField(field: "PrivacySetParams.duration_ms") }
+        }
+    }
+}
+
+public struct PrivacyState: Codable, Equatable, Sendable {
+    public let active: Bool
+    public let privacyEpoch: UInt64
+    public let expiresAtMs: Int64?
+
+    private enum CodingKeys: String, CodingKey {
+        case active = "active"
+        case privacyEpoch = "privacy_epoch"
+        case expiresAtMs = "expires_at_ms"
+    }
+
+    public init(
+        active: Bool,
+        privacyEpoch: UInt64,
+        expiresAtMs: Int64?
+    ) throws {
+        self.active = active
+        self.privacyEpoch = privacyEpoch
+        self.expiresAtMs = expiresAtMs
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            active: container.decode(Bool.self, forKey: .active),
+            privacyEpoch: container.decode(UInt64.self, forKey: .privacyEpoch),
+            expiresAtMs: container.decode(Optional<Int64>.self, forKey: .expiresAtMs)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(active, forKey: .active)
+        try container.encode(privacyEpoch, forKey: .privacyEpoch)
+        try container.encode(expiresAtMs, forKey: .expiresAtMs)
+    }
+
+    private func validate() throws {
+        guard privacyEpoch <= 9007199254740991 else { throw InvalidWireField(field: "PrivacyState.privacy_epoch") }
+        if let expiresAtMs {
+            guard expiresAtMs >= 0, expiresAtMs <= 9007199254740991 else { throw InvalidWireField(field: "PrivacyState.expires_at_ms") }
+        }
+    }
+}

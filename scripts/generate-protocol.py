@@ -14,7 +14,7 @@ SWIFT_TYPES = (
     "WireErrorCode", "WireError", "EventKind", "EventData", "Event", "SubscribeParams", "EventsResult",
     "DesktopPageParams", "DesktopEntryParams", "DesktopEntry", "DesktopEntries",
     "BodySnapshot", "SnapshotReadParams", "SnapshotChunk", "WindowsPasteTarget", "DesktopCopyParams",
-    "OperationResult",
+    "OperationResult", "PrivacySetParams", "PrivacyState",
 )
 
 
@@ -172,22 +172,32 @@ def swift_values(definitions, envelope):
             raise ValueError(f"unsupported Swift schema keywords: {name}")
         strict = not schema["additionalProperties"]
         lines.append(f"public struct {name}: Codable, Equatable, Sendable {{")
-        fields = [(wire, swift_name(wire), swift_type(prop), wire in schema["required"], prop)
-                  for wire, prop in schema["properties"].items()]
-        validation = [(wire, field, required, swift_constraint(prop, field))
-                      for wire, field, _, required, prop in fields]
+        fields = []
+        for wire, prop in schema["properties"].items():
+            required = wire in schema["required"]
+            kind = prop.get("type")
+            nullable = isinstance(kind, list) and "null" in kind
+            if nullable:
+                if not required or len(kind) != 2:
+                    raise ValueError(f"unsupported Swift nullable field: {name}.{wire}")
+                prop = {**prop, "type": next(value for value in kind if value != "null")}
+                if "x-rust-type" in prop:
+                    prop["x-rust-type"] = prop["x-rust-type"].removeprefix("Option<").removesuffix(">")
+            fields.append((wire, swift_name(wire), swift_type(prop), required, nullable, prop))
+        validation = [(wire, field, required and not nullable, swift_constraint(prop, field))
+                      for wire, field, _, required, nullable, prop in fields]
         validation = [entry for entry in validation if entry[3]]
-        for _, field, kind, required, _ in fields:
-            lines.append(f"    public let {field}: {kind}" + ("" if required else "?"))
+        for _, field, kind, required, nullable, _ in fields:
+            lines.append(f"    public let {field}: {kind}" + ("" if required and not nullable else "?"))
         all_keys = ", CaseIterable" if strict else ""
         lines += ["", f"    private enum CodingKeys: String, CodingKey{all_keys} {{"]
-        for wire, field, _, _, _ in fields:
+        for wire, field, _, _, _, _ in fields:
             lines.append(f"        case {field} = {json.dumps(wire)}")
         lines += ["    }", "", "    public init("]
-        params = [f"{field}: {kind}" + ("" if required else "? = nil")
-                  for _, field, kind, required, _ in fields]
+        params = [f"{field}: {kind}" + ("?" if nullable else "" if required else "? = nil")
+                  for _, field, kind, required, nullable, _ in fields]
         lines += ["        " + ",\n        ".join(params), "    ) throws {"]
-        for _, field, _, _, _ in fields:
+        for _, field, _, _, _, _ in fields:
             lines.append(f"        self.{field} = {field}")
         if validation:
             lines.append("        try validate()")
@@ -202,10 +212,18 @@ def swift_values(definitions, envelope):
             ]
         lines += ["        let container = try decoder.container(keyedBy: CodingKeys.self)", "        try self.init("]
         args = []
-        for _, field, kind, required, _ in fields:
-            decode = f"container.decode({kind}.self, forKey: .{field})"
+        for _, field, kind, required, nullable, _ in fields:
+            value_type = f"Optional<{kind}>" if nullable else kind
+            decode = f"container.decode({value_type}.self, forKey: .{field})"
             args.append(f"{field}: " + (decode if required else f"container.contains(.{field}) ? {decode} : nil"))
         lines += ["            " + ",\n            ".join(args), "        )", "    }"]
+        if any(nullable for _, _, _, _, nullable, _ in fields):
+            lines += ["", "    public func encode(to encoder: Encoder) throws {",
+                      "        var container = encoder.container(keyedBy: CodingKeys.self)"]
+            for _, field, _, required, _, _ in fields:
+                encode = "encode" if required else "encodeIfPresent"
+                lines.append(f"        try container.{encode}({field}, forKey: .{field})")
+            lines.append("    }")
         if validation:
             lines += ["", "    private func validate() throws {"]
             for wire, field, required, bounds in validation:

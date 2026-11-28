@@ -12,8 +12,10 @@ public enum DesktopSessionError: Error, Equatable {
     case invalidResponse
     case invalidSnapshot
     case exchangeInProgress
+    case sessionLimitReached
     case disconnected
     case copyOutcomeUnknown
+    case privacyOutcomeUnknown
 }
 
 public struct HistorySnapshot<Value: Sendable>: Sendable {
@@ -61,24 +63,40 @@ public actor DesktopSession {
     private var nextID: UInt64 = 2
     private var busy = false
     private var closed = false
+    private var onClose: (@Sendable () async -> Void)?
     private static let inlineID = "00000000000000000000000000000000"
     private static let inlineLimit = 32 * 1024
 
-    private init(transport: LocalFrameConnection, hello: HelloResult) {
+    private init(transport: LocalFrameConnection, hello: HelloResult, onClose: (@Sendable () async -> Void)?) {
         self.transport = transport
         self.hello = hello
+        self.onClose = onClose
+    }
+
+    deinit {
+        if let onClose { Task { await onClose() } }
     }
 
     /// Takes ownership of a socket after the launcher verifies the native
     /// peer. The expected instance and grant come from the trusted bootstrap.
     public static func open(
         verifiedSocket: Int32, expectedInstance: String, grant: String, clientVersion: String,
-        requireCopy: Bool = false
+        requireCopy: Bool = false, requirePrivacyWrite: Bool = false
+    ) async throws -> DesktopSession {
+        try await open(verifiedSocket: verifiedSocket, expectedInstance: expectedInstance, grant: grant,
+                       clientVersion: clientVersion, requireCopy: requireCopy, requirePrivacyWrite: requirePrivacyWrite,
+                       onClose: nil)
+    }
+
+    package static func open(
+        verifiedSocket: Int32, expectedInstance: String, grant: String, clientVersion: String,
+        requireCopy: Bool, requirePrivacyWrite: Bool, onClose: (@Sendable () async -> Void)?
     ) async throws -> DesktopSession {
         let transport = LocalFrameConnection(verifiedSocket: verifiedSocket)
         let version = try ProtocolVersion(major: 1, minor: 0)
-        let readMethods: [DzcProtocol.Method] = [.desktopHistoryPage, .desktopHistoryGet, .desktopSnapshotRead, .eventsSubscribe]
-        let methods = requireCopy ? readMethods + [.desktopClipboardCopy] : readMethods
+        var methods: [DzcProtocol.Method] = [.desktopHistoryPage, .desktopHistoryGet, .desktopSnapshotRead, .eventsSubscribe, .privacyGet]
+        if requireCopy { methods.append(.desktopClipboardCopy) }
+        if requirePrivacyWrite { methods.append(.privacySet) }
         let params = try HelloParams(
             protocolVersion: version, clientVersion: clientVersion, clientRole: .desktop,
             capabilities: ["desktop.inline_snapshot"], requiredCapabilities: methods.map(\.rawValue), grant: grant
@@ -92,16 +110,21 @@ public actor DesktopSession {
         guard !expectedInstance.isEmpty, hello.state.serviceInstanceId == expectedInstance else {
             throw DesktopSessionError.wrongInstance
         }
-        let required: [Permission] = requireCopy ? [.historyRead, .desktopHistory, .clipboardCopy] : [.historyRead, .desktopHistory]
+        var required: [Permission] = [.historyRead, .desktopHistory]
+        if requireCopy { required.append(.clipboardCopy) }
+        if requirePrivacyWrite { required.append(.privacyWrite) }
         for permission in required {
             guard hello.permissions.contains(permission) else { throw DesktopSessionError.missingPermission(permission) }
         }
-        return DesktopSession(transport: transport, hello: hello)
+        return DesktopSession(transport: transport, hello: hello, onClose: onClose)
     }
 
     public func close() async {
         closed = true
+        let release = onClose
+        onClose = nil
         await transport.invalidate()
+        await release?()
     }
 
     public func historyPage(_ params: DesktopPageParams) async throws -> HistorySnapshot<DesktopEntries> {
@@ -124,6 +147,21 @@ public actor DesktopSession {
             throw DesktopSessionError.wrongInstance
         }
         return response
+    }
+
+    public func privacyState() async throws -> PrivacyState {
+        try begin()
+        defer { busy = false }
+        return try await call(.privacyGet, [String: String]())
+    }
+
+    /// A lost reply leaves the outcome unknown. Read the state on a new
+    /// session before attempting another change.
+    public func setPrivacy(_ params: PrivacySetParams) async throws -> PrivacyState {
+        guard hello.permissions.contains(.privacyWrite) else { throw DesktopSessionError.missingPermission(.privacyWrite) }
+        try begin()
+        defer { busy = false }
+        return try await call(.privacySet, params)
     }
 
     /// Copies through an explicitly authorized Desktop operation, with the
@@ -164,6 +202,7 @@ public actor DesktopSession {
         } catch {
             await close()
             if method == .desktopClipboardCopy { throw DesktopSessionError.copyOutcomeUnknown }
+            if method == .privacySet { throw DesktopSessionError.privacyOutcomeUnknown }
             throw error
         }
     }

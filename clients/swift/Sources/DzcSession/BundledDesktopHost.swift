@@ -17,6 +17,9 @@ private struct HostBootstrap: Decodable, Sendable {
 /// Owns the signed helper and the inherited pipe that bounds its lifetime.
 /// Obtain independent sessions for queries, subscriptions and clipboard work.
 public actor BundledDesktopHost {
+    // The Host admits 16 streams. Leave room for its other verified clients
+    // and short-lived native probes while bounding this launcher's work.
+    public static let maximumSessions = 8
     private let process = Process()
     private let lifetime = Pipe()
     private let output = Pipe()
@@ -25,6 +28,7 @@ public actor BundledDesktopHost {
     private var expectedHash: Data?
     private var readingReceipt = false
     private var inputClosed = false
+    private var sessions: Set<UUID> = []
 
     private init(clientVersion: String) {
         self.clientVersion = clientVersion
@@ -43,17 +47,32 @@ public actor BundledDesktopHost {
         return (host, receipt)
     }
 
-    public func openSession(requireCopy: Bool = false) async throws -> DesktopSession {
+    public func openSession(requireCopy: Bool = false, requirePrivacyWrite: Bool = false) async throws -> DesktopSession {
         guard let bootstrap else { throw DesktopSessionError.disconnected }
-        let fd = try await verifiedSocket()
-        let session = try await DesktopSession.open(verifiedSocket: fd, expectedInstance: bootstrap.instance,
-                                                    grant: bootstrap.grant, clientVersion: clientVersion, requireCopy: requireCopy)
-        if inputClosed || !process.isRunning {
-            await session.close()
-            throw DesktopSessionError.disconnected
+        try Task.checkCancellation()
+        guard sessions.count < Self.maximumSessions else { throw DesktopSessionError.sessionLimitReached }
+        let id = UUID()
+        sessions.insert(id)
+        do {
+            let fd = try await verifiedSocket()
+            let session = try await DesktopSession.open(
+                verifiedSocket: fd, expectedInstance: bootstrap.instance, grant: bootstrap.grant,
+                clientVersion: clientVersion, requireCopy: requireCopy, requirePrivacyWrite: requirePrivacyWrite,
+                onClose: { [weak self] in await self?.releaseSession(id) }
+            )
+            if inputClosed || !process.isRunning || Task.isCancelled {
+                await session.close()
+                try Task.checkCancellation()
+                throw DesktopSessionError.disconnected
+            }
+            return session
+        } catch {
+            releaseSession(id)
+            throw error
         }
-        return session
     }
+
+    private func releaseSession(_ id: UUID) { sessions.remove(id) }
 
     /// Closes the inherited pipe and gives admitted requests time to drain.
     public func stop() async throws {

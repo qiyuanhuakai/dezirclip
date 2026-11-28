@@ -17,7 +17,7 @@ public enum LocalFrameError: Error, Equatable {
 /// The caller must use an independent connection for a concurrent long poll.
 public actor LocalFrameConnection {
     public static let maximumFrameBytes = WireLimits.maximumFrameBytes
-    private let descriptor: Int32
+    private var descriptor: Int32?
     private var inFlight = false
     private var usable = true
 
@@ -26,26 +26,35 @@ public actor LocalFrameConnection {
         descriptor = verifiedSocket
     }
 
-    deinit { Darwin.close(descriptor) }
+    deinit { if let descriptor { Darwin.close(descriptor) } }
 
     /// Retires a stream whose protocol exchange could not be trusted.
     public func invalidate() {
         usable = false
-        _ = Darwin.shutdown(descriptor, SHUT_RDWR)
+        guard let descriptor else { return }
+        if inFlight {
+            // The I/O worker still holds the raw descriptor. Unblock its
+            // wait before closing so it cannot touch a recycled descriptor.
+            _ = Darwin.shutdown(descriptor, SHUT_RDWR)
+        } else {
+            self.descriptor = nil
+            Darwin.close(descriptor)
+        }
     }
 
     /// A single deadline covers the request and the entire response frame.
     /// A failed exchange retires the stream because its frame boundary is unknown.
     public func exchange(_ request: Data, timeoutMilliseconds: UInt32 = 2_000) async throws -> Data {
-        guard usable else { throw LocalFrameError.disconnected }
+        guard usable, let socket = descriptor else { throw LocalFrameError.disconnected }
         guard !inFlight else { throw LocalFrameError.exchangeInProgress }
         guard !request.isEmpty, request.count <= Self.maximumFrameBytes else { throw LocalFrameError.invalidLength }
         try Self.validateJSONPayload(request)
         try Task.checkCancellation()
         inFlight = true
-        defer { inFlight = false }
-
-        let socket = descriptor
+        defer {
+            inFlight = false
+            if !usable { invalidate() }
+        }
         let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(timeoutMilliseconds) * 1_000_000
         let worker = Task.detached {
             try Self.transact(socket, request, until: deadline)
@@ -57,6 +66,7 @@ public actor LocalFrameConnection {
                 worker.cancel()
             }
             try Task.checkCancellation()
+            guard usable else { throw LocalFrameError.disconnected }
             return response
         } catch {
             invalidate()

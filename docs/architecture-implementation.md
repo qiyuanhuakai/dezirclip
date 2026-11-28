@@ -245,6 +245,12 @@ macOS 26 ARM64 首次验收用时 3 分 36 秒。临时签名测试包通过 15 
 
 首轮构建通过，原签名夹具通过，正式 helper 拒绝合法父进程。修正签名查询参数后，复验暴露了预检短连接先关闭时 Darwin 返回的 `ENOTCONN`，共享监听器因此退出。修复后增加连续短连接回归，并将正式 helper 独立列为 Darwin CI 必需步骤。Linux Host 88 项和 IPC 6 项通过。提交 `8b43ab91` 的 macOS 26 ARM64 正式 helper 步骤通过，覆盖包外启动拒绝、空库、手工写入、用同一临时默认 Keychain 重启读回、实例更换、系统剪贴板和排空。签名使用 CI 的临时签名，macOS 13 运行和 Developer ID 升级后的 Keychain 访问仍待独立验收。 [正式 helper 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46146266505/job/140982942612)
 
+### M1 Darwin 文本采集
+
+`1d1528c6` 将系统剪贴板变更接入共享 Core 采集管线。主线程只在剪贴板所有权计数变化时读取文本，先核对隐私 epoch 和剪贴板类型。后台提交持有独占采集租约，并复查当前规则。启动或结束隐私会话后跳过剪贴板旧内容。Darwin 无法可靠识别来源应用时，存在来源排除规则会暂停自动采集。
+
+macOS 26 ARM64 的第一次托管验收用时 2 分 59 秒。正式签名 helper 从独立 `pbcopy` 写入读取文本，验证历史和事件、回写防回采、隐藏内容、隐私暂停与恢复及来源排除。Linux Host 套件通过 88 项，1 项按既有条件忽略。 [Darwin 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46148019746/job/140988292744)
+
 ### R8 维护量中间复算
 
 按规范原基线 `1f1641a0` 与 `d2291d7b` 的 Git blob 统计。使用 `git ls-tree -r -z` 取得两次提交的常规文件，按对象 ID 批量读取，计入末尾没有换行的最后一行。范围沿用原统计的 Rust、Go、Python、JSON、TS、TSX、MJS、JS，加上当前提交中的 Swift。基线复算与规范原表的八种后缀计数一致。

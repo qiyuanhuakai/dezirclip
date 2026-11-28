@@ -18,7 +18,9 @@ func verifyProductionHost(directory: URL) async throws {
     let entryID: Int64
     let instance: String
     do {
+        try await verifySessionLimit(host)
         let read = try await host.openSession(requireCopy: true)
+        let privacy = try await host.openSession(requirePrivacyWrite: true)
         let initial = try await read.historyPage(DesktopPageParams(limit: 20, offset: 0))
         try require(initial.value.entries.isEmpty, "production helper added fixture history during startup")
         try require(Set(read.hello.permissions) == [.historyRead, .desktopHistory, .clipboardCopy, .privacyWrite],
@@ -29,9 +31,10 @@ func verifyProductionHost(directory: URL) async throws {
         entryID = try await addProductionEntry(control, state: initial.state, text: marker)
         let page = try await read.historyPage(DesktopPageParams(limit: 20, offset: 0))
         try require(page.value.entries.map(\.id) == [entryID], "the manual entry did not reach production history")
-        try await verifyCapture(read, control: control, page: page, originalID: entryID, originalText: marker)
+        try await verifyCapture(read, privacy: privacy, control: control, page: page, originalID: entryID, originalText: marker)
         await control.invalidate()
         await read.close()
+        await privacy.close()
         try await host.stop()
         clipboard.clearContents()
         try require(clipboard.setString("Clipboard from while helper was stopped", forType: .string),
@@ -66,6 +69,33 @@ func verifyProductionHost(directory: URL) async throws {
     print("Verified bundled production Host: empty startup, manual history, persistent Keychain and profile, new instance, system pasteboard and drain")
 }
 
+private func verifySessionLimit(_ host: BundledDesktopHost) async throws {
+    let sessions = try await withThrowingTaskGroup(of: DesktopSession.self) { workers in
+        for _ in 0..<BundledDesktopHost.maximumSessions {
+            workers.addTask { try await host.openSession() }
+        }
+        var opened: [DesktopSession] = []
+        for try await session in workers { opened.append(session) }
+        return opened
+    }
+    try require(Set(sessions.map { $0.hello.sessionId }).count == BundledDesktopHost.maximumSessions,
+                "concurrent sessions reused a Host connection")
+    do {
+        _ = try await host.openSession()
+        throw ProbeFailure("launcher admitted more than its session limit")
+    } catch DesktopSessionError.sessionLimitReached {}
+    await sessions[0].close()
+    await sessions[0].close()
+    let replacement = try await host.openSession()
+    do {
+        _ = try await host.openSession()
+        throw ProbeFailure("closing a session twice released two slots")
+    } catch DesktopSessionError.sessionLimitReached {}
+    await replacement.close()
+    for session in sessions.dropFirst() { await session.close() }
+    print("Verified concurrent SDK session limit, rejection at capacity and reuse after a closed stream")
+}
+
 @MainActor
 private func productionControl(_ host: BundledDesktopHost, grant: String) async throws -> LocalFrameConnection {
     let fd = try await host.verifiedSocket()
@@ -97,7 +127,7 @@ private func addProductionEntry(_ connection: LocalFrameConnection, state: Runti
 
 @MainActor
 private func verifyCapture(
-    _ session: DesktopSession, control: LocalFrameConnection, page: HistorySnapshot<DesktopEntries>,
+    _ session: DesktopSession, privacy: DesktopSession, control: LocalFrameConnection, page: HistorySnapshot<DesktopEntries>,
     originalID: Int64, originalText: String
 ) async throws {
     let status = try await request(control, id: "capture-status", method: "service.status", params: [:])
@@ -166,10 +196,15 @@ private func verifyCapture(
     let afterHint = try await history()
     try require(Set(afterHint.value.entries.map(\.id)) == ids, "Darwin captured a concealed clipboard selection")
 
-    _ = try await request(control, id: "private-on", method: "privacy.set", params: ["active": true])
+    let beforePrivacy = try await privacy.privacyState()
+    let privateOn = try await privacy.setPrivacy(PrivacySetParams(active: true))
+    try require(privateOn.active && privateOn.privacyEpoch > beforePrivacy.privacyEpoch,
+                "the SDK did not enter the requested private session")
     try publish("Text copied in a private session")
     try await Task.sleep(for: .milliseconds(500))
-    _ = try await request(control, id: "private-off", method: "privacy.set", params: ["active": false])
+    let privateOff = try await privacy.setPrivacy(PrivacySetParams(active: false))
+    try require(!privateOff.active && privateOff.privacyEpoch > privateOn.privacyEpoch,
+                "the SDK did not leave the requested private session")
     try await Task.sleep(for: .milliseconds(500))
     let afterPrivacy = try await history()
     try require(Set(afterPrivacy.value.entries.map(\.id)) == ids, "Darwin retained or replayed private clipboard content")
