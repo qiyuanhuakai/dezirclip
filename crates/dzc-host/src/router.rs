@@ -479,7 +479,6 @@ impl Host {
         if let Some(platform) = platform.as_object_mut() {
             if can(Permission::DesktopHistory) && session.role()==ClientRole::Desktop {
                 platform.insert("desktop_generated_copy".into(),serde_json::json!({"supported":self.actions.can_copy(),"version":1}));
-                #[cfg(any(target_os = "linux", target_os = "windows"))]
                 platform.insert("desktop_queue_completion".into(),serde_json::json!({"supported":true,"version":1}));
                 let component = if self.mode == HostMode::Service {
                     dzc_protocol::build_info::Component::Service

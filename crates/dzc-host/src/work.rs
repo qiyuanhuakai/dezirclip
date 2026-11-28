@@ -1,12 +1,19 @@
 use dzc_platform::ipc::CaptureLease;
+#[cfg(any(test, target_os = "linux", target_os = "windows"))]
 use dzc_protocol::wire::WireErrorCode;
-use std::{sync::{Arc, Condvar, Mutex, atomic::{AtomicBool,Ordering}}, time::Duration};
+use std::sync::{Arc, Condvar, Mutex};
+#[cfg(any(test, target_os = "linux", target_os = "windows"))]
+use std::{sync::atomic::{AtomicBool, Ordering}, time::Duration};
 
+#[cfg(any(test, target_os = "linux", target_os = "windows"))]
 pub(crate) struct LeaseRetention { lease: Arc<CaptureLease>, actions: Arc<dyn crate::HostActions>, confirmed: AtomicBool }
+#[cfg(any(test, target_os = "linux", target_os = "windows"))]
 impl LeaseRetention {
     pub(crate) fn new(lease: Arc<CaptureLease>, actions: Arc<dyn crate::HostActions>) -> Arc<Self> { Arc::new(Self {lease,actions,confirmed:AtomicBool::new(false)}) }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub(crate) fn confirm(&self) { self.confirmed.store(true,Ordering::Release); }
 }
+#[cfg(any(test, target_os = "linux", target_os = "windows"))]
 impl Drop for LeaseRetention {
     fn drop(&mut self) {
         if self.confirmed.load(Ordering::Acquire) { return; }
@@ -30,6 +37,7 @@ impl Drop for LeaseRetention {
 
 #[derive(Default)]
 pub(crate) struct WorkTracker { active: Mutex<usize>, changed: Condvar }
+#[cfg(any(test, target_os = "linux", target_os = "windows"))]
 impl WorkTracker {
     pub(crate) fn begin(self: &Arc<Self>, lease: Arc<CaptureLease>, budget: impl Send + Sync + 'static) -> Result<CaptureWork, WireErrorCode> {
         let mut active = self.active.lock().map_err(|_| WireErrorCode::Unavailable)?;
