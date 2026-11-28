@@ -63,7 +63,7 @@ Darwin 专项以 macOS 13.0 为 Swift 和 Rust 的编译目标。签名后核对
 | 前端、生成一致性和工具纯逻辑 | `frontend`：i18n、版本、Surface tokens、协议生成、CSS、Node/Python fixture 与发布逻辑检查；`pnpm run test:unit`、前端 build | Vitest 发现 `src` 下的测试；fixture/mock 通过不等于真实窗口或发布通过 |
 | Rust 业务与客户端 | `rust-development`：Linux/Windows 各跑 `core-tests` 和 `desktop-check` | 前者使用 workspace/all-targets 和 CLI/Service 的 `native-screen` feature，后者执行桌面 `cargo check` |
 | Go 客户端和 UI 逻辑 | `go-development`：Linux/Windows 分别在 `clients/go` 和 `frontends/dzc-surface` 跑 `go test ./...` | Deziro UI Native 和 presets 使用独立仓库的固定版本。PNG 是渲染诊断 |
-| 真实 CLI / TUI | 日常 Windows `core-tests` 先构建本次 CLI，再运行 ConPTY 用例。full 的 standalone integrations 使用隔离 ABI 产物 | ConPTY 零用例或跳过会失败；Windows ARM64 按 static-only 验证 |
+| 真实 CLI / TUI | 日常 Windows `core-tests` 将工作区测试生成的普通 `dzc.exe` 交给 ConPTY。full 的 standalone integrations 使用隔离 ABI 产物 | 核对 Cargo 产物的入口、目标、`native-screen` feature 和文件 SHA-256。ConPTY 零用例或跳过会失败；Windows ARM64 按 static-only 验证 |
 | 真实 Host 客户端 | `tauri` 可执行目标在本次 CLI/Service 构建后运行 `test-local-host.py`、`test-local-clients.py` 和 CLI BuildInfo 契约 | 单独保存 CLI/MCP 报告，覆盖授权、撤销、显式持久化确认和 Host 停止后拒绝回退 |
 | 桌面与原生 OS | full/对应专项的 `tauri`：Linux x64/ARM64、Windows x64 的真实 harness；Windows clipboard、Explorer、private lease 等显式用例 | Linux MyGo 使用隔离 X11；Windows ARM64 `can_test=false`，不能称为四目标均已原生执行 |
 | 安装与升级 | `native-windows-upgrade` 六场景；历史 `mygo-installer`；当前 MyGo installer 的专项步骤 | 来源与构建形态见下文，不能互换成正式候选证据 |
@@ -72,6 +72,8 @@ Darwin 专项以 macOS 13.0 为 Swift 和 Rust 的编译目标。签名后核对
 | 性能与诊断 | `scripts/performance/tests` / frontend 的比较器与 fixture 单测；手动性能或崩溃入口 | 工具单测、崩溃诊断与真实性能测量分别报告，不互相代替 |
 
 Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rust 客户端和原生桌面。Tauri 测试任务只运行其 Cargo 包的套件。Windows NSIS 的纯打包检查集中到 fixture 构建任务，完整验证的跨目标 Python discovery 仍待收口。
+
+提交 `a81310d6` 的 Windows ConPTY 验收首次执行通过全部 11 项用例，核对了工作区测试产出的 CLI 摘要。该步骤用时 84 秒。上一提交 `3b41e951` 首跑中，同一验收步骤用时 105 秒，其中独立 CLI 构建用时 19.83 秒。较早运行的 CI 汇总因历史 alpha.9 编辑器粘贴时剪贴板被占用而失败。新提交的历史安装器和汇总均通过，开发 CI 从触发到汇总结束用时 4 分 24 秒。 [优化前 ConPTY](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46174831115/job/141071146734) [历史安装器失败日志](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46174831115/job/141071146661) [优化后首轮开发 CI](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46175490062)
 
 ### 六个 NSIS 场景的实际来源
 

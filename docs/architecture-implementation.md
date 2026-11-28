@@ -266,6 +266,8 @@ Windows、Linux Go 套件和 Linux 竞态测试通过。隔离 Service 验收用
 
 `a11af290` 的首次准入从首个 job 到汇总用时 12 分 21 秒，排队 4 秒。Windows 与 Linux x64 通过，复算 66 项结果，其中 44 项成功。源码凭据 artifact `15269342785` 的 ZIP 摘要、提交、attempt 和目标均已核对。Windows 实窗凭据 artifact `15268733768` 的 13 项检查通过，其实际程序摘要与 Tauri 单测产物交接记录一致。移除的构建步骤在上一轮耗时 52 秒，两轮总耗时之差也包含其它步骤和缓存的变化。 [源准入与实窗凭据](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46159389727)
 
+Windows 开发 CI 的 ConPTY 验收直接使用 Cargo 工作区测试产生的普通 `dzc.exe`。验收前核对该次 Cargo 产物记录的 CLI 入口、`native-screen` feature、目标路径和文件摘要。提交 `a81310d6` 首次运行通过全部 11 项 ConPTY 用例，步骤用时 84 秒。改动前一轮同一步骤为 105 秒。Windows 本地也用同一产物解析器从 Cargo `--all-targets --no-run` 记录识别了由 `tauri/custom-protocol` 构建的普通 Tauri 可执行文件。 [ConPTY 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46175490062/job/141073141543)
+
 ### M1 Darwin 主线程剪贴板
 
 `b5b0b8bd` 将文本剪贴板调度移入 Host 库。Darwin 主线程独占系统剪贴板，Host worker 通过有界队列发送写入并等待真实结果。主线程直接调用同步 Host copy 会返回 Unavailable，避免等待自己处理队列。关闭要求保持主线程轮询，直到已接收的 Host 请求排空。
