@@ -22,7 +22,7 @@
 
 | 专项模式 | 当前执行范围 |
 |---|---|
-| `darwin-native` | macOS ARM64 文件、IPC、签名对端、持久化 profile 与 Swift 会话 |
+| `darwin-native` | macOS ARM64 文件、IPC、签名对端、持久化 profile、Swift 会话与最终签名包的部署目标 |
 | `native-file-drag` | Linux x64 和 Windows x64 原生文件拖放、目标互动及现有截图验收 |
 | `historical-windows-memory` | 固定 alpha.8 / alpha.9 的 Windows 内存比较 |
 | `mygo-package` | Windows x64 当前 MyGo 候选安装、运行验收和安装包归档 |
@@ -37,6 +37,8 @@
 tag 源码准入的 Tauri 任务会恢复可用的 Rust 缓存，跳过本 tag 独占缓存的保存步骤。手动源码准入实跑中，Windows 桌面任务最后的 Rust 缓存保存耗时 1 分 46 秒。跨 tag 的缓存访问范围见 [GitHub 缓存说明](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)。 [手动源码准入](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46122651572)
 
 PR 更新和新的 master push 会取消同组旧 CI。手动 full 不适用该取消条件。Darwin 专项使用独立的并发组，可与同一分支的 Windows/Linux 检查同时运行。普通日常检查的耗时目标仍为 10 分钟以内；排队、外部下载和真实原生验收耗时须分别记录，超时或取消不能算成功。
+
+Darwin 专项以 macOS 13.0 为 Swift 和 Rust 的编译目标。签名后核对包的 `LSMinimumSystemVersion`、启动器与内嵌 helper 的 ARM64 架构，以及两份 Mach-O 的 macOS 最低版本。实际运行使用 GitHub 托管 macOS 26 ARM64。macOS 13 实跑需要独立环境。 [GitHub 托管镜像范围](https://github.com/actions/runner-images) [Rust Darwin 部署目标](https://doc.rust-lang.org/rustc/platform-support/apple-darwin.html)
 
 ### 源码工具与平台验收分工
 

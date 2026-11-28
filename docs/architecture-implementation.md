@@ -196,6 +196,8 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 
 `5d5fdd14` 的 macOS 26 ARM64 托管专项实际构建并临时签名测试 `.app`，通过裸启动器拒绝、独立进程持久 profile，以及经签名包发现并启动真实 Host 的 Swift 会话。该会话验证对端身份、授权、历史、快照、事件、系统剪贴板和退出。macOS 13 的运行验证、Developer ID 签名与升级后的 Keychain ACL 仍需取得独立证据。 [签名应用包验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46128925341)
 
+`ef41d8dd` 为 Swift 和 Rust 构建指定 macOS 13.0 部署目标。CI 在签名后读取正式 helper 测试包，确认 `Info.plist` 与两份 ARM64 Mach-O 的最低版本一致。以 `cf92ac95` 首次运行复核时，两份产物均报告 `platform MACOS` 和 `minos 13.0`。运行环境为 macOS 26.7.2。 [签名产物部署检查](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46169432732/job/141054321335)
+
 ### M0 Darwin 启动与空闲资源
 
 托管 macOS 26.7.2 ARM64 使用临时签名的 debug 测试包运行正式 Rust helper，并由真实 Swift 启动器建立会话。首次查询耗时从启动 helper 前计起，包含签名与对端检查、两次会话授权及读回首个空历史页。热身覆盖采集、隐私切换和会话上限。关闭所有会话后，在剪贴板未变化的时段分别采样 launcher 和 helper。使用 `proc_pid_rusage` 的物理占用、驻留内存、累计 CPU 和 page-in，按 Mach 时基换算 CPU 时间，按单核计算占比。 [XNU 资源计数实现](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/bsd_kern.c#L1187) [XNU Mach CPU 时基](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/task.c#L6389)
@@ -291,6 +293,14 @@ Linux Host 本地通过 89 项，1 项按既有条件忽略。本机 Windows 的
 macOS 26 ARM64 的托管验收通过 Swift 协议、路径、授权和签名 helper 步骤。正式 helper 以并发连接达到上限，验证超限拒绝和关闭后复用，并通过 SDK 切换隐私会话、核对 epoch 和剪贴板暂停与恢复。共享 Host 夹具拒绝了要求隐私写权限的未授权连接。Swift 测试也覆盖了隐私写回执丢失，以及 `expires_at_ms` 的必填 null。 [Swift 与签名 helper 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46149642199/job/140993308576)
 
 `178fa683` 为 Swift Desktop 握手增加与 Go SDK 一致的 Host 组件版本核对。即使 wire major、签名进程、实例和授权符合预期，组件版本不一致也会关闭连接。诊断应用从统一发布版本写入签名包元数据，版本升级时不需修改探针。macOS 26 ARM64 首轮通过 17 项 Swift 测试，并以实际签名 helper 验证版本不匹配被拒绝。匹配版本继续通过历史、系统剪贴板、Keychain 和关闭排空。 [组件版本验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46157330247/job/141016822000)
+
+Swift 事件订阅从一份 Host 状态取实例 ID 和事件序号。连接回同一实例可沿用保留的游标。签名 helper 重启后，SDK 会拒绝旧游标和旧复制选择，重新读页后可订阅新实例。首轮在关闭后的流上重复设置发送选项，Darwin 返回 `EINVAL`。`cf92ac95` 在接管 socket 时设置该选项一次，关闭后读请求报告断连，已发出且回执丢失的变更仍报告结果未知。 [首轮日志](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46168795316/job/141052310736) [Apple XNU socket 选项实现](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/uipc_socket.c)
+
+托管复验首次执行通过 18 项 Swift 测试、49 项 Host 测试，1 项 Host 兼容用例按既有条件忽略。真实签名 helper 使用同一临时 Keychain 重启后读回持久历史，旧复制选择被拒绝且系统剪贴板保持，新游标可用。保留一条已授权流等待 helper 正常排空，随后读取报告断连。资源 artifact `15272912234` 的 ZIP 摘要与运行身份相符。该次 8.26 秒空闲样本中，helper 物理占用 16.52 MiB、占单核约 0.18%、page-in 为 0。首次历史页用时 639 ms。 [重启与会话验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46169432732/job/141054321335)
+
+### R5c React 组件导入
+
+React 直接从固定版本的 Deziro UI 导入虚拟列表、附件预览、设置折叠块、提示容器、滚轮区域和搜索历史。产品内的六个转发文件已移除，现有组件测试也改用公开导出。470 项前端测试、两种 Web 生产构建、主题 token 检查和生产 WebView 的设置与字符搜索通过。`src/index.css` 仍导入包含窗口 shell 的样式入口，`src/main.tsx` 仍通过同一个组件样式合集导入数据管理和队列样式。独立的产品样式入口仍需继续拆分。
 
 ### R8 维护量中间复算
 
