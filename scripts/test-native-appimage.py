@@ -18,96 +18,12 @@ import tempfile
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
+from native_appimage_contract import (OLD_RELEASES, appimage_scenarios, configure_headless_fixture,
+                                     require, verify_build_set, verify_previous_alpha)
+
 SCRIPT = Path(__file__).resolve()
 MARKER = 'Synthetic clipboard acceptance; no production key or user profile.\n'
-OLD_RELEASES = {
-    '0.1.20': 'da4abe1af820226ccf0cb8c40c8d7512b5ae3d7de89babcd1acecfd1ece9f0f0',
-    '0.2.0-alpha.1': '660d8d73d9b719b5c7b92f471024a715eb61fa471b56cba7364edfa1c2464628',
-    '0.2.0-alpha.2': '2f1d91a027b447a2bfe259f29c896b62abda2a24bd5d1fda22bd831e376f81af',
-}
 NAMESPACES = ('user', 'pid', 'net')
-
-
-def require(condition, message):
-    if not condition:
-        raise RuntimeError(message)
-
-
-def configure_headless_fixture(database):
-    if not database.is_file():
-        raise RuntimeError('The old CLI must create the synthetic database first.')
-    requested = {'app.silent_start': 'false', 'app.disable_webview_gpu': 'true'}
-    with closing(sqlite3.connect(database)) as connection, connection:
-        before = {}
-        for key in requested:
-            row = connection.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
-            before[key] = row[0] if row else None
-        connection.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', requested.items())
-        after = dict(connection.execute('SELECT key,value FROM settings WHERE key IN (?,?)', tuple(requested)))
-    return {'before': before, 'after': after,
-            'scope': 'Existing user settings selected only in a synthetic headless Xvfb profile; product defaults are unchanged.'}
-
-
-def verify_build_set(cli_info, desktop_info, service_info, expected_revision, version):
-    components = [('cli', cli_info), ('desktop', desktop_info), ('service', service_info)]
-    for role, info in components:
-        names = ('dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host')
-        if role == 'service':
-            names += ('dzc-service',)
-        linked = [{'component': name, 'version': version} for name in names]
-        require(isinstance(info, dict), 'Component build metadata must be an object.')
-        require(info.get('component') == role and info.get('component_version') == version,
-                'Component role or version differs from the candidate package.')
-        revision = info.get('source_revision')
-        require(isinstance(revision, str) and re.fullmatch('[0-9a-f]{40}', revision)
-                and info.get('build_id') == version + '@' + revision,
-                'Component build identity is missing or inconsistent.')
-        require(info.get('source_state') == 'verified_checkout',
-                'Native package acceptance requires a verified, clean source checkout.')
-        require(not expected_revision or revision == expected_revision.lower(),
-                'Component source differs from the frozen acceptance revision.')
-        require(type(info.get('metadata_version')) is int and info['metadata_version'] == 1
-                and type(info.get('database_schema_version')) is int and info['database_schema_version'] == 24,
-                'Component metadata or database schema version differs.')
-        protocol = info.get('protocol_version')
-        require(isinstance(protocol, dict) and protocol == {'major': 1, 'minor': 0}
-                and all(type(protocol.get(key)) is int for key in ('major', 'minor')),
-                'Component protocol version differs.')
-        require(info.get('target') == 'x86_64-unknown-linux-gnu' and info.get('linked_components') == linked,
-                'Component target or linked version set differs.')
-    require(len({info['build_id'] for _, info in components}) == 1,
-            'Actual GUI, bundled CLI and service belong to different build sets.')
-    return {'build_id': cli_info['build_id'], 'source_revision': cli_info['source_revision'],
-            'components': ['desktop', 'cli', 'service'], 'verified': True,
-            'service_started': False}
-
-
-def verify_previous_alpha(info, version='0.2.0-alpha.1'):
-    contracts = {
-        '0.2.0-alpha.1': ('90ba9960744b6cd57caaaf597f68533a7e41be45', 21,
-                          ('dzc-core', 'dzc-platform', 'dzc-protocol')),
-        '0.2.0-alpha.2': ('037f40cf014cd4bb3dce4a0a0c5cbcaee23affae', 24,
-                          ('dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host')),
-    }
-    require(version in contracts, 'Unknown published alpha baseline.')
-    revision, schema, names = contracts[version]
-    require(isinstance(info, dict) and info.get('component') == 'cli'
-            and info.get('component_version') == version,
-            'The previous alpha must be the selected published CLI.')
-    require(info.get('source_revision') == revision and info.get('build_id') == version + '@' + revision
-            and info.get('source_state') == 'verified_checkout',
-            'Previous alpha source identity differs from the published release.')
-    require(type(info.get('metadata_version')) is int and info['metadata_version'] == 1
-            and type(info.get('database_schema_version')) is int and info['database_schema_version'] == schema,
-            'Previous alpha metadata or database schema differs.')
-    protocol = info.get('protocol_version')
-    require(isinstance(protocol, dict) and protocol == {'major': 1, 'minor': 0}
-            and all(type(protocol.get(key)) is int for key in ('major', 'minor')),
-            'Previous alpha protocol differs.')
-    linked = [{'component': name, 'version': version} for name in names]
-    require(info.get('target') == 'x86_64-unknown-linux-gnu' and info.get('linked_components') == linked,
-            'Previous alpha component set differs.')
-    return {'source_revision': revision, 'database_schema_version': schema, 'verified': True}
 
 
 def digest(path):
@@ -182,6 +98,7 @@ def sandbox(command, readonly=False, readonly_image=False):
         '--ro-bind', '/lib', '/lib', '--ro-bind', '/lib64', '/lib64', '--ro-bind', '/etc', '/etc',
         '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/tmp', '--tmpfs', '/run', '--dir', '/run/fixture', '--chmod', '0700', '/run/fixture', '--dir', '/home/fixture',
         '--dir', '/fixture-bin', '--ro-bind', str(HELPER), '/fixture-bin/updater', '--ro-bind', str(SCRIPT), '/fixture-bin/acceptance.py',
+        '--ro-bind', str(SCRIPT.parent / 'native_appimage_contract.py'), '/fixture-bin/native_appimage_contract.py',
         '--ro-bind', str(DRIVER), '/fixture-bin/WebKitWebDriver',
         '--ro-bind' if readonly else '--bind', str(SCENARIO), str(SCENARIO),
         '--setenv', 'HOME', '/home/fixture', '--setenv', 'XDG_CONFIG_HOME', str(SCENARIO / 'profile/config'),
@@ -347,7 +264,8 @@ def outside():
               'public_key': PUBLIC_KEY, 'helper': HELPER, 'webdriver': DRIVER}
     tool_sources = [SCRIPT, *(SCRIPT.parent / 'native-updater-fixture' / name
                              for name in ('Cargo.toml', 'Cargo.lock', 'src/main.rs')),
-                    SCRIPT.parent / 'release_version.py', SCRIPT.parent.parent / 'package.json']
+                    SCRIPT.parent / 'native_appimage_contract.py', SCRIPT.parent / 'release_version.py',
+                    SCRIPT.parent.parent / 'package.json']
     report = {'schema_version': 1, 'started_at': datetime.now(timezone.utc).isoformat(),
               'source_revision_label': options.source_revision, 'previous_release': options.previous_release,
               'candidate_version': CANDIDATE_VERSION,
@@ -363,13 +281,7 @@ def outside():
         report_path.write_text(json.dumps(report, indent=2) + '\n')
 
     save_report()
-    commands = [
-        ('old', ['/usr/bin/python3', '/fixture-bin/acceptance.py', 'old', CANDIDATE_VERSION], False),
-        ('read-only', ['/fixture-bin/updater', str(SCENARIO), '--read-only'], True),
-        ('replace', ['/fixture-bin/updater', str(SCENARIO)], False),
-        ('new', ['/usr/bin/xvfb-run', '-a', '-s', '-screen 0 1280x900x24', '/usr/bin/dbus-run-session', '--', '/usr/bin/python3', '/fixture-bin/acceptance.py', 'new', CANDIDATE_VERSION], False),
-        ('new-read-only', ['/usr/bin/xvfb-run', '-a', '-s', '-screen 0 1280x900x24', '/usr/bin/dbus-run-session', '--', '/usr/bin/python3', '/fixture-bin/acceptance.py', 'new-read-only', CANDIDATE_VERSION], False),
-    ]
+    commands = appimage_scenarios(SCENARIO, CANDIDATE_VERSION)
     try:
         report['inputs'] = {name: {'path': str(path), 'bytes': path.stat().st_size, 'sha256': digest(path)}
                             for name, path in inputs.items()}

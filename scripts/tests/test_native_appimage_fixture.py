@@ -1,31 +1,25 @@
-import ast
 from contextlib import closing
 from functools import partial
 import json
 from pathlib import Path
-import re
 import sqlite3
+import sys
 import tempfile
 import unittest
 
-VERSION = json.loads((Path(__file__).resolve().parents[2] / 'package.json').read_text(encoding='utf-8'))['version']
+SCRIPTS = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPTS))
+from native_appimage_contract import (OLD_RELEASES, appimage_scenarios, configure_headless_fixture,
+                                     verify_build_set, verify_previous_alpha)
+from release_version import release_version
 
-
-def load_fixture_function(name='configure_headless_fixture'):
-    source = Path(__file__).resolve().parents[1] / 'test-native-appimage.py'
-    tree = ast.parse(source.read_text(encoding='utf-8'))
-    functions = [node for node in tree.body
-                 if isinstance(node, ast.FunctionDef) and node.name in (name, 'require')]
-    namespace = {'sqlite3': sqlite3, 'closing': closing, 're': re}
-    exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
-    return namespace[name]
+VERSION = release_version(SCRIPTS.parent)
 
 
 class HeadlessFixtureTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix='dezirclip-headless-fixture-')
         self.database = Path(self.directory.name) / 'clipboard.db'
-        self.configure = load_fixture_function()
 
     def tearDown(self):
         self.directory.cleanup()
@@ -38,7 +32,7 @@ class HeadlessFixtureTests(unittest.TestCase):
                 ('app.silent_start', 'true'), ('app.disable_webview_gpu', 'false'),
                 ('app.quick_paste_hotkey', 'Ctrl+Shift+V')])
             connection.execute("INSERT INTO clipboard_history VALUES('synthetic preserved entry')")
-        record = self.configure(self.database)
+        record = configure_headless_fixture(self.database)
         self.assertEqual(record['before'], {'app.silent_start': 'true', 'app.disable_webview_gpu': 'false'})
         self.assertEqual(record['after'], {'app.silent_start': 'false', 'app.disable_webview_gpu': 'true'})
         with closing(sqlite3.connect(self.database)) as connection:
@@ -49,7 +43,7 @@ class HeadlessFixtureTests(unittest.TestCase):
 
     def test_missing_old_database_is_rejected_without_creating_a_file(self):
         with self.assertRaisesRegex(RuntimeError, 'old CLI'):
-            self.configure(self.database)
+            configure_headless_fixture(self.database)
         self.assertFalse(self.database.exists())
 
     def test_settings_failure_rolls_back_the_first_write(self):
@@ -58,7 +52,7 @@ class HeadlessFixtureTests(unittest.TestCase):
             connection.executemany('INSERT INTO settings VALUES(?,?)', [
                 ('app.silent_start', 'true'), ('app.disable_webview_gpu', 'false')])
         with self.assertRaises(sqlite3.IntegrityError):
-            self.configure(self.database)
+            configure_headless_fixture(self.database)
         with closing(sqlite3.connect(self.database)) as connection:
             self.assertEqual(dict(connection.execute('SELECT key,value FROM settings')),
                              {'app.silent_start': 'true', 'app.disable_webview_gpu': 'false'})
@@ -66,7 +60,7 @@ class HeadlessFixtureTests(unittest.TestCase):
 
 class BuildSetTests(unittest.TestCase):
     def setUp(self):
-        self.verify = partial(load_fixture_function('verify_build_set'), version=VERSION)
+        self.verify = partial(verify_build_set, version=VERSION)
         self.revision = 'a' * 40
 
     def component(self, role):
@@ -133,7 +127,6 @@ class BuildSetTests(unittest.TestCase):
 
 class PreviousAlphaTests(unittest.TestCase):
     def test_previous_alpha_is_bound_to_the_published_source_schema_and_inventory(self):
-        verify = load_fixture_function('verify_previous_alpha')
         revision = '90ba9960744b6cd57caaaf597f68533a7e41be45'
         version = '0.2.0-alpha.1'
         original = {'component': 'cli', 'component_version': version,
@@ -143,7 +136,7 @@ class PreviousAlphaTests(unittest.TestCase):
                     'target': 'x86_64-unknown-linux-gnu',
                     'linked_components': [{'component': name, 'version': version}
                                           for name in ('dzc-core', 'dzc-platform', 'dzc-protocol')]}
-        self.assertTrue(verify(original)['verified'])
+        self.assertTrue(verify_previous_alpha(original)['verified'])
         for field, value in [('component_version', '0.2.0-alpha.2'), ('source_revision', 'a' * 40),
                              ('build_id', None), ('source_state', 'modified_checkout'),
                              ('metadata_version', True), ('database_schema_version', 24),
@@ -151,10 +144,9 @@ class PreviousAlphaTests(unittest.TestCase):
                              ('protocol_version', {'major': True, 'minor': 0}),
                              ('linked_components', [])]:
             with self.subTest(field=field, value=value), self.assertRaises(RuntimeError):
-                verify({**original, field: value})
+                verify_previous_alpha({**original, field: value})
 
     def test_published_alpha2_keeps_its_exact_source_schema_and_host_inventory(self):
-        verify = load_fixture_function('verify_previous_alpha')
         version = '0.2.0-alpha.2'
         revision = '037f40cf014cd4bb3dce4a0a0c5cbcaee23affae'
         original = {'component': 'cli', 'component_version': version,
@@ -164,7 +156,7 @@ class PreviousAlphaTests(unittest.TestCase):
                     'target': 'x86_64-unknown-linux-gnu',
                     'linked_components': [{'component': name, 'version': version}
                                           for name in ('dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host')]}
-        result = verify(original, version)
+        result = verify_previous_alpha(original, version)
         self.assertEqual(result, {'source_revision': revision, 'database_schema_version': 24, 'verified': True})
         changes = [('component', 'desktop'), ('component_version', VERSION),
                    ('source_revision', 'a' * 40), ('build_id', None),
@@ -176,37 +168,28 @@ class PreviousAlphaTests(unittest.TestCase):
                    ('linked_components', original['linked_components'] + original['linked_components'][-1:])]
         for field, value in changes:
             with self.subTest(field=field, value=value), self.assertRaises(RuntimeError):
-                verify({**original, field: value}, version)
+                verify_previous_alpha({**original, field: value}, version)
         with self.assertRaisesRegex(RuntimeError, 'Unknown'):
-            verify(original, '0.2.0-alpha.0')
+            verify_previous_alpha(original, '0.2.0-alpha.0')
 
     def test_old_release_hashes_include_the_real_public_alpha2_bytes(self):
-        source = Path(__file__).resolve().parents[1] / 'test-native-appimage.py'
-        tree = ast.parse(source.read_text(encoding='utf-8'))
-        constants = {node.targets[0].id: ast.literal_eval(node.value)
-                     for node in tree.body if isinstance(node, ast.Assign)
-                     and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
-                     and node.targets[0].id == 'OLD_RELEASES'}
-        self.assertEqual(constants['OLD_RELEASES'], {
+        self.assertEqual(OLD_RELEASES, {
             '0.1.20': 'da4abe1af820226ccf0cb8c40c8d7512b5ae3d7de89babcd1acecfd1ece9f0f0',
             '0.2.0-alpha.1': '660d8d73d9b719b5c7b92f471024a715eb61fa471b56cba7364edfa1c2464628',
             '0.2.0-alpha.2': '2f1d91a027b447a2bfe259f29c896b62abda2a24bd5d1fda22bd831e376f81af',
         })
 
-    def test_outer_package_version_is_explicit_in_each_inner_command_and_hashed(self):
-        source = (Path(__file__).resolve().parents[1] / 'test-native-appimage.py').read_text(encoding='utf-8')
-        tree = ast.parse(source)
-        outside = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'outside')
-        commands = next(node.value for node in outside.body if isinstance(node, ast.Assign)
-                        and any(isinstance(target, ast.Name) and target.id == 'commands' for target in node.targets))
-        for row in commands.elts:
-            label = ast.literal_eval(row.elts[0])
-            if label in ('old', 'new', 'new-read-only'):
-                arguments = row.elts[1].elts
-                self.assertIsInstance(arguments[-1], ast.Name)
-                self.assertEqual(arguments[-1].id, 'CANDIDATE_VERSION')
-        self.assertIn('CANDIDATE_VERSION = release_version(SCRIPT.parent.parent)', source)
-        self.assertIn("SCRIPT.parent / 'release_version.py', SCRIPT.parent.parent / 'package.json'", source)
+    def test_each_inner_command_receives_the_candidate_version(self):
+        scenario = Path('/fixture/scenario')
+        commands = appimage_scenarios(scenario, VERSION)
+        self.assertEqual([label for label, _, _ in commands], ['old', 'read-only', 'replace', 'new', 'new-read-only'])
+        for label, arguments, readonly in commands:
+            with self.subTest(label=label):
+                self.assertEqual(readonly, label == 'read-only')
+                if label in ('old', 'new', 'new-read-only'):
+                    self.assertEqual(arguments[-4:], ['/usr/bin/python3', '/fixture-bin/acceptance.py', label, VERSION])
+                else:
+                    self.assertEqual(arguments[:2], ['/fixture-bin/updater', str(scenario)])
 
 
 if __name__ == '__main__':

@@ -153,10 +153,10 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 - 发布 verifier 以 job 显示名称作精确匹配：当前 `dualReleaseJobs`、以及历史 `fullSourceJobs`、`nativeReleaseJobs`、`releaseGateJobs`、`optionalReleaseJobs` 均在 `updater-release.mjs`。改名、复用前缀、skip 规则或新增后置 job 时要同步该消费者及 [updater-release.node.mjs](../scripts/tests/updater-release.node.mjs)、[packaging-sidecars.node.mjs](../scripts/tests/packaging-sidecars.node.mjs) 等连接契约，不能把所有 skipped 一概视为通过。
 - `ci.yml` 的复用验收 artifact 使用 `acceptance-cli-*`、`acceptance-flatpak-*`；正常 Release 的 standalone 使用 `release-cli-<attempt>-<target>`，通过固定 ID 下载。当前正常 tag 没有 `release-flatpak-*` 生产者。
 - Release 菜单已退役 alpha.2 草稿恢复和 alpha.9 MyGo 安装器补传。两项资产已经公开，草稿恢复和同名补传各自会拒绝该状态。当前双桌面恢复仍绑定原 tag、run ID 和 attempt。两个历史 reusable workflow 及其回归脚本保留，供公共 helper 迁移和离线复核。 [alpha.2](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.2) [alpha.9](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.9)
-- 仓库 API 核对时，`master` 没有经典分支保护或适用规则集。统一的计划与实际执行汇总由 [CI policy](../scripts/ci_policy.py) 实施。外部 required checks、组织 token 策略、environment 审批和 runner 配额仍需按实际配置核对。
+- 2026-11-28 UTC 读取仓库 API，`master` 没有经典分支保护或适用规则集。仓库规则集列表包含父级规则集时仍为空。Actions 已启用，仓库默认 workflow token 为只读，禁止 workflow 自动批准 PR。仓库没有配置 deployment environment。统一的计划与实际结果汇总由 [CI policy](../scripts/ci_policy.py) 实施。组织 runner 配额及未来设置变化需单独核对。
 
 ## 耗时与验证记录
 
 此前文档记录的 [运行 42557275483](https://github.com/qiyuanhuakai/dezirclip/actions/runs/42557275483) 中，Windows Tauri 约 19.4 分钟、Flatpak x64 约 14.8 分钟，但整次运行失败；[PR 运行 42560409914](https://github.com/qiyuanhuakai/dezirclip/actions/runs/42560409914) 记录为 2026-11-09 04:11:27–04:16:45 UTC，约 5 分 18 秒且全部成功。这些保留为历史记录，本次未重新查询其 API，也不是当前基线完整 CI/Release 的成功耗时证明。
 
-当前基线可对照 [v0.2.0 正式发布](https://github.com/qiyuanhuakai/dezirclip/actions/runs/45952455038) 和 [Arch、X11 修复分支开发 CI](https://github.com/qiyuanhuakai/dezirclip/actions/runs/45984601736)。正式版首次运行从启动到 Stable 生效为 18 分 01 秒。修复分支的手动基础 CI 通过，涵盖 7 个基础实例和历史 MyGo 安装器。GitHub 的 master 分支信息报告未启用经典分支保护。规则集、组织 token 策略、配额与完整候选验收仍需各自核对。
+当前基线可对照 [v0.2.0 正式发布](https://github.com/qiyuanhuakai/dezirclip/actions/runs/45952455038) 和 [Arch、X11 修复分支开发 CI](https://github.com/qiyuanhuakai/dezirclip/actions/runs/45984601736)。正式版首次运行从启动到 Stable 生效为 18 分 01 秒。修复分支的手动基础 CI 通过，涵盖 7 个基础实例和历史 MyGo 安装器。

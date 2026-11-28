@@ -333,3 +333,9 @@ React 直接从固定版本的 Deziro UI 导入虚拟列表、附件预览、设
 先按生成标记和已知镜像、历史证据目录、测试目录与文件名归类，再按工具目录和产品目录归类。对工具和产品中的 Rust 文件，用语法树将匹配 `#[cfg(test)]` 或 `#[test]` 等测试属性的完整 item 行区间取并集，连同其前置属性移入内联测试列。两次解析均未出现错误。测试专用的其它共用 helper 仍按所在文件计算。物理行包含注释和空行。
 
 用 `git diff --name-status -M100%` 在同一范围识别了 8 个原样移动的文件、共 1,780 行。另有 104 个路径被删除，其中 21,073 行来自生成文件。基线中 21,019 行的 `builtin-widget-styles.json` 已由版本固定的 Deziro UI presets 提供。删除的源码路径仍包含搬迁后顺带修改或拆分的条目，不能把这些路径的行数计为移除的职责。原 `legacy-bridge` 及其 Core 导出已退役，CLI 与 Service 迁入自己的可执行包。
+
+### C4 Linux AppImage 升级夹具
+
+AppImage 验收入口、隔离子进程和十项工具测试直接导入同一个版本、三组件身份和场景模块。子进程只读挂载该模块，验收报告记录其哈希。可移植工具套件 353 项通过。
+
+实际回放已发布的 `v0.2.0-alpha.2` 到 `v0.2.0` Linux x64 AppImage。候选核对发布提交 `ba0ad71f7b9d8caddac45d0bc5588254a8273482`，使用公开签名和公钥完成离线验签、拒绝只读安装、拒绝篡改包内容或版本、正式 updater 替换和实际 WebView 历史读回。两个 GUI 场景分别验证可写和只读安装能力。五个场景全部通过，用时约 25 秒。隔离报告 SHA-256 为 `0eac405dc7d7cc42ec7c627de61f07232fbcdbf4035db5713e37245666db0c4a`。 [来源版本](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0-alpha.2) [目标版本](https://github.com/qiyuanhuakai/dezirclip/releases/tag/v0.2.0)
