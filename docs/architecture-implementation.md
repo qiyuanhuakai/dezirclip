@@ -188,6 +188,7 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **C4 直接验证真实实现**。Windows 点击规划的 11 个用例直接导入运行时模块，另保留 75 项注入 OS 的测试。PowerShell 开发检查使用实际进程环境验证缺失、空值、文本和值恢复失败。当前 NSIS 的原 GUI 与升级测试仍由六场景验收。退役无人调用的 `test:e2e` 和 `@playwright/test`，保留 Playwright 的生产 WebView 冒烟。本地生产构建和实际 Chromium 页面设置、字符目录搜索通过。 [PowerShell 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46128671130)
 - **C2/C4 全量矩阵复核**。`d7d64c59` 的四平台桌面、四份 standalone、两架构 Flatpak、六项 NSIS 和开发任务实际通过。历史 alpha.9 验收把已发布的 WebView 窗口当成当前 Native 窗口，因此原运行和汇总失败。`a8675bf9` 的 Windows 托管复验执行了普通及非 ANSI 路径的真实安装、粘贴、升级、文件锁、卸载与重装，两个路径都通过。 [首轮全量矩阵](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46127684498) [历史包复验](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46128671130)
 - **R3 GPU 启动读探针**。Windows 和 Linux x64 各运行 3 项 Tauri 启动探针测试。新增父进程持有无 sidecar 的 SQLite 读取事务、子进程执行真实探针的检查，父测试核对子用例确实执行。释放锁后同一个数据库恢复正常读值。原有坏库、回滚事务、活跃 WAL、已 checkpoint WAL 和文件字节完整性检查均通过。
+- **C1 Linux 原生测试执行门槛**。默认 Rust 单测显式忽略需图形隔离环境的用例。Linux 开发任务从同轮 Cargo 输出取得 Platform 测试程序，在私有会话重新执行 15 项精确用例，缺显示、隔离标记或成功记录均失败。WSL 实际通过工作区套件及全部 15 项，包括强制重启私有 Xvfb 后的捕获恢复。手动 Wayland 脚本也核对精确用例执行，本地 Sway 1.9 的 wlr 矩阵通过实际剪贴板、CLI MIME、能力负控及合成器断开。完整 ext 合成器矩阵仍沿用独立验收。
 
 ### Darwin 首发拓扑
 

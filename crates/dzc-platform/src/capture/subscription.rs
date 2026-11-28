@@ -152,18 +152,19 @@ pub fn subscribe_clipboard(callback: Callback) -> Result<ClipboardSubscription, 
 mod tests {
     use super::*;
     #[cfg(target_os = "linux")]
-    fn regression_runtime(flag: &str) -> Option<std::path::PathBuf> {
-        if std::env::var(flag).as_deref() != Ok("1") { return None; }
+    fn regression_runtime(flag: &str) -> std::path::PathBuf {
+        assert_eq!(std::env::var(flag).as_deref(), Ok("1"), "requires the private {flag} fixture");
         let root = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
         assert!(root.is_absolute());
         assert_eq!(std::fs::read(root.join("p94-private-native-fixture")).unwrap(), b"synthetic-p94-native-only\n");
-        Some(root)
+        root
     }
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[ignore = "requires the private synthetic Wayland setup server"]
     fn isolated_pending_wayland_setup_cancels_as_a_successful_stop() {
-        let Some(root) = regression_runtime("DEZIRCLIP_RUN_STARTUP_CANCEL_FIXTURE") else { return; };
+        let root = regression_runtime("DEZIRCLIP_RUN_STARTUP_CANCEL_FIXTURE");
         assert_eq!(std::env::var("WAYLAND_DISPLAY").unwrap(), "wayland-p94-setup");
         assert!(std::env::var_os("DISPLAY").is_none());
         use std::io::Read;
@@ -200,8 +201,9 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[ignore = "requires restarting the disposable XFixes server"]
     fn isolated_established_xfixes_loss_falls_back_and_recovers_after_server_restart() {
-        let Some(root) = regression_runtime("DEZIRCLIP_RUN_XFIXES_RESTART_FIXTURE") else { return; };
+        let root = regression_runtime("DEZIRCLIP_RUN_XFIXES_RESTART_FIXTURE");
         assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
         assert_eq!(super::super::probe_clipboard_monitor().unwrap(), "x11-xfixes");
         let (tx, rx) = mpsc::channel();
@@ -251,14 +253,9 @@ mod tests {
     }
     #[cfg(target_os = "linux")]
     #[test]
+    #[ignore = "requires isolated Xvfb and a private runtime"]
     fn isolated_x11_subscription_stops_and_joins() {
-        if std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() != Ok("1") {
-            return;
-        }
-        assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
-        let marker = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap())
-            .join("dezirclip-isolated-wayland-fixture");
-        assert!(marker.is_file());
+        crate::native_test::private_x11("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS");
         let (tx, rx) = mpsc::channel();
         let mut subscription = subscribe_clipboard(Arc::new(move |change| {
             let _ = tx.send(change.sequence);

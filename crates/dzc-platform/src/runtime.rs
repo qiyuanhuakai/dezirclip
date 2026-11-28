@@ -458,19 +458,14 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[ignore = "requires the private Wayland compositor"]
     fn isolated_wayland_ports_owned_lifecycle_and_core_preflight() {
-        if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") {
-            return;
-        }
         use crate::wayland::{MimeData, WaylandOwner};
         use dzc_core::api::{HistoryQuery, HistoryService};
         use dzc_core::capture::*;
         use std::collections::VecDeque;
         use std::sync::Arc;
-        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
-        assert!(
-            runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file()
-        );
+        let runtime = crate::native_test::private_runtime("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS");
         assert!(std::env::var_os("DISPLAY").is_none());
         generated_file_drop_native_writer(&runtime);
         let report = session_capabilities();
@@ -928,15 +923,9 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[ignore = "requires isolated Xvfb and a private runtime"]
     fn isolated_x11_private_owner_retains_files_and_releases_only_its_selection() {
-        if std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() != Ok("1") {
-            return;
-        }
-        assert!(!crate::wayland::requested());
-        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
-        assert!(
-            runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file()
-        );
+        let runtime = crate::native_test::private_x11("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS");
         generated_file_drop_native_writer(&runtime);
         use dzc_core::api::{ClipboardEntry, HistoryService, SensitiveAccess};
         let history = HistoryService::open(&runtime.join("private-x11-history.db")).unwrap();

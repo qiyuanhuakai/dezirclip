@@ -845,22 +845,10 @@ mod tests {
         assert!(super::requested_for_environment(empty, Some(OsStr::new("3")), Some("x11")));
     }
     use super::*;
-    fn isolated_runtime() -> Option<std::path::PathBuf> {
-        if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") {
-            return None;
-        }
-        let runtime =
-            std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").expect("private runtime"));
-        assert!(
-            runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file()
-        );
-        Some(runtime)
-    }
     #[test]
+    #[ignore = "requires the controlled Wayland capability fixture"]
     fn isolated_negative_capabilities_fail_closed_without_x11_fallback() {
-        if isolated_runtime().is_none() {
-            return;
-        }
+        crate::native_test::private_runtime("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS");
         let expected = match std::env::var("DEZIRCLIP_EXPECT_WAYLAND_FAILURE").as_deref() {
             Ok("connection") => WaylandError::ConnectionUnavailable,
             Ok("protocol") => WaylandError::DataControlUnavailable,
@@ -869,7 +857,7 @@ mod tests {
             Ok("permission") => WaylandError::PermissionDenied,
             Ok("disabled") => WaylandError::DisabledByConfiguration,
             Ok("inherited_fd") => WaylandError::InheritedSocketUnavailable,
-            _ => return,
+            value => panic!("unknown private fixture failure: {value:?}"),
         };
         assert_eq!(WaylandClipboardBackend::probe().unwrap_err(), expected);
         let report = crate::runtime::session_capabilities();
@@ -886,13 +874,10 @@ mod tests {
         );
     }
     #[test]
+    #[ignore = "requires disconnecting the disposable Wayland compositor"]
     fn isolated_disconnect_joins_owner_and_subscription() {
-        let Some(runtime) = isolated_runtime() else {
-            return;
-        };
-        if std::env::var("DEZIRCLIP_WAYLAND_DISCONNECT_TEST").as_deref() != Ok("1") {
-            return;
-        }
+        let runtime = crate::native_test::private_runtime("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS");
+        assert_eq!(std::env::var("DEZIRCLIP_WAYLAND_DISCONNECT_TEST").as_deref(), Ok("1"));
         let mut subscription = crate::capture::subscribe_clipboard(Arc::new(|_| {})).unwrap();
         subscription.wait_ready(Duration::from_secs(5)).unwrap();
         let mut owner = WaylandOwner::start(vec![MimeData {
@@ -956,14 +941,9 @@ mod tests {
         );
     }
     #[test]
+    #[ignore = "requires a private Wayland compositor"]
     fn isolated_uri_offer_falls_back_to_text_unless_local_files_exist() {
-        if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") {
-            return;
-        }
-        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
-        assert!(
-            runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file()
-        );
+        crate::native_test::private_runtime("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS");
         assert!(std::env::var_os("DISPLAY").is_none());
         use dzc_core::capture::{CaptureData, CaptureReadRequest, CaptureReader, CaptureSkip};
         use std::io::Write;
@@ -1021,15 +1001,9 @@ mod tests {
         }
     }
     #[test]
+    #[ignore = "requires a private Wayland compositor"]
     fn isolated_compositor_clipboard_lifecycle() {
-        if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") {
-            return;
-        }
-        let runtime =
-            std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").expect("private runtime"));
-        assert!(
-            runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file()
-        );
+        crate::native_test::private_runtime("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS");
         assert!(std::env::var_os("DISPLAY").is_none());
         let status = WaylandClipboardBackend::probe().unwrap();
         println!(

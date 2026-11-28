@@ -283,10 +283,9 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[ignore = "requires isolated Xvfb and a private runtime"]
     fn isolated_x11_monitor_probe_negotiates_without_a_worker() {
-        if std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() != Ok("1") {
-            return;
-        }
+        crate::native_test::private_x11("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS");
         for _ in 0..2 {
             assert_eq!(super::probe_clipboard_monitor().unwrap(), "x11-xfixes");
         }

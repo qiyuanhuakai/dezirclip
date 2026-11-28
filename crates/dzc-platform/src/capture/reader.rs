@@ -616,10 +616,9 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[ignore = "requires isolated Xvfb and a private runtime"]
     fn isolated_x11_reader_keeps_text_html_and_file_priority() {
-        if std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() != Ok("1") {
-            return;
-        }
+        crate::native_test::private_x11("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS");
         use super::{CaptureData, CaptureReadRequest, CaptureReader, NativeCaptureReader};
         let text = "  native capture\r\n\tsecond line\r\n";
         super::super::x11_clipboard::set_clipboard_text_and_html(text.into(), None).unwrap();
@@ -656,10 +655,9 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[ignore = "requires isolated Xvfb and a private runtime"]
     fn isolated_x11_file_images_recapture_after_delete_text_and_another_image() {
-        if std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() != Ok("1") {
-            return;
-        }
+        crate::native_test::private_x11("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS");
         use super::{CaptureData, NativeCaptureReader};
         use base64::{engine::general_purpose::STANDARD, Engine};
         use dzc_core::{

@@ -656,10 +656,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires isolated Xvfb and a private runtime"]
     fn isolated_x11_ports_probe_source_and_explicit_paste() {
-        if std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() != Ok("1") {
-            return;
-        }
+        crate::native_test::private_x11("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS");
         use x11rb::{
             protocol::xproto::{CreateWindowAux, EventMask, InputFocus, PropMode, WindowClass},
             wrapper::ConnectionExt as _,

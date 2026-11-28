@@ -1515,6 +1515,8 @@ jobs:
             libegl-dev libwayland-dev libfontconfig1-dev libfreetype-dev)
           if [[ "$RUST_CHECK_MODE" == desktop-check ]]; then
             packages+=(libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev)
+          else
+            packages+=(xvfb xauth dbus-daemon)
           fi
           network=(-o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
           install_libraries() {
@@ -1540,8 +1542,11 @@ jobs:
           key: development-${{ matrix.mode }}-no-debug
           cache-workspace-crates: true
       - name: Test shared core, protocol, Host, Service and CLI
-        if: matrix.mode == 'core-tests'
+        if: matrix.mode == 'core-tests' && runner.os == 'Windows'
         run: cargo test --locked --workspace --all-targets --no-default-features --features dzc-cli/native-screen,dzc-service/native-screen
+      - name: Test Linux workspace and isolated Platform
+        if: matrix.mode == 'core-tests' && runner.os == 'Linux'
+        run: python3 -B scripts/test-linux-platform.py --workspace
       - name: Verify the bare CLI in a real Windows pseudoterminal
         if: matrix.mode == 'core-tests' && runner.os == 'Windows'
         shell: pwsh

@@ -238,10 +238,9 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[ignore = "requires isolated Xvfb and a private runtime"]
     fn isolated_x11_written_payloads_match_reader_echo_and_only_explicit_copy_is_skipped() {
-        if std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() != Ok("1") {
-            return;
-        }
+        crate::native_test::private_x11("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS");
         use crate::{capture::NativeCaptureReader, runtime::EmbeddedClipboardWriter};
         use dzc_core::{
             capture::{

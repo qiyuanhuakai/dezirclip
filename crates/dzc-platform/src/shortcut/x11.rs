@@ -349,14 +349,10 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a private runtime and explicitly disabled shortcuts"]
     fn isolated_disabled_shortcuts_never_connect_or_register() {
-        if std::env::var("DEZIRCLIP_RUN_LINUX_SHORTCUT_SMOKE_TESTS").as_deref() != Ok("1")
-            || !crate::wayland::service_disabled("global_shortcut")
-        {
-            return;
-        }
-        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
-        assert!(runtime.join("dezirclip-isolated-wayland-fixture").is_file());
+        crate::native_test::private_runtime("DEZIRCLIP_RUN_LINUX_SHORTCUT_SMOKE_TESTS");
+        assert!(crate::wayland::service_disabled("global_shortcut"));
         assert_eq!(std::env::var("DISPLAY").unwrap(), ":65530");
         let provider = NativeShortcutProvider::default();
         let result = provider.register(
@@ -375,14 +371,10 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the private Wayland fallback fixture"]
     fn isolated_wayland_shortcuts_are_unsupported_before_x11_access() {
-        if std::env::var("DEZIRCLIP_RUN_LINUX_SHORTCUT_SMOKE_TESTS").as_deref() != Ok("1")
-            || std::env::var("XDG_SESSION_TYPE").as_deref() != Ok("wayland")
-        {
-            return;
-        }
-        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
-        assert!(runtime.join("dezirclip-isolated-wayland-fixture").is_file());
+        crate::native_test::private_runtime("DEZIRCLIP_RUN_LINUX_SHORTCUT_SMOKE_TESTS");
+        assert_eq!(std::env::var("XDG_SESSION_TYPE").as_deref(), Ok("wayland"));
         assert_eq!(std::env::var("DISPLAY").unwrap(), ":65530");
         let provider = NativeShortcutProvider::default();
         let expected = unsupported(UnsupportedReason::AdapterUnavailable);
@@ -399,13 +391,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires isolated Xvfb with XTEST and XKB"]
     fn isolated_x11_shortcuts_conflict_repeat_release_and_re_register() {
-        if std::env::var("DEZIRCLIP_RUN_LINUX_SHORTCUT_SMOKE_TESTS").as_deref() != Ok("1") {
-            return;
-        }
-        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
-        assert!(runtime.join("dezirclip-isolated-wayland-fixture").is_file());
-        assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
+        crate::native_test::private_x11("DEZIRCLIP_RUN_LINUX_SHORTCUT_SMOKE_TESTS");
         use x11rb::protocol::{
             xproto::{KEY_PRESS_EVENT, KEY_RELEASE_EVENT},
             xtest::ConnectionExt as _,

@@ -123,9 +123,11 @@ def job_requirements(mode, legacy_installer, crash_profile="release"):
             jobs[f"Go development ({runner})"] = ("Test local protocol client", "Test MyGo desktop and native surfaces")
             if runner == "windows-latest":
                 jobs[f"Go development ({runner})"] += ("Verify WebView fixture environment restoration",)
-            core = ("Test shared core, protocol, Host, Service and CLI",)
             if runner == "windows-latest":
-                core += ("Verify the bare CLI in a real Windows pseudoterminal",)
+                core = ("Test shared core, protocol, Host, Service and CLI",
+                        "Verify the bare CLI in a real Windows pseudoterminal")
+            else:
+                core = ("Test Linux workspace and isolated Platform",)
             jobs[f"Rust development ({runner}, core-tests)"] = core
             jobs[f"Rust development ({runner}, desktop-check)"] = ("Check all desktop targets without linking another application",)
     if mode == "full" or (mode == "development" and legacy_installer):

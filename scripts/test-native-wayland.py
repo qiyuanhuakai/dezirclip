@@ -166,7 +166,10 @@ def inside():
         return result.stdout
 
     def test(label, name, env):
-        return run(label, ["/fixture/platform-tests", "--exact", name, "--nocapture"], env)
+        output = run(label, ["/fixture/platform-tests", "--ignored", "--exact", name, "--nocapture"], env)
+        if b"test result: ok. 1 passed; 0 failed; 0 ignored;" not in output:
+            raise RuntimeError(label + " did not execute its selected native test")
+        return output
 
     try:
         report["compositor_version"] = subprocess.check_output(["/fixture/compositor", "--version"], text=True).strip()
@@ -228,8 +231,10 @@ def inside():
             test("negative-" + label, NEGATIVE, negative_env)
 
         disconnect_env = dict(env, DEZIRCLIP_WAYLAND_DISCONNECT_TEST="1")
-        run_disconnect(root, runtime, ["/fixture/platform-tests", "--exact", DISCONNECT, "--nocapture"],
+        run_disconnect(root, runtime, ["/fixture/platform-tests", "--ignored", "--exact", DISCONNECT, "--nocapture"],
                        compositor, disconnect_env, report["cases"])
+        if b"test result: ok. 1 passed; 0 failed; 0 ignored;" not in (root / "disconnect.stdout.log").read_bytes():
+            raise RuntimeError("disconnect did not execute its selected native test")
 
         # Controlled protocol server, generated from official XML. These are not
         # claims about real compositor permission UI or its policy defaults.

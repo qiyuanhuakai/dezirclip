@@ -49,6 +49,8 @@ pub mod shortcut;
 pub mod ocr;
 #[cfg(target_os = "linux")]
 pub mod wayland;
+#[cfg(all(test, target_os = "linux"))]
+mod native_test;
 
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 pub struct NativeKeyProvider;

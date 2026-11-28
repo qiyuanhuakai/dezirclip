@@ -280,10 +280,9 @@ mod tests {
         );
     }
     #[test]
+    #[ignore = "requires isolated Xvfb and a private runtime"]
     fn isolated_x11_metadata_is_bounded_and_same_owner_replacement_revokes_the_snapshot() {
-        if std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() != Ok("1") {
-            return;
-        }
+        crate::native_test::private_x11("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS");
         use std::sync::{
             atomic::{AtomicBool, AtomicUsize, Ordering},
             Arc, Mutex,

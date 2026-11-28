@@ -49,6 +49,7 @@ PR 更新和新的 master push 会取消同组旧 CI。手动 full 不适用该�
 | Windows WebView 环境恢复 | Windows 开发任务和六场景 NSIS | 开发任务直接调用共享 PowerShell helper，使用真实进程环境测试缺失、空值、文本和失败。完整 NSIS 验收继续检查原 GUI 生命周期和升级 |
 | Standalone Companion 归属 | Tauri 桌面任务 | CLI 与 Service 一次构建。Tauri 测试和实际 Desktop 链接前后核对两个可执行文件的 SHA-256 |
 | Windows 原生剪贴板和阻塞 UI 的中键钩子 | Windows 桌面任务 | 真实剪贴板用例在同一测试进程串行执行。中键钩子复用 MyGo 库验收使用的 Go 测试程序，并确认用例实际通过 |
+| Linux 原生剪贴板、输入和快捷键 | Linux Rust 开发任务 | 复用当轮 Cargo JSON 中的 Platform 单测程序，在私有 Xvfb/DBus 中执行。精确核对 15 项实际结果，包含 XFixes 服务器重启和无合成器的 Wayland 建连取消 |
 
 ## 测试入口与证据种类
 
@@ -132,8 +133,7 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 
 | 缺口 | 定位与解释 |
 |---|---|
-| 原生测试的“未执行”可能显示通过 | [capture/subscription.rs](../crates/dzc-platform/src/capture/subscription.rs)、[shortcut/x11.rs](../crates/dzc-platform/src/shortcut/x11.rs) 部分测试缺 opt-in 时直接 return；普通 Rust test 成功不能计为这些原生行为成功 |
-| Wayland 自动覆盖未接入 | 当前 Linux 产品 harness 是 X11；[Wayland 实验支持](./wayland-experimental.md) 的手工脚本不能算作本次 CI 已执行 |
+| 完整 Wayland 合成器矩阵仍为手动验收 | Linux 自动任务覆盖 X11、Wayland 快捷键回退负控及建连取消。实际 Wayland 合成器和 CLI MIME 测试由 [Wayland 实验支持](./wayland-experimental.md) 的隔离脚本运行，按协商协议分别留证 |
 | 当前候选与发布闭环仍有缺口 | 仍需实测新 tag 的完整发布链和 Linux 系统级安装，并为封存 job 本身取消后提供独立的复核入口 |
 
 源码准入、共享 NSIS 样件和 Windows x64 最终包验收已接入。当前含 Arch 的产品目录包含 40 项。Windows ARM64 产物按现有交叉构建级别验收。

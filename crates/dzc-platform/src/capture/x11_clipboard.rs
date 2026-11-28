@@ -407,14 +407,6 @@ mod tests {
 
     static SMOKE_ID: AtomicU64 = AtomicU64::new(1);
 
-    fn run_linux_clipboard_smoke_tests() -> bool {
-        std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() == Ok("1")
-    }
-
-    fn system_clipboard_is_reachable() -> bool {
-        arboard::Clipboard::new().is_ok()
-    }
-
     #[test]
     fn parses_gnome_copied_files_payload() {
         let payload = b"copy\nfile:///tmp/demo.png\nfile:///home/test/My%20File.txt\n\0";
@@ -471,10 +463,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires isolated Xvfb and a private runtime"]
     fn linux_clipboard_owner_keeps_text_available_after_setter_returns() {
-        if !run_linux_clipboard_smoke_tests() || !system_clipboard_is_reachable() {
-            return;
-        }
+        crate::native_test::private_x11("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS");
         let id = SMOKE_ID.fetch_add(1, Ordering::Relaxed);
         let expected = format!("dezirclip-linux-clipboard-smoke-{id}");
 
@@ -488,10 +479,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires isolated Xvfb and a private runtime"]
     fn linux_clipboard_owner_keeps_image_available_after_setter_returns() {
-        if !run_linux_clipboard_smoke_tests() || !system_clipboard_is_reachable() {
-            return;
-        }
+        crate::native_test::private_x11("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS");
 
         set_clipboard_image_with_formats(ImageData {
             width: 1,
