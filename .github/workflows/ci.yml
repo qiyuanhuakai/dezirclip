@@ -105,7 +105,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ (inputs.source_acceptance || inputs.mode == 'source-acceptance') && 'source-acceptance' || github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ (inputs.source_acceptance || inputs.mode == 'source-acceptance') && 'source-acceptance' || (inputs.macos_native_probe || inputs.mode == 'darwin-native') && 'darwin-native' || github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ !inputs.source_acceptance && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master')) }}
 
 env:
@@ -141,16 +141,43 @@ jobs:
           swift_bin=$(swift build --package-path clients/swift --show-bin-path)
           cp "$swift_bin/DarwinPeerProbe" "$RUNNER_TEMP/dzc-darwin-peer"
           codesign --force --sign - target/debug/examples/ipc_protocol_fixture
-          codesign --force --sign - target/debug/examples/darwin_desktop_fixture
           codesign --force --sign - "$RUNNER_TEMP/dzc-darwin-peer"
+          app="$RUNNER_TEMP/DezirClipHostProbe.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers"
+          cp "$swift_bin/DarwinPeerProbe" "$app/Contents/MacOS/DarwinPeerProbe"
+          cp target/debug/examples/darwin_desktop_fixture "$app/Contents/Helpers/dzc-darwin-host"
+          cat > "$app/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleExecutable</key><string>DarwinPeerProbe</string>
+            <key>CFBundleIdentifier</key><string>io.github.qiyuanhuakai.dezirclip.host-probe</string>
+            <key>CFBundleName</key><string>DezirClip Host Probe</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>LSMinimumSystemVersion</key><string>13.0</string>
+            <key>LSUIElement</key><true/>
+          </dict></plist>
+          PLIST
+          plutil -lint "$app/Contents/Info.plist"
+          codesign --force --sign - --options runtime --identifier io.github.qiyuanhuakai.dezirclip.host-probe.helper "$app/Contents/Helpers/dzc-darwin-host"
+          codesign --force --sign - --options runtime "$app"
+          codesign --verify --deep --strict "$app"
       - name: Verify profile persistence across signed helper processes
         run: |
           root=$(mktemp -d /private/tmp/dzc-profile.XXXXXX)
-          "$PWD/target/debug/examples/darwin_desktop_fixture" --verify-profile "$root"
+          "$RUNNER_TEMP/DezirClipHostProbe.app/Contents/Helpers/dzc-darwin-host" --verify-profile "$root"
       - name: Verify signed Swift sessions against the local Rust Host and platform fixture
         run: |
           socket_dir=$(mktemp -d /private/tmp/dzc-m0.XXXXXX)
-          "$RUNNER_TEMP/dzc-darwin-peer" "$PWD/target/debug/examples/ipc_protocol_fixture" "$socket_dir" "$PWD/target/debug/examples/darwin_desktop_fixture"
+          "$RUNNER_TEMP/dzc-darwin-peer" "$PWD/target/debug/examples/ipc_protocol_fixture" "$socket_dir"
+          if "$RUNNER_TEMP/dzc-darwin-peer" --bundled-host "$socket_dir/rejected" 2>"$socket_dir/outer-launch.log"; then
+            echo "A bare probe started the bundled Host"
+            exit 1
+          fi
+          grep -Fx 'the Host must be launched from the signed app bundle' "$socket_dir/outer-launch.log"
+          test ! -e "$socket_dir/rejected"
+          "$RUNNER_TEMP/DezirClipHostProbe.app/Contents/MacOS/DarwinPeerProbe" --bundled-host "$socket_dir/desktop"
 
   windows-release-memory:
     name: Published Windows memory comparison

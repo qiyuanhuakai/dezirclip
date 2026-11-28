@@ -185,3 +185,9 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 
 - **C3 合并重复构建和测试**。在并行的 Frontend job 执行一次可移植工具契约。各平台仍使用实际二进制运行 BuildInfo、独立归档和 SQLite 验收，Linux 保留私有挂载与凭据隔离负控。一次 Cargo 调用生成 CLI 和 Service，随后验证 Tauri 构建前后的两个文件哈希。Windows 将 5 项真实剪贴板测试合为一次串行调用，并复用已构建的 Go 测试程序验证中键钩子。原源码准入首次运行 15 分 31 秒，修正后的 `8a4c2e89` 首次运行 12 分 29 秒。Windows 剪贴板步骤从 40 秒降到 13 秒。整体差值也包含缓存影响，两次 Windows Rust cache 保存步骤分别为 106 秒和 0 秒。已下载后一次准入凭据，核对 SHA、run/attempt、双 x64 目标及 GitHub 记录中的 42 项必需结果。tag 的首轮发布耗时仍待实测。 [源码准入实跑](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46124948797)
 - **C3 当前 Windows MyGo 安装包**。`d7d64c59` 的专项在托管 Windows x64 运行 4 项真实 NSIS 钩子用例，随后验证当前安装器的恢复、升级、文件锁、卸载和重装。产物以 artifact ID `15255544468` 留在该次测试运行。 [安装包专项](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46125125204)
+
+### Darwin 首发拓扑
+
+首发按直接分发的 macOS ARM64 `.app` 设计，沿用 Swift package 声明的 macOS 13 编译目标。Swift 启动器从 `Contents/Helpers` 启动同一包内的 Rust Host，继承管道传递短期授权并绑定 helper 生命周期。私有 Unix socket 只传现有帧协议。Host 继续持有 Core、profile 和采集所有权。应用包由内向外签名，启动器核对应用包与内嵌代码后再启动，并在连接上核对实际 helper 的签名身份。暂按用户会话内运行、Hardened Runtime 和 Developer ID 直接分发准备，发行阶段再核对公证和对用户 Keychain 的访问。 [Apple 嵌套代码签名](https://developer.apple.com/library/archive/technotes/tn2206/_index.html#//apple_ref/doc/uid/DTS40007919-CH1-TNTAG201)
+
+现有 macOS 26 专项将真实 Host 放到测试 `.app`，按相同目录布局临时签名，分别验证裸启动器拒绝、持久 profile 和经应用包启动的系统剪贴板及 Swift 会话。macOS 13 的运行验证、Developer ID 签名与升级后的 Keychain ACL 仍需取得独立证据。

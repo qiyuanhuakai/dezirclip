@@ -121,6 +121,23 @@ func requireChild(_ fd: Int32, pid: Int32, executable: URL) throws {
     try require(liveHash == installedHash, "helper code identity differs")
 }
 
+private func bundledHost() throws -> URL {
+    let bundle = Bundle.main.bundleURL.resolvingSymlinksInPath()
+    try require(bundle.pathExtension == "app", "the Host must be launched from the signed app bundle")
+    let helper = bundle.appendingPathComponent("Contents/Helpers/dzc-darwin-host", isDirectory: false)
+    try require(helper.resolvingSymlinksInPath().path == helper.path, "the bundled Host path contains a symbolic link")
+    let values = try helper.resourceValues(forKeys: [.isRegularFileKey, .isExecutableKey])
+    try require(values.isRegularFile == true && values.isExecutable == true, "the bundle does not contain an executable Host")
+    var signedBundle: SecStaticCode?
+    try require(SecStaticCodeCreateWithPath(bundle as CFURL, [], &signedBundle) == errSecSuccess,
+                "the app bundle signature is unavailable")
+    guard let signedBundle else { throw ProbeFailure("the app bundle code object is missing") }
+    let flags = SecCSFlags(rawValue: UInt32(kSecCSCheckNestedCode) | UInt32(kSecCSStrictValidate))
+    try require(SecStaticCodeCheckValidity(signedBundle, flags, nil) == errSecSuccess,
+                "the app bundle or nested Host signature is invalid")
+    return helper
+}
+
 @MainActor
 func request(_ connection: LocalFrameConnection, id: String, method: String, params: [String: Any]) async throws -> [String: Any] {
     let payload = try JSONSerialization.data(withJSONObject: ["request_id": id, "method": method, "params": params])
@@ -163,7 +180,18 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
             try verifyForeignProcessRejected(socket: args[2])
             return
         }
-        try require(args.count == 3 || args.count == 4, "expected helper, private directory and optional shared Host fixture")
+        if args.count == 3, args[1] == "--bundled-host" {
+            do {
+                let helper = try bundledHost()
+                try await verifySharedHost(helper: helper, directory: URL(fileURLWithPath: args[2], isDirectory: true))
+            } catch {
+                let message = (error as? ProbeFailure)?.message ?? String(describing: error)
+                FileHandle.standardError.write(Data((message + "\n").utf8))
+                exit(EXIT_FAILURE)
+            }
+            return
+        }
+        try require(args.count == 3, "expected the protocol helper and private directory")
         let helper = URL(fileURLWithPath: args[1])
         let socket = URL(fileURLWithPath: args[2]).appendingPathComponent("host.sock").path
         let child = Process()
@@ -223,9 +251,5 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
         try require(child.terminationStatus == 0, "helper exited unsuccessfully")
         try verifyCancelledRead(helper: helper, directory: args[2], socket: socket)
         print("Verified the Darwin UID, live signed helper, framed Rust wire responses, system pasteboard, isolated Keychain and cancelled partial read")
-        if args.count == 4 {
-            let directory = URL(fileURLWithPath: args[2]).appendingPathComponent("desktop", isDirectory: true)
-            try await verifySharedHost(helper: URL(fileURLWithPath: args[3]), directory: directory)
-        }
     }
 }
