@@ -1,6 +1,8 @@
 // Clipboard operations module
-use crate::app_state::{SessionHistory, SettingsState};
-use dzc_core::api::HistoryService;
+use crate::app::ipc_host::public_code;
+use crate::app_state::SettingsState;
+use dzc_core::{api::{HistoryService, PrivacyAccessIntent, SensitiveAccess}, ports::ClipboardPayload};
+use dzc_host::PasteHistoryChange;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::surface_focus::Target;
 use base64::{engine::general_purpose, Engine as _};
@@ -115,7 +117,6 @@ pub fn copy_image_bytes_to_system_clipboard(bytes: Vec<u8>) -> AppResult<()> {
 pub async fn copy_to_clipboard(
     app_handle: tauri::AppHandle,
     state: State<'_, HistoryService>,
-    session: State<'_, SessionHistory>,
     content: String,
     content_type: String,
     paste: bool,
@@ -130,7 +131,7 @@ pub async fn copy_to_clipboard(
 ) -> AppResult<()> {
     let paste_target = capture_paste_target(paste)?;
     copy_to_clipboard_bound(
-        app_handle, state, session, content, content_type, paste, id, delete_after_use,
+        app_handle, state, content, content_type, paste, id, delete_after_use,
         paste_with_format, move_to_top, paste_image_as_base64, expected_privacy_epoch,
         derived_from_id, expected_host_instance_id, paste_target,
     ).await
@@ -139,7 +140,6 @@ pub async fn copy_to_clipboard(
 pub(crate) async fn copy_to_clipboard_bound(
     app_handle: tauri::AppHandle,
     state: State<'_, HistoryService>,
-    session: State<'_, SessionHistory>,
     mut content: String,
     mut content_type: String,
     paste: bool,
@@ -159,7 +159,7 @@ pub(crate) async fn copy_to_clipboard_bound(
     let bridge=app_handle.state::<crate::app::ipc_host::DesktopHost>();
     let source_id=if id!=0 {id}else{derived_from_id.unwrap_or(0)};
     bridge.check_instance(source_id,expected_host_instance_id.as_deref()).map_err(AppError::Validation)?;
-    if bridge.embedded().map_err(AppError::Validation)?.is_none() {
+    let Some(embedded) = bridge.embedded().map_err(AppError::Validation)? else {
         if paste {handle_window_focus_for_paste(&app_handle, paste_target.as_ref()).await?;}
         if source_id==0 {
             let upload=bridge.begin_generated_copy(expected_privacy_epoch,
@@ -178,50 +178,64 @@ pub(crate) async fn copy_to_clipboard_bound(
         },paste_target.as_deref().and_then(Target::windows_paste_target)).await.map_err(AppError::Validation)?;
         if !result.performed {return Err(AppError::Internal("Clipboard copy was not performed".into()));}
         return Ok(());
-    }
-    let operation_permission=if let Some(epoch)=expected_privacy_epoch {
-        Some(state.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::GeneratedCopy,dzc_core::api::SensitiveAccess::Denied,Some(epoch),chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?)
-    } else {None};
+    };
+    let history = state.inner();
     let generated_ticket = if paste_image_as_base64.unwrap_or(false) || derived_from_id.is_some() {
         crate::services::clipboard::generated_capture_ticket(&app_handle).await?
-    } else { None };
+    } else {
+        None
+    };
+    let operation_permission = if source_id == 0 {
+        Some(history.privacy().authorize_read(
+            PrivacyAccessIntent::GeneratedCopy, SensitiveAccess::Denied, expected_privacy_epoch, Utc::now().timestamp_millis(),
+        ).map_err(|error| AppError::Validation(error.to_string()))?)
+    } else {
+        None
+    };
+    let mut html_content = None;
+    let mut private_payload = None;
+    let selected_action = if source_id != 0 {
+        let derived = if id == 0 {
+            if !matches!(content_type.as_str(), "text" | "code" | "url" | "rich_text") {
+                return Err(AppError::Validation("DerivedPayloadKindRejected".into()));
+            }
+            Some(content.clone())
+        } else {
+            None
+        };
+        let selected = embedded.prepare_embedded_clipboard_selection(
+            source_id, expected_host_instance_id.as_deref(), expected_privacy_epoch, derived,
+        ).map_err(|error| AppError::Validation(public_code(error)))?;
+        if let Some(entry) = selected.entry {
+            content = entry.content;
+            content_type = entry.content_type;
+            html_content = entry.html_content;
+        }
+        if matches!(&selected.payload, ClipboardPayload::Private { .. } | ClipboardPayload::ProtectedFiles { .. }) {
+            private_payload = Some(selected.payload);
+        }
+        Some(selected.action)
+    } else {
+        if derived_from_id.is_some() {
+            return Err(AppError::Validation("DerivedPayloadKindRejected".into()));
+        }
+        None
+    };
 
-    println!(
-        "[DEBUG] copy_to_clipboard called: id={}, paste={}, content_type={}, content_len={}",
-        id,
-        paste,
-        content_type,
-        content.len()
-    );
-
-    let mut html_content: Option<String> = None;
-
-    let history=state.inner();
-    let mut read_permit=None;
-    let mut private_payload=None;
-    if id != 0 {
-        let sensitive=if expected_privacy_epoch.is_some() { dzc_core::api::SensitiveAccess::ExplicitUserAction } else { dzc_core::api::SensitiveAccess::Denied };
-        let permit=history.privacy().authorize_selected_copy(id,expected_host_instance_id.as_deref(),sensitive,expected_privacy_epoch,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
-        let entry=if id>0 { history.get_entry_authorized(id,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.ok_or_else(||AppError::Validation("SensitiveAccessDenied".into()))? }
-            else {
-                let entry=session.0.lock().map_err(|_|AppError::Internal("PrivacyStateUnavailable".into()))?.iter().find(|entry|entry.id==id).cloned().ok_or_else(||AppError::Validation("ClipboardRecordUnavailable".into()))?;
-                history.authorize_session_entry_for_host(&entry,&bridge.instance().map_err(AppError::Validation)?,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?
-            };
-        content=entry.content.clone();html_content=entry.html_content.clone();content_type=entry.content_type.clone();
-        let payload=if id>0 { history.clipboard_payload_authorized(id,&permit,chrono::Utc::now().timestamp_millis()) } else { history.session_clipboard_payload_for_host_authorized(&entry,&bridge.instance().map_err(AppError::Validation)?,&permit,chrono::Utc::now().timestamp_millis()) }.map_err(|error|AppError::Validation(error.to_string()))?;
-        if matches!(payload,dzc_core::ports::ClipboardPayload::Private{..}|dzc_core::ports::ClipboardPayload::ProtectedFiles{..}) { private_payload=Some(payload); }
-        read_permit=Some(permit);
-    } else if let Some(source_id)=derived_from_id {
-        if source_id==0 || !matches!(content_type.as_str(),"text"|"code"|"url"|"rich_text") { return Err(AppError::Validation("DerivedPayloadKindRejected".into())); }
-        let sensitive=if expected_privacy_epoch.is_some(){dzc_core::api::SensitiveAccess::ExplicitUserAction}else{dzc_core::api::SensitiveAccess::Denied};
-        let permit=history.privacy().authorize_selected_copy(source_id,expected_host_instance_id.as_deref(),sensitive,expected_privacy_epoch,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
-        let payload=if source_id>0 {history.derived_text_payload_authorized(source_id,content.clone(),&permit,chrono::Utc::now().timestamp_millis())} else {
-            let source=session.0.lock().map_err(|_|AppError::Internal("PrivacyStateUnavailable".into()))?.iter().find(|entry|entry.id==source_id).cloned().ok_or_else(||AppError::Validation("ClipboardRecordUnavailable".into()))?;
-            history.session_derived_text_payload_for_host_authorized(&source,&bridge.instance().map_err(AppError::Validation)?,content.clone(),&permit,chrono::Utc::now().timestamp_millis())
-        }.map_err(|error|AppError::Validation(error.to_string()))?;
-        if matches!(payload,dzc_core::ports::ClipboardPayload::Private{..}){ private_payload=Some(payload); }
-        read_permit=Some(permit);
-    }
+    let check_operation = || -> AppResult<()> {
+        if bridge.instance().map_err(AppError::Validation)? != embedded.instance_id() || embedded.is_stopping() {
+            return Err(AppError::Validation("ClipboardHostInstanceChanged".into()));
+        }
+        if let Some(permit) = &operation_permission {
+            history.privacy().check_read(permit, Utc::now().timestamp_millis())
+                .map_err(|error| AppError::Validation(error.to_string()))?;
+        }
+        if let Some(action) = &selected_action {
+            embedded.check_embedded_clipboard_action(action)
+                .map_err(|error| AppError::Validation(public_code(error)))?;
+        }
+        Ok(())
+    };
 
     let paste_image_as_base64_requested = paste_image_as_base64.unwrap_or(false);
     let mut effective_content_type = content_type.clone();
@@ -276,40 +290,54 @@ pub(crate) async fn copy_to_clipboard_bound(
         should_mark_clipboard_write_as_self_copy(id, paste, paste_image_as_base64_requested)
     };
 
-    if let Some(permit)=&operation_permission { history.privacy().check_read(permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?; }
-    if let Some(permit)=&read_permit { history.privacy().check_read(permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?; }
-    if let Some(mut payload)=private_payload {
-        if let dzc_core::ports::ClipboardPayload::Private{payload:inner,..}=&mut payload {
-            if self_insert_label.is_some() || !paste_with_format.unwrap_or(effective_content_type=="rich_text" && html_content.is_some()) && matches!(inner.as_ref(),dzc_core::ports::ClipboardPayload::Html{..}) { **inner=dzc_core::ports::ClipboardPayload::Text(content.clone()); }
+    check_operation()?;
+    if let Some(mut payload) = private_payload {
+        if let ClipboardPayload::Private { payload: inner, .. } = &mut payload {
+            let formatted = paste_with_format.unwrap_or(effective_content_type == "rich_text" && html_content.is_some());
+            if self_insert_label.is_some() || !formatted && matches!(inner.as_ref(), ClipboardPayload::Html { .. }) {
+                **inner = ClipboardPayload::Text(content.clone());
+            }
         }
-        bridge.writer().map_err(AppError::Validation)?.write_suppressing_recapture(payload).map_err(|error|AppError::Internal(error.to_string()))?;
+        bridge.writer().map_err(AppError::Validation)?.write_suppressing_recapture(payload)
+            .map_err(|error| AppError::Internal(error.to_string()))?;
     } else {
-    write_content_to_system_clipboard(
-        &content,
-        ClipboardWriteOptions {
-            content_type: &effective_content_type,
-            html_content: html_content.as_deref(),
-            paste_with_format: paste_with_format.unwrap_or(
-                effective_content_type == "rich_text" && html_content.as_deref().is_some(),
-            ),
-            mark_as_self_copy,
-        },
-    )?;
+        write_content_to_system_clipboard(
+            &content,
+            ClipboardWriteOptions {
+                content_type: &effective_content_type,
+                html_content: html_content.as_deref(),
+                paste_with_format: paste_with_format.unwrap_or(
+                    effective_content_type == "rich_text" && html_content.is_some(),
+                ),
+                mark_as_self_copy,
+            },
+        )?;
     }
 
-    // 4. Perform paste action if requested
     if paste {
-        perform_paste_action(
-            &app_handle,
-            &state,
-            id,
-            delete_after_use,
-            Some(&content),
-            &effective_content_type,
-            move_to_top,
-            paste_target.as_deref(),
-        )
-        .await?;
+        tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+        let method = resolve_paste_method(&state);
+        check_operation()?;
+        #[cfg(target_os = "linux")]
+        {
+            use dzc_platform::runtime::QueueInputTarget;
+            QueueInputTarget::foreground()
+                .and_then(|focus| QueueInputTarget::prepare(&focus))
+                .and_then(|target| target.send(&method, Some(&content), &effective_content_type, || check_operation().is_ok()))
+                .map_err(|error| AppError::Internal(error.to_string()))?;
+        }
+        #[cfg(not(target_os = "linux"))]
+        send_paste_keystroke(paste_target.as_deref(), &method, Some(&content), Some(&effective_content_type))?;
+        if let Some(action) = selected_action {
+            match embedded.complete_embedded_paste(action, delete_after_use, move_to_top) {
+                Ok(PasteHistoryChange::Removed(id)) => { let _ = app_handle.emit("clipboard-removed", id); }
+                Ok(PasteHistoryChange::Updated(id)) => { let _ = app_handle.emit("clipboard-updated", serde_json::json!({"id": id})); }
+                Ok(PasteHistoryChange::Unchanged) => {}
+                Err(error) => eprintln!("[paste] history update failed after sending input: {}", public_code(error)),
+            }
+        }
+        hide_window_after_paste(&app_handle).await;
+        play_paste_sound_if_enabled(&app_handle);
     }
 
     Ok(())
@@ -900,34 +928,6 @@ fn copy_text_with_retry(content: &str) -> AppResult<()> {
     }
 }
 
-async fn perform_paste_action(
-    app_handle: &tauri::AppHandle,
-    state: &State<'_, HistoryService>,
-    id: i64,
-    delete_after_use: bool,
-    content: Option<&str>,
-    content_type: &str,
-    move_to_top: Option<bool>,
-    target: Option<&Target>,
-) -> AppResult<()> {
-    println!(
-        "[DEBUG] perform_paste_action: pinned={}",
-        crate::WINDOW_PINNED.load(Ordering::Relaxed)
-    );
-    wait_for_focus_settle().await;
-    let paste_method = resolve_paste_method(state);
-    send_paste_keystroke(target, &paste_method, content, Some(content_type))?;
-    hide_window_after_paste(app_handle).await;
-    handle_post_paste_actions(app_handle, state, id, delete_after_use, move_to_top)?;
-    play_paste_sound_if_enabled(app_handle);
-
-    Ok(())
-}
-
-async fn wait_for_focus_settle() {
-    tokio::time::sleep(std::time::Duration::from_millis(40)).await;
-}
-
 fn resolve_paste_method(state: &State<'_, HistoryService>) -> String {
     state.queue_preferences()
         .map(|(_, _, method)| method).unwrap_or_else(|_| "shift_insert".into())
@@ -957,7 +957,8 @@ async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
     }
 }
 
-pub fn send_paste_keystroke(
+#[cfg(not(target_os = "linux"))]
+fn send_paste_keystroke(
     target: Option<&Target>,
     method: &str,
     content: Option<&str>,
@@ -969,17 +970,6 @@ pub fn send_paste_keystroke(
         let target = target.ok_or_else(|| AppError::Internal("Paste target unavailable".into()))?;
         crate::infrastructure::windows_api::paste::send_paste(target, method, content, content_type)
             .map_err(AppError::Internal)?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let _ = target;
-        crate::infrastructure::linux_api::paste::simulate_paste_with_method_and_content(
-            method,
-            content_type,
-            content,
-        )
-            .map_err(AppError::from)?;
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
@@ -1003,28 +993,6 @@ fn split_local_paths(content: &str) -> Vec<String> {
         .filter(|line| !line.is_empty())
         .map(|line| line.to_string())
         .collect()
-}
-
-fn handle_post_paste_actions(
-    app_handle: &tauri::AppHandle,
-    state: &State<'_, HistoryService>,
-    id: i64,
-    delete_after_use: bool,
-    move_to_top: Option<bool>,
-) -> AppResult<()> {
-    if delete_after_use {
-        // Cleanup file if needed
-        let app_data = app_handle.state::<crate::app_state::AppDataDir>();
-        let data_dir = app_data.0.lock().unwrap();
-
-        if state.delete(id, Some(&data_dir)).is_ok() {
-            let _ = app_handle.emit("clipboard-removed", id);
-        }
-    } else if id > 0 && state.record_paste_use(id, Utc::now().timestamp_millis(), move_to_top).is_ok() {
-        let _ = app_handle.emit("clipboard-updated", serde_json::json!({"id": id}));
-    }
-
-    Ok(())
 }
 
 pub(crate) fn play_paste_sound_if_enabled(app_handle: &tauri::AppHandle) {
@@ -1052,7 +1020,6 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
                 let _ = copy_to_clipboard_bound(
                     app_handle_clone.clone(),
                     app_handle_clone.state::<HistoryService>(),
-                    app_handle_clone.state::<SessionHistory>(),
                     item.content.clone(),
                     item.content_type.clone(),
                     true, // paste

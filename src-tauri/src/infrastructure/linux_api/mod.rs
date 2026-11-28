@@ -4,7 +4,6 @@ pub mod clipboard;
 pub mod clipboard_listener;
 pub mod input_grab;
 pub mod mouse_hotkey;
-pub mod paste;
 pub mod tray;
 pub mod window_tracker;
 pub(crate) mod surface_activation;

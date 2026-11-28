@@ -209,6 +209,12 @@ Tauri 与 MyGo 使用同一个 `desktop.settings.reset`。Core 在事务中恢�
 
 Linux X11 中用实际 Tauri 窗口执行了重置，分别覆盖内嵌 Host 和独立 Service。Service 场景核对了实例未更换并产生重置事件。Linux Tauri 套件 270 项通过、4 项按既有条件忽略。Tauri 重置桥接回归在 Windows 也通过，Core 和 Host 的重置测试覆盖事务回滚、旧权限拒绝、队列清理及已提交后撤销重试。
 
+### R6 剪贴板选中项与粘贴回执
+
+Tauri 内嵌模式和 Service 共用 Host 的选中项授权、正文读取、删除和使用次数更新。Tauri 负责系统剪贴板格式及窗口焦点，在写入剪贴板和发送粘贴按键前核对原 Host 和隐私 epoch。原生输入成功后才消费粘贴回执。内存条目按原 Host 所有权删除，转换所得文本沿用原有的保留源条目行为。内嵌快贴直接按条目 ID 分发，省去一次独立正文读取。
+
+Tauri 的 X11 输入接入 Service 已使用的原生目标校验和按键注入，移除 `xdotool` 调用。无 `xdotool` 的隔离 X11 会话完成三项真实 GTK 粘贴，覆盖持久条目计数、删除内存条目和快贴保留 HTML。Linux Host 89 项、Tauri 265 项通过，分别有 1 项、4 项按条件忽略。Windows Tauri 测试目标编译与 6 项 Host 粘贴专项通过。
+
 ### R5b/R6 历史读取边界
 
 Tauri 的内嵌历史查询使用同一个 Host 持有的 `HistoryService` 和 RAM store。Core 负责首页内存条目合并、过滤、排序、分页和正文隐私投影。Tauri 负责参数、WebView 显示裁剪、原宿主 ID 与错误映射。内嵌模式按持久条目偏移，Service 模式继续执行其协议分页。历史删除、置顶、编辑和改标签统一走 Host，移除了返回类型中已无实际路径的本地删除分支。富文本快捷粘贴也直接调用 Host 适配器。

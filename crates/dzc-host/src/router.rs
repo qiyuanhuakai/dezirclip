@@ -58,7 +58,7 @@ pub struct Host {
     pub(crate) session: Arc<api::SessionHistoryStore>,
     pub(crate) grants: GrantAuthority,
     pub(crate) actions: Arc<dyn HostActions>,
-    mode: HostMode,
+    pub(crate) mode: HostMode,
     instance: String,
     events: Events,
     pub(crate) stop_requested: AtomicBool,

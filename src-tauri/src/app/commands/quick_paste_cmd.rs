@@ -17,16 +17,15 @@
 //!   pipeline so all platform paste mechanics (focus restore, keystroke
 //!   simulation, sound, post-paste bookkeeping) keep working unchanged.
 //!
-//! Pure helpers ([`compute_quick_paste_position`], [`build_paste_dispatch_plan`],
+//! Pure helpers ([`compute_quick_paste_position`],
 //! [`resolve_visibility_flag`]) carry all of the position / dispatch /
 //! visibility logic so the inline `#[cfg(test)] mod tests` can exercise them
 //! without spinning up a Tauri runtime.
 
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::Ordering;
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::app_state::SessionHistory;
 use dzc_core::api::HistoryService;
 use crate::services::clipboard_ops;
 
@@ -99,60 +98,6 @@ pub fn compute_quick_paste_position(
 /// both yield `false` so callers don't have to distinguish them.
 pub fn resolve_visibility_flag(raw: Option<bool>) -> bool {
     raw.unwrap_or(false)
-}
-
-/// Outcome of [`build_paste_dispatch_plan`]: the content pair that will be
-/// handed to `clipboard_ops::copy_to_clipboard` plus the option flags that
-/// drive paste semantics.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PasteDispatchPlan {
-    pub id: i64,
-    pub paste: bool,
-    pub delete_after_use: bool,
-    pub paste_with_format: bool,
-    pub move_to_top: Option<bool>,
-    pub paste_image_as_base64: bool,
-}
-
-/// Pure mapping from `(id, content, content_type)` to the call shape that
-/// `clipboard_ops::copy_to_clipboard` expects. Keeping this in a free function
-/// means the tests can assert the wiring without instantiating a Tauri app.
-pub fn build_paste_dispatch_plan(
-    id: i64,
-    content: &str,
-    content_type: &str,
-) -> (String, String, PasteDispatchPlan) {
-    let plan = PasteDispatchPlan {
-        id,
-        paste: true,
-        delete_after_use: false,
-        // Rich text keeps the formatted HTML; plain text/others get the
-        // raw bytes (matches `copy_to_clipboard`'s `paste_with_format`
-        // defaulting to `content_type == "rich_text"`).
-        paste_with_format: content_type == "rich_text",
-        move_to_top: None,
-        // Image content can be requested as base64 by the caller; the
-        // quick-paste path always wants the native image, never base64,
-        // so this stays `false` here.
-        paste_image_as_base64: false,
-    };
-    (content.to_string(), content_type.to_string(), plan)
-}
-
-/// Observability hook for the inline tests. Set to `true` right before
-/// `copy_to_clipboard` is dispatched, paired with the entry id we asked
-/// it to paste. Tests flip it to `false` before exercising the path.
-static PASTE_DISPATCH_INVOKED: AtomicBool = AtomicBool::new(false);
-static LAST_DISPATCHED_ID: AtomicI64 = AtomicI64::new(0);
-
-fn reset_dispatch() {
-    PASTE_DISPATCH_INVOKED.store(false, Ordering::SeqCst);
-    LAST_DISPATCHED_ID.store(0, Ordering::SeqCst);
-}
-
-fn record_dispatch(id: i64) {
-    PASTE_DISPATCH_INVOKED.store(true, Ordering::SeqCst);
-    LAST_DISPATCHED_ID.store(id, Ordering::SeqCst);
 }
 
 /// Show the quick-paste overlay near the current cursor position, hide the
@@ -456,7 +401,6 @@ pub fn is_quick_paste_surface_helper_installed(window: tauri::WebviewWindow) -> 
 pub async fn paste_quick_paste_selection(
     app: AppHandle,
     state: tauri::State<'_, HistoryService>,
-    session: tauri::State<'_, SessionHistory>,
     entry_id: i64,
     expected_host_instance_id:Option<String>,
 ) -> Result<(), String> {
@@ -468,34 +412,25 @@ pub async fn paste_quick_paste_selection(
     let bridge=app.state::<crate::app::ipc_host::DesktopHost>();
     bridge.check_instance(entry_id,expected_host_instance_id.as_deref())?;
 
-    let entry = if let Some(entry)=bridge.summary(entry_id,expected_host_instance_id.as_deref()).await? {entry.entry}
-    else if entry_id<0 {session.0.lock().map_err(|_|"PrivacyStateUnavailable")?.iter().find(|entry|entry.id==entry_id).cloned().ok_or("ClipboardRecordUnavailable")?}
-    else {
-        state.get_entry_by_id(entry_id)
-            .map_err(|error| format!("Failed to load entry {entry_id}: {error}"))?
-            .ok_or_else(|| format!("Entry not found: {entry_id}"))?
-    };
+    // Remote Host copy needs the explicit plain/rich format choice. The
+    // embedded copy already derives it from the record opened by its Host.
+    let with_format = bridge.summary(entry_id, expected_host_instance_id.as_deref()).await?
+        .map(|entry| entry.entry.content_type == "rich_text");
 
-    let (content, content_type, plan) =
-        build_paste_dispatch_plan(entry.id, &entry.content, &entry.content_type);
-
-    reset_dispatch();
-    record_dispatch(plan.id);
     // The paste pipeline hides the overlay before it returns to its caller.
     crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
 
     clipboard_ops::copy_to_clipboard_bound(
         app,
         state,
-        session,
-        content,
-        content_type,
-        plan.paste,
-        plan.id,
-        plan.delete_after_use,
-        Some(plan.paste_with_format),
-        plan.move_to_top,
-        Some(plan.paste_image_as_base64),
+        String::new(),
+        String::new(),
+        true,  // paste
+        entry_id,
+        false, // quick paste does not consume the entry
+        with_format,
+        None,
+        None,
         None,
         None,
         expected_host_instance_id,
@@ -572,66 +507,6 @@ mod tests {
         assert!(
             live.is_err(),
             "present-window branch must defer to real hide, not silently Ok"
-        );
-    }
-
-    #[test]
-    fn test_paste_selection_calls_paste_ops() {
-        reset_dispatch();
-        assert!(
-            !PASTE_DISPATCH_INVOKED.load(Ordering::SeqCst),
-            "dispatch flag must start cleared"
-        );
-        assert_eq!(LAST_DISPATCHED_ID.load(Ordering::SeqCst), 0);
-
-        record_dispatch(42);
-        assert!(
-            PASTE_DISPATCH_INVOKED.load(Ordering::SeqCst),
-            "dispatch flag must be set after record_dispatch"
-        );
-        assert_eq!(
-            LAST_DISPATCHED_ID.load(Ordering::SeqCst),
-            42,
-            "last dispatched id must match the entry we recorded"
-        );
-
-        // The dispatch plan builder must produce args the existing
-        // `copy_to_clipboard` accepts. This validates the wiring of
-        // the actual call site, not just the record step.
-        let entry_id = 7_i64;
-        let content = "hello\nworld\0\x07with-control-chars";
-        let content_type = "text";
-        let (content_out, type_out, plan) =
-            build_paste_dispatch_plan(entry_id, content, content_type);
-        assert_eq!(
-            content_out, content,
-            "content must be passed through verbatim"
-        );
-        assert_eq!(
-            type_out, "text",
-            "content_type must be passed through verbatim"
-        );
-        assert_eq!(plan.id, entry_id, "plan must carry the entry id");
-        assert!(plan.paste, "plan must request the paste action");
-        assert!(
-            !plan.delete_after_use,
-            "quick-paste must not delete after use"
-        );
-        assert_eq!(plan.move_to_top, None, "quick-paste must use the saved setting");
-        assert!(
-            !plan.paste_with_format,
-            "plain text must skip the rich-text formatting path"
-        );
-        assert!(
-            !plan.paste_image_as_base64,
-            "text content must not request the image-as-base64 path"
-        );
-
-        // Rich text flips the format flag so HTML survives the paste.
-        let (_, _, rich_plan) = build_paste_dispatch_plan(8, "<b>x</b>", "rich_text");
-        assert!(
-            rich_plan.paste_with_format,
-            "rich_text must request paste_with_format"
         );
     }
 

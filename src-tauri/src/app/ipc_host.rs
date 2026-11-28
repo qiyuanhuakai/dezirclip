@@ -241,7 +241,7 @@ async fn write_desktop_body(client: &mut Client, id: &str, bytes: &[u8]) -> Resu
     Ok(())
 }
 
-fn public_code(code:WireErrorCode)->String {match code {
+pub(crate) fn public_code(code:WireErrorCode)->String {match code {
     WireErrorCode::PrivacyStateUnavailable=>"PrivacyStateUnavailable",WireErrorCode::PrivacyEpochChanged=>"PrivacyEpochChanged",
     WireErrorCode::PrivacySessionActive=>"PrivacySessionActive",WireErrorCode::SensitiveAccessDenied=>"SensitiveAccessDenied",
     WireErrorCode::ManualPersistenceConfirmationRequired=>"ManualPersistenceConfirmationRequired",WireErrorCode::PrivacyDurationInvalid=>"PrivacyDurationInvalid",
