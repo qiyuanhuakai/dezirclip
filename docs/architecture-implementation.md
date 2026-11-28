@@ -173,3 +173,5 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **R6 Host 原生导出撤销边界**。将进程级原生文件撤销交给 Service 和 Tauri 的适配器显式实现。合成 Host 各自注入撤销行为，避免并行测试中的一次隐私切换删除另一个测试的临时附件。Linux 三轮 Host 套件均通过各 87 项，原有独立 Go 客户端用例仍按条件跳过。Linux Core 498 项和 Platform 183 项通过，Tauri 测试目标通过类型检查，Windows Host 与 Platform 测试目标通过类型检查。
 
 - **M1 Darwin 共享 Host 路由**。macOS 26 ARM64 在真实 Unix socket 上运行与 Windows、Linux 相同的 Host、Core 和帧协议。验收写入实际 SQLite 历史，读取事件及正文快照，拒绝无授权的 Desktop 角色和另一条已授权连接读取原快照，验证复制请求到达注入的剪贴板适配器，并核对撤销后的连接权限。窗口粘贴、字体枚举、快捷键等平台操作按目标开放。Swift 已单独验证签名 helper 和系统剪贴板，Swift 连接真实 Host 的签名启动链仍待验证。Linux Host 88 项通过，1 项需预构建 Go 客户端。Windows 本地 84 项通过，4 项需要独占采集所有权的用例因现有桌面进程占用而未纳入复核。 [Darwin 共享 Host 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46117245223)
+
+- **M2 Swift 历史与事件 DTO**。从同一套 Schema 生成历史页、事件、快照、复制参数和错误类型。macOS 专项对提交 `093aaa7a` 跑完 47 项适用于 Darwin 的 Host 测试，另有 1 项需要预构建 Go 客户端。Swift 的 11 项测试覆盖共享整数和长度上限、未知字段、缺失和 null 的区分。Signed helper 的剪贴板、Keychain 和部分读取取消验收也通过。Swift 会话、同连接快照组装和签名 Swift 客户端访问实际 Host 的验收仍待接入。 [Darwin 专项验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46117837911)
