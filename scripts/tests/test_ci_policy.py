@@ -1,3 +1,5 @@
+from pathlib import Path
+import re
 import unittest
 from unittest.mock import patch
 
@@ -83,6 +85,18 @@ class ModeTests(unittest.TestCase):
 
 
 class AcceptanceTests(unittest.TestCase):
+    def test_every_required_step_is_declared_in_a_workflow(self):
+        workflows = Path(__file__).resolve().parents[2] / ".github" / "workflows"
+        declared = {
+            name
+            for filename in ("ci.yml", "standalone-cli.yml", "flatpak.yml")
+            for name in re.findall(r"^      - name: (.+)$", (workflows / filename).read_text(encoding="utf-8"), re.MULTILINE)
+        }
+        for mode in ci_policy.ALL_MODES:
+            for profile in ("release", "debug"):
+                for steps in ci_policy.job_requirements(mode, mode == "full", profile).values():
+                    self.assertTrue(set(steps) <= declared, set(steps) - declared)
+
     def test_each_mode_passes_its_exact_job_set(self):
         for mode in ci_policy.ALL_MODES:
             with self.subTest(mode=mode):
@@ -116,6 +130,12 @@ class AcceptanceTests(unittest.TestCase):
         report = ci_policy.evaluate("source-acceptance", False, jobs, SHA, RUN, ATTEMPT, prefix)
         self.assertIn(("Tauri backend (linux-x86_64)", "required", "missing", False), report)
         self.assertIn(("Tauri backend (windows-x86_64)", "required", "wrong run, attempt or source", False), report)
+
+    def test_surface_crash_debug_mode_requires_the_debug_artifact(self):
+        mode = "windows-surface-crash"
+        report = ci_policy.evaluate(mode, False, finished(mode), SHA, RUN, ATTEMPT, crash_profile="debug")
+        self.assertIn(("Windows Surface comparison or crash diagnostics / Build the exact debug Desktop and retain its symbol receipt",
+                       "required", "missing", False), report)
 
     def test_development_accepts_an_unchanged_job_reused_by_github(self):
         jobs = finished("development")

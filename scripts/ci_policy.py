@@ -109,27 +109,44 @@ def requires_legacy_installer(mode, event, base):
     return subprocess.run(["git", "diff", "--quiet", base, "HEAD", "--", *LEGACY_INSTALLER_PATHS]).returncode != 0
 
 
-def job_requirements(mode, legacy_installer):
+def job_requirements(mode, legacy_installer, crash_profile="release"):
     jobs = {"Select desktop acceptance targets": ()}
     if mode in DEVELOPMENT_MODES:
-        jobs["Frontend"] = ()
+        jobs["Frontend"] = ("Check single-source local protocol generation", "Run unit tests",
+                            "Build frontend", "Verify production WebView startup")
         for runner in DEVELOPMENT_RUNNERS:
-            jobs[f"Go development ({runner})"] = ()
-            for specialization in ("core-tests", "desktop-check"):
-                jobs[f"Rust development ({runner}, {specialization})"] = ()
+            jobs[f"Go development ({runner})"] = ("Test local protocol client", "Test MyGo desktop and native surfaces")
+            core = ("Test shared core, protocol, Host, Service and CLI",)
+            if runner == "windows-latest":
+                core += ("Verify the bare CLI in a real Windows pseudoterminal",)
+            jobs[f"Rust development ({runner}, core-tests)"] = core
+            jobs[f"Rust development ({runner}, desktop-check)"] = ("Check all desktop targets without linking another application",)
     if legacy_installer:
         jobs["MyGo installer acceptance"] = ("Verify installation, installed desktop, upgrade, locked files and uninstall",)
     if mode == "full":
         jobs["Build shared native NSIS fixtures"] = ()
         for scenario in NSIS_SCENARIOS:
-            jobs[f"Native NSIS ({scenario})"] = ()
+            jobs[f"Native NSIS ({scenario})"] = ("Exercise actual installer and application",)
         for name, _, _, _ in TARGETS:
-            jobs[f"Compatible standalone CLI / Standalone ({name})"] = ()
+            steps = ("Package actual executable with dependency report", "Upload standalone archive and checksum")
+            if name == "windows-aarch64":
+                steps += ("Verify cross-built ARM64 architecture and static CRT",)
+            else:
+                steps += ("Verify extracted CLI and persistent history", "Test integrations against the isolated actual binary")
+            if name.startswith("linux-"):
+                steps += ("Run actual archive in AlmaLinux 8, Ubuntu 22.04 and Debian 12",)
+            jobs[f"Compatible standalone CLI / Standalone ({name})"] = steps
         for name in ("linux-x86_64", "linux-aarch64"):
             jobs[f"Verified Flatpak / Flatpak ({name})"] = ("Verify OCR and paste on the final Platform runtime",)
     for item in desktop_targets(mode):
         name = item["name"]
         steps = NATIVE_DESKTOP_STEPS if item["can_test"] else ("Build Tauri crate",)
+        if item["can_test"]:
+            if name.startswith("linux-"):
+                steps += ("Verify MyGo Native history and clipboard on X11",)
+            else:
+                steps += ("Verify MyGo Native paste into an independent Windows editor",
+                          "Verify real Service-mode paste target binding on disposable Windows")
         if name == "windows-x86_64" and mode in ("full", "mygo-package"):
             steps += CURRENT_MYGO_STEPS
         if mode == "linux-release-inputs":
@@ -145,15 +162,18 @@ def job_requirements(mode, legacy_installer):
         jobs["Darwin native foundations"] = ("Verify profile persistence across signed helper processes",
                                             "Verify signed Swift sessions against the local Rust Host and platform fixture")
     if mode == "historical-windows-memory":
-        jobs["Published Windows memory comparison"] = ()
+        jobs["Published Windows memory comparison"] = ("Measure original published executables",)
     if mode == "windows-service-startup":
         jobs["Diagnose Windows Service startup"] = ("Diagnose Windows Service startup crashes with local symbols",)
     if mode == "windows-performance":
         jobs["Windows Surface comparison or crash diagnostics"] = (
+            "Build the actual release Desktop with embedded frontend",
             "Verify these release bytes before the sequential ABBA comparison", "Run the complete sequential release ABBA comparison")
     if mode == "windows-surface-crash":
+        build_step = ("Build the exact debug Desktop and retain its symbol receipt" if crash_profile == "debug"
+                      else "Build the actual release Desktop with embedded frontend")
         jobs["Windows Surface comparison or crash diagnostics"] = (
-            "Run up to five success-only diagnostic cases on the selected build",)
+            build_step, "Run up to five success-only diagnostic cases on the selected build")
     return jobs
 
 
@@ -161,8 +181,8 @@ ALL_MODES = (NAMED_MODES - {"windows-crash"}) | {"windows-service-startup", "win
 KNOWN_JOBS = set().union(*(job_requirements(mode, mode in ("full", "development")) for mode in ALL_MODES))
 
 
-def evaluate(mode, legacy_installer, jobs, sha, run, attempt, prefix=""):
-    requirements = job_requirements(mode, legacy_installer)
+def evaluate(mode, legacy_installer, jobs, sha, run, attempt, prefix="", crash_profile="release"):
+    requirements = job_requirements(mode, legacy_installer, crash_profile)
     by_name = {}
     for job in jobs:
         by_name.setdefault(job["name"], []).append(job)
@@ -243,13 +263,14 @@ def summarize():
     if subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip() != source:
         raise ValueError("The checked-out source does not match the CI run")
     legacy_installer = selected["outputs"]["legacy_installer"] == "true"
+    crash_profile = selected["outputs"]["crash_profile"]
     run = int(env["GITHUB_RUN_ID"])
     prefix = "Source acceptance / " if mode == "source-acceptance" and env["GITHUB_EVENT_NAME"] != "workflow_dispatch" else ""
     # GitHub job details can lag behind the scheduler dependency status.
     attempt = int(env["GITHUB_RUN_ATTEMPT"])
     for check in range(3):
         jobs = workflow_jobs(env, exact_attempt=mode == "source-acceptance")
-        report = evaluate(mode, legacy_installer, jobs, env["CI_REPORTED_SOURCE"], run, attempt, prefix)
+        report = evaluate(mode, legacy_installer, jobs, env["CI_REPORTED_SOURCE"], run, attempt, prefix, crash_profile)
         if check == 2 or all(actual not in ("missing", "queued", "in_progress") for _, _, actual, _ in report):
             break
         time.sleep(3)
