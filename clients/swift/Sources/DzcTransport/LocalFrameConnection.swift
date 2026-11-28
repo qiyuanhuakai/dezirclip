@@ -147,6 +147,9 @@ public actor LocalFrameConnection {
             try Task.checkCancellation()
             let transferred = operation(offset)
             if transferred < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) { continue }
+            if transferred < 0 && (errno == EPIPE || errno == ECONNRESET || errno == ENOTCONN) {
+                throw LocalFrameError.disconnected
+            }
             if transferred < 0 { throw LocalFrameError.socket(errno) }
             if transferred == 0 { throw LocalFrameError.disconnected }
             offset += transferred

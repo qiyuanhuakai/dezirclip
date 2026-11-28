@@ -148,9 +148,8 @@ private func openDesktop(_ socket: Int32, expectedInstance: String = "fixture") 
     try hello(peer)
     try respond(peer, id: "previous", result: ["events": [], "state": hostState(), "resync_required": true])
     let session = try await openDesktop(socket)
-    let params = try SubscribeParams(afterSequence: 0)
-    await #expect(throws: DesktopSessionError.invalidResponse) { try await session.subscribe(params) }
-    await #expect(throws: DesktopSessionError.disconnected) { try await session.subscribe(params) }
+    await #expect(throws: DesktopSessionError.invalidResponse) { try await session.subscribe(after: session.hello.state) }
+    await #expect(throws: DesktopSessionError.disconnected) { try await session.subscribe(after: session.hello.state) }
 }
 
 @Test func privacyMutationRequiresPermissionAndLostReplyIsAmbiguous() async throws {
@@ -192,7 +191,9 @@ private func openDesktop(_ socket: Int32, expectedInstance: String = "fixture") 
         "data_base64": "e30=", "offset": 0, "next_offset": 1, "finished": true, "state": hostState(),
     ])
     let session = try await openDesktop(socket)
-    let events = try await session.subscribe(SubscribeParams(afterSequence: 0))
+    let stale = try RuntimeState(serviceInstanceId: "retired-fixture", historyRevision: 4, privacyEpoch: 2, eventSequence: 7)
+    await #expect(throws: DesktopSessionError.wrongInstance) { try await session.subscribe(after: stale) }
+    let events = try await session.subscribe(after: session.hello.state)
     #expect(events.resyncRequired)
     let page = try DesktopPageParams(limit: 20, offset: 0)
     await #expect(throws: DesktopSessionError.invalidSnapshot) { try await session.historyPage(page) }

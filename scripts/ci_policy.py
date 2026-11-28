@@ -176,7 +176,8 @@ def job_requirements(mode, legacy_installer, crash_profile="release"):
             "native-file-drag (windows-latest)": ("Verify actual Windows file transfers",),
         })
     if mode == "darwin-native":
-        jobs["Darwin native foundations"] = ("Verify profile persistence across signed helper processes",
+        jobs["Darwin native foundations"] = ("Verify deployment target of both signed Darwin executables",
+                                            "Verify profile persistence across signed helper processes",
                                             "Verify signed Swift sessions against the local Rust Host and platform fixture",
                                             "Verify the production Darwin helper with its own Keychain",
                                             "Preserve signed Darwin helper measurements")

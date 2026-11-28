@@ -19,7 +19,7 @@ func verifyProductionHost(directory: URL, version: String) async throws {
     let (host, bootstrap) = try await BundledDesktopHost.launchWithReceipt(in: directory, clientVersion: version)
     let marker = "DezirClip production helper " + UUID().uuidString
     let entryID: Int64
-    let instance: String
+    let oldState: RuntimeState
     let resources: DarwinResourceReport
     do {
         let read = try await host.openSession(requireCopy: true)
@@ -30,11 +30,11 @@ func verifyProductionHost(directory: URL, version: String) async throws {
         try require(initial.value.entries.isEmpty, "production helper added fixture history during startup")
         try require(Set(read.hello.permissions) == [.historyRead, .desktopHistory, .clipboardCopy, .privacyWrite],
                     "production helper reported unexpected permissions")
-        instance = read.hello.state.serviceInstanceId
         let receipt = try JSONDecoder().decode(ProductionReceipt.self, from: bootstrap)
         let control = try await productionControl(host, grant: receipt.grant)
         entryID = try await addProductionEntry(control, state: initial.state, text: marker)
         let page = try await read.historyPage(DesktopPageParams(limit: 20, offset: 0))
+        oldState = page.state
         try require(page.value.entries.map(\.id) == [entryID], "the manual entry did not reach production history")
         try await verifyCapture(read, privacy: privacy, control: control, page: page, originalID: entryID, originalText: marker)
         await control.invalidate()
@@ -65,26 +65,43 @@ func verifyProductionHost(directory: URL, version: String) async throws {
     let reopened = try await BundledDesktopHost.launch(in: directory, clientVersion: version)
     do {
         let session = try await reopened.openSession(requireCopy: true)
-        try require(session.hello.state.serviceInstanceId != instance, "the Host instance did not change after restart")
+        try require(session.hello.state.serviceInstanceId != oldState.serviceInstanceId, "the Host instance did not change after restart")
+        do {
+            _ = try await session.subscribe(after: oldState)
+            throw ProbeFailure("a restarted Host accepted an old event cursor")
+        } catch DesktopSessionError.wrongInstance {}
+        let clipboard = NSPasteboard.general
+        let before = clipboard.changeCount
+        do {
+            _ = try await session.copy(id: entryID, state: oldState)
+            throw ProbeFailure("a restarted Host copied an old selection")
+        } catch DesktopSessionError.wrongInstance {}
+        try require(clipboard.changeCount == before, "the rejected copy changed the pasteboard")
         let page = try await session.historyPage(DesktopPageParams(limit: 20, offset: 0))
         try require(page.value.entries.map(\.id) == [entryID], "restarted production helper did not read the persisted entry")
+        let events = try await session.subscribe(after: page.state)
+        try require(!events.resyncRequired && events.state.serviceInstanceId == page.state.serviceInstanceId,
+                    "the fresh page did not resume events from the new Host instance")
         let entry = try await session.historyEntry(DesktopEntryParams(
             id: entryID, serviceInstanceId: page.state.serviceInstanceId, expectedEpoch: page.state.privacyEpoch, reveal: false
         ))
         try require(entry.value.content == marker, "restarted production helper returned a different entry")
-        let clipboard = NSPasteboard.general
-        let before = clipboard.changeCount
         let copied = try await session.copy(id: entryID, state: entry.state)
         try require(copied.performed && clipboard.changeCount != before && clipboard.string(forType: .string) == marker,
                     "production copy did not reach the system pasteboard")
-        await session.close()
+        // Leave this authenticated stream open while the restarted helper drains.
         try await reopened.stop()
+        do {
+            _ = try await session.privacyState()
+            throw ProbeFailure("an open SDK stream survived the signed helper stopping")
+        } catch DesktopSessionError.disconnected {}
     } catch {
         try? await reopened.stop()
         throw error
     }
     try resources.write()
     print("Verified bundled production Host: empty startup, manual history, persistent Keychain and profile, new instance, system pasteboard and drain")
+    print("Verified old event cursor and copy selection rejected after restart, fresh cursor accepted, and open stream disconnected on stop")
 }
 
 private func verifySessionLimit(_ host: BundledDesktopHost) async throws {
@@ -194,7 +211,7 @@ private func verifyCapture(
     try require(external.terminationStatus == 0, "the external pasteboard writer failed")
     let captured = try await waitForCapture(expected, previous: [originalID])
     let ids = Set(captured.value.entries.map(\.id))
-    let events = try await session.subscribe(SubscribeParams(afterSequence: page.state.eventSequence, waitMs: 0))
+    let events = try await session.subscribe(after: page.state)
     try require(events.events.contains { $0.event == .entryAdded && $0.data.entryId != originalID },
                 "Darwin capture did not emit an entry event")
 

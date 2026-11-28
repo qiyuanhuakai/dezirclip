@@ -99,12 +99,15 @@ private func verifyStartedHost(_ host: BundledDesktopHost, credentials: Bootstra
     let selected = try await query.historyEntry(params)
     let expectedText = credentials.marker + "\n" + String(repeating: "x", count: 200_000)
     try require(selected.value.content == expectedText, "chunked history body differs")
-    let published = try await events.subscribe(SubscribeParams(afterSequence: 0))
+    let joined = events.hello.state
+    let replay = try RuntimeState(serviceInstanceId: joined.serviceInstanceId, historyRevision: joined.historyRevision,
+                                  privacyEpoch: joined.privacyEpoch, eventSequence: 0)
+    let published = try await events.subscribe(after: replay)
     try require(published.events.contains { $0.event == .entryAdded && $0.data.entryId == credentials.entryId },
                 "real Host did not publish its history event")
 
     let polling = Task {
-        try await events.subscribe(SubscribeParams(afterSequence: published.state.eventSequence, waitMs: 5_000))
+        try await events.subscribe(after: published.state, waitMs: 5_000)
     }
     defer { polling.cancel() }
     let clipboard = NSPasteboard.general
@@ -121,6 +124,8 @@ private func verifyStartedHost(_ host: BundledDesktopHost, credentials: Bootstra
     let resumed = try await host.openSession()
     try require(resumed.hello.state.serviceInstanceId == events.hello.state.serviceInstanceId &&
                 resumed.hello.sessionId != events.hello.sessionId, "reconnect reused the retired session")
+    let resumedEvents = try await resumed.subscribe(after: published.state)
+    try require(!resumedEvents.resyncRequired, "reconnecting to the same Host lost a retained event cursor")
 
     try await host.sendCommand(UInt8(ascii: "p"))
     let privacy = try await JSONDecoder().decode(PrivacyReceipt.self, from: host.readReceipt())

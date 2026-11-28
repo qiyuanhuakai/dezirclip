@@ -139,10 +139,14 @@ public actor DesktopSession {
         return try await snapshot(.desktopHistoryGet, params, expectedEpoch: params.expectedEpoch) { $0.id == params.id }
     }
 
-    public func subscribe(_ params: SubscribeParams) async throws -> EventsResult {
+    /// Resume from a state returned by this Host instance. After a helper
+    /// restart, read a fresh page before subscribing on the new instance.
+    public func subscribe(after state: RuntimeState, waitMs: UInt16 = 0, settingsOnly: Bool? = nil) async throws -> EventsResult {
+        guard state.serviceInstanceId == hello.state.serviceInstanceId else { throw DesktopSessionError.wrongInstance }
+        let params = try SubscribeParams(afterSequence: state.eventSequence, waitMs: waitMs, settingsOnly: settingsOnly)
         try begin()
         defer { busy = false }
-        let timeout = UInt32(params.waitMs ?? 0) + 2_000
+        let timeout = UInt32(waitMs) + 2_000
         let response: EventsResult = try await call(.eventsSubscribe, params, timeoutMilliseconds: timeout)
         guard response.state.serviceInstanceId == hello.state.serviceInstanceId,
               response.events.allSatisfy({ $0.state.serviceInstanceId == response.state.serviceInstanceId }) else {
@@ -206,6 +210,9 @@ public actor DesktopSession {
             await close()
             if method == .desktopClipboardCopy { throw DesktopSessionError.copyOutcomeUnknown }
             if method == .privacySet { throw DesktopSessionError.privacyOutcomeUnknown }
+            if let frameError = error as? LocalFrameError, frameError == .disconnected {
+                throw DesktopSessionError.disconnected
+            }
             throw error
         }
     }
