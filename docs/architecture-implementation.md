@@ -239,6 +239,12 @@ macOS 26 ARM64 第一次托管验收通过。15 项 Swift 测试和 47 项 Host 
 
 macOS 26 ARM64 首次验收用时 3 分 36 秒。临时签名测试包通过 15 项 Swift 与 47 项 Host 测试，并验证了拒绝包外启动、链接目录和其他同用户进程。用同一启动器读取真实 SQLite、订阅事件、操作系统剪贴板并检查撤销、半帧关闭和重复停止。生产 helper 的入口、macOS 13 实跑和 Developer ID 签名后的 Keychain ACL 仍需验收。 [Darwin 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46143713914)
 
+### M1 Darwin 正式 helper
+
+`dzc-darwin-host` 成为独立 Cargo 目标。helper 检查启动管道、同一应用包的父进程及其运行签名，使用用户默认 Keychain 和独占 profile。Desktop grant 通过继承管道交接，绑定 helper 生命周期，无服务管理或自动粘贴授权。夹具和正式 helper 复用 Rust 监听与排空循环。macOS 对端在凭据读取前断开时，只拒绝该连接，继续监听。
+
+首轮构建通过，原签名夹具通过，正式 helper 拒绝合法父进程。修正签名查询参数后，复验暴露了预检短连接先关闭时 Darwin 返回的 `ENOTCONN`，共享监听器因此退出。修复后增加连续短连接回归，并将正式 helper 独立列为 Darwin CI 必需步骤。Linux Host 88 项和 IPC 6 项通过。提交 `8b43ab91` 的 macOS 26 ARM64 正式 helper 步骤通过，覆盖包外启动拒绝、空库、手工写入、用同一临时默认 Keychain 重启读回、实例更换、系统剪贴板和排空。签名使用 CI 的临时签名，macOS 13 运行和 Developer ID 升级后的 Keychain 访问仍待独立验收。 [正式 helper 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46146266505/job/140982942612)
+
 ### R8 维护量中间复算
 
 按规范原基线 `1f1641a0` 与 `d2291d7b` 的 Git blob 统计。使用 `git ls-tree -r -z` 取得两次提交的常规文件，按对象 ID 批量读取，计入末尾没有换行的最后一行。范围沿用原统计的 Rust、Go、Python、JSON、TS、TSX、MJS、JS，加上当前提交中的 Swift。基线复算与规范原表的八种后缀计数一致。
