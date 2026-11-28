@@ -1,8 +1,7 @@
 // Clipboard operations module
 use crate::app_state::{SessionHistory, SettingsState};
-use crate::database::DbState;
+use dzc_core::api::HistoryService;
 use crate::error::{AppError, AppResult};
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
 use crate::infrastructure::surface_focus::Target;
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
@@ -115,7 +114,7 @@ pub fn copy_image_bytes_to_system_clipboard(bytes: Vec<u8>) -> AppResult<()> {
 #[tauri::command]
 pub async fn copy_to_clipboard(
     app_handle: tauri::AppHandle,
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     session: State<'_, SessionHistory>,
     content: String,
     content_type: String,
@@ -139,7 +138,7 @@ pub async fn copy_to_clipboard(
 
 pub(crate) async fn copy_to_clipboard_bound(
     app_handle: tauri::AppHandle,
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     session: State<'_, SessionHistory>,
     mut content: String,
     mut content_type: String,
@@ -170,7 +169,7 @@ pub(crate) async fn copy_to_clipboard_bound(
             upload.finish_copy(body,paste).await.map_err(AppError::Validation)?;
             return Ok(());
         }
-        let epoch=expected_privacy_epoch.unwrap_or(state.history_service().runtime_snapshot(Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.privacy_epoch);
+        let epoch=expected_privacy_epoch.unwrap_or(state.runtime_snapshot(Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.privacy_epoch);
         if paste {check_paste_target(paste_target.as_deref())?;}
         let result=bridge.copy_with_windows_target(dzc_host::wire::DesktopCopyParams {
             id:source_id,service_instance_id:bridge.instance().map_err(AppError::Validation)?,expected_epoch:epoch,reveal:expected_privacy_epoch.is_some(),paste,
@@ -181,7 +180,7 @@ pub(crate) async fn copy_to_clipboard_bound(
         return Ok(());
     }
     let operation_permission=if let Some(epoch)=expected_privacy_epoch {
-        Some(state.history_service().privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::GeneratedCopy,dzc_core::api::SensitiveAccess::Denied,Some(epoch),chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?)
+        Some(state.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::GeneratedCopy,dzc_core::api::SensitiveAccess::Denied,Some(epoch),chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?)
     } else {None};
     let generated_ticket = if paste_image_as_base64.unwrap_or(false) || derived_from_id.is_some() {
         crate::services::clipboard::generated_capture_ticket(&app_handle).await?
@@ -197,7 +196,7 @@ pub(crate) async fn copy_to_clipboard_bound(
 
     let mut html_content: Option<String> = None;
 
-    let history=state.history_service();
+    let history=state.inner();
     let mut read_permit=None;
     let mut private_payload=None;
     if id != 0 {
@@ -503,7 +502,7 @@ fn write_native_wayland_content(content: &str, options: &ClipboardWriteOptions<'
         "image" => {
             const LIMIT: usize = 64 * 1024 * 1024;
             let bytes = if content.starts_with('/') || content.starts_with("file://") || content.contains(":\\") {
-                let path = crate::infrastructure::attachments::path_from_uri(content).map_err(AppError::Internal)?;
+                let path = dzc_core::filesystem::path_from_uri(content).map_err(AppError::Internal)?;
                 dzc_platform::local_file::read_bounded_regular(std::path::Path::new(&path), LIMIT).map_err(AppError::from)?
             } else {
                 let encoded = content.split_once(',').filter(|_| content.starts_with("data:image/")).map(|(_, data)| data).unwrap_or(content);
@@ -903,7 +902,7 @@ fn copy_text_with_retry(content: &str) -> AppResult<()> {
 
 async fn perform_paste_action(
     app_handle: &tauri::AppHandle,
-    state: &State<'_, DbState>,
+    state: &State<'_, HistoryService>,
     id: i64,
     delete_after_use: bool,
     content: Option<&str>,
@@ -929,8 +928,8 @@ async fn wait_for_focus_settle() {
     tokio::time::sleep(std::time::Duration::from_millis(40)).await;
 }
 
-fn resolve_paste_method(state: &State<'_, DbState>) -> String {
-    state.history_service().queue_preferences()
+fn resolve_paste_method(state: &State<'_, HistoryService>) -> String {
+    state.queue_preferences()
         .map(|(_, _, method)| method).unwrap_or_else(|_| "shift_insert".into())
 }
 
@@ -1008,7 +1007,7 @@ fn split_local_paths(content: &str) -> Vec<String> {
 
 fn handle_post_paste_actions(
     app_handle: &tauri::AppHandle,
-    state: &State<'_, DbState>,
+    state: &State<'_, HistoryService>,
     id: i64,
     delete_after_use: bool,
     move_to_top: Option<bool>,
@@ -1018,10 +1017,10 @@ fn handle_post_paste_actions(
         let app_data = app_handle.state::<crate::app_state::AppDataDir>();
         let data_dir = app_data.0.lock().unwrap();
 
-        if state.repo.delete(id, Some(&data_dir)).is_ok() {
+        if state.delete(id, Some(&data_dir)).is_ok() {
             let _ = app_handle.emit("clipboard-removed", id);
         }
-    } else if id > 0 && state.history_service().record_paste_use(id, Utc::now().timestamp_millis(), move_to_top).is_ok() {
+    } else if id > 0 && state.record_paste_use(id, Utc::now().timestamp_millis(), move_to_top).is_ok() {
         let _ = app_handle.emit("clipboard-updated", serde_json::json!({"id": id}));
     }
 
@@ -1029,7 +1028,7 @@ fn handle_post_paste_actions(
 }
 
 pub(crate) fn play_paste_sound_if_enabled(app_handle: &tauri::AppHandle) {
-    dzc_platform::sound::play(&app_handle.state::<DbState>().history_service(), dzc_platform::sound::Cue::Paste);
+    dzc_platform::sound::play(&app_handle.state::<HistoryService>(), dzc_platform::sound::Cue::Paste);
 }
 
 #[tauri::command]
@@ -1047,7 +1046,7 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
 
         let history = crate::app::commands::history_cmd::get_clipboard_history(
             app_handle_clone.clone(),
-            app_handle_clone.state::<DbState>(),
+            app_handle_clone.state::<HistoryService>(),
             app_handle_clone.state::<SessionHistory>(),
             1,
             0, // offset
@@ -1059,7 +1058,7 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
             if let Some(item) = items.first() {
                 let _ = copy_to_clipboard_bound(
                     app_handle_clone.clone(),
-                    app_handle_clone.state::<DbState>(),
+                    app_handle_clone.state::<HistoryService>(),
                     app_handle_clone.state::<SessionHistory>(),
                     item.content.clone(),
                     item.content_type.clone(),

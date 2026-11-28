@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use tauri::State;
 
 use crate::app_state::SearchHistory;
-use crate::database::DbState;
+use dzc_core::api::HistoryService;
 use crate::domain::models::ClipboardEntry;
 #[cfg(test)]
 use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
@@ -22,7 +22,7 @@ fn normalize_limit(limit: u32) -> u32 {
 
 #[tauri::command]
 pub async fn search_fts(
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     history: State<'_, SearchHistory>,
     query: String,
     limit: u32,
@@ -34,14 +34,14 @@ pub async fn search_fts(
         return Ok(Vec::new());
     }
     state
-        .history_service()
+
         .search_fts(trimmed, limit)
         .map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn search_fuzzy(
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     history: State<'_, SearchHistory>,
     query: String,
     threshold: u8,
@@ -53,14 +53,14 @@ pub async fn search_fuzzy(
     }
     let limit = normalize_limit(limit);
     state
-        .history_service()
+
         .search_fuzzy(&query, threshold, limit)
         .map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn search_regex(
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     history: State<'_, SearchHistory>,
     pattern: String,
     limit: u32,
@@ -69,7 +69,7 @@ pub async fn search_regex(
         return Ok(Vec::new());
     }
     let result = state
-        .history_service()
+
         .search_regex(&pattern, normalize_limit(limit));
     if !matches!(&result, Err(error) if error.code==dzc_core::api::CoreErrorCode::Validation) {
         history.push(pattern);

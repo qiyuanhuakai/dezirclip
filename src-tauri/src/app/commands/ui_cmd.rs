@@ -1,10 +1,9 @@
 use crate::app::webview_memory;
 use crate::app_state::SettingsState;
-use crate::database::DbState;
+use dzc_core::api::HistoryService;
 #[cfg(target_os = "windows")]
 use crate::error::AppError;
 use crate::error::AppResult;
-use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use serde::Serialize;
 #[cfg(target_os = "linux")]
 use std::process::Command;
@@ -135,7 +134,7 @@ pub fn set_theme(
     app: AppHandle,
     window: WebviewWindow,
     state: State<'_, SettingsState>,
-    db_state: State<'_, DbState>,
+    db_state: State<'_, HistoryService>,
     theme: String,
     color_mode: Option<String>,
     show_app_border: Option<bool>,
@@ -148,15 +147,13 @@ pub fn set_theme(
         .unwrap_or(true)
     {
         effective_color_mode = db_state
-            .settings_repo
-            .get("app.color_mode")
+.desktop_setting("app.color_mode")
             .unwrap_or(Some("system".to_string()));
     }
     let mut effective_show_app_border = show_app_border;
     if effective_show_app_border.is_none() {
         effective_show_app_border = db_state
-            .settings_repo
-            .get("app.show_app_border")
+.desktop_setting("app.show_app_border")
             .unwrap_or(Some("true".to_string()))
             .map(|v| v != "false");
     }

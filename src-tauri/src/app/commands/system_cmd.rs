@@ -1,5 +1,5 @@
 use crate::app_state::AppDataDir;
-use crate::database::DbState;
+use dzc_core::api::HistoryService;
 use crate::error::{AppError, AppResult};
 use tauri::{AppHandle, Manager, State};
 
@@ -273,7 +273,7 @@ pub async fn set_data_path(app_handle: AppHandle, move_state: State<'_, ProfileM
         return Ok(None);
     }
     let executable = std::env::current_exe().map_err(AppError::from)?;
-    if cfg!(feature = "portable") || crate::infrastructure::data_paths::portable_data_dir(executable.parent()).is_some() {
+    if cfg!(feature = "portable") || dzc_core::api::portable_desktop_data_dir(executable.parent()).is_some() {
         return Err(AppError::Validation("Portable storage uses the data folder beside the executable; move the complete portable directory instead".into()));
     }
     let host = app_handle.state::<DesktopHost>();
@@ -286,8 +286,7 @@ pub async fn set_data_path(app_handle: AppHandle, move_state: State<'_, ProfileM
         }
         let redirect = app_handle.path().app_data_dir().map_err(AppError::from)?.join("datapath.txt");
         let destination = new_data_path.clone();
-        let db = app_handle.state::<DbState>();
-        let history = db.history_service();
+        let history = app_handle.state::<HistoryService>().inner().clone();
         tauri::async_runtime::spawn_blocking(move || {
             history.migrate_profile_at_epoch(&old_path_buf, &destination, &redirect, expected_epoch)
         }).await.map_err(|error| AppError::Internal(error.to_string()))?.map_err(AppError::from)?;

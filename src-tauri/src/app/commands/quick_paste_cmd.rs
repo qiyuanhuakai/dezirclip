@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::app_state::SessionHistory;
-use crate::database::DbState;
+use dzc_core::api::HistoryService;
 use crate::services::clipboard_ops;
 
 /// Window label, matches `tauri.conf.json` (Task 22) and the main label used
@@ -455,7 +455,7 @@ pub fn is_quick_paste_surface_helper_installed(window: tauri::WebviewWindow) -> 
 #[tauri::command]
 pub async fn paste_quick_paste_selection(
     app: AppHandle,
-    state: tauri::State<'_, DbState>,
+    state: tauri::State<'_, HistoryService>,
     session: tauri::State<'_, SessionHistory>,
     entry_id: i64,
     expected_host_instance_id:Option<String>,
@@ -471,7 +471,7 @@ pub async fn paste_quick_paste_selection(
     let entry = if let Some(entry)=bridge.summary(entry_id,expected_host_instance_id.as_deref()).await? {entry.entry}
     else if entry_id<0 {session.0.lock().map_err(|_|"PrivacyStateUnavailable")?.iter().find(|entry|entry.id==entry_id).cloned().ok_or("ClipboardRecordUnavailable")?}
     else {
-        state.history_service().get_entry_by_id(entry_id)
+        state.get_entry_by_id(entry_id)
             .map_err(|error| format!("Failed to load entry {entry_id}: {error}"))?
             .ok_or_else(|| format!("Entry not found: {entry_id}"))?
     };

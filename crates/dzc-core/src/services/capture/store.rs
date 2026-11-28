@@ -1,6 +1,4 @@
 use super::{CaptureFailure, CaptureStage, CaptureSource};
-#[cfg(any(feature = "legacy-bridge", test))]
-use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
 use crate::infrastructure::attachments::{plan_html_attachments, HtmlAttachmentPlan};
 use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
@@ -116,13 +114,6 @@ fn failure(stage: CaptureStage, error: impl ToString) -> CaptureFailure {
     CaptureFailure { stage, code }
 }
 
-#[cfg(any(feature = "legacy-bridge", test))]
-impl DbState {
-    /// Transitional embedded adapter; the capture contract itself exposes no connection.
-    pub fn capture_store<'a>(&'a self, directory: &'a Path) -> impl CaptureStore + 'a {
-        self.repo.capture_store(directory)
-    }
-}
 
 pub(crate) fn sqlite_capture_store<'a>(
     repository: &'a SqliteClipboardRepository,
@@ -304,25 +295,30 @@ impl CaptureStore for SqliteCaptureStore<'_> {
 mod tests {
     use super::*;
     use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
-    #[cfg(feature = "legacy-bridge")]
-    use crate::infrastructure::repository::{settings_repo::SqliteSettingsRepository, tag_repo::SqliteTagRepository};
     use crate::services::capture::*;
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};
 
-    fn database() -> (std::path::PathBuf, DbState) {
+    struct CaptureDatabase {
+        conn: Arc<Mutex<rusqlite::Connection>>,
+        repo: SqliteClipboardRepository,
+    }
+
+    impl CaptureDatabase {
+        fn capture_store<'a>(&'a self, directory: &'a Path) -> impl CaptureStore + 'a {
+            self.repo.capture_store(directory)
+        }
+    }
+
+    fn database() -> (std::path::PathBuf, CaptureDatabase) {
         let directory =
             std::env::temp_dir().join(format!("dezirclip-capture-engine-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
         let connection = Arc::new(Mutex::new(
             crate::database::init_db(directory.join("clipboard.db").to_str().unwrap()).unwrap(),
         ));
-        let state = DbState {
+        let state = CaptureDatabase {
             repo: SqliteClipboardRepository::new(connection.clone()),
-            #[cfg(feature = "legacy-bridge")]
-            settings_repo: SqliteSettingsRepository::new(connection.clone()),
-            #[cfg(feature = "legacy-bridge")]
-            tag_repo: SqliteTagRepository::new(connection.clone()),
             conn: connection,
         };
         (directory, state)

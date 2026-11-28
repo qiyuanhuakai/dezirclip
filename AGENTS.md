@@ -64,7 +64,7 @@ Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows v
 - Platform may use controlled public Core APIs, ports and providers, but not repository types, history connections or SQL.
 - Host depends on Core/Platform/Protocol and owns authenticated sessions, capture coordination and event contracts.
 - Tauri keeps window lifecycle and native UI coordination. Transitional `legacy-bridge` callers migrate by capability; remove the bridge only after constructors and consumers are migrated.
-- Reuse `DbState.history_service()` during that transition. It shares repositories/cache; constructing a fresh facade per command from the connection does not.
+- Tauri manages the `HistoryService` opened once with the desktop initialization policy. Desktop commands and Embedded Host share its repositories and caches.
 - Do not replace the GUI initializer with `HistoryService::open` without preserving the existing PRAGMA, migrations, seed and shared session policy.
 - `global_state.rs` contains cross-thread lifecycle atomics. Do not replace hot-path CAS coordination with a global Mutex.
 

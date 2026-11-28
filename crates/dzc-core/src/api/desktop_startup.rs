@@ -54,21 +54,23 @@ impl HistoryService {
 
 #[cfg(test)]
 mod tests {
-    use crate::database::DbState;
-    use crate::infrastructure::repository::settings_repo::SettingsRepository;
+    use super::*;
 
     #[test]
     fn desktop_startup_keeps_gui_initialization_and_saved_preferences() {
         let path =
             std::env::temp_dir().join(format!("dezirclip-startup-{}.db", uuid::Uuid::new_v4()));
         {
-            let database = DbState::open_desktop(&path).unwrap();
-            let history = database.history_service();
+            let history = HistoryService::open_desktop(&path).unwrap();
             let initial = history.desktop_startup_preferences();
             assert_eq!(initial.theme, crate::domain::theme::DEFAULT_BUILTIN_THEME);
             assert!(!initial.persistent);
             assert_eq!(initial.window_size, None);
-            let table = database.conn.lock().unwrap();
+            let shared = history.clone();
+            history.set_desktop_setting("app.font_main", "Example Font").unwrap();
+            assert_eq!(shared.desktop_settings_snapshot().unwrap()["app.font_main"], "Example Font");
+            assert_eq!(shared.desktop_setting("missing").unwrap(), None);
+            let table = crate::database::init_db(path.to_str().unwrap()).unwrap();
             assert_eq!(
                 table
                     .pragma_query_value(None, "journal_mode", |row| row.get::<_, String>(0))
@@ -97,9 +99,8 @@ mod tests {
             assert!(!history.reset_unelevated_game_mode(|| true));
             assert!(history.reset_unelevated_game_mode(|| false));
             assert_eq!(
-                database
-                    .settings_repo
-                    .get("app.paste_method")
+                history
+                    .desktop_setting("app.paste_method")
                     .unwrap()
                     .as_deref(),
                 Some("shift_insert")

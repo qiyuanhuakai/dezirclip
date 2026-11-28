@@ -3,6 +3,10 @@ use super::settings_repo::{SettingsRepository, SqliteSettingsRepository};
 use crate::api::{CoreError, CoreResult, DesktopStartupPreferences};
 
 impl SqliteClipboardRepository {
+    pub(crate) fn desktop_settings_repository(&self) -> SqliteSettingsRepository {
+        SqliteSettingsRepository::new(self.conn.clone())
+    }
+
     /// Read preferences from one connection while preserving the desktop's
     /// existing fallback for missing, malformed or unreadable settings.
     pub(crate) fn desktop_startup_preferences(&self) -> DesktopStartupPreferences {
@@ -77,7 +81,7 @@ impl SqliteClipboardRepository {
     }
 
     pub(crate) fn reset_unelevated_game_mode(&self, is_elevated: impl FnOnce() -> bool) -> bool {
-        let settings = SqliteSettingsRepository::new(self.conn.clone());
+        let settings = self.desktop_settings_repository();
         if settings.get("app.paste_method").ok().flatten().as_deref() == Some("game_mode")
             && !is_elevated()
         {

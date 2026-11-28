@@ -58,8 +58,8 @@ pub fn start_automatic_checks(app: AppHandle) {
                 _ = tokio::time::sleep(delay) => {}
             }
             delay = AUTOMATIC_POLL_INTERVAL;
-            let database = app.state::<crate::database::DbState>();
-            let Ok(Some(preference)) = database.history_service().automatic_update_preference() else {
+            let database = app.state::<dzc_core::api::HistoryService>();
+            let Ok(Some(preference)) = database.automatic_update_preference() else {
                 continue;
             };
             let channel = UpdateChannel::from_preference(preference.saved_channel.as_deref(), &app.package_info().version);
@@ -102,8 +102,7 @@ async fn run_check(app: &AppHandle, state: &UpdaterState, channel: UpdateChannel
     -> Result<Option<CompletedCheck>, String>
 {
     let mut pending = state.pending.try_lock().map_err(|_| "update_busy")?;
-    let database = app.state::<crate::database::DbState>();
-    let history = database.history_service();
+    let history = app.state::<dzc_core::api::HistoryService>();
     let receipt_channel = match channel {
         UpdateChannel::Stable => UpdateAttemptChannel::Stable,
         UpdateChannel::Preview => UpdateAttemptChannel::Preview,

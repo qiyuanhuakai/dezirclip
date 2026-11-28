@@ -1,11 +1,12 @@
-use crate::{app::ipc_host::DesktopHost, database::DbState, error::AppError};
+use crate::{app::ipc_host::DesktopHost, error::AppError};
+use dzc_core::api::HistoryService;
 use dzc_host::wire::{Method, OperationResult, RuntimeState};
 use tauri::State;
 
 #[tauri::command]
 pub async fn open_content(
     host: State<'_, DesktopHost>,
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     id: i64,
     content: String,
     content_type: String,
@@ -15,7 +16,7 @@ pub async fn open_content(
     host.check_instance(id, expected_host_instance_id.as_deref()).map_err(AppError::Validation)?;
     if id < 0 { return Err(AppError::Validation("SessionExternalOpenUnavailable".into())); }
     if id == 0 {
-        let history = state.history_service();
+        let history = state.inner().clone();
         return tokio::task::spawn_blocking(move || {
             dzc_host::external::open_generated(&history, &content, &content_type, expected_privacy_epoch)
                 .map_err(|code| AppError::Validation(format!("{code:?}")))

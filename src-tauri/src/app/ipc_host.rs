@@ -1,6 +1,6 @@
 //! The default desktop uses the shared Host in process. Only an explicitly
 //! started service changes history hydration into local IPC.
-use crate::{app_state::{AppDataDir, SessionHistory}, database::DbState};
+use crate::app_state::{AppDataDir, SessionHistory};
 use dzc_core::{api::{ClipboardEntry, HistoryService}, ports::{ClipboardWriter, PasteController}};
 use dzc_host::{wire::*, CaptureManager, Client, ControlFile, Host, HostActions, HostOptions};
 use serde::{Serialize, de::DeserializeOwned};
@@ -323,7 +323,7 @@ impl DesktopHost {
     pub fn start(app:&AppHandle) {
         app.manage(crate::app::surface_supervisor::SurfaceSupervisor::default());
         let directory=app.state::<AppDataDir>().0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
-        let bridge=Self(Arc::new(Inner {mode:Mutex::new(Mode::Starting),history:app.state::<DbState>().history_service(),database:directory.join("clipboard.db"),directory,
+        let bridge=Self(Arc::new(Inner {mode:Mutex::new(Mode::Starting),history:app.state::<HistoryService>().inner().clone(),database:directory.join("clipboard.db"),directory,
             session:app.state::<SessionHistory>().0.clone(),closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None),profile_move:Default::default()}));
         app.manage(bridge.clone());
         tauri::async_runtime::spawn(async move {if bridge.initialize().await.is_err() {bridge.set_mode(Mode::Unavailable);emit("clipboard-host-unavailable",());}});

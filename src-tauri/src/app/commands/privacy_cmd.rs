@@ -1,6 +1,6 @@
 //! Trusted desktop requests use the same persistent state and opaque permissions as the Host.
 use crate::app_state::SessionHistory;
-use crate::database::DbState;
+use dzc_core::api::HistoryService;
 use dzc_core::api::{PrivacyAccessIntent, RuntimeSnapshot, SensitiveAccess};
 use crate::app::ipc_host::{DesktopHost,HostedEntry};
 use dzc_host::wire::{Method,PrivacyState,PrivacySetParams,PrivacyHotkey};
@@ -65,7 +65,7 @@ pub async fn get_privacy_entry(
         return Ok(entry);
     }
     if id<0 {bridge.check_instance(id,expected_host_instance_id.as_deref())?;}
-    let history = app.state::<DbState>().history_service();
+    let history = app.state::<HistoryService>();
     let permit = history
         .privacy()
         .authorize_read(
@@ -115,7 +115,7 @@ pub async fn get_history_resource_preview(
     let maximum = max_dimension.unwrap_or(384).clamp(64, 1024);
     if let Some(entry)=bridge.entry(id,expected_epoch,false,Some(maximum),expected_host_instance_id.as_deref(),include_video_frame).await? {return Ok(entry);}
     if id<0 {bridge.check_instance(id,expected_host_instance_id.as_deref())?;}
-    let history = app.state::<DbState>().history_service();
+    let history = app.state::<HistoryService>();
     let permit = history
         .privacy()
         .authorize_read(

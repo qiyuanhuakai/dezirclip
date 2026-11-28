@@ -1,5 +1,5 @@
 use crate::app_state::{AppDataDir, SessionHistory};
-use crate::database::DbState;
+use dzc_core::api::HistoryService;
 use crate::domain::models::ClipboardEntry;
 use crate::error::{AppError, AppResult};
 use crate::services::clipboard::truncate_html_for_preview;
@@ -110,7 +110,7 @@ fn captured_entry_summary(
 #[tauri::command]
 pub async fn get_captured_entry_summary(
     app:AppHandle,
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     session: State<'_, SessionHistory>,
     id: i64,
     expected_host_instance_id:Option<String>,
@@ -118,13 +118,13 @@ pub async fn get_captured_entry_summary(
     let bridge=app.state::<DesktopHost>();
     if let Some(entry)=bridge.summary(id,expected_host_instance_id.as_deref()).await.map_err(AppError::Validation)? {return Ok(entry);}
     bridge.check_instance(id,expected_host_instance_id.as_deref()).map_err(AppError::Validation)?;
-    bridge.hosted(captured_entry_summary(&state.history_service(), &session, id)?).map_err(AppError::Validation)
+    bridge.hosted(captured_entry_summary(&state, &session, id)?).map_err(AppError::Validation)
 }
 
 #[tauri::command]
 pub async fn get_clipboard_history(
     app:AppHandle,
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     session: State<'_, SessionHistory>,
     limit: i32,
     offset: i32,
@@ -135,7 +135,7 @@ pub async fn get_clipboard_history(
     if let Some(entries)=bridge.page(limit,offset,content_type.clone(),None).await.map_err(AppError::Validation)? {return Ok(entries);}
     // 1. Get history from repository
     let mut history = state
-        .history_service()
+
         .get_history(limit, offset, content_type.as_deref())?;
 
     // 2. Add session history items (non-persisted) ONLY on the first page
@@ -169,7 +169,7 @@ pub async fn get_clipboard_history(
         history.truncate(limit as usize);
     }
 
-    state.history_service().entries_for_gui_list(&mut history,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+    state.entries_for_gui_list(&mut history,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     normalize_entries_for_ui(&mut history);
 
     history.into_iter().map(|entry|bridge.hosted(entry).map_err(AppError::Validation)).collect()
@@ -178,7 +178,7 @@ pub async fn get_clipboard_history(
 #[tauri::command]
 pub async fn search_clipboard_history(
     app:AppHandle,
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     session: State<'_, SessionHistory>,
     search_term: String,
     limit: i32,
@@ -186,7 +186,7 @@ pub async fn search_clipboard_history(
     let limit = normalize_limit(limit);
     let bridge=app.state::<DesktopHost>();
     if let Some(entries)=bridge.page(limit,0,None,Some(search_term.clone())).await.map_err(AppError::Validation)? {return Ok(entries);}
-    search_embedded_history(&state.history_service(),&session,&bridge,&search_term,limit)
+    search_embedded_history(&state,&session,&bridge,&search_term,limit)
 }
 
 fn search_embedded_history(repository:&dzc_core::api::HistoryService,session:&SessionHistory,bridge:&DesktopHost,search_term:&str,limit:i32)->AppResult<Vec<HostedEntry>> {
@@ -221,7 +221,7 @@ fn search_embedded_history(repository:&dzc_core::api::HistoryService,session:&Se
 #[tauri::command]
 pub async fn delete_clipboard_entry(
     app:AppHandle,
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     session: State<'_, SessionHistory>,
     app_data: State<'_, AppDataDir>,
     id: i64,
@@ -237,7 +237,7 @@ pub async fn delete_clipboard_entry(
 
     if id > 0 {
         let data_dir = app_data.0.lock().unwrap();
-        state.history_service().delete(id, Some(&data_dir))?;
+        state.delete(id, Some(&data_dir))?;
     }
     crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
     Ok(())
@@ -253,15 +253,15 @@ pub async fn clear_clipboard_history(app: AppHandle) -> AppResult<()> {
 
 #[tauri::command]
 pub async fn get_tag_items(
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     tag: String,
 ) -> AppResult<Vec<ClipboardEntry>> {
     let mut history = state
-        .history_service()
+
         .get_entries_by_tag(&tag)
         .map_err(AppError::from)?;
 
-    state.history_service().entries_for_gui(&mut history,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+    state.entries_for_gui(&mut history,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     for item in &mut history {
         if is_text_like_content_type(&item.content_type) {
             item.content =
@@ -290,14 +290,14 @@ pub async fn get_tag_items_page(
 }
 
 #[tauri::command]
-pub async fn get_tag_item_detail(app:AppHandle,state: State<'_, DbState>, id: i64) -> AppResult<HostedEntry> {
+pub async fn get_tag_item_detail(app:AppHandle,state: State<'_, HistoryService>, id: i64) -> AppResult<HostedEntry> {
     let bridge=app.state::<DesktopHost>().inner().clone();
     let instance=bridge.instance().map_err(AppError::Validation)?;
-    let repository = state.history_service();
+    let history = state.inner().clone();
     let entry=tauri::async_runtime::spawn_blocking(move || {
-        let entry=repository.get_entry_by_id(id)?;
+        let entry=history.get_entry_by_id(id)?;
         let mut entries=entry.into_iter().collect();
-        repository.entries_for_gui(&mut entries,true,chrono::Utc::now().timestamp_millis()).map_err(|error|dzc_core::api::CoreError::from(error.to_string()))?;
+        history.entries_for_gui(&mut entries,true,chrono::Utc::now().timestamp_millis()).map_err(|error|dzc_core::api::CoreError::from(error.to_string()))?;
         Ok::<_,dzc_core::api::CoreError>(entries.pop())
     })
         .await
@@ -385,16 +385,16 @@ pub async fn create_new_tag(app: AppHandle, tag_name: String) -> AppResult<()> {
 #[tauri::command]
 pub async fn get_clipboard_content(
     app:AppHandle,
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     session: State<'_, SessionHistory>,
     id: i64,
     expected_host_instance_id:Option<String>,
 ) -> AppResult<String> {
     let bridge=app.state::<DesktopHost>();
-    let epoch=state.history_service().runtime_snapshot(chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.privacy_epoch;
+    let epoch=state.runtime_snapshot(chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.privacy_epoch;
     if let Some(entry)=bridge.entry(id,epoch,false,None,expected_host_instance_id.as_deref(),None).await.map_err(AppError::Validation)? {return Ok(entry.entry.content);}
     bridge.check_instance(id,expected_host_instance_id.as_deref()).map_err(AppError::Validation)?;
-    let history=state.history_service();
+    let history=state;
     let permit=history.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::InteractiveRead,dzc_core::api::SensitiveAccess::Denied,None,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     let entry=if id<0 {
         let entry=session.0.lock().map_err(|_|AppError::Internal("PrivacyStateUnavailable".into()))?.iter().find(|entry|entry.id==id).cloned().ok_or_else(||AppError::Validation("ClipboardRecordUnavailable".into()))?;

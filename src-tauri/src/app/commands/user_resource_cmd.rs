@@ -1,5 +1,5 @@
 use crate::app_state::AppDataDir;
-use crate::database::DbState;
+use dzc_core::api::HistoryService;
 use crate::infrastructure::user_resource;
 use std::path::Path;
 use tauri::{AppHandle, Manager};
@@ -12,7 +12,7 @@ fn require_selected_background(configured: &str, expected_path: &str) -> Result<
 
 #[tauri::command]
 pub async fn get_custom_background_resource(app: AppHandle, expected_path: String) -> Result<String, String> {
-    let history = app.state::<DbState>().history_service();
+    let history = app.state::<HistoryService>();
     let configured = history.selected_background().map_err(|_| "UserResourceUnavailable")?;
     require_selected_background(&configured, &expected_path)?;
     let path = expected_path.clone();

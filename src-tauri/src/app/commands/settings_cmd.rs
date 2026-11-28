@@ -1,8 +1,7 @@
 use crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings;
 use crate::app_state::SettingsState;
-use crate::database::DbState;
+use dzc_core::api::HistoryService;
 use crate::error::{AppError, AppResult};
-use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -26,11 +25,14 @@ async fn persist_queue_setting(app: &AppHandle, key: &str, value: String) -> App
     Ok(())
 }
 
-fn save_bool_setting(db_state: &DbState, key: &str, enabled: bool) -> AppResult<()> {
+fn setting_error(error: dzc_core::api::CoreError) -> AppError {
+    AppError::Database(error.to_string())
+}
+
+fn save_bool_setting(db_state: &HistoryService, key: &str, enabled: bool) -> AppResult<()> {
     db_state
-        .settings_repo
-        .set(key, &enabled.to_string())
-        .map_err(AppError::from)
+.set_desktop_setting(key, &enabled.to_string())
+        .map_err(setting_error)
 }
 
 fn apply_setting_state_update(
@@ -170,15 +172,6 @@ fn apply_setting_state_update(
     }
 }
 
-fn persist_setting_with_legacy(db_state: &DbState, key: &str, value: &str) -> AppResult<()> {
-    db_state
-        .settings_repo
-        .set(key, value)
-        .map_err(AppError::from)?;
-
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn set_sequential_mode(app: AppHandle, state: State<'_, SettingsState>, enabled: bool) -> AppResult<()> {
     persist_queue_setting(&app, "app.sequential_mode", enabled.to_string()).await?;
@@ -196,11 +189,10 @@ pub fn set_sequential_hotkey(
         *guard = hotkey.clone();
     }
 
-    let db_state = app_handle.state::<DbState>();
+    let db_state = app_handle.state::<HistoryService>();
     db_state
-        .settings_repo
-        .set("app.sequential_hotkey", &hotkey)
-        .map_err(AppError::from)?;
+.set_desktop_setting("app.sequential_hotkey", &hotkey)
+        .map_err(setting_error)?;
     sync_hotkeys_from_settings(&app_handle)
 }
 
@@ -214,11 +206,10 @@ pub fn set_rich_paste_hotkey(
         *guard = hotkey.clone();
     }
 
-    let db_state = app_handle.state::<DbState>();
+    let db_state = app_handle.state::<HistoryService>();
     db_state
-        .settings_repo
-        .set("app.rich_paste_hotkey", &hotkey)
-        .map_err(AppError::from)?;
+.set_desktop_setting("app.rich_paste_hotkey", &hotkey)
+        .map_err(setting_error)?;
     sync_hotkeys_from_settings(&app_handle)
 }
 
@@ -232,11 +223,10 @@ pub fn set_search_hotkey(
         *guard = hotkey.clone();
     }
 
-    let db_state = app_handle.state::<DbState>();
+    let db_state = app_handle.state::<HistoryService>();
     db_state
-        .settings_repo
-        .set("app.search_hotkey", &hotkey)
-        .map_err(AppError::from)?;
+.set_desktop_setting("app.search_hotkey", &hotkey)
+        .map_err(setting_error)?;
     sync_hotkeys_from_settings(&app_handle)
 }
 
@@ -275,7 +265,7 @@ fn is_appearance_override_key(key: &str) -> bool {
 #[tauri::command]
 pub async fn save_setting(
     app_handle: AppHandle,
-    db_state: State<'_, DbState>,
+    db_state: State<'_, HistoryService>,
     settings_state: State<'_, crate::app_state::SettingsState>,
     key: String,
     value: String,
@@ -297,7 +287,7 @@ pub async fn save_setting(
     } else if dzc_core::api::HistoryService::is_capture_setting(&key) || dzc_core::api::HistoryService::is_view_setting(&key) {
         persist_host_setting(&app_handle.state::<crate::app::ipc_host::DesktopHost>(), &key, value.clone()).await?;
     } else {
-        persist_setting_with_legacy(&db_state, &key, &value)?;
+        db_state.set_desktop_setting(&key, &value).map_err(setting_error)?;
     }
     apply_setting_state_update(&app_handle, &settings_state, &key, &value);
     if dzc_core::api::HistoryService::is_update_preference(&key) {
@@ -324,7 +314,7 @@ pub fn set_ignore_blur(ignore: bool) {
 }
 
 #[tauri::command]
-pub fn set_window_pinned(app_handle: AppHandle, state: State<'_, DbState>, pinned: bool) -> AppResult<()> {
+pub fn set_window_pinned(app_handle: AppHandle, state: State<'_, HistoryService>, pinned: bool) -> AppResult<()> {
     super::capability_cmd::require_desktop_interaction().map_err(AppError::Validation)?;
     crate::WINDOW_PINNED.store(pinned, Ordering::Relaxed);
     if let Some(window) = app_handle.get_webview_window("main") {
@@ -349,16 +339,15 @@ pub fn set_window_pinned(app_handle: AppHandle, state: State<'_, DbState>, pinne
         }
     }
     let _ = state
-        .settings_repo
-        .set("app.window_pinned", &pinned.to_string());
+.set_desktop_setting("app.window_pinned", &pinned.to_string());
     Ok(())
 }
 
 #[tauri::command]
 pub fn get_settings(
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
 ) -> AppResult<std::collections::HashMap<String, String>> {
-    state.settings_repo.get_all().map_err(AppError::from)
+    state.desktop_settings_snapshot().map_err(setting_error)
 }
 
 #[tauri::command]
@@ -394,7 +383,7 @@ pub async fn set_capture_rich_text(host: State<'_, crate::app::ipc_host::Desktop
 #[tauri::command]
 pub fn set_silent_start(
     state: State<'_, crate::app_state::SettingsState>,
-    db_state: State<'_, DbState>,
+    db_state: State<'_, HistoryService>,
     enabled: bool,
 ) -> AppResult<()> {
     state.silent_start.store(enabled, Ordering::Relaxed);
@@ -454,7 +443,7 @@ pub async fn set_privacy_protection_custom_rules(
 #[tauri::command]
 pub fn set_sound_enabled(
     state: State<'_, crate::app_state::SettingsState>,
-    db_state: State<'_, DbState>,
+    db_state: State<'_, HistoryService>,
     enabled: bool,
 ) -> AppResult<()> {
     state.sound_enabled.store(enabled, Ordering::Relaxed);
@@ -464,47 +453,40 @@ pub fn set_sound_enabled(
 #[tauri::command]
 pub fn reset_settings(
     app: AppHandle,
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     settings_state: State<'_, crate::app_state::SettingsState>,
 ) -> AppResult<()> {
     let machine_id = crate::app::system::get_machine_id();
     let new_id = format!("{}-0000-0000-0000-000000000000", machine_id);
-    state.history_service().reset_desktop_preferences(&new_id)
-        .map_err(|error| AppError::Database(error.to_string()))?;
+    state.reset_desktop_preferences(&new_id)
+        .map_err(setting_error)?;
 
     let main_hotkey = state
-        .settings_repo
-        .get("app.hotkey")
+.desktop_setting("app.hotkey")
         .unwrap_or(Some("Alt+C".to_string()))
         .unwrap_or("Alt+C".to_string());
     let seq_hotkey = state
-        .settings_repo
-        .get("app.sequential_hotkey")
+.desktop_setting("app.sequential_hotkey")
         .unwrap_or(Some("Alt+V".to_string()))
         .unwrap_or("Alt+V".to_string());
     let rich_hotkey = state
-        .settings_repo
-        .get("app.rich_paste_hotkey")
+.desktop_setting("app.rich_paste_hotkey")
         .unwrap_or(Some("Ctrl+Shift+Z".to_string()))
         .unwrap_or("Ctrl+Shift+Z".to_string());
     let search_hotkey = state
-        .settings_repo
-        .get("app.search_hotkey")
+.desktop_setting("app.search_hotkey")
         .unwrap_or(Some("Alt+F".to_string()))
         .unwrap_or("Alt+F".to_string());
     let screenshot_hotkey = state
-        .settings_repo
-        .get("app.screenshot_hotkey")
+.desktop_setting("app.screenshot_hotkey")
         .unwrap_or(Some("Ctrl+Shift+A".to_string()))
         .unwrap_or("Ctrl+Shift+A".to_string());
     let screenshot_full_hotkey = state
-        .settings_repo
-        .get("app.screenshot_full_hotkey")
+.desktop_setting("app.screenshot_full_hotkey")
         .unwrap_or(Some("Ctrl+Shift+F".to_string()))
         .unwrap_or("Ctrl+Shift+F".to_string());
     let quick_paste_hotkey = state
-        .settings_repo
-        .get("app.quick_paste_hotkey")
+.desktop_setting("app.quick_paste_hotkey")
         .unwrap_or(Some("Ctrl+Shift+V".to_string()))
         .unwrap_or("Ctrl+Shift+V".to_string());
 
@@ -560,7 +542,7 @@ pub fn set_tray_visible(
     if let Some(tray) = app_handle.tray_by_id("main_tray") {
         let _ = tray.set_visible(visible);
     }
-    let db_state = app_handle.state::<DbState>();
+    let db_state = app_handle.state::<HistoryService>();
     save_bool_setting(&db_state, "app.hide_tray_icon", !visible)
 }
 
@@ -572,7 +554,7 @@ pub fn set_edge_docking(
 ) -> AppResult<()> {
     if enabled { super::capability_cmd::require_desktop_interaction().map_err(AppError::Validation)?; }
     state.edge_docking.store(enabled, Ordering::Relaxed);
-    let db_state = app_handle.state::<DbState>();
+    let db_state = app_handle.state::<HistoryService>();
     save_bool_setting(&db_state, "app.edge_docking", enabled)
 }
 
@@ -584,14 +566,14 @@ pub fn set_follow_mouse(
 ) -> AppResult<()> {
     if enabled { super::capability_cmd::require_desktop_interaction().map_err(AppError::Validation)?; }
     state.follow_mouse.store(enabled, Ordering::Relaxed);
-    let db_state = app_handle.state::<DbState>();
+    let db_state = app_handle.state::<HistoryService>();
     save_bool_setting(&db_state, "app.follow_mouse", enabled)
 }
 
 #[tauri::command]
 pub fn set_idle_destroy_enabled(
     state: State<'_, crate::app_state::SettingsState>,
-    db_state: State<'_, DbState>,
+    db_state: State<'_, HistoryService>,
     enabled: bool,
 ) -> AppResult<()> {
     state.idle_destroy_enabled.store(enabled, Ordering::Relaxed);
@@ -601,15 +583,14 @@ pub fn set_idle_destroy_enabled(
 #[tauri::command]
 pub fn set_idle_destroy_seconds(
     state: State<'_, crate::app_state::SettingsState>,
-    db_state: State<'_, DbState>,
+    db_state: State<'_, HistoryService>,
     seconds: u64,
 ) -> AppResult<()> {
     let clamped = crate::app::idle_destroyer::clamp_idle_seconds(seconds);
     state.idle_destroy_seconds.store(clamped, Ordering::Relaxed);
     db_state
-        .settings_repo
-        .set("app.idle_destroy_seconds", &clamped.to_string())
-        .map_err(AppError::from)
+.set_desktop_setting("app.idle_destroy_seconds", &clamped.to_string())
+        .map_err(setting_error)
 }
 
 #[cfg(test)]

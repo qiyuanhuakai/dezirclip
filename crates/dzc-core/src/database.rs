@@ -9,25 +9,6 @@ pub use crate::infrastructure::encryption::{self, ENCRYPT_PREFIX};
 
 #[cfg(any(feature = "legacy-bridge", test))]
 pub use crate::domain::models::ClipboardEntry;
-#[cfg(any(feature = "legacy-bridge", test))]
-use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
-#[cfg(feature = "legacy-bridge")]
-use crate::infrastructure::repository::settings_repo::SqliteSettingsRepository;
-#[cfg(feature = "legacy-bridge")]
-use crate::infrastructure::repository::tag_repo::SqliteTagRepository;
-#[cfg(any(feature = "legacy-bridge", test))]
-use std::sync::{Arc, Mutex};
-
-#[cfg(any(feature = "legacy-bridge", test))]
-pub struct DbState {
-    pub conn: Arc<Mutex<Connection>>,
-    pub repo: SqliteClipboardRepository,
-    #[cfg(feature = "legacy-bridge")]
-    pub settings_repo: SqliteSettingsRepository,
-    #[cfg(feature = "legacy-bridge")]
-    pub tag_repo: SqliteTagRepository,
-}
-
 pub fn ensure_writable(conn: &Connection) -> std::result::Result<(), String> {
     let query_only = conn
         .pragma_query_value(None, "query_only", |row| row.get::<_, bool>(0))
@@ -40,26 +21,6 @@ pub fn ensure_writable(conn: &Connection) -> std::result::Result<(), String> {
         Err("DatabaseIsReadOnly".into())
     } else {
         Ok(())
-    }
-}
-
-#[cfg(feature = "legacy-bridge")]
-impl DbState {
-    pub fn open_desktop(path: &std::path::Path) -> Result<Self> {
-        let conn = Arc::new(Mutex::new(init_db(&path.to_string_lossy())?));
-        Ok(Self {
-            repo: SqliteClipboardRepository::new(conn.clone()),
-            settings_repo: SqliteSettingsRepository::new(conn.clone()),
-            tag_repo: SqliteTagRepository::new(conn.clone()),
-            conn,
-        })
-    }
-
-    /// Migration adapter: share the existing cache budgets and connection through the business facade.
-    pub fn history_service(&self) -> crate::api::HistoryService {
-        crate::api::HistoryService::from_legacy_parts(
-            Arc::new(self.repo.clone()), Arc::new(self.tag_repo.clone()),
-        )
     }
 }
 
@@ -210,7 +171,6 @@ pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
     Some(thumbnail_hash(&img))
 }
 
-#[cfg(any(feature = "legacy-bridge", test))]
 pub fn init_db(path: &str) -> Result<Connection> {
     let mut conn = Connection::open(path)?;
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
@@ -469,6 +429,7 @@ pub(crate) fn seed_preference_defaults(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn failed_database_upgrade_never_quarantines_or_replaces_history() {

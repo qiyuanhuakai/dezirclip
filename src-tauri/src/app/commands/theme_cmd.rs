@@ -1,5 +1,5 @@
 use crate::app_state::SettingsState;
-use crate::database::DbState;
+use dzc_core::api::HistoryService;
 use crate::error::{AppError, AppResult};
 use dzc_core::domain::theme::{valid_theme_id, ThemePackage, MAX_THEME_BYTES};
 use std::sync::Mutex;
@@ -35,19 +35,18 @@ fn emit_library(app: &AppHandle, themes: &[ThemePackage]) {
 }
 
 #[tauri::command]
-pub fn get_custom_themes(state: State<'_, DbState>) -> AppResult<Vec<ThemePackage>> {
-    state.history_service().custom_themes().map_err(theme_error)
+pub fn get_custom_themes(state: State<'_, HistoryService>) -> AppResult<Vec<ThemePackage>> {
+    state.custom_themes().map_err(theme_error)
 }
 
 fn save_theme(
     app: &AppHandle,
-    state: &DbState,
+    state: &HistoryService,
     publication: &ThemePublicationState,
     theme: ThemePackage,
 ) -> AppResult<ThemePackage> {
-    let history = state.history_service();
     let outcome = publication.commit_and_publish(
-        || history.import_theme(theme).map_err(theme_error),
+        || state.import_theme(theme).map_err(theme_error),
         |outcome| emit_library(app, &outcome.themes),
     )?;
     Ok(outcome.theme)
@@ -56,7 +55,7 @@ fn save_theme(
 #[tauri::command]
 pub async fn import_custom_theme(
     app: AppHandle,
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     publication: State<'_, ThemePublicationState>,
     path: String,
 ) -> AppResult<ThemePackage> {
@@ -77,7 +76,7 @@ pub async fn import_custom_theme(
 pub fn delete_custom_theme(
     app: AppHandle,
     window: WebviewWindow,
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     settings: State<'_, SettingsState>,
     publication: State<'_, ThemePublicationState>,
     id: String,
@@ -85,9 +84,8 @@ pub fn delete_custom_theme(
     if !valid_theme_id(&id) {
         return Err(theme_error("invalid custom theme id"));
     }
-    let history = state.history_service();
     let outcome = publication.commit_and_publish(
-        || history.remove_theme_with_outcome(&id).map_err(theme_error),
+        || state.remove_theme_with_outcome(&id).map_err(theme_error),
         |outcome| emit_library(&app, &outcome.themes),
     )?;
     // The publication guard is released before any native window work.
@@ -108,14 +106,14 @@ pub fn delete_custom_theme(
 
 #[tauri::command]
 pub async fn export_custom_theme(
-    state: State<'_, DbState>,
+    state: State<'_, HistoryService>,
     id: String,
     path: String,
 ) -> AppResult<()> {
     if !valid_theme_id(&id) {
         return Err(theme_error("invalid custom theme id"));
     }
-    let history = state.history_service();
+    let history = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         history.export_theme_file(&id, std::path::Path::new(&path)).map_err(theme_error)
     })
@@ -123,8 +121,8 @@ pub async fn export_custom_theme(
     .map_err(|error| AppError::Internal(error.to_string()))?
 }
 
-pub fn effective_base_theme(state: &DbState, theme: &str) -> String {
-    state.history_service().effective_base_theme(theme)
+pub fn effective_base_theme(state: &HistoryService, theme: &str) -> String {
+    state.effective_base_theme(theme)
 }
 
 #[cfg(test)]

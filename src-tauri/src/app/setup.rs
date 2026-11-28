@@ -6,10 +6,9 @@ use crate::app::window_manager::{release_win_keys, restore_last_focus, toggle_wi
 use crate::app_state::{
     AppDataDir, SearchHistory, SessionHistory, SettingsState,
 };
-use crate::database::DbState;
+use dzc_core::api::HistoryService;
 use crate::global_state::*;
 use crate::info;
-use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use dzc_core::api::DesktopStartupPreferences;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_ext::WindowExt;
@@ -77,7 +76,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Database Initialization
     let db_path = app_dir.join("clipboard.db");
-    let database = DbState::open_desktop(&db_path).map_err(|e| {
+    let database = HistoryService::open_desktop(&db_path).map_err(|e| {
         let err_msg = format!("数据库初始化失败: {}", e);
         #[cfg(target_os = "windows")]
         {
@@ -90,11 +89,10 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
         e
     })?;
-    let history = database.history_service();
-    if history.reset_unelevated_game_mode(crate::app::commands::system_cmd::check_is_admin) {
+    if database.reset_unelevated_game_mode(crate::app::commands::system_cmd::check_is_admin) {
         info!(">>> [STARTUP] Game Mode active without Admin privileges. Resetting to default.");
     }
-    let settings = history.desktop_startup_preferences();
+    let settings = database.desktop_startup_preferences();
 
     // 5. App State Management
     setup_state(app, database, &settings, app_dir);
@@ -141,7 +139,7 @@ fn resolve_data_dir(app: &App) -> Result<std::path::PathBuf, Box<dyn std::error:
     let default_app_dir = app.path().app_data_dir()?;
     let executable = std::env::current_exe().ok();
     let executable_dir = executable.as_deref().and_then(std::path::Path::parent);
-    if crate::infrastructure::data_paths::portable_data_dir(executable_dir).is_none() {
+    if dzc_core::api::portable_desktop_data_dir(executable_dir).is_none() {
         migrate_legacy_identifier_data_dir(&default_app_dir);
         crate::migration::perform_migration_v028(&default_app_dir);
     }
@@ -161,7 +159,7 @@ fn resolve_data_dir(app: &App) -> Result<std::path::PathBuf, Box<dyn std::error:
     });
 
     let app_dir =
-        crate::infrastructure::data_paths::select_data_dir(&default_app_dir, executable_dir);
+        dzc_core::api::resolve_desktop_data_dir(&default_app_dir, executable_dir);
 
     match std::fs::create_dir_all(&app_dir) {
         Ok(_) => Ok(app_dir),
@@ -234,7 +232,7 @@ fn legacy_identifier_app_data_dir() -> Option<std::path::PathBuf> {
 
 fn setup_state(
     app: &App,
-    database: DbState,
+    database: HistoryService,
     s: &DesktopStartupPreferences,
     app_dir: std::path::PathBuf,
 ) {
@@ -304,8 +302,8 @@ fn apply_saved_size(window: &tauri::WebviewWindow, size: Option<(u32, u32)>) {
 }
 
 pub(super) fn restore_recreated_appearance(app: &AppHandle, window: &tauri::WebviewWindow) {
-    let db = app.state::<DbState>();
-    apply_saved_size(window, db.history_service().saved_window_size().ok().flatten());
+    let db = app.state::<HistoryService>();
+    apply_saved_size(window, db.saved_window_size().ok().flatten());
     apply_initial_theme(app);
 }
 
@@ -388,7 +386,7 @@ fn start_services(app: &App, _s: &DesktopStartupPreferences, app_handle: AppHand
     #[cfg(not(target_os = "windows"))]
     let _ = app;
     #[cfg(target_os = "windows")]
-    let db_state = app.state::<DbState>();
+    let db_state = app.state::<HistoryService>();
 
     #[cfg(target_os = "linux")]
     {
@@ -408,8 +406,7 @@ fn start_services(app: &App, _s: &DesktopStartupPreferences, app_handle: AppHand
     #[cfg(target_os = "windows")]
     {
         if db_state
-            .settings_repo
-            .get("app.use_win_v_shortcut")
+.desktop_setting("app.use_win_v_shortcut")
             .unwrap_or(Some("false".to_string()))
             == Some("true".to_string())
         {
@@ -659,8 +656,8 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
 
                     // Restore pinned state based on user setting when undocked
                     let mut user_pinned = WINDOW_PINNED.load(Ordering::Relaxed);
-                    if let Some(db_state) = app_handle.try_state::<DbState>() {
-                        if let Ok(pinned) = db_state.history_service().window_pinned() {
+                    if let Some(db_state) = app_handle.try_state::<HistoryService>() {
+                        if let Ok(pinned) = db_state.window_pinned() {
                             user_pinned = pinned;
                         }
                     }
@@ -916,8 +913,8 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                     CURRENT_DOCK.store(0, Ordering::Relaxed);
 
                     let mut user_pinned = WINDOW_PINNED.load(Ordering::Relaxed);
-                    if let Some(db_state) = app_handle.try_state::<DbState>() {
-                        if let Ok(pinned) = db_state.history_service().window_pinned() {
+                    if let Some(db_state) = app_handle.try_state::<HistoryService>() {
+                        if let Ok(pinned) = db_state.window_pinned() {
                             user_pinned = pinned;
                         }
                     }
@@ -1282,15 +1279,13 @@ mod tray_tests {
 }
 
 fn apply_initial_theme(app: &AppHandle) {
-    let db_state = app.state::<DbState>();
+    let db_state = app.state::<HistoryService>();
     let theme = db_state
-        .settings_repo
-        .get("app.theme")
+.desktop_setting("app.theme")
         .unwrap_or(Some("retro".to_string()))
         .unwrap_or("retro".to_string());
     let mode = db_state
-        .settings_repo
-        .get("app.color_mode")
+.desktop_setting("app.color_mode")
         .unwrap_or(Some("system".to_string()));
 
     if let Some(window) = app.get_webview_window("main") {
@@ -1563,8 +1558,8 @@ fn persist_window_size(window: &tauri::Window, width: u32, height: u32) {
             *guard
         };
 
-        if let Some(db_state) = app_handle.try_state::<DbState>() {
-            let history = db_state.history_service();
+        if let Some(db_state) = app_handle.try_state::<HistoryService>() {
+            let history = db_state;
             if let Ok(state) = history.runtime_snapshot(chrono::Utc::now().timestamp_millis()) {
                 let _ = history.set_window_size(w, h, state.privacy_epoch);
             }

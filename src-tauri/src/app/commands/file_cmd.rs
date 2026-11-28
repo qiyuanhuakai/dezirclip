@@ -1,5 +1,5 @@
 use crate::app_state::AppDataDir;
-use crate::database::DbState;
+use dzc_core::api::HistoryService;
 use crate::error::{AppError, AppResult};
 use base64::Engine;
 #[cfg(target_os = "windows")]
@@ -56,8 +56,8 @@ pub(crate) fn list_emoji_favorite_paths_in_dir(data_dir: &Path) -> AppResult<Vec
     dzc_platform::user_resource::list_emoji_favorites(data_dir).map_err(AppError::Internal)
 }
 
-fn change_emoji_favorites<T>(db: &DbState, change: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
-    let privacy = db.history_service().privacy();
+fn change_emoji_favorites<T>(db: &HistoryService, change: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+    let privacy = db.privacy();
     let now = chrono::Utc::now().timestamp_millis();
     let epoch = privacy.status(now).map_err(|error| AppError::Internal(error.to_string()))?.privacy_epoch;
     privacy.with_writable_profile(epoch, now, change).map_err(|error| AppError::Internal(error.to_string()))?
@@ -66,7 +66,7 @@ fn change_emoji_favorites<T>(db: &DbState, change: impl FnOnce() -> AppResult<T>
 #[tauri::command]
 pub async fn save_emoji_favorite(
     app_data: State<'_, AppDataDir>,
-    db: State<'_, DbState>,
+    db: State<'_, HistoryService>,
     source_path: String,
 ) -> AppResult<String> {
     change_emoji_favorites(&db, || {
@@ -86,7 +86,7 @@ pub async fn save_emoji_favorite(
 }
 
 #[tauri::command]
-pub async fn remove_emoji_favorite(app_data: State<'_, AppDataDir>, db: State<'_, DbState>, path: String) -> AppResult<()> {
+pub async fn remove_emoji_favorite(app_data: State<'_, AppDataDir>, db: State<'_, HistoryService>, path: String) -> AppResult<()> {
     change_emoji_favorites(&db, || {
         if path.trim().is_empty() {
             return Ok(());
@@ -106,7 +106,7 @@ pub fn list_emoji_favorites(app_data: State<'_, AppDataDir>) -> AppResult<Vec<St
 #[tauri::command]
 pub async fn save_emoji_favorite_data_url(
     app_data: State<'_, AppDataDir>,
-    db: State<'_, DbState>,
+    db: State<'_, HistoryService>,
     data_url: String,
     file_name: Option<String>,
 ) -> AppResult<String> {

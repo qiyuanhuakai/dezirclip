@@ -70,6 +70,33 @@ impl UpdateAttemptChannel {
 }
 
 impl HistoryService {
+    /// Read an existing preference for the local Tauri settings adapter.
+    #[cfg(feature = "legacy-bridge")]
+    pub fn desktop_setting(&self, key: &str) -> CoreResult<Option<String>> {
+        use crate::infrastructure::repository::settings_repo::SettingsRepository;
+
+        self.repository.desktop_settings_repository().get(key)
+            .map_err(|error| super::CoreError::from(error.to_string()))
+    }
+
+    /// Persist a local desktop preference after the adapter has dispatched
+    /// Host-owned settings through their respective authorized operations.
+    #[cfg(feature = "legacy-bridge")]
+    pub fn set_desktop_setting(&self, key: &str, value: &str) -> CoreResult<()> {
+        use crate::infrastructure::repository::settings_repo::SettingsRepository;
+
+        self.repository.desktop_settings_repository().set(key, value)
+            .map_err(|error| super::CoreError::from(error.to_string()))
+    }
+
+    #[cfg(feature = "legacy-bridge")]
+    pub fn desktop_settings_snapshot(&self) -> CoreResult<std::collections::HashMap<String, String>> {
+        use crate::infrastructure::repository::settings_repo::SettingsRepository;
+
+        self.repository.desktop_settings_repository().get_all()
+            .map_err(|error| super::CoreError::from(error.to_string()))
+    }
+
     /// Apply the desktop's existing reset semantics as one transaction.
     #[cfg(feature = "legacy-bridge")]
     pub fn reset_desktop_preferences(&self, anonymous_id: &str) -> CoreResult<()> {

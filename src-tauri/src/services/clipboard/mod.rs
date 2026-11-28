@@ -1,6 +1,6 @@
 mod utils;
 
-pub use crate::database::DbState;
+use dzc_core::api::HistoryService;
 use dzc_core::capture::{CaptureEvent, CaptureFrame, CaptureReadMetadata, CaptureSource, StoredCapture, OwnClipboardCopy};
 use std::sync::{Arc, atomic::Ordering};
 use tauri::{AppHandle, Emitter, Manager};
@@ -48,7 +48,7 @@ impl dzc_host::CaptureHooks for DesktopHooks {
     fn stored(&self,capture:StoredCapture,work:dzc_host::CaptureWork) {if let Some(app)=app() {distribute(app,capture,work);}}
 }
 fn distribute(app:&AppHandle,capture:StoredCapture,work:dzc_host::CaptureWork) {
-    let history=app.state::<DbState>().history_service();
+    let history=app.state::<HistoryService>().inner().clone();
     let Some(ticket)=capture.privacy_ticket else {return;};
     if history.privacy().check_capture(&ticket,timestamp()).is_err() {return;}
     dzc_platform::sound::play(&history, dzc_platform::sound::Cue::Copy);
@@ -76,7 +76,7 @@ pub enum GeneratedCaptureTicket {Local{ticket:dzc_core::api::CaptureTicket,_work
 pub async fn generated_capture_ticket(app:&AppHandle)->Result<Option<GeneratedCaptureTicket>,String> {
     let bridge=app.state::<crate::app::ipc_host::DesktopHost>();
     if bridge.embedded()?.is_none() {return bridge.begin_generated().await.map(|ticket|ticket.map(GeneratedCaptureTicket::Remote));}
-    match app.state::<DbState>().history_service().privacy().capture_ticket(timestamp()) {
+    match app.state::<HistoryService>().privacy().capture_ticket(timestamp()) {
         Ok(ticket)=>{let host=bridge.embedded()?.ok_or("ClipboardHostInstanceChanged")?;let work=host.begin_work().map_err(|_|"CaptureWorkUnavailable")?;
             Ok(Some(GeneratedCaptureTicket::Local{ticket,_work:work,instance:bridge.instance()?}))},Err(dzc_core::api::PrivacyError::PrivacySessionActive)=>Ok(None),Err(error)=>Err(error.to_string())
     }
@@ -111,14 +111,9 @@ pub async fn process_new_entry_with_protection(app:&AppHandle,data:ClipboardData
 #[cfg(all(test, target_os = "windows", not(feature = "portable")))]
 mod tests {
     use super::*;
-    use crate::infrastructure::repository::{
-        clipboard_repo::SqliteClipboardRepository,
-        settings_repo::SqliteSettingsRepository,
-        tag_repo::{SqliteTagRepository, TagRepository},
-    };
     use dzc_core::privacy::{PrivacyAction, PrivacyReason};
     use dzc_core::capture::{CaptureContext, CaptureEngine, CaptureOutcome, CaptureSettings, CaptureStore};
-    use std::{collections::VecDeque, sync::Mutex};
+    use std::collections::VecDeque;
 
     fn persistence_result(outcome:CaptureOutcome)->Result<Option<StoredCapture>,String> {
         match outcome {CaptureOutcome::Stored(capture)=>Ok(Some(capture)),CaptureOutcome::Skipped(dzc_core::capture::CaptureSkip::PrivacyEpochChanged)=>Err("PrivacyEpochChanged".into()),
@@ -131,13 +126,8 @@ mod tests {
         let directory =
             std::env::temp_dir().join(format!("dezirclip-capture-dpapi-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
-        let connection = Arc::new(Mutex::new(crate::database::init_db(":memory:").unwrap()));
-        let state = DbState {
-            repo: SqliteClipboardRepository::new(connection.clone()),
-            settings_repo: SqliteSettingsRepository::new(connection.clone()),
-            tag_repo: SqliteTagRepository::new(connection.clone()),
-            conn: connection,
-        };
+        let database = directory.join("clipboard.db");
+        let history = HistoryService::open_desktop(&database).unwrap();
         let session = dzc_core::api::SessionHistoryStore::new(VecDeque::new());
         let mut context = CaptureContext {
             source: CaptureSource {
@@ -154,7 +144,6 @@ mod tests {
             paused: false,
             sequential_echo: None,
         };
-        let history = state.history_service();
         let store = history.capture_store(&directory);
         let text = "ordinary manually protected text";
         let frame = || CaptureFrame {
@@ -166,8 +155,7 @@ mod tests {
         else {
             panic!("first capture should store");
         };
-        state
-            .tag_repo
+        history
             .update_entry_tags(first.entry.id, vec!["sensitive".into(), "work".into()])
             .unwrap();
         context.timestamp = 2;
@@ -183,7 +171,7 @@ mod tests {
             second.privacy.reason,
             PrivacyReason::ExistingRecordProtected
         );
-        let connection = state.conn.lock().unwrap();
+        let connection = rusqlite::Connection::open(&database).unwrap();
         let (ciphertext, timestamp): (String, i64) = connection
             .query_row(
                 "SELECT content,timestamp FROM clipboard_history WHERE id=?1",
@@ -218,7 +206,7 @@ mod tests {
         );
         drop(connection);
         drop(store);
-        drop(state);
+        drop(history);
         std::fs::remove_dir_all(directory).unwrap();
     }
     #[test]

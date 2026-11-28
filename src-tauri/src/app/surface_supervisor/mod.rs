@@ -257,7 +257,7 @@ fn environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
     .collect()
 }
 fn appearance(app: &AppHandle) -> (String, SurfaceTheme) {
-    let saved = app.state::<crate::database::DbState>().history_service()
+    let saved = app.state::<dzc_core::api::HistoryService>()
         .surface_appearance_preferences().unwrap_or_default();
     let dark = saved.dark_mode.unwrap_or_else(|| super::commands::ui_cmd::get_system_theme_mode() == "dark");
     (
@@ -270,7 +270,7 @@ fn appearance(app: &AppHandle) -> (String, SurfaceTheme) {
     )
 }
 pub(crate) fn quick_paste_presentation(app: &AppHandle) -> dzc_core::api::QuickPastePresentation {
-    app.state::<crate::database::DbState>().history_service().quick_paste_presentation().unwrap_or_default()
+    app.state::<dzc_core::api::HistoryService>().quick_paste_presentation().unwrap_or_default()
 }
 
 pub(crate) fn geometry(app: &AppHandle, ring: bool) -> Result<(SurfacePhysicalRect, f64, Option<String>), String> {
@@ -1338,8 +1338,8 @@ fn schedule_stop(app: &AppHandle, process: &Arc<Managed>, reason: &'static str) 
     });
 }
 pub fn enabled(app: &AppHandle) -> bool {
-    app.state::<crate::database::DbState>()
-        .history_service()
+    app.state::<dzc_core::api::HistoryService>()
+
         .uses_external_quick_paste()
         .unwrap_or(false)
 }

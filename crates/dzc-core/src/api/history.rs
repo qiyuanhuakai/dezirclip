@@ -93,6 +93,13 @@ impl HistoryService {
         self.repository.migrate_profile(source, destination, redirect, Some(epoch))
     }
 
+    /// Open the local desktop profile with its existing WAL and seed policy.
+    pub fn open_desktop(path: &Path) -> CoreResult<Self> {
+        let connection = crate::database::init_db(&path.to_string_lossy())
+            .map_err(|error| CoreError::from(error.to_string()))?;
+        Ok(Self::from_connection(Arc::new(Mutex::new(connection))))
+    }
+
     pub fn open(path: &Path) -> CoreResult<Self> {
         if path.as_os_str().is_empty() {
             return Err(CoreError::validation("database path is empty"));
@@ -110,11 +117,14 @@ impl HistoryService {
             .map_err(|error| CoreError::from(error.to_string()))?;
         crate::infrastructure::repository::migrations::run_migrations(&mut conn)
             .map_err(|error| CoreError::from(format!("migrations: {error}")))?;
-        let shared = Arc::new(Mutex::new(conn));
-        Ok(Self {
+        Ok(Self::from_connection(Arc::new(Mutex::new(conn))))
+    }
+
+    fn from_connection(shared: Arc<Mutex<rusqlite::Connection>>) -> Self {
+        Self {
             repository: Arc::new(SqliteClipboardRepository::new(shared.clone())),
             tags: Arc::new(SqliteTagRepository::new(shared)),
-        })
+        }
     }
 
     pub fn query(&self, query: &HistoryQuery<'_>) -> CoreResult<Vec<ClipboardEntry>> {
@@ -335,19 +345,7 @@ impl HistoryService {
     #[cfg(feature = "legacy-bridge")]
     #[doc(hidden)]
     pub fn from_legacy_connection(shared: Arc<Mutex<rusqlite::Connection>>) -> Self {
-        Self {
-            repository: Arc::new(SqliteClipboardRepository::new(shared.clone())),
-            tags: Arc::new(SqliteTagRepository::new(shared)),
-        }
-    }
-
-    #[cfg(feature = "legacy-bridge")]
-    #[doc(hidden)]
-    pub fn from_legacy_parts(
-        repository: Arc<SqliteClipboardRepository>,
-        tags: Arc<SqliteTagRepository>,
-    ) -> Self {
-        Self { repository, tags }
+        Self::from_connection(shared)
     }
 }
 
