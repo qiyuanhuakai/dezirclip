@@ -544,9 +544,17 @@ function Test-MainHotkeys($Main, $Root, $Resident, [string]$Executable, $Editor,
     if ($reopened.Id -ne $Main.Id) { throw 'Shortcut wake replaced the hidden WebView' }
     $newRoot = [Windows.Automation.AutomationElement]::FromHandle($reopened.MainWindowHandle)
     Click-Control $reopened (Get-ControlPoint $newRoot 'Clipboard')
-    Click-Control $reopened (Get-ControlPoint $newRoot 'Delete Ctrl+Shift+F9')
-    $null = Wait-Until { (Get-SavedMainHotkeys) -ceq $original } 'Removing the new shortcut did not preserve original bindings'
-    if (![MyGoInput]::MainTestShortcutAvailable()) { throw 'Removed main shortcut was not released at the OS level' }
+    $removeCondition = [Windows.Automation.AndCondition]::new($type,
+        [Windows.Automation.PropertyCondition]::new($nameProperty, 'Delete Ctrl+Shift+F9'))
+    $remove = Wait-Until {
+        $button = $newRoot.FindFirst([Windows.Automation.TreeScope]::Descendants, $removeCondition)
+        if ($button -and $button.Current.IsEnabled) { return $button }
+    } 'Saved shortcut did not expose an enabled removal action'
+    $remove.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+    $null = Wait-Until {
+        (Get-SavedMainHotkeys) -ceq $original -and [MyGoInput]::MainTestShortcutAvailable() -and
+            !$newRoot.FindFirst([Windows.Automation.TreeScope]::Descendants, $removeCondition)
+    } 'Removing the new shortcut did not restore the original bindings and release OS registration'
     Write-Host 'Verified shortcut editing, persistence, native registration, same-process hide/wake and removal'
     return $reopened
 }
