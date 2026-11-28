@@ -404,7 +404,7 @@ class Inputs(unittest.TestCase):
                       "          python-version: '3.13.15'\n\n"
                       '      - name: Test portable tooling and release contracts\n'
                       '        run: |\n'
-                      '          python -B scripts/ci_contracts.py portable', text)
+                      '          python -B -m scripts.ci_contracts portable', text)
         start = text.index('      - name: Supply optional Linux x64 release inputs')
         end = text.index('      - name: Record Linux x64 disk after main checks', start)
         block = text[start:end]

@@ -211,7 +211,7 @@ jobs:
 
       - name: Test portable tooling and release contracts
         run: |
-          python -B scripts/ci_contracts.py portable
+          python -B -m scripts.ci_contracts portable
           python -I -B -m unittest discover -s scripts -p test_release_recovery.py -v
           python -B -m unittest discover -s scripts/performance/tests -v
 
@@ -628,7 +628,7 @@ jobs:
 
       - name: Test desktop tooling in its platform environment
         if: matrix.can_test
-        run: python -B scripts/ci_contracts.py desktop
+        run: python -B -m scripts.ci_contracts desktop
 
       - name: Build standalone CLI and Service for desktop acceptance
         run: python -B scripts/ci_desktop_binaries.py build
@@ -860,7 +860,7 @@ jobs:
           DZC_TEST_MIDDLE_HOOK: '1'
         shell: pwsh
         run: |
-          $result = ./target/debug/mygo-library.test.exe -test.run '^TestMiddleHookSurvivesBlockedResident$' -test.count=1 -test.timeout=30s -test.v
+          $result = ./target/debug/mygo-library.test.exe '-test.run=^TestMiddleHookSurvivesBlockedResident$' '-test.count=1' '-test.timeout=30s' '-test.v'
           $result | Write-Host
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not ($result -match '^--- PASS: TestMiddleHookSurvivesBlockedResident\b')) { throw 'Native middle button fixture did not pass' }
