@@ -612,7 +612,6 @@ jobs:
             frontends/dzc-surface/go.sum
 
       - name: Setup pnpm for native Surface acceptance
-        if: matrix.build_web
         uses: pnpm/action-setup@v4
         with:
           version: 11.0.9
@@ -621,13 +620,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: ${{ matrix.build_web && 'pnpm' || '' }}
+          cache: pnpm
+
+      - name: Install dependencies for Surface tokens
+        run: pnpm install --frozen-lockfile
 
       - name: Prepare actual frontend for native Surface acceptance
         if: matrix.build_web
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm run build
+        run: pnpm run build
 
       - name: Test Go local protocol client
         if: matrix.name == 'linux-aarch64'
@@ -658,8 +658,8 @@ jobs:
           TAURI_ENV_TARGET_TRIPLE: ${{ matrix.rust_target }}
           GOTOOLCHAIN: local
         run: |
-          node scripts/build-surface.mjs
-          node scripts/build-surface.mjs --desktop
+          pnpm run surface:build
+          pnpm run desktop:mygo:build
 
       - name: Build the native local IPC interoperability fixture
         if: matrix.can_test

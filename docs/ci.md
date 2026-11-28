@@ -48,7 +48,7 @@ PR 更新和新的 master push 会取消同组旧 CI。手动 full 不适用该�
 | Windows MyGo Native 测试安装包 | Windows x64 桌面任务 | 复用本轮原生验收的 Go 可执行文件，暂存后核对实际 BuildInfo 和构建证明的 SHA-256。Rust CLI、Service 仍按 release profile 构建 |
 | Windows WebView 环境恢复 | Windows 开发任务和六场景 NSIS | 开发任务直接调用共享 PowerShell helper，使用真实进程环境测试缺失、空值、文本和失败。完整 NSIS 验收继续检查原 GUI 生命周期和升级 |
 | Standalone Companion 归属 | Tauri 桌面任务 | CLI 与 Service 一次构建。Tauri 测试和实际 Desktop 链接前后核对两个可执行文件的 SHA-256 |
-| Tauri Web 前端与原生构建 | Frontend、Windows 原生 Surface 验收和 Linux release-inputs 专项 | Frontend 保留生产 Web 构建与浏览器检查。桌面矩阵仅在嵌入 Web 产物的场景安装 pnpm 并构建前端。Windows Tauri 测试与 Surface 可执行文件共用 `custom-protocol` 依赖图。保留 `--all-targets`、备份集成测试和 backup-inspect 示例编译 |
+| Tauri Web 前端与原生构建 | Frontend、Windows 原生 Surface 验收和 Linux release-inputs 专项 | Frontend 保留生产 Web 构建与浏览器检查。桌面矩阵仍安装 Surface token 校验所需依赖，仅在嵌入 Web 产物的场景额外构建前端。Windows Tauri 测试与 Surface 可执行文件共用 `custom-protocol` 依赖图。保留 `--all-targets`、备份集成测试和 backup-inspect 示例编译 |
 | Windows 原生剪贴板和阻塞 UI 的中键钩子 | Windows 桌面任务 | 真实剪贴板用例在同一测试进程串行执行。中键钩子复用 MyGo 库验收使用的 Go 测试程序，并确认用例实际通过 |
 | Linux 原生剪贴板、输入和快捷键 | Linux Rust 开发任务 | 复用当轮 Cargo JSON 中的 Platform 单测程序，在私有 Xvfb/DBus 中执行。精确核对 15 项实际结果，包含 XFixes 服务器重启和无合成器的 Wayland 建连取消 |
 
