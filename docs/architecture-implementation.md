@@ -201,6 +201,8 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **C5 Arch 事务验证**。在 release 的固定 Arch 构建镜像里，以经过签名核对的 v0.2.0-rc5 和 v0.2.0 对应 Debian 资产，用生产 `bundle-archlinux.sh` 各生成两个 x64 包和 AUR recipe。网络隔离的 Arch 容器对两种桌面执行真实 `pacman` 安装、升级、重装和卸载，核对了版本排序、文件和依赖登记、历史可读及卸载后的 profile 保留。历史的 Arch 包由已发布 Debian 字节重建。当前 Linux x64 生产验收接入 pacman 门槛，候选路径直接安装暂存的两份 Arch 文件，并比对候选包和三个安装程序的摘要。升级起点的 Arch 安装文件逐一比对已经 dpkg 实装的历史签名 Debian 包。Windows 和 ARM64 的包矩阵不新增 Arch。WSL 实际通过完整只读重放和独立暂存的 x64 候选路径，两份归档在候选路径均直接安装。提交 `d2291d7b` 的 GitHub 只读重放首次用时 2 分 09 秒，Linux x64 的 6 组事务和 ARM64 的 4 组事务全部通过，双架构各验证 6 份公开发布包在 X11 中运行。按 artifact ID `15259445609` 和 `15259460557` 下载报告，核对 x64 的两组 pacman 结果及当前、历史两个阶段都与相应 dpkg 实装文件一致。真实 tag 封存仍需独立验收。 [托管只读重放](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46134465121)
 
 
+- **C6 独立复核取消的候选封存**。手动恢复先按原 run、attempt 和 job 时间读取七份固定 artifact ID 对应的成功报告，重建 `dezirclip-candidate.json` 并逐字节核对已上传附件。附件的原时间窗口和全部 40 项产品的原截止时间仍参与校验。单列成功复核任务的 run、attempt、源码、job、artifact ID 和摘要，恢复发布器在写入前再次核对两轮身份。离线模拟通过附件上传后取消、发布后再次同步、缺失或替换的证据、验收未通过、错时间与错复核来源。真实公开的 v0.2.0 已在 GitHub API 只读查询中通过旧 36 项合同的恢复规划分类。新 tag 的 40+1 全链、首次耗时和真实取消后的恢复尚待托管实测。 [v0.2.0 原发布运行](https://github.com/qiyuanhuakai/dezirclip/actions/runs/45952455038)
+
 ### R8 维护量中间复算
 
 按规范原基线 `1f1641a0` 与 `d2291d7b` 的 Git blob 统计。使用 `git ls-tree -r -z` 取得两次提交的常规文件，按对象 ID 批量读取，计入末尾没有换行的最后一行。范围沿用原统计的 Rust、Go、Python、JSON、TS、TSX、MJS、JS，加上当前提交中的 Swift。基线复算与规范原表的八种后缀计数一致。

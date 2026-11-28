@@ -276,10 +276,11 @@ const candidateSourceJobs = [
   ]),
 ].map(name => `Source acceptance / ${name}`);
 const desktopUploadJob = 'Upload verified desktop assets';
+const sealReviewJob = 'Review interrupted release seal';
 const optionalReleaseJobs = [
   'Synchronize an already published update channel', 'Supplement published MyGo installer',
   'Resume verified publication or synchronize update channel', 'Publish the fixed historical recovery',
-  'Resume dual-desktop publication or synchronize its channel',
+  'Resume dual-desktop publication or synchronize its channel', sealReviewJob,
   'Collect actual final package identities', 'Verify actual signed Windows upgrades',
   'Full source acceptance / Published Windows memory comparison', 'Full source acceptance / native-file-drag',
   'Full source acceptance / Optional Windows Surface comparison or crash diagnostics',
@@ -289,7 +290,27 @@ const optionalReleaseJobs = [
     'Diagnose Windows Service startup'].map(name => `Source acceptance / ${name}`),
 ];
 
-function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = false, dual = false, sealing = false) {
+function releaseAttemptJobs(transport, runId, runAttempt, commit) {
+  const pages = JSON.parse(transport(['api',
+    `repos/${repository}/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100`, '--paginate', '--slurp']));
+  const count = pages?.[0]?.total_count;
+  if (!Array.isArray(pages) || !pages.length || !Number.isSafeInteger(count) || count <= 0
+      || pages.some(page => page.total_count !== count || !Array.isArray(page.jobs))) {
+    throw new Error('Release attempt job listing is incomplete');
+  }
+  const jobs = pages.flatMap(page => page.jobs);
+  if (jobs.length !== count || new Set(jobs.map(job => job.id)).size !== count
+      || new Set(jobs.map(job => job.name)).size !== count
+      || jobs.some(job => !Number.isSafeInteger(job.id) || job.id <= 0 || typeof job.name !== 'string'
+        || !job.name.trim() || job.run_id !== Number(runId) || job.run_attempt !== Number(runAttempt)
+        || job.head_sha !== commit)) {
+    throw new Error('Release attempt jobs have missing or conflicting identities');
+  }
+  return jobs;
+}
+
+function verifiedReleaseRun(transport, tag, commit, runId, runAttempt,
+  { repair = false, dual = false, sealing = false, reviewInterruptedSeal = false } = {}) {
   if (!/^[1-9]\d*$/.test(String(runId)) || !Number.isSafeInteger(Number(runId))
       || !/^[1-9]\d*$/.test(String(runAttempt)) || !Number.isSafeInteger(Number(runAttempt))) {
     throw new Error('Synchronization requires an exact Release run and attempt');
@@ -313,21 +334,7 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
       || (!historicalAttempt && (!validRun(latest) || latest.status !== run.status || latest.conclusion !== run.conclusion))) {
     throw new Error('Release workflow run/source/attempt is not eligible for synchronization');
   }
-  const pages = JSON.parse(transport(['api',
-    `repos/${repository}/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100`, '--paginate', '--slurp']));
-  const count = pages?.[0]?.total_count;
-  if (!Array.isArray(pages) || !pages.length || !Number.isSafeInteger(count) || count <= 0
-      || pages.some(page => page.total_count !== count || !Array.isArray(page.jobs))) {
-    throw new Error('Release attempt job listing is incomplete');
-  }
-  const jobs = pages.flatMap(page => page.jobs);
-  if (jobs.length !== count || new Set(jobs.map(job => job.id)).size !== count
-      || new Set(jobs.map(job => job.name)).size !== count
-      || jobs.some(job => !Number.isSafeInteger(job.id) || job.id <= 0 || typeof job.name !== 'string'
-        || !job.name.trim() || job.run_id !== Number(runId) || job.run_attempt !== Number(runAttempt)
-        || job.head_sha !== commit)) {
-    throw new Error('Release attempt jobs have missing or conflicting identities');
-  }
+  const jobs = releaseAttemptJobs(transport, runId, runAttempt, commit);
   const archSteps = dual ? (jobs.find(job => job.name === 'Dual desktop release (linux-x86_64)')?.steps ?? [])
     .filter(step => step.name === archPackagingStep) : [];
   if (archSteps.length > 1 || archSteps.some(step => step.status !== 'completed' || step.conclusion !== 'success')) {
@@ -341,6 +348,11 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
   const windowsCandidateGate = dual && (seal !== undefined || jobs.some(job => windowsJobs.includes(job.name)));
   const linuxRuntimeGate = dual && (seal !== undefined || jobs.some(job => linuxJobs.includes(job.name)));
   const cancelledPublisher = repair && seal && run.conclusion === 'cancelled';
+  const interruptedSeal = reviewInterruptedSeal && cancelledPublisher && run.status === 'completed'
+    && seal.status === 'completed' && seal.conclusion === 'cancelled';
+  if (interruptedSeal && !(Date.parse(seal.completed_at) >= Date.parse(seal.started_at))) {
+    throw new Error('The interrupted seal has no bounded original job interval');
+  }
   if ((seal && !currentContract) || (historicalAttempt && (!seal || run.status !== 'completed')) || (run.conclusion === 'cancelled' && !cancelledPublisher)
       || (sealing && (run.status !== 'in_progress' || seal?.status !== 'in_progress' || seal.conclusion !== null))) {
     throw new Error('The release has no eligible candidate seal');
@@ -350,21 +362,22 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
       ...(windowsCandidateGate ? windowsJobs : []), ...(linuxRuntimeGate ? linuxJobs : [])]
     : [...releaseGateJobs, ...nativeReleaseJobs];
   const publishers = jobs.filter(job => publisherJobs.includes(job.name));
-  if ((sealing ? publishers.length > 1 : publishers.length !== 1)
+  const publisher = publishers[0];
+  if ((sealing || interruptedSeal ? publishers.length > 1 : publishers.length !== 1)
       || (!dual && requiresMyGo(tag) && jobs.filter(job => job.name === mygoJob).length !== 1)
       || (!dual && requiresFullSourceAcceptance(tag) && fullSourceJobs.some(name => !jobs.some(job => job.name === name && job.conclusion === 'success')))
       || jobs.some(job => !(job.status === 'completed' && job.conclusion === 'success')
       && !(optionalReleaseJobs.includes(job.name)
         && job.status === 'completed' && job.conclusion === 'skipped')
-      && !(sealing && job === seal)
-      && !(sealing && job === publishers[0] && ['queued', 'waiting', 'requested', 'pending'].includes(job.status))
-      && !(repair && job === publishers[0] && job.status === 'completed' && job.conclusion === 'failure')
-      && !(cancelledPublisher && job === publishers[0] && job.status === 'completed' && ['cancelled', 'skipped'].includes(job.conclusion))
-      && !(job === publishers[0] && job.status === 'in_progress' && job.conclusion === null))
-      || (run.status === 'completed' && publishers[0].status !== 'completed')
-      || (run.conclusion === 'failure' && publishers[0].conclusion !== 'failure')
-      || (cancelledPublisher && !['cancelled', 'skipped'].includes(publishers[0].conclusion))
-      || (run.conclusion === 'success' && publishers[0].conclusion !== 'success')
+      && !((sealing || interruptedSeal) && job === seal)
+      && !(sealing && job === publisher && ['queued', 'waiting', 'requested', 'pending'].includes(job.status))
+      && !(repair && job === publisher && job.status === 'completed' && job.conclusion === 'failure')
+      && !(cancelledPublisher && job === publisher && job.status === 'completed' && ['cancelled', 'skipped'].includes(job.conclusion))
+      && !(job === publisher && job.status === 'in_progress' && job.conclusion === null))
+      || (run.status === 'completed' && publisher && publisher.status !== 'completed')
+      || (run.conclusion === 'failure' && publisher?.conclusion !== 'failure')
+      || (cancelledPublisher && publisher && !['cancelled', 'skipped'].includes(publisher.conclusion))
+      || (run.conclusion === 'success' && publisher?.conclusion !== 'success')
       || requiredJobs.some(name => !jobs.some(job => job.name === name && job.status === 'completed' && job.conclusion === 'success'))) {
     throw new Error('Release native identity/upgrade gates or another job have not succeeded');
   }
@@ -380,7 +393,8 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
     status: run.status, conclusion: run.conclusion, asset_cutoff: dual ? Math.max(...times) : Math.min(...times),
     ...(dual ? { run_started_at: run.run_started_at, arch_packages: archSteps.length === 1, source_acceptance: currentContract,
       windows_candidate_gate: windowsCandidateGate, linux_runtime_gate: linuxRuntimeGate,
-      ...(seal ? { seal: { id: seal.id, started_at: seal.started_at, completed_at: sealing ? null : seal.completed_at },
+      ...(seal ? { seal: { id: seal.id, started_at: seal.started_at, completed_at: sealing ? null : seal.completed_at,
+        ...(interruptedSeal ? { interrupted: true } : {}) },
         product_cutoffs: Object.fromEntries(uploaders.map(name => [name, Date.parse(jobs.find(job => job.name === name).completed_at)])) } : {}) } : {}),
     jobs: jobs.map(job => ({ id: job.id, name: job.name, status: job.status, conclusion: job.conclusion,
       started_at: job.started_at, ...(seal ? { completed_at: job.completed_at } : {}) })).sort((a, b) => a.id - b.id) };
@@ -1000,7 +1014,11 @@ function originalArtifact(artifact, producer) {
 export function releaseSealReceiptId(tag, runId, runAttempt, transport = gh) {
   const client = githubClient(transport, true);
   const source = client.releaseCommit(tag);
-  const run = verifiedReleaseRun(transport, tag, source, runId, runAttempt, true, true);
+  const run = verifiedReleaseRun(transport, tag, source, runId, runAttempt, { repair: true, dual: true });
+  return originalSealReceiptId(source, run, transport);
+}
+
+function originalSealReceiptId(source, run, transport) {
   if (run.status !== 'completed') throw new Error('The original Release attempt is still running');
   if (!run.seal) return null;
   const name = 'release-seal-attempt-' + run.run_attempt;
@@ -1009,6 +1027,32 @@ export function releaseSealReceiptId(tag, runId, runAttempt, transport = gh) {
   const evidence = originalArtifact(artifact, producer);
   if (evidence.size_in_bytes > 8192) throw new Error('Original release seal receipt exceeds its artifact budget');
   return evidence.artifact_id;
+}
+
+// The Releases API requires push access to enumerate drafts. The recovery
+// review has that credential, but its commands can only issue GET requests.
+function releaseReviewReadOnly(transport) {
+  return (args, binary) => {
+    const options = args.slice(2).join('\0');
+    if (args[0] !== 'api' || !args[1]?.startsWith(`repos/${repository}/`)
+        || !['', '--paginate\0--slurp', '-H\0Accept: application/octet-stream'].includes(options)) {
+      throw new Error('The seal review can only read release evidence');
+    }
+    return transport(args, binary);
+  };
+}
+
+export function releaseSealRecoveryPlan(tag, runId, runAttempt, transport = gh) {
+  transport = releaseReviewReadOnly(transport);
+  const client = githubClient(transport, true);
+  const source = client.releaseCommit(tag);
+  const run = verifiedReleaseRun(transport, tag, source, runId, runAttempt,
+    { repair: true, dual: true, reviewInterruptedSeal: true });
+  if (!run.seal?.interrupted) return { original_receipt_id: originalSealReceiptId(source, run, transport) };
+  const release = client.releaseByTag(tag);
+  verifiedProducts(release, tag, run, true);
+  const reportIds = sealArtifacts(source, run, transport).filter(input => input.report).map(input => input.artifact_id);
+  return { release_id: String(release.id), report_ids: reportIds.join(',') };
 }
 
 function sameManifest(value, expected) {
@@ -1098,16 +1142,21 @@ function verifySourceReadback(receipt, source, run) {
 }
 
 export function releaseSealInputIds(tag, source, runId, runAttempt, transport = gh) {
-  const run = verifiedReleaseRun(transport, tag, source, runId, runAttempt, false, true, true);
+  const run = verifiedReleaseRun(transport, tag, source, runId, runAttempt, { dual: true, sealing: true });
   return sealArtifacts(source, run, transport).filter(input => input.report).map(input => input.artifact_id);
 }
 
-export function sealReleaseCandidate(tag, runId, runAttempt, readbacks, readbackIds, transport = gh) {
+function candidateSealEvidence(tag, runId, runAttempt, readbacks, readbackIds, transport, review = false) {
   const version = parseVersion(tag);
   const client = githubClient(transport, true);
   const release = client.releaseByTag(tag);
   const source = client.releaseCommit(tag);
-  const run = verifiedReleaseRun(transport, tag, source, runId, runAttempt, false, true, true);
+  const run = verifiedReleaseRun(transport, tag, source, runId, runAttempt, review
+    ? { repair: true, dual: true, reviewInterruptedSeal: true } : { dual: true, sealing: true });
+  if (review && !run.seal?.interrupted) throw new Error('No interrupted original seal to review');
+  if ((!review && release.draft !== true) || typeof release.draft !== 'boolean') {
+    throw new Error('Invalid draft state during candidate sealing');
+  }
   const products = verifiedProducts(release, tag, run, true);
   const inputs = sealArtifacts(source, run, transport);
   if (readbackIds !== inputs.filter(input => input.report).map(input => input.artifact_id).join(',')) {
@@ -1130,18 +1179,63 @@ export function sealReleaseCandidate(tag, runId, runAttempt, readbacks, readback
   });
   const bytes = candidateBytes({ tag, source, releaseId: release.id, repository, run, products, inputs,
     channel: promotionChannel(version.value), manifest });
-  const readDraft = () => {
+  const readRelease = () => {
     const observed = client.releaseByTag(tag);
-    if (observed.id !== release.id || observed.draft !== true || observed.prerelease !== Boolean(version.pre.length)
+    if (observed.id !== release.id || observed.tag_name !== tag || observed.draft !== release.draft
+        || observed.prerelease !== Boolean(version.pre.length)
         || observed.body !== release.body || client.releaseCommit(tag) !== source
         || verifiedProducts(observed, tag, run, true) !== products) {
-      throw new Error('The original draft changed during candidate sealing');
+      throw new Error('The original release changed during candidate sealing');
     }
     return observed;
   };
-  const identity = attachCandidate({ tag, repository, bytes, interval: run.seal, readDraft,
-    download: client.downloadAsset, transport });
-  return { ...identity, release_id: release.id, source_revision: source, run_id: run.run_id, run_attempt: run.run_attempt };
+  const origin = { release_id: release.id, source_revision: source, run_id: run.run_id, run_attempt: run.run_attempt };
+  return { bytes, interval: run.seal, readRelease, download: client.downloadAsset, origin };
+}
+
+export function sealReleaseCandidate(tag, runId, runAttempt, readbacks, readbackIds, transport = gh) {
+  const { bytes, interval, readRelease, download, origin } =
+    candidateSealEvidence(tag, runId, runAttempt, readbacks, readbackIds, transport);
+  const identity = attachCandidate({ tag, repository, bytes, interval, readDraft: readRelease, download, transport });
+  return { ...identity, ...origin };
+}
+
+export function reviewInterruptedReleaseSeal(tag, runId, runAttempt, readbacks, readbackIds, transport = gh) {
+  const { bytes, interval, readRelease, download, origin } =
+    candidateSealEvidence(tag, runId, runAttempt, readbacks, readbackIds, releaseReviewReadOnly(transport), true);
+  const identity = requireCandidateAsset(readRelease(), bytes, interval, download);
+  return { ...identity, ...origin, tag, original_seal_job_id: interval.id };
+}
+
+function verifiedSealReview(review, run, source, tag, release, sealed, transport) {
+  if (!run.seal?.interrupted || !sealed || Number(review.runId) === run.run_id
+      || !/^[1-9][0-9]*$/.test(review.runId) || !/^[1-9][0-9]*$/.test(review.attempt)
+      || !/^[a-f0-9]{40}$/.test(review.source)) {
+    throw new Error('Interrupted seal recovery requires an independent release review');
+  }
+  const observed = JSON.parse(transport(['api', `repos/${repository}/actions/runs/${review.runId}`]));
+  if (observed.id !== Number(review.runId) || observed.workflow_id !== run.workflow_id
+      || observed.path !== '.github/workflows/release.yml' || observed.event !== 'workflow_dispatch'
+      || observed.status !== 'in_progress' || observed.conclusion !== null || observed.head_branch !== 'master'
+      || observed.head_sha !== review.source || observed.run_attempt !== Number(review.attempt)
+      || observed.repository?.full_name !== repository || observed.head_repository?.full_name !== repository) {
+    throw new Error('Seal review does not identify the current recovery workflow');
+  }
+  const jobs = releaseAttemptJobs(transport, review.runId, review.attempt, review.source);
+  const producer = jobs.find(job => job.name === sealReviewJob);
+  if (!(Date.parse(producer?.started_at) >= Date.parse(run.seal.completed_at))) {
+    throw new Error('The independent review job did not start after the original seal ended');
+  }
+  const [artifact] = candidateArtifacts(review.source, String(review.runId), [`reviewed-seal-attempt-${review.attempt}`], transport);
+  const evidence = originalArtifact(artifact, producer);
+  const expected = { ...sealed, release_id: release.id, source_revision: source, tag,
+    run_id: run.run_id, run_attempt: run.run_attempt, original_seal_job_id: run.seal.id };
+  if (evidence.artifact_id !== Number(review.artifactId) || evidence.size_in_bytes > 8192 ||
+      Object.keys(review.receipt ?? {}).length !== Object.keys(expected).length ||
+      Object.entries(expected).some(([key, value]) => review.receipt?.[key] !== value)) {
+    throw new Error('Independent seal review receipt does not bind the original candidate');
+  }
+  return { run_id: observed.id, run_attempt: observed.run_attempt, source_revision: review.source, ...evidence };
 }
 
 function publication(mode, version, config, log, transport, bundle) {
@@ -1158,7 +1252,9 @@ function publication(mode, version, config, log, transport, bundle) {
   const resumeDraft = mode === 'resume-verified-draft';
   const synchronize = mode === 'publish-and-sync' || mode === 'sync-published' || resumeDraft;
   const repair = mode === 'sync-published' || resumeDraft;
-  const run = synchronize ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, repair, dual) : null;
+  const review = repair && dual ? bundle.sealReview : undefined;
+  const verification = { repair, dual, reviewInterruptedSeal: Boolean(review) };
+  const run = synchronize ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, verification) : null;
   const releaseAssets = synchronize ? verifiedProducts(release, parsed.value, run, dual) : null;
   if (bundle?.readbacks) verifyUploadReadbacks(release, tag, commit, run, bundle.readbacks, transport);
   if (synchronize && typeof release.draft !== 'boolean') throw new Error('Release draft state is missing');
@@ -1166,7 +1262,7 @@ function publication(mode, version, config, log, transport, bundle) {
     throw new Error('Published-channel synchronization requires a public release and completed eligible original run');
   }
   if (resumeDraft && (release.draft !== true || run.status !== 'completed' || !['failure', 'cancelled'].includes(run.conclusion))) {
-    throw new Error('Draft recovery requires an unpublished release and completed publisher-only interruption');
+    throw new Error('Draft recovery requires an unpublished release and an eligible completed original run');
   }
   if (mode === 'promote' && release.draft) throw new Error('Promotion requires an already published release');
   const signedAssets = [];
@@ -1190,17 +1286,21 @@ function publication(mode, version, config, log, transport, bundle) {
     return requireCandidateAsset(observed, bytes, run.seal, client.downloadAsset);
   };
   const sealed = checkSeal(release);
-  if (sealed && repair && !bundle.sealIdentity) throw new Error('Recovery requires the original frozen candidate receipt');
+  const reviewEvidence = review ? verifiedSealReview(review, run, commit, tag, release, sealed, transport) : null;
+  if (sealed && repair && !bundle.sealIdentity && !reviewEvidence) {
+    throw new Error('Recovery requires the original frozen candidate receipt');
+  }
   if (bundle?.sealIdentity && (sealed?.id !== bundle.sealIdentity.id || sealed?.sha256 !== bundle.sealIdentity.sha256
       || release.id !== bundle.sealIdentity.releaseId)) {
     throw new Error('Frozen candidate differs from the successful seal job outputs');
   }
-  bundle?.trace?.('candidate-verified', { release_id: release.id, candidate: sealed });
+  bundle?.trace?.('candidate-verified', { release_id: release.id, candidate: sealed, ...(reviewEvidence ? { seal_review: reviewEvidence } : {}) });
   const receipt = { schema_version: 1, version: parsed.value, source_revision: commit,
     release_id: release.id, signed_assets: signedAssets };
   if (synchronize && !dual) verifiedUpgradeGate(bundle.upgradeEvidence, receipt);
   const syncReceipt = synchronize ? { ...receipt, workflow: run,
     ...(sealed ? { sealed_candidate: sealed } : {}),
+    ...(reviewEvidence ? { seal_review: reviewEvidence } : {}),
     ...(dual ? {} : { windows_upgrade_gate_sha256: bundle.upgradeEvidence.sha256 }) } : null;
   if (mode === 'promote') {
     const acceptance = bundle?.acceptance;
@@ -1238,7 +1338,7 @@ function publication(mode, version, config, log, transport, bundle) {
   }
   // Check asset identity again before making the verified release public.
   const currentRun = synchronize
-    ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, repair, dual) : null;
+    ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, verification) : null;
   const latest = client.releaseByTag(tag);
   if (latest.id !== release.id || client.releaseCommit(tag) !== commit) throw new Error('Release source changed during verification');
   for (const asset of release.assets) {
@@ -1251,7 +1351,9 @@ function publication(mode, version, config, log, transport, bundle) {
     if (latest.tag_name !== tag || latest.prerelease !== release.prerelease || latest.body !== release.body
         || verifiedProducts(latest, parsed.value, run, dual) !== releaseAssets
         || JSON.stringify(currentRun) !== JSON.stringify(run)
-        || JSON.stringify(checkSeal(latest)) !== JSON.stringify(sealed)) {
+        || JSON.stringify(checkSeal(latest)) !== JSON.stringify(sealed)
+        || (review && JSON.stringify(verifiedSealReview(review, run, commit, tag, latest, sealed, transport))
+          !== JSON.stringify(reviewEvidence))) {
       throw new Error('Release workflow gates or asset identities changed before publication');
     }
     if (!dual && readEvidenceJson(bundle.upgradePath).sha256 !== bundle.upgradeEvidence.sha256) {
@@ -1387,9 +1489,9 @@ const dualActions = {
   'resume-dual-draft': 'resume-verified-draft',
 };
 
-export function publishDual(mode, version, config, runId, runAttempt, log = console.log, transport = gh, readbacks, sealIdentity, trace) {
+export function publishDual(mode, version, config, runId, runAttempt, log = console.log, transport = gh, readbacks, sealIdentity, trace, sealReview) {
   if (!Object.hasOwn(dualActions, mode)) throw new Error('Unknown dual desktop publication mode');
-  return publication(dualActions[mode], version, config, log, transport, { dual: true, runId, runAttempt, readbacks, sealIdentity, trace });
+  return publication(dualActions[mode], version, config, log, transport, { dual: true, runId, runAttempt, readbacks, sealIdentity, trace, sealReview });
 }
 
 function uploadReceipt(kind, tag, source, releaseId, assets) {
@@ -1408,11 +1510,11 @@ function publicationTrace(tag, originalRun, originalAttempt) {
   };
 }
 
-function publishDualCommand(mode, tag, config, runId, runAttempt, identity) {
+function publishDualCommand(mode, tag, config, runId, runAttempt, identity, sealReview) {
   const trace = publicationTrace(tag, runId, runAttempt);
   trace('started', { candidate: identity });
   try {
-    const result = publishDual(mode, tag, config, runId, runAttempt, console.error, gh, undefined, identity, trace);
+    const result = publishDual(mode, tag, config, runId, runAttempt, console.error, gh, undefined, identity, trace, sealReview);
     const verifiedAt = new Date().toISOString();
     trace('completed', { status: result.status });
     console.log(JSON.stringify({ ...result, channel_verified_at: verifiedAt }));
@@ -1420,6 +1522,13 @@ function publishDualCommand(mode, tag, config, runId, runAttempt, identity) {
     trace('failed');
     throw error;
   }
+}
+
+function readSealReadbacks(directory, releaseId) {
+  const read = name => readEvidenceJson(join(directory, name + '.json')).value;
+  return { releaseId, source: read('source-acceptance'), desktop: read('desktop-readback'),
+    standalone: read('standalone-readback'), windows: windowsVariants.map(variant => read('windows-candidate-' + variant)),
+    linux: linuxTargets.map(target => read('linux-runtime-' + target)) };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
@@ -1476,21 +1585,24 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   } else if (mode === 'seal-input-ids' && process.env.GITHUB_EVENT_NAME === 'push') {
     console.log(releaseSealInputIds(version, acceptancePath, process.env.GITHUB_RUN_ID, process.env.GITHUB_RUN_ATTEMPT).join(','));
   } else if (mode === 'seal-dual' && process.env.GITHUB_EVENT_NAME === 'push' && remaining.length === 2) {
-    const read = name => readEvidenceJson(join(upgradePath, name + '.json')).value;
-    const readbacks = { releaseId: remaining[0], source: read('source-acceptance'),
-      desktop: read('desktop-readback'), standalone: read('standalone-readback'),
-      windows: windowsVariants.map(variant => read('windows-candidate-' + variant)),
-      linux: linuxTargets.map(target => read('linux-runtime-' + target)) };
+    const readbacks = readSealReadbacks(upgradePath, remaining[0]);
     console.log(JSON.stringify(sealReleaseCandidate(version, acceptancePath, runAttempt, readbacks, remaining[1])));
   } else if (mode === 'publish-sealed-dual' && process.env.GITHUB_EVENT_NAME === 'push' && remaining.length === 2) {
     const sealIdentity = { id: Number(remaining[0]), sha256: remaining[1], releaseId: Number(upgradePath) };
     publishDualCommand('publish-dual', version, config, acceptancePath, runAttempt, sealIdentity);
-  } else if (mode === 'seal-receipt-id' && process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
-    console.log(releaseSealReceiptId(version, acceptancePath, runAttempt) ?? '');
+  } else if (mode === 'seal-recovery-plan' && process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
+    console.log(JSON.stringify(releaseSealRecoveryPlan(version, acceptancePath, runAttempt)));
+  } else if (mode === 'review-interrupted-seal' && process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' && remaining.length === 2) {
+    const readbacks = readSealReadbacks(upgradePath, remaining[0]);
+    console.log(JSON.stringify(reviewInterruptedReleaseSeal(version, acceptancePath, runAttempt, readbacks, remaining[1])));
   } else if (mode === 'publish-only') publishOnly(version, config);
-  else if (mode !== 'publish-dual' && Object.hasOwn(dualActions, mode) && acceptancePath && runAttempt && remaining.length === 0) {
-    let identity;
-    if (upgradePath) {
+  else if (mode !== 'publish-dual' && Object.hasOwn(dualActions, mode) && acceptancePath && runAttempt
+      && process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' && remaining.length <= 1) {
+    let identity, sealReview;
+    if (upgradePath && remaining.length === 1) {
+      sealReview = { runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT, source: process.env.GITHUB_SHA,
+        artifactId: remaining[0], receipt: readEvidenceJson(upgradePath).value };
+    } else if (upgradePath) {
       const receipt = readEvidenceJson(upgradePath).value;
       if (receipt?.name !== candidateFilename || receipt.run_id !== Number(acceptancePath)
           || receipt.run_attempt !== Number(runAttempt) || !/^[a-f0-9]{64}$/.test(receipt.sha256 ?? '')
@@ -1500,7 +1612,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       }
       identity = { id: receipt.id, sha256: receipt.sha256, releaseId: receipt.release_id };
     }
-    publishDualCommand(mode, version, config, acceptancePath, runAttempt, identity);
+    publishDualCommand(mode, version, config, acceptancePath, runAttempt, identity, sealReview);
   }
   else if (['publish-and-sync', 'sync-published', 'resume-verified-draft'].includes(mode) && acceptancePath && runAttempt && upgradePath) {
     const synchronize = mode === 'resume-verified-draft' ? resumeVerifiedDraft

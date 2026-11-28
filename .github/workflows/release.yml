@@ -693,9 +693,70 @@ jobs:
           }
           JS
 
+  review-dual-seal:
+    name: Review interrupted release seal
+    if: github.event_name == 'workflow_dispatch' && (inputs.mode == 'sync-dual-channel' || inputs.mode == 'resume-dual-draft')
+    runs-on: ubuntu-24.04
+    permissions:
+      # GitHub requires push access to list draft releases. The review CLI restricts transport to GET.
+      contents: write
+      actions: read
+    outputs:
+      original_receipt_id: ${{ steps.plan.outputs.original_receipt_id }}
+      review_receipt_id: ${{ steps.proof.outputs.artifact-id }}
+    steps:
+      - run: test "$GITHUB_REF" = refs/heads/master
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Bound recovery to the original run, attempt and producer jobs
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_RUN: ${{ inputs.release-run-id }}
+          RELEASE_ATTEMPT: ${{ inputs.release-run-attempt }}
+        run: |
+          set -euo pipefail
+          result="$(node scripts/updater-release.mjs seal-recovery-plan "$RELEASE_TAG" "$RELEASE_RUN" "$RELEASE_ATTEMPT")"
+          jq -r 'to_entries[] | select(.value != null) | "\(.key)=\(.value)"' <<< "$result" >> "$GITHUB_OUTPUT"
+      - name: Download the original successful validation reports by ID
+        if: steps.plan.outputs.report_ids != ''
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.release-run-id }}
+          artifact-ids: ${{ steps.plan.outputs.report_ids }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/original-readbacks
+      - name: Reconstruct the candidate and read back its original attachment
+        if: steps.plan.outputs.report_ids != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_RUN: ${{ inputs.release-run-id }}
+          RELEASE_ATTEMPT: ${{ inputs.release-run-attempt }}
+          RELEASE_ID: ${{ steps.plan.outputs.release_id }}
+          REPORT_IDS: ${{ steps.plan.outputs.report_ids }}
+        run: |
+          set -euo pipefail
+          node scripts/updater-release.mjs review-interrupted-seal "$RELEASE_TAG" "$RELEASE_RUN" "$RELEASE_ATTEMPT" \
+            "$RUNNER_TEMP/original-readbacks" "$RELEASE_ID" "$REPORT_IDS" > "$RUNNER_TEMP/release-seal-review.json"
+      - uses: actions/upload-artifact@v4
+        id: proof
+        if: steps.plan.outputs.report_ids != ''
+        with:
+          name: reviewed-seal-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-seal-review.json
+          if-no-files-found: error
+
   recover-dual-release:
     name: Resume dual-desktop publication or synchronize its channel
     if: github.event_name == 'workflow_dispatch' && (inputs.mode == 'sync-dual-channel' || inputs.mode == 'resume-dual-draft')
+    needs: review-dual-seal
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -708,26 +769,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Locate the original successful seal receipt
-        id: receipt
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag }}
-          RELEASE_RUN: ${{ inputs.release-run-id }}
-          RELEASE_ATTEMPT: ${{ inputs.release-run-attempt }}
-        run: |
-          set -euo pipefail
-          id="$(node scripts/updater-release.mjs seal-receipt-id "$RELEASE_TAG" "$RELEASE_RUN" "$RELEASE_ATTEMPT")"
-          echo "artifact_id=$id" >> "$GITHUB_OUTPUT"
       - name: Download the immutable original receipt by ID
-        if: steps.receipt.outputs.artifact_id != ''
+        if: needs.review-dual-seal.outputs.original_receipt_id != ''
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
           run-id: ${{ inputs.release-run-id }}
-          artifact-ids: ${{ steps.receipt.outputs.artifact_id }}
+          artifact-ids: ${{ needs.review-dual-seal.outputs.original_receipt_id }}
           merge-multiple: true
           path: ${{ runner.temp }}/original-seal
+      - name: Download the independent review receipt by ID
+        if: needs.review-dual-seal.outputs.review_receipt_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.review-dual-seal.outputs.review_receipt_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/reviewed-seal
       - name: Verify the original dual-desktop jobs and synchronize
         env:
           GH_TOKEN: ${{ github.token }}
@@ -735,12 +792,18 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
           RELEASE_RUN: ${{ inputs.release-run-id }}
           RELEASE_ATTEMPT: ${{ inputs.release-run-attempt }}
-          SEAL_ARTIFACT: ${{ steps.receipt.outputs.artifact_id }}
+          SEAL_ARTIFACT: ${{ needs.review-dual-seal.outputs.original_receipt_id }}
+          REVIEW_ARTIFACT: ${{ needs.review-dual-seal.outputs.review_receipt_id }}
           DZC_PUBLICATION_TRACE: ${{ runner.temp }}/publication-stages.ndjson
         run: |
           set -euo pipefail
           receipt=()
-          if [[ -n "$SEAL_ARTIFACT" ]]; then receipt+=("$RUNNER_TEMP/original-seal/release-seal.json"); fi
+          if [[ -n "$SEAL_ARTIFACT" ]]; then
+            test -z "$REVIEW_ARTIFACT"
+            receipt+=("$RUNNER_TEMP/original-seal/release-seal.json")
+          elif [[ -n "$REVIEW_ARTIFACT" ]]; then
+            receipt+=("$RUNNER_TEMP/reviewed-seal/release-seal-review.json" "$REVIEW_ARTIFACT")
+          fi
           node scripts/updater-release.mjs "$RELEASE_MODE" "$RELEASE_TAG" "$RELEASE_RUN" "$RELEASE_ATTEMPT" "${receipt[@]}" \
             | tee "$RUNNER_TEMP/updater-channel-sync.json"
       - uses: actions/upload-artifact@v4

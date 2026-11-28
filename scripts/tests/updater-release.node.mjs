@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, publishAndSync, publishDual, syncPublished, resumeVerifiedDraft, promote as promoteFile, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
 import { attachDesktopCandidates, desktopArtifactIds, desktopReleaseTargets, expectedDesktopCandidateFiles, readStandaloneCandidates, standaloneArtifactIds, stageDesktopCandidate } from '../updater-release.mjs';
-import { releaseSealInputIds, releaseSealReceiptId, sealReleaseCandidate } from '../updater-release.mjs';
+import { releaseSealInputIds, releaseSealReceiptId, releaseSealRecoveryPlan, reviewInterruptedReleaseSeal, sealReleaseCandidate } from '../updater-release.mjs';
 import { candidateFilename, candidateSealJob } from '../release-candidate.mjs';
 
 const gateNames = ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'];
@@ -700,7 +700,34 @@ function sealFixture(options) {
   const windowsId = state.artifacts.find(artifact => artifact.name === others[0]).id;
   for (const report of readbacks.windows) report.producer_artifact_id = String(windowsId);
   const reportIds = reports.map(name => state.artifacts.find(artifact => artifact.name === name).id);
-  return { ...fixture, publisher, seal,
+  const reviewSource = 'b'.repeat(40), reviewRunId = 7002;
+  const reviewRun = { ...state.run, id: reviewRunId, event: 'workflow_dispatch', head_branch: 'master', head_sha: reviewSource };
+  const reviewJob = { ...seal, id: 9100, name: 'Review interrupted release seal', run_id: reviewRunId,
+    head_sha: reviewSource, status: 'completed', conclusion: 'success',
+    started_at: '2026-10-21T03:00:00Z', completed_at: '2026-10-21T03:06:00Z' };
+  const reviewArtifact = { ...state.artifacts[0], id: 1789, name: 'reviewed-seal-attempt-1',
+    created_at: '2026-10-21T03:04:00Z',
+    workflow_run: { ...state.artifacts[0].workflow_run, id: reviewRunId, head_sha: reviewSource } };
+  const publishTransport = (args, binary) => {
+    if (args[1] === `repos/${repository}/actions/runs/${reviewRunId}`) return JSON.stringify(reviewRun);
+    if (args[1] === `repos/${repository}/actions/runs/${reviewRunId}/attempts/1/jobs?per_page=100`) {
+      return JSON.stringify([{ total_count: 1, jobs: [reviewJob] }]);
+    }
+    if (args[1] === `repos/${repository}/actions/runs/${reviewRunId}/artifacts?per_page=100`) {
+      return JSON.stringify([{ artifacts: [reviewArtifact] }]);
+    }
+    return transport(args, binary);
+  };
+  return { ...fixture, publisher, seal, reviewRun, reviewJob, reviewArtifact,
+    cancelSeal() {
+      Object.assign(state.run, { status: 'completed', conclusion: 'cancelled' });
+      Object.assign(seal, { status: 'completed', conclusion: 'cancelled', completed_at: '2026-10-21T01:10:00Z' });
+      Object.assign(publisher, { status: 'completed', conclusion: 'skipped' });
+    },
+    recoveryPlan: () => releaseSealRecoveryPlan(tag, 7001, 1, transport),
+    reviewSeal: (ids = reportIds) => reviewInterruptedReleaseSeal(tag, 7001, 1, readbacks, ids.join(','), transport),
+    reviewIdentity: receipt => ({ runId: String(reviewRunId), attempt: '1', source: reviewSource,
+      artifactId: reviewArtifact.id, receipt }),
     inputIds: () => releaseSealInputIds(tag, source, 7001, 1, transport),
     recoveryId: () => releaseSealReceiptId(tag, 7001, 1, transport),
     reportIds,
@@ -711,8 +738,8 @@ function sealFixture(options) {
       state.artifacts.push({ ...state.artifacts[0], name: 'release-seal-attempt-1',
         id: 1788, created_at: '2026-10-21T01:07:00Z' });
     },
-    publish: (mode, identity, trace) => publishDual(mode, tag, config, 7001, 1, () => {}, transport, undefined,
-      identity && { id: identity.id, sha256: identity.sha256, releaseId: identity.release_id }, trace),
+    publish: (mode, identity, trace, review) => publishDual(mode, tag, config, 7001, 1, () => {}, publishTransport, undefined,
+      identity && { id: identity.id, sha256: identity.sha256, releaseId: identity.release_id }, trace, review),
   };
 }
 
@@ -742,6 +769,7 @@ test('a successful seal permits publisher-only cancellation recovery', () => {
   Object.assign(fixture.state.run, { status: 'completed', conclusion: 'cancelled' });
   fixture.state.latestRun = { ...fixture.state.run, run_attempt: 2, conclusion: 'failure' };
   assert.equal(fixture.recoveryId(), 1788);
+  assert.deepEqual(fixture.recoveryPlan(), { original_receipt_id: 1788 });
   assert.throws(() => fixture.publish('resume-dual-draft'), /original frozen candidate receipt/);
   assert.throws(() => fixture.publish('resume-dual-draft', { ...original, id: original.id + 1 }), /seal job outputs/);
   assert.equal(fixture.publish('resume-dual-draft', original).sealed_candidate.id, original.id);
@@ -760,6 +788,91 @@ test('an interrupted sealing process leaves the original bytes recoverable but g
   fixture.sealSucceeded();
   assert.equal(fixture.publish('publish-dual', checked).sealed_candidate.id, saved);
 });
+
+test('a cancelled seal can publish only through a new successful review of the original attachment', () => {
+  const fixture = sealFixture({ stopAfter: 'upload:candidate' });
+  assert.throws(() => fixture.attach(), /Synthetic publisher interruption/);
+  fixture.state.interrupted = false;
+  const saved = fixture.state.product.assets.at(-1);
+  fixture.cancelSeal();
+  assert.throws(() => fixture.recoveryId(), /gates/);
+  assert.throws(() => fixture.publish('resume-dual-draft'), /gates/);
+  assert.deepEqual(fixture.recoveryPlan(), { release_id: '10', report_ids: fixture.reportIds.join(',') });
+  const approval = fixture.reviewSeal();
+  assert.deepEqual(fixture.reviewSeal(), approval);
+  assert.equal(approval.id, saved.id);
+  assert.equal(`sha256:${approval.sha256}`, saved.digest);
+  assert.equal(approval.original_seal_job_id, fixture.seal.id);
+  assert.equal(fixture.state.product.draft, true);
+  assert.deepEqual(fixture.state.mutations, ['upload:candidate']);
+  const review = fixture.reviewIdentity(approval);
+  const result = fixture.publish('resume-dual-draft', undefined, undefined, review);
+  assert.equal(result.status, 'synchronized');
+  assert.equal(result.sealed_candidate.id, saved.id);
+  assert.equal(result.seal_review.run_id, fixture.reviewRun.id);
+  assert.equal(result.seal_review.producer_job_id, fixture.reviewJob.id);
+  assert.equal(result.seal_review.artifact_id, fixture.reviewArtifact.id);
+  const mutations = fixture.state.mutations.slice();
+  const repeat = fixture.publish('sync-dual-channel', undefined, undefined, fixture.reviewIdentity(fixture.reviewSeal()));
+  assert.equal(repeat.status, 'already_synchronized');
+  assert.deepEqual(fixture.state.mutations, mutations);
+  assert.equal(fixture.state.product.assets.length, 41);
+});
+
+test('a valid review can recover a seal cancelled before a publisher job was scheduled', () => {
+  const fixture = sealFixture();
+  const original = fixture.attach();
+  fixture.cancelSeal();
+  fixture.state.jobs = fixture.state.jobs.filter(job => job !== fixture.publisher);
+  const review = fixture.reviewIdentity(fixture.reviewSeal());
+  assert.equal(fixture.publish('resume-dual-draft', undefined, undefined, review).sealed_candidate.id, original.id);
+});
+
+for (const [name, change, error] of [
+  ['missing frozen attachment', fixture => fixture.state.product.assets.pop(), /missing frozen/],
+  ['changed frozen attachment', fixture => { fixture.state.product.assets.at(-1).digest = 'sha256:' + 'f'.repeat(64); }, /content, asset identity/],
+  ['attachment uploaded after cancellation', fixture => { fixture.state.product.assets.at(-1).updated_at = '2026-10-21T03:03:00Z'; }, /seal time/],
+  ['missing cancellation time', fixture => { fixture.seal.completed_at = null; }, /bounded original job/],
+  ['failed original gate', fixture => {
+    fixture.state.jobs.find(job => job.name === 'Verify final Windows installer (tauri)').conclusion = 'cancelled';
+  }, /gates/],
+  ['changed producer artifact', fixture => { fixture.state.artifacts[0].id = 9999; }, /Linux runtime report does not identify/],
+  ['missing validation report', fixture => { fixture.readbacks.linux.pop(); }, /Linux/],
+  ['different release ID', fixture => { fixture.readbacks.releaseId = '23'; }, /different draft release/],
+  ['changed release notes', fixture => { fixture.state.product.body = 'Different notes'; }, /Frozen candidate/],
+]) {
+  test('independent review refuses ' + name, () => {
+    const fixture = sealFixture();
+    fixture.attach();
+    fixture.cancelSeal();
+    change(fixture);
+    assert.throws(() => fixture.reviewSeal(), error);
+    assert.deepEqual(fixture.state.mutations, ['upload:candidate']);
+    assert.equal(fixture.state.product.draft, true);
+  });
+}
+
+for (const [name, change, error] of [
+  ['a review job that failed', fixture => { fixture.reviewJob.conclusion = 'failure'; }, /successful producer job/],
+  ['review from the wrong branch', fixture => { fixture.reviewRun.head_branch = 'unreviewed'; }, /current recovery workflow/],
+  ['review from the wrong attempt', fixture => { fixture.reviewRun.run_attempt = 2; }, /current recovery workflow/],
+  ['a review started before cancellation', fixture => { fixture.reviewJob.started_at = '2026-10-21T01:09:59Z'; }, /did not start after/],
+  ['review artifact outside the successful job', fixture => { fixture.reviewArtifact.created_at = '2026-10-21T03:10:00Z'; }, /successful producer job/],
+  ['wrong review artifact ID', (_, review) => { review.artifactId++; }, /review receipt/],
+  ['a receipt for a different cancelled job', (_, review) => { review.receipt.original_seal_job_id++; }, /review receipt/],
+  ['a receipt for a replaced candidate attachment', (_, review) => { review.receipt.id++; }, /review receipt/],
+]) {
+  test('interrupted seal publication rejects ' + name, () => {
+    const fixture = sealFixture();
+    fixture.attach();
+    fixture.cancelSeal();
+    const review = fixture.reviewIdentity(fixture.reviewSeal());
+    change(fixture, review);
+    assert.throws(() => fixture.publish('resume-dual-draft', undefined, undefined, review), error);
+    assert.deepEqual(fixture.state.mutations, ['upload:candidate']);
+    assert.equal(fixture.state.product.draft, true);
+  });
+}
 
 for (const [name, change] of [
   ['bad source receipt', fixture => { fixture.readbacks.source.source_revision = 'f'.repeat(40); }],

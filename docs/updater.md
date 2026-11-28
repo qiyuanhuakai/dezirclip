@@ -101,12 +101,12 @@ Stable 只读取 stable.json，排除全部预发布。Preview 分别读取两�
 1. 核对同步版本及签名配置，创建 GitHub 草稿。
 2. 四个平台与草稿准备同时启动。每个平台单独编译 Tauri 主程序，再在打包时生成同一组 Rust 辅助程序供 Tauri 和 MyGo 使用。上传前核对草稿及 tag 源码。桌面发布使用 ThinLTO，Windows NSIS 使用 zlib，Linux 并行打包 Tauri RPM 与 MyGo。独立 CLI 并行执行四个平台的兼容构建和实际制品验证。
 3. 同一平台任务直接检查制品架构、构建身份和 MyGo 安装包。Linux 启动提取后的 deb 与 AppImage 检查入口。Linux x86_64 复用两种 deb 的程序与资源，用 Arch Linux 的 `makepkg` 生成 pacman 安装包和包含 `PKGBUILD`、`.SRCINFO` 的 AUR 配方归档。Windows x64 在验收会话安装 MyGo，启动静默更新，验证安装器等待旧进程退出后替换文件、重新打开原来的历史，再卸载。普通 CI 在安装脚本或验收输入变动时测试历史 MyGo 安装包。也可以手动运行 CI 的全量验收。
-4. `publish-dual` 核对原 tag 推送、精确 run/attempt、构建任务和资产清单，重新下载八份 NSIS/AppImage 与配套签名，校验 SHA-256、签名、版本和文件名。通过后公开草稿，并写入包含两种桌面的单份通道索引。
+4. 先封存候选，记录 40 项产品的摘要、原始构建与验收凭据、release ID 和通道索引摘要。发布器核对封存任务、附件和原 tag 的 run/attempt，重新下载八份 NSIS/AppImage 与配套签名，校验 SHA-256、签名、版本和文件名。通过后公开草稿，并写入包含两种桌面的单份通道索引。
 5. 预发布推进 `preview.json`，正式版推进 `stable.json`。先上传版本索引并回读，再激活。等版本必须内容一致，较新通道继续生效。deb 和 rpm 通过原安装方式更新。
 
 首次成功的 tag 发布会在 Actions 摘要记录从工作流开始到通道发布的时长。目标为 15–20 分钟，重跑的耗时不纳入这项指标。
 
-双桌面版若只在最后一步失败，从 `master` 手动运行 Release。草稿选择 `resume-dual-draft`，已公开版选择 `sync-dual-channel`。填写原版 tag、run ID 和 attempt。恢复沿用原始制品、签名和构建结果。旧版可沿用 `resume-verified-draft` 和 `sync-published-channel`，这两个入口仍依赖其原始 Windows 升级汇总。
+双桌面版若在封存或公开阶段中断，从 `master` 手动运行 Release。草稿选择 `resume-dual-draft`，已公开版选择 `sync-dual-channel`。填写原版 tag、run ID 和 attempt。原封存任务已成功时，按原 artifact ID 读取封存凭据。如果原封存任务在上传附件后被取消，独立任务用原验收报告复核附件的 ID、摘要、字节及上传时间。复核任务成功且发布器再次确认凭据后，才允许公开或同步通道。缺失附件、超出原封存时段、产品变动或原验收失败均会停止恢复。旧版可沿用 `resume-verified-draft` 和 `sync-published-channel`，这两个入口仍依赖其原始 Windows 升级汇总。
 
 旧 `node scripts/updater-release.mjs promote v<version> ACCEPTANCE.json` 仍要求四份真实 `public_assets`、`appimage_updates`、`windows_upgrade`、`performance` 报告及验收清单。其版本、来源提交、release ID 和八项签名资产必须匹配。每个 `gates` 仍使用 `{ "file": "报告名.json", "sha256": "报告原始字节的64位小写哈希" }`，不接受只有哈希字符串的声明；此兼容入口不自动生成验收结论。
 

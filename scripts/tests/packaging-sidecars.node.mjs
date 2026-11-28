@@ -54,11 +54,23 @@ function assertReleaseSourceRouting(workflow) {
   assert.match(promote, /SEAL_ID: \$\{\{ needs\.seal-candidate\.outputs\.asset_id \}\}/);
   assert.match(promote, /SEAL_SHA256: \$\{\{ needs\.seal-candidate\.outputs\.sha256 \}\}/);
   assert.match(promote, /updater-release\.mjs publish-sealed-dual/);
+  const review = releaseJob(workflow, "review-dual-seal");
   const recover = releaseJob(workflow, "recover-dual-release");
-  assert.match(recover, /inputs\.mode == 'resume-dual-draft'/);
-  assert.equal([...recover.matchAll(/RELEASE_RUN: \$\{\{ inputs\.release-run-id \}\}/g)].length, 2);
-  assert.equal([...recover.matchAll(/RELEASE_ATTEMPT: \$\{\{ inputs\.release-run-attempt \}\}/g)].length, 2);
-  assert.match(recover, /artifact-ids: \$\{\{ steps\.receipt\.outputs\.artifact_id \}\}/);
+  for (const job of [review, recover]) {
+    assert.match(job, /github.event_name == 'workflow_dispatch'/);
+    assert.match(job, /inputs\.mode == 'resume-dual-draft'/);
+    assert.match(job, /test "\$GITHUB_REF" = refs\/heads\/master/);
+    assert.match(job, /RELEASE_RUN: \$\{\{ inputs\.release-run-id \}\}/);
+    assert.match(job, /RELEASE_ATTEMPT: \$\{\{ inputs\.release-run-attempt \}\}/);
+  }
+  assert.equal([...review.matchAll(/RELEASE_RUN: \$\{\{ inputs\.release-run-id \}\}/g)].length, 2);
+  assert.equal([...review.matchAll(/RELEASE_ATTEMPT: \$\{\{ inputs\.release-run-attempt \}\}/g)].length, 2);
+  assert.match(review, /updater-release\.mjs seal-recovery-plan/);
+  assert.match(review, /updater-release\.mjs review-interrupted-seal/);
+  assert.match(review, /run-id: \$\{\{ inputs\.release-run-id \}\}\n\s+artifact-ids: \$\{\{ steps\.plan\.outputs\.report_ids \}\}/);
+  assert.match(recover, /needs: review-dual-seal/);
+  assert.match(recover, /artifact-ids: \$\{\{ needs\.review-dual-seal\.outputs\.original_receipt_id \}\}/);
+  assert.match(recover, /artifact-ids: \$\{\{ needs\.review-dual-seal\.outputs\.review_receipt_id \}\}/);
 }
 
 function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = "release", portable = false, omitOutput = false, withDesktop = false } = {}) {
@@ -247,6 +259,7 @@ test("release source routing rejects tag mismatch, lost recovery identity or ret
     ["publishes around seal", value => value.replace("needs: [create-release, seal-candidate]", "needs: [create-release]")],
     ["lost immutable asset identity", value => value.replace("SEAL_ID: ${{ needs.seal-candidate.outputs.asset_id }}", "SEAL_ID: 1")],
     ["lost original attempt", value => value.replace("RELEASE_ATTEMPT: ${{ inputs.release-run-attempt }}", "RELEASE_ATTEMPT: 1")],
+    ["publication bypasses interrupted seal review", value => value.replace("    needs: review-dual-seal", "")],
     ["retired operation", value => value.replace("resume-dual-draft,", "resume-dual-draft, resume-existing-alpha2,")],
   ];
   for (const [name, change] of changes) {

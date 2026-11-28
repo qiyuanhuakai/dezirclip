@@ -87,7 +87,7 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 
 ## 正常 tag 发布
 
-`release.yml` 并行创建 draft、构建产物与执行候选源码验收。standalone 上传等待其构建和 draft，按当前 attempt 的固定 artifact ID 下载四份归档，核对校验文件、绑定 draft ID 并读回已上传 asset。桌面上传任务按源码 SHA 和 attempt 下载四个生产 artifact ID 对应的文件，先验证 12 个签名和 20 份桌面归档，再绑定 draft ID 上传。归档检查核对安装路径、可执行文件架构和适用的包元数据，并确认 Arch 二进制和 AUR 配方对应候选中的 Debian 包。Windows x64 的 Tauri 和 MyGo 安装包各交给独立 runner。验证从固定签名旧版 v0.2.0 升级、三个安装文件的 SHA-256、启动、重装、卸载和数据保留。独立封存任务按固定 artifact ID 下载源码记录、上传读回以及 Windows 和 Linux 的原生验收。封存附件绑定原 draft ID、每项资产的摘要、原 producer 及预期更新 manifest。公开发布任务需要封存 job 成功，并独立核对原封存资产身份、签名与写入前后的远端状态。 [发布脚本](../scripts/updater-release.mjs)
+`release.yml` 并行创建 draft、构建产物与执行候选源码验收。standalone 上传等待其构建和 draft，按当前 attempt 的固定 artifact ID 下载四份归档，核对校验文件、绑定 draft ID 并读回已上传 asset。桌面上传任务按源码 SHA 和 attempt 下载四个生产 artifact ID 对应的文件，先验证 12 个签名和 20 份桌面归档，再绑定 draft ID 上传。归档检查核对安装路径、可执行文件架构和适用的包元数据，并确认 Arch 二进制和 AUR 配方对应候选中的 Debian 包。Windows x64 的 Tauri 和 MyGo 安装包各交给独立 runner。验证从固定签名旧版 v0.2.0 升级、三个安装文件的 SHA-256、启动、重装、卸载和数据保留。独立封存任务按固定 artifact ID 下载源码记录、上传读回以及 Windows 和 Linux 的原生验收。封存附件绑定原 draft ID、每项资产的摘要、原 producer 及预期更新 manifest。正常 tag 的公开任务需要封存 job 成功，并独立核对原封存资产身份、签名与写入前后的远端状态。 [发布脚本](../scripts/updater-release.mjs)
 
 每个目标用一次 Cargo 构建产出 Tauri、桌面配套 CLI 和 Service，随后 Tauri 打包阶段复用已暂存的二进制，MyGo 使用相同目录。独立 CLI 下载保持原 ABI 构建边界。生产 Web bundle 的浏览器测试在源码验收执行一次。本地以同一路径构建并解包 Windows x64 NSIS 和 Linux x64 deb，两个 helper 的 SHA-256 和实际 CLI/MCP 集成通过。Release 首次运行计时仍需候选实测。
 
@@ -110,6 +110,8 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 | 合计 | 28 个原桌面文件 + 8 个 standalone 文件 + 4 个 Arch 文件 | **40** |
 
 含 Arch 打包步骤的运行必须通过该步骤并上传四项 Arch 产物。旧 dual 运行（包括已发布的 v0.2.0）使用原有 36 项合同。当前发布要求 40 项产品资产和唯一的 `dezirclip-candidate.json`，拒绝其它附件和 Flatpak。两种 Windows 桌面均只分发安装器。产品和封存附件分别受上传 job 和封存 job 的时间约束。
+
+手动恢复沿用 Release 的两个双桌面入口。封存已成功时读取原凭据。如果原封存被取消但附件已上传，`Review interrupted release seal` 从原 attempt 下载七份成功报告，重建并读回原附件。恢复发布器检查新复核的 job、artifact ID、摘要、时间及原附件身份，并将两次运行分别记入同步回执。复核使用 GitHub 列出 draft 所需的仓库权限，脚本仅允许调用读取 Release 证据的 GET 请求。 [GitHub Releases API](https://docs.github.com/en/rest/releases/releases#list-releases)
 
 ### 当前发布验证级别
 
@@ -134,7 +136,7 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 | 缺口 | 定位与解释 |
 |---|---|
 | 完整 Wayland 合成器矩阵仍为手动验收 | Linux 自动任务覆盖 X11、Wayland 快捷键回退负控及建连取消。实际 Wayland 合成器和 CLI MIME 测试由 [Wayland 实验支持](./wayland-experimental.md) 的隔离脚本运行，按协商协议分别留证 |
-| 当前候选与发布闭环仍有缺口 | 仍需实测新 tag 的完整发布链和 Linux 系统级安装，并为封存 job 本身取消后提供独立的复核入口 |
+| 当前候选与发布闭环仍待实测 | 新 tag 完整发布链、首次总耗时，以及实际取消封存后的托管恢复均待实测。Linux DEB/RPM/Arch 系统级安装和升级已通过只读重放 |
 
 源码准入、共享 NSIS 样件和 Windows x64 最终包验收已接入。当前含 Arch 的产品目录包含 40 项。Windows ARM64 产物按现有交叉构建级别验收。
 
