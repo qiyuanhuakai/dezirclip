@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WEB_TYPES = ("DesktopProfileInfo", "EventKind", "RuntimeState", "EventData", "Event", "EventsResult", "PrivacyState")
 SWIFT_TYPES = (
-    "ProtocolVersion", "ClientRole", "Permission", "RuntimeState", "HelloParams", "HelloResult",
+    "ProtocolVersion", "ClientRole", "Method", "Permission", "RuntimeState", "HelloParams", "HelloResult",
     "WireErrorCode", "WireError", "EventKind", "EventData", "Event", "SubscribeParams", "EventsResult",
     "DesktopPageParams", "DesktopEntryParams", "DesktopEntry", "DesktopEntries",
     "BodySnapshot", "SnapshotReadParams", "SnapshotChunk", "WindowsPasteTarget", "DesktopCopyParams",

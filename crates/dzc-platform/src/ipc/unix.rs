@@ -70,15 +70,38 @@ impl Endpoint {
         }
         let listener = UnixListener::bind(&self.path)?;
         fs::set_permissions(&self.path, fs::Permissions::from_mode(0o600))?;
-        Ok(Listener { listener, endpoint: self.clone(), _lock: lock })
+        Ok(Listener {
+            listener, endpoint: self.clone(), _lock: lock,
+            #[cfg(target_os = "macos")]
+            required_pid: None,
+        })
+    }
+
+    /// Restrict an inherited helper endpoint to its actual launcher. The
+    /// caller still provides a private grant and watches launcher lifetime.
+    #[cfg(target_os = "macos")]
+    pub fn bind_for_parent(&self) -> io::Result<Listener> {
+        let parent = unsafe { libc::getppid() };
+        if parent <= 1 { return Err(denied()); }
+        let mut listener = self.bind()?;
+        listener.required_pid = Some(parent as u32);
+        Ok(listener)
     }
 }
 
-pub struct Listener { listener: UnixListener, endpoint: Endpoint, _lock: fs::File }
+pub struct Listener {
+    listener: UnixListener,
+    endpoint: Endpoint,
+    _lock: fs::File,
+    #[cfg(target_os = "macos")]
+    required_pid: Option<u32>,
+}
 impl Listener {
     pub async fn accept(&mut self) -> io::Result<Stream> {
         let (stream, _) = self.listener.accept().await?;
         let peer = authenticated_peer(&stream, &self.endpoint.identity)?;
+        #[cfg(target_os = "macos")]
+        if self.required_pid.is_some_and(|pid| peer.pid() != Some(pid)) { return Err(denied()); }
         Ok(Stream(stream, peer))
     }
 }

@@ -110,16 +110,18 @@ jobs:
         run: cargo test --locked -p dzc-host --lib
       - name: Test the Swift local framed transport
         run: swift test --package-path clients/swift
-      - name: Bind the Swift client to its signed Rust fixture over the local socket
+      - name: Verify signed Swift sessions against the local Rust Host and platform fixture
         run: |
           cargo build --locked -p dzc-platform --features ipc --example ipc_protocol_fixture
+          cargo build --locked -p dzc-host --example darwin_desktop_fixture
           socket_dir=$(mktemp -d /private/tmp/dzc-m0.XXXXXX)
           swift build --package-path clients/swift --product DarwinPeerProbe
           swift_bin=$(swift build --package-path clients/swift --show-bin-path)
           cp "$swift_bin/DarwinPeerProbe" "$RUNNER_TEMP/dzc-darwin-peer"
           codesign --force --sign - target/debug/examples/ipc_protocol_fixture
+          codesign --force --sign - target/debug/examples/darwin_desktop_fixture
           codesign --force --sign - "$RUNNER_TEMP/dzc-darwin-peer"
-          "$RUNNER_TEMP/dzc-darwin-peer" "$PWD/target/debug/examples/ipc_protocol_fixture" "$socket_dir"
+          "$RUNNER_TEMP/dzc-darwin-peer" "$PWD/target/debug/examples/ipc_protocol_fixture" "$socket_dir" "$PWD/target/debug/examples/darwin_desktop_fixture"
 
   windows-release-memory:
     name: Published Windows memory comparison

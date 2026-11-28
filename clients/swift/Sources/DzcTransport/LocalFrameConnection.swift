@@ -28,13 +28,19 @@ public actor LocalFrameConnection {
 
     deinit { Darwin.close(descriptor) }
 
+    /// Retires a stream whose protocol exchange could not be trusted.
+    public func invalidate() {
+        usable = false
+        _ = Darwin.shutdown(descriptor, SHUT_RDWR)
+    }
+
     /// A single deadline covers the request and the entire response frame.
     /// A failed exchange retires the stream because its frame boundary is unknown.
     public func exchange(_ request: Data, timeoutMilliseconds: UInt32 = 2_000) async throws -> Data {
         guard usable else { throw LocalFrameError.disconnected }
         guard !inFlight else { throw LocalFrameError.exchangeInProgress }
         guard !request.isEmpty, request.count <= Self.maximumFrameBytes else { throw LocalFrameError.invalidLength }
-        try Self.validatePayload(request)
+        try Self.validateJSONPayload(request)
         try Task.checkCancellation()
         inFlight = true
         defer { inFlight = false }
@@ -53,8 +59,7 @@ public actor LocalFrameConnection {
             try Task.checkCancellation()
             return response
         } catch {
-            usable = false
-            _ = Darwin.shutdown(descriptor, SHUT_RDWR)
+            invalidate()
             throw error
         }
     }
@@ -77,11 +82,12 @@ public actor LocalFrameConnection {
         let count = header.reduce(0) { ($0 << 8) | Int($1) }
         guard count > 0, count <= maximumFrameBytes else { throw LocalFrameError.invalidLength }
         let response = try receive(fd, count: count, until: deadline)
-        try validatePayload(response)
+        try validateJSONPayload(response)
         return response
     }
 
-    private static func validatePayload(_ bytes: Data) throws {
+    /// Checks UTF-8 and nesting even for JSON reassembled from opaque chunks.
+    public static func validateJSONPayload(_ bytes: Data) throws {
         guard String(data: bytes, encoding: .utf8) != nil else { throw LocalFrameError.invalidUTF8 }
         var depth = 0
         var quoted = false

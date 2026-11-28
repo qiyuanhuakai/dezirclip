@@ -1,10 +1,11 @@
 import Darwin
 import DzcProtocol
+import DzcSession
 import DzcTransport
 import Foundation
 import Testing
 
-private func sockets() throws -> (LocalFrameConnection, Int32) {
+private func socketPair() throws -> (Int32, Int32) {
     var descriptors: [Int32] = [0, 0]
     let status = descriptors.withUnsafeMutableBufferPointer {
         Darwin.socketpair(AF_UNIX, SOCK_STREAM, 0, $0.baseAddress)
@@ -17,7 +18,12 @@ private func sockets() throws -> (LocalFrameConnection, Int32) {
         Darwin.close(descriptors[1])
         throw error
     }
-    return (LocalFrameConnection(verifiedSocket: descriptors[0]), descriptors[1])
+    return (descriptors[0], descriptors[1])
+}
+
+private func sockets() throws -> (LocalFrameConnection, Int32) {
+    let (client, peer) = try socketPair()
+    return (LocalFrameConnection(verifiedSocket: client), peer)
 }
 
 private func write(_ fd: Int32, _ data: Data) throws {
@@ -92,4 +98,79 @@ private func write(_ fd: Int32, _ data: Data) throws {
     try write(peer, Data(bytes: &length, count: 4) + nested)
     await #expect(throws: LocalFrameError.nestingLimit) { try await stream.exchange(Data("{}".utf8)) }
     await #expect(throws: LocalFrameError.disconnected) { try await stream.exchange(Data("{}".utf8)) }
+}
+
+private func hostState() -> [String: Any] {
+    ["service_instance_id": "fixture", "history_revision": 4, "privacy_epoch": 2, "event_sequence": 7]
+}
+
+private func respond(_ peer: Int32, id: String, result: [String: Any]) throws {
+    let body = try JSONSerialization.data(withJSONObject: ["request_id": id, "result": result])
+    var length = UInt32(body.count).bigEndian
+    try write(peer, Data(bytes: &length, count: 4) + body)
+}
+
+private func hello(_ peer: Int32, permissions: [String] = ["history_read", "desktop_history", "clipboard_copy"]) throws {
+    try respond(peer, id: "1", result: [
+        "session_id": "test-session", "protocol_version": ["major": 1, "minor": 0], "core_version": "0.2.0",
+        "permissions": permissions, "state": hostState(), "max_frame_bytes": WireLimits.maximumFrameBytes,
+    ])
+}
+
+private func openDesktop(_ socket: Int32, expectedInstance: String = "fixture") async throws -> DesktopSession {
+    try await DesktopSession.open(verifiedSocket: socket, expectedInstance: expectedInstance,
+                                  grant: String(repeating: "a", count: 64), clientVersion: "test", requireCopy: true)
+}
+
+@Test func desktopSessionRejectsWrongInstanceAndMissingPermissions() async throws {
+    for (instance, permissions, error) in [
+        ("replacement", ["history_read", "desktop_history", "clipboard_copy"], DesktopSessionError.wrongInstance),
+        ("fixture", ["history_read"], DesktopSessionError.missingPermission(.desktopHistory)),
+    ] {
+        let (socket, peer) = try socketPair()
+        defer { Darwin.close(peer) }
+        try hello(peer, permissions: permissions)
+        await #expect(throws: error) { try await openDesktop(socket, expectedInstance: instance) }
+    }
+}
+
+@Test func desktopSessionRejectsAReplyWithWrongCorrelation() async throws {
+    let (socket, peer) = try socketPair()
+    defer { Darwin.close(peer) }
+    try hello(peer)
+    try respond(peer, id: "previous", result: ["events": [], "state": hostState(), "resync_required": true])
+    let session = try await openDesktop(socket)
+    let params = try SubscribeParams(afterSequence: 0)
+    await #expect(throws: DesktopSessionError.invalidResponse) { try await session.subscribe(params) }
+    await #expect(throws: DesktopSessionError.disconnected) { try await session.subscribe(params) }
+}
+
+@Test func desktopSessionReturnsResyncAndRejectsInvalidSnapshotChunks() async throws {
+    let (socket, peer) = try socketPair()
+    defer { Darwin.close(peer) }
+    try hello(peer)
+    try respond(peer, id: "2", result: ["events": [], "state": hostState(), "resync_required": true])
+    try respond(peer, id: "3", result: [
+        "snapshot_id": String(repeating: "1", count: 32), "total_bytes": 2, "state": hostState(),
+    ])
+    try respond(peer, id: "4", result: [
+        "data_base64": "e30=", "offset": 0, "next_offset": 1, "finished": true, "state": hostState(),
+    ])
+    let session = try await openDesktop(socket)
+    let events = try await session.subscribe(SubscribeParams(afterSequence: 0))
+    #expect(events.resyncRequired)
+    let page = try DesktopPageParams(limit: 20, offset: 0)
+    await #expect(throws: DesktopSessionError.invalidSnapshot) { try await session.historyPage(page) }
+    await #expect(throws: DesktopSessionError.disconnected) { try await session.historyPage(page) }
+}
+
+@Test func desktopSessionReportsAnAmbiguousCopyAndDoesNotReuseTheStream() async throws {
+    let (socket, peer) = try socketPair()
+    defer { Darwin.close(peer) }
+    try hello(peer)
+    #expect(Darwin.shutdown(peer, SHUT_WR) == 0)
+    let session = try await openDesktop(socket)
+    let state = session.hello.state
+    await #expect(throws: DesktopSessionError.copyOutcomeUnknown) { try await session.copy(id: 1, state: state) }
+    await #expect(throws: DesktopSessionError.disconnected) { try await session.copy(id: 1, state: state) }
 }

@@ -159,7 +159,11 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
     @MainActor
     static func main() async throws {
         let args = CommandLine.arguments
-        try require(args.count == 3, "expected helper and private directory")
+        if args.count == 3, args[1] == "--foreign-host" {
+            try await verifyForeignProcessRejected(socket: args[2])
+            return
+        }
+        try require(args.count == 3 || args.count == 4, "expected helper, private directory and optional shared Host fixture")
         let helper = URL(fileURLWithPath: args[1])
         let socket = URL(fileURLWithPath: args[2]).appendingPathComponent("host.sock").path
         let child = Process()
@@ -219,5 +223,9 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
         try require(child.terminationStatus == 0, "helper exited unsuccessfully")
         try verifyCancelledRead(helper: helper, directory: args[2], socket: socket)
         print("Verified the Darwin UID, live signed helper, framed Rust wire responses, system pasteboard, isolated Keychain and cancelled partial read")
+        if args.count == 4 {
+            let directory = URL(fileURLWithPath: args[2]).appendingPathComponent("desktop", isDirectory: true)
+            try await verifySharedHost(helper: URL(fileURLWithPath: args[3]), directory: directory)
+        }
     }
 }

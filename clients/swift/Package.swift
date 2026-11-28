@@ -7,12 +7,14 @@ let package = Package(
     products: [
         .library(name: "DzcProtocol", targets: ["DzcProtocol"]),
         .library(name: "DzcTransport", targets: ["DzcTransport"]),
+        .library(name: "DzcSession", targets: ["DzcSession"]),
         .executable(name: "DarwinPeerProbe", targets: ["DarwinPeerProbe"]),
     ],
     targets: [
         .target(name: "DzcProtocol"),
         .target(name: "DzcTransport", dependencies: ["DzcProtocol"]),
-        .executableTarget(name: "DarwinPeerProbe", dependencies: ["DzcProtocol", "DzcTransport"]),
-        .testTarget(name: "DzcTransportTests", dependencies: ["DzcProtocol", "DzcTransport"]),
+        .target(name: "DzcSession", dependencies: ["DzcProtocol", "DzcTransport"]),
+        .executableTarget(name: "DarwinPeerProbe", dependencies: ["DzcProtocol", "DzcTransport", "DzcSession"]),
+        .testTarget(name: "DzcTransportTests", dependencies: ["DzcProtocol", "DzcTransport", "DzcSession"]),
     ]
 )
