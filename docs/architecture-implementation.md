@@ -195,6 +195,17 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 首发按直接分发的 macOS ARM64 `.app` 设计，沿用 Swift package 声明的 macOS 13 编译目标。Swift 启动器从 `Contents/Helpers` 启动同一包内的 Rust Host，继承管道传递短期授权并绑定 helper 生命周期。私有 Unix socket 只传现有帧协议。Host 继续持有 Core、profile 和采集所有权。应用包由内向外签名，启动器核对应用包与内嵌代码后再启动，并在连接上核对实际 helper 的签名身份。暂按用户会话内运行、Hardened Runtime 和 Developer ID 直接分发准备，发行阶段再核对公证和对用户 Keychain 的访问。 [Apple 嵌套代码签名](https://developer.apple.com/library/archive/technotes/tn2206/_index.html#//apple_ref/doc/uid/DTS40007919-CH1-TNTAG201)
 
 `5d5fdd14` 的 macOS 26 ARM64 托管专项实际构建并临时签名测试 `.app`，通过裸启动器拒绝、独立进程持久 profile，以及经签名包发现并启动真实 Host 的 Swift 会话。该会话验证对端身份、授权、历史、快照、事件、系统剪贴板和退出。macOS 13 的运行验证、Developer ID 签名与升级后的 Keychain ACL 仍需取得独立证据。 [签名应用包验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46128925341)
+
+### M0 Darwin 启动与空闲资源
+
+托管 macOS 26.7.2 ARM64 使用临时签名的 debug 测试包运行正式 Rust helper，并由真实 Swift 启动器建立会话。首次查询耗时从启动 helper 前计起，包含签名与对端检查、两次会话授权及读回首个空历史页。热身覆盖采集、隐私切换和会话上限。关闭所有会话后，在剪贴板未变化的时段分别采样 launcher 和 helper。使用 `proc_pid_rusage` 的物理占用、驻留内存、累计 CPU 和 page-in，按 Mach 时基换算 CPU 时间，按单核计算占比。 [XNU 资源计数实现](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/bsd_kern.c#L1187) [XNU Mach CPU 时基](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/task.c#L6389)
+
+| 进程 | 空闲采样 | CPU | 单核占比 | 最终物理占用 | 最终 RSS | page-in | 中断唤醒 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Rust helper | 8.47 秒 | 8.75 ms | 0.103% | 17.10 MiB | 40.33 MiB | 0 | 117 |
+| Swift 启动器 | 8.47 秒 | 0.38 ms | 0.0045% | 4.80 MiB | 16.47 MiB | 0 | 2 |
+
+`08b9add4` 的首轮从启动到授权历史页用时 292.36 ms，helper 排空和正常退出用时 81.72 ms。启动器加载剪贴板后、拉起 helper 前的物理占用为 2.33 MiB，读取首屏时为 4.17 MiB。按 artifact ID `15269804599` 下载并核对 ZIP 摘要、源码提交、run/attempt 与采样前后的进程身份。结果只覆盖托管环境中的 helper 和测试启动器。 [原始采样与托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46162540332)
 - **C1 托管 Linux 原生执行**。提交 `c221e826` 的首次源码准入通过，GitHub 记录从启动到完成用时 15 分 01 秒。Linux Core job 从同一轮 Cargo 构建取得测试程序，输出该程序的 SHA-256 和全部 15 项实跑清单，含 Xvfb 服务重启后的 XFixes 恢复。 [源码准入](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46132022480)
 - **C3 MyGo 测试安装包复用**。`5d5fdd14` 的托管 Windows x64 专项通过。安装包直接复用已完成桌面验收的 MyGo 构建，安装验收通过。GitHub 保留安装器 artifact `15258555516`，记录实际恢复、升级、锁定、卸载和重装。 [Windows 安装包复验](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46129167214)
 - **C5 Linux DEB/RPM 包管理器事务**。下载并验证公开 `v0.2.0-rc5` 和 `v0.2.0` 的 Linux x64 资产，核对 GitHub 内容摘要和 Debian 更新签名。在网络隔离的 Ubuntu 24.04 和 Fedora 44 容器中，以实际 `dpkg`、`rpm` 完成 Tauri、MyGo 共四组安装、升级、重装和卸载，核对三份安装程序、包管理器的登记和文件校验、历史及设置留存。发布验收复用原有 Linux runtime job，并行执行两个包管理器和原 X11 验收。候选封存必须收到四组事务结果，并将安装后程序的哈希与候选解包结果逐一匹配。本地合并报告通过四组事务和六个发布包的真实 GUI/Service 运行，SHA-256 为 `3f3da054ed13dbdb126869c3d498fe7a7fcaf01d632b96528d871052553f9244`。对提交 `d4879a3b` 的只读重放在 Linux x64 和 ARM64 分别通过六个真实发布包的运行和四组包管理器事务，耗时 1 分 37 秒。按 artifact ID `15258830810` 及 `15257933825` 下载两个报告，逐项核对事务完成标记、程序哈希、上一版本和运行身份。 [双架构只读重放](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46133365670)
@@ -268,6 +279,10 @@ macOS 26 ARM64 首次验收用时 3 分 36 秒。临时签名测试包通过 15 
 `1d1528c6` 将系统剪贴板变更接入共享 Core 采集管线。主线程只在剪贴板所有权计数变化时读取文本，先核对隐私 epoch 和剪贴板类型。后台提交持有独占采集租约，并复查当前规则。启动或结束隐私会话后跳过剪贴板旧内容。Darwin 无法可靠识别来源应用时，存在来源排除规则会暂停自动采集。
 
 macOS 26 ARM64 的第一次托管验收用时 2 分 59 秒。正式签名 helper 从独立 `pbcopy` 写入读取文本，验证历史和事件、回写防回采、隐藏内容、隐私暂停与恢复及来源排除。Linux Host 套件通过 88 项，1 项按既有条件忽略。 [Darwin 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46148019746/job/140988292744)
+
+`00866d75` 处理存储任务仍在进行时出现的连续剪贴板变更。当前选择保持待处理，上一条写入结束后的采样重新读取系统剪贴板，只处理当时仍在剪贴板上的最新内容，并重新校验隐私 epoch。回写自身和隐私 epoch 切换继续抑制旧选择。托管 macOS 26.7.2 ARM64 上签名 helper 的真实系统剪贴板验收通过，49 项 Host 测试包含阻塞写入的确定性回归，17 项 Swift 测试通过。复验的 8.35 秒空闲窗口内，helper 物理占用为 16.99 MiB，使用 16.63 ms CPU，占单核约 0.20%，page-in 为 0。按 artifact ID `15270304121` 核对复验的 ZIP 摘要与运行身份。 [连续采集复验与资源凭据](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46162838971/job/141033821961)
+
+Linux Host 本地通过 89 项，1 项按既有条件忽略。本机 Windows 的常驻 Service 报告持有采集租约，使用真实租约的测试因此返回 `WouldBlock`。同一提交在临时托管 Windows 的 Host 套件通过 89 项，包括租约持有和释放用例，1 项按既有条件忽略。该次开发 CI 首轮通过。 [Windows Host 复验](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46163653556/job/141036369833)
 
 ### M2 Swift 会话容量与隐私操作
 
