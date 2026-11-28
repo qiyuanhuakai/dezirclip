@@ -31,6 +31,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  DZC_ARCH_BUILDER_IMAGE: archlinux:base-devel@sha256:949ecb1661609ab7e8f6854ba03efd62792e7a796313738e94b040c095c20d91
   DZC_BUILD_REVISION: ${{ github.sha }}
 
 concurrency:
@@ -341,7 +342,7 @@ jobs:
             --volume "$BUNDLE_ROOT/bundle/deb:/tauri:ro" \
             --volume "$RUNNER_TEMP/mygo-release:/mygo:ro" \
             --volume "$RUNNER_TEMP/arch-release:/output" \
-            archlinux:base-devel@sha256:949ecb1661609ab7e8f6854ba03efd62792e7a796313738e94b040c095c20d91 \
+            "$DZC_ARCH_BUILDER_IMAGE" \
             bash /bundle.sh "$GITHUB_REF_NAME" "/tauri/DezirClip_${version}_amd64.deb" \
             "/mygo/DezirClip-MyGo_${version}_amd64.deb" /output
 
@@ -567,7 +568,7 @@ jobs:
           else
             node scripts/updater-release.mjs replay-linux-runtime "$TARGET" "$fixture"
           fi
-      - name: Verify shipped launchers and native DEB and RPM transactions
+      - name: Verify shipped launchers and native package transactions
         id: exercise
         env:
           TARGET: ${{ matrix.target }}

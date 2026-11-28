@@ -42,7 +42,9 @@ def load_inputs(fixture):
 
 
 def checked_archive(fixture, package):
-    path = fixture / package['name']
+    name = package['name']
+    require(Path(name).name == name and re.fullmatch(r'[a-zA-Z0-9._+-]+', name), 'Unsafe Linux archive name')
+    path = fixture / name
     require(path.is_file() and not path.is_symlink() and path.stat().st_size == package['size']
             and sha(path) == package['sha256'], 'Linux archive differs from authenticated inputs')
     return path
@@ -305,7 +307,7 @@ def main():
     from release_linux_package_manager import package_transactions
     reports = []
     with ThreadPoolExecutor(max_workers=1) as pool:
-        transactions = pool.submit(package_transactions, fixture, output, inputs['target'])
+        transactions = pool.submit(package_transactions, fixture, output, inputs)
         for index, package in enumerate(inputs['packages']):
             print(f"Verify native Linux runtime for {package['name']}", file=sys.stderr, flush=True)
             reports.append(sandbox(fixture, output, driver, bsdtar, index))
@@ -313,6 +315,10 @@ def main():
     inspected = {item['name']: item for item in reports}
     for item in package_manager:
         current = item['current']
+        if 'debian_source' in current:
+            require(inputs['origin'] == 'published-replay' and item['package_manager'] == 'pacman',
+                    'A release candidate requires the exact shipped Arch archive')
+            current = current['debian_source']
         archive = inspected[current['name']]
         require(current['sha256'] == archive['sha256'] and current['size'] == archive['size']
                 and item['members'] == archive['members'], 'Installed files differ from the exercised Linux archive')

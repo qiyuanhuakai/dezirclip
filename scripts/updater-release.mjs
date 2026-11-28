@@ -651,8 +651,11 @@ function verifyDesktopSignatures(tag, assets, publicKey) {
 }
 
 const linuxManagedPackage = name => name.endsWith('.deb') || name.endsWith('.rpm');
-const linuxManager = name => name.endsWith('.deb') ? 'dpkg' : 'rpm';
-const linuxInstallerKind = name => (name.startsWith('DezirClip-MyGo') ? 'mygo-' : 'tauri-') + linuxManager(name);
+const linuxArchPackage = name => name.endsWith('.pkg.tar.zst');
+const linuxInstalledPackage = name => linuxManagedPackage(name) || linuxArchPackage(name);
+const linuxManager = name => name.endsWith('.deb') ? 'dpkg' : linuxArchPackage(name) ? 'pacman' : 'rpm';
+const linuxDesktopVariant = name => name.startsWith('DezirClip-MyGo') || name.startsWith('dezirclip-mygo-bin-') ? 'mygo' : 'tauri';
+const linuxInstallerKind = name => linuxDesktopVariant(name) + '-' + linuxManager(name);
 
 function stagePublishedLinuxAssets(tag, names, destination, publicKey, cache, transport) {
   const pinned = publishedDesktopBaselines[tag];
@@ -733,6 +736,28 @@ export function stageLinuxRuntime({ tag, source, runId, attempt, target, directo
   writeFileSync(join(destination, 'linux-runtime-inputs.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
 }
 
+function sameLinuxMembers(installed, expected) {
+  return installed && expected && Object.keys(installed).length === 3 && Object.keys(expected).length === 3 &&
+    ['desktop', 'cli', 'service'].every(role => typeof expected[role]?.path === 'string' &&
+      /^[0-9a-f]{64}$/.test(expected[role]?.sha256 ?? '') &&
+      installed[role]?.path === expected[role].path && installed[role]?.sha256 === expected[role].sha256);
+}
+
+function verifyArchTransactionBaseline(transaction, archBaseline, debTransaction, debBaseline) {
+  const previous = transaction.previous;
+  const deb = previous?.debian_source;
+  const checked = debTransaction?.previous;
+  if (!deb || !checked || previous.name !== archBaseline || !/^[0-9a-f]{64}$/.test(previous.sha256 ?? '') ||
+      deb.name !== debBaseline || deb.sha256 !== linuxInstallerHashes[debBaseline] ||
+      deb.tag !== previous.tag || deb.source_revision !== previous.source_revision ||
+      deb.name !== checked.name || deb.sha256 !== checked.sha256 ||
+      deb.size !== checked.size || deb.asset_id !== checked.asset_id ||
+      !Number.isSafeInteger(deb.size) || deb.size <= 0 || !Number.isSafeInteger(deb.asset_id) || deb.asset_id <= 0 ||
+      !sameLinuxMembers(transaction.previous_members, debTransaction.previous_members)) {
+    throw new Error('Arch Linux baseline does not match the installed signed Debian package: ' + transaction.current.name);
+  }
+}
+
 function verifyLinuxRuntimeReports(reports, desktop, tag, source, run, transport) {
   if (!Array.isArray(reports)) throw new Error('Missing Linux runtime reports');
   requireExactNames(reports.map(report => report?.target), linuxTargets, 'Linux runtime reports');
@@ -752,9 +777,10 @@ function verifyLinuxRuntimeReports(reports, desktop, tag, source, run, transport
     requireExactNames(packages.map(asset => asset?.name), names, target);
     const transactions = report.package_transactions;
     if (!Array.isArray(transactions)) throw new Error('Missing Linux package-manager transaction results');
-    requireExactNames(transactions.map(item => item?.current?.name), names.filter(linuxManagedPackage), 'Linux package transactions');
+    requireExactNames(transactions.map(item => item?.current?.name), names.filter(linuxInstalledPackage), 'Linux package transactions');
     const transactionsByName = new Map(transactions.map(item => [item.current.name, item]));
-    const baselineByKind = new Map(linuxRuntimeFiles(linuxReplayTag, target, false).filter(linuxManagedPackage)
+    const currentByKind = new Map(names.filter(linuxInstalledPackage).map(name => [linuxInstallerKind(name), name]));
+    const baselineByKind = new Map(linuxRuntimeFiles(linuxReplayTag, target, run.arch_packages).filter(linuxInstalledPackage)
       .map(name => [linuxInstallerKind(name), name]));
     for (const item of packages) {
       const archive = archives.get(item.name);
@@ -767,21 +793,24 @@ function verifyLinuxRuntimeReports(reports, desktop, tag, source, run, transport
             item.members[role]?.sha256 !== archive.members[role].sha256)) {
         throw new Error(`Linux runtime report does not match the final package: ${item.name}`);
       }
-      if (linuxManagedPackage(item.name)) {
-        const { current, previous, members, package_manager, installed, upgraded, reinstalled, uninstalled, profile_retained } =
-          transactionsByName.get(item.name);
-        const baseline = baselineByKind.get(linuxInstallerKind(item.name));
-        if (package_manager !== linuxManager(item.name) || current.tag !== tag || current.source_revision !== source ||
-            current.sha256 !== item.sha256 || current.size !== item.size ||
-            previous?.name !== baseline || previous.tag !== linuxReplayTag ||
-            previous.source_revision !== publishedDesktopBaselines[linuxReplayTag].source ||
-            previous.sha256 !== linuxInstallerHashes[baseline] ||
-            ![installed, upgraded, reinstalled, uninstalled, profile_retained].every(value => value === true) ||
-            !members || Object.keys(members).length !== 3 ||
-            Object.keys(item.members).some(role => members[role]?.path !== item.members[role].path ||
-              members[role]?.sha256 !== item.members[role].sha256)) {
-          throw new Error('Linux package transaction did not verify the final bytes and historical upgrade: ' + item.name);
-        }
+      if (!linuxInstalledPackage(item.name)) continue;
+      const transaction = transactionsByName.get(item.name);
+      const { current, previous, members, package_manager, installed, upgraded, reinstalled, uninstalled, profile_retained } = transaction;
+      const baseline = baselineByKind.get(linuxInstallerKind(item.name));
+      const arch = linuxArchPackage(item.name);
+      if (package_manager !== linuxManager(item.name) || current.tag !== tag || current.source_revision !== source ||
+          current.sha256 !== item.sha256 || current.size !== item.size || Object.hasOwn(current, 'debian_source') ||
+          previous?.name !== baseline || previous.tag !== linuxReplayTag ||
+          previous.source_revision !== publishedDesktopBaselines[linuxReplayTag].source ||
+          (!arch && previous.sha256 !== linuxInstallerHashes[baseline]) ||
+          ![installed, upgraded, reinstalled, uninstalled, profile_retained].every(value => value === true) ||
+          !sameLinuxMembers(members, item.members)) {
+        throw new Error('Linux package transaction did not verify the final bytes and historical upgrade: ' + item.name);
+      }
+      if (arch) {
+        const debKind = linuxDesktopVariant(item.name) + '-dpkg';
+        verifyArchTransactionBaseline(transaction, baseline, transactionsByName.get(currentByKind.get(debKind)),
+          baselineByKind.get(debKind));
       }
     }
   }

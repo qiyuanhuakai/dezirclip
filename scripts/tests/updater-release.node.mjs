@@ -547,8 +547,10 @@ function currentDualFixture(version, native = false, linux = false, options = {}
       'DezirClip_0.2.0_arm64.deb': 'b1e48decdb152ed024267a064aba079b5b2be086cfc62dd12ac8a693ded4167c',
       'DezirClip-MyGo_0.2.0_arm64.deb': '4442352b30c4e8e9639404e384c2cfd2cfaf1d4427544da0175e65d86dd0207c',
     };
-    const managed = name => name.endsWith('.deb') || name.endsWith('.rpm');
-    const kind = name => [name.startsWith('DezirClip-MyGo'), name.slice(-4)].join(':');
+    const managed = name => /[.](deb|rpm|pkg[.]tar[.]zst)$/.test(name);
+    const mygo = name => name.startsWith('DezirClip-MyGo') || name.startsWith('dezirclip-mygo-bin-');
+    const manager = name => name.endsWith('.deb') ? 'dpkg' : name.endsWith('.rpm') ? 'rpm' : 'pacman';
+    const kind = name => [mygo(name), manager(name)].join(':');
     fixture.state.artifacts = targets.map((target, index) => ({
       id: 950 + index, name: `release-desktop-${target}-1`, digest: 'sha256:' + 'd'.repeat(64),
       expired: false, workflow_run: { id: 7001, head_sha: 'a'.repeat(40), repository_id: 90, head_repository_id: 90 },
@@ -561,14 +563,20 @@ function currentDualFixture(version, native = false, linux = false, options = {}
           size: readbacks.desktop.assets.find(asset => asset.name === name).size,
           runtime: name.endsWith('.AppImage') ? 'appimage' : 'extracted-native-launcher',
           history_rendered: true, service_verified: true }));
-      const baseline = expectedDesktopCandidateFiles('v0.2.0', target, false).filter(managed);
+      const baseline = expectedDesktopCandidateFiles('v0.2.0', target).filter(managed);
+      const previousIdentity = name => ({ name, tag: 'v0.2.0', source_revision: 'ba0ad71f7b9d8caddac45d0bc5588254a8273482',
+        sha256: baselineHashes[name] ?? '0'.repeat(64), size: 2000 + baseline.indexOf(name),
+        asset_id: 3000 + baseline.indexOf(name) });
       const transactions = packages.filter(item => managed(item.name)).map(({ name, sha256, size, members }) => {
         const old = baseline.find(asset => kind(asset) === kind(name));
+        const previous = previousIdentity(old);
+        if (manager(name) === 'pacman') {
+          previous.debian_source = previousIdentity(baseline.find(asset => mygo(asset) === mygo(name) && asset.endsWith('.deb')));
+        }
         return {
-          package_manager: name.endsWith('.deb') ? 'dpkg' : 'rpm',
+          package_manager: manager(name),
           current: { name, sha256, size, tag, source_revision: 'a'.repeat(40) },
-          previous: { name: old, tag: 'v0.2.0', source_revision: 'ba0ad71f7b9d8caddac45d0bc5588254a8273482',
-            sha256: baselineHashes[old] },
+          previous, previous_members: structuredClone(members),
           members: structuredClone(members),
           installed: true, upgraded: true, reinstalled: true, uninstalled: true, profile_retained: true,
         };
@@ -590,6 +598,7 @@ test('a current workflow publishes only the asset identities read back from its 
   assert.equal(publish(make()).status, 'synchronized');
   assert.equal(publish(make(true)).status, 'synchronized');
   assert.equal(publish(make(true, true)).status, 'synchronized');
+  const archTransactions = fixture => fixture.readbacks.linux[0].package_transactions.filter(item => item.package_manager === 'pacman');
   for (const change of [
     fixture => { delete fixture.readbacks.linux; },
     fixture => { fixture.readbacks.linux[1].origin = 'published-replay'; },
@@ -604,6 +613,12 @@ test('a current workflow publishes only the asset identities read back from its 
     fixture => { fixture.readbacks.linux[1].package_transactions[0].current.sha256 = 'f'.repeat(64); },
     fixture => { fixture.readbacks.linux[1].package_transactions[0].members.cli.sha256 = 'f'.repeat(64); },
     fixture => { fixture.readbacks.linux[1].package_transactions[0].uninstalled = false; },
+    fixture => { fixture.readbacks.linux[0].package_transactions =
+      fixture.readbacks.linux[0].package_transactions.filter(item => item.package_manager !== 'pacman'); },
+    fixture => { archTransactions(fixture)[0].current.debian_source = archTransactions(fixture)[0].previous.debian_source; },
+    fixture => { archTransactions(fixture)[0].previous.debian_source = archTransactions(fixture)[1].previous.debian_source; },
+    fixture => { archTransactions(fixture)[0].previous_members.desktop.sha256 = '9'.repeat(64); },
+    fixture => { archTransactions(fixture)[0].members.service.sha256 = '9'.repeat(64); },
     fixture => { fixture.state.jobs.at(-1).conclusion = 'failure'; },
   ]) {
     const fixture = make(true, true);
