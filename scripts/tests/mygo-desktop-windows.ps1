@@ -1367,21 +1367,29 @@ with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         Click-Control $main (Get-ControlPoint $root 'Settings')
         Click-Control $main (Get-ControlPoint $root 'Tools')
         foreach ($enabled in @($true, $false, $true)) {
-            foreach ($panel in @(@('Quick Paste', $quickTitle, '^+v'), @('Screenshot', $screenTitle, '^+a'))) {
-                $box = Wait-Until { Get-SettingsCheckbox $root $panel[0] } 'Native panel setting unavailable'
+            foreach ($panel in @(@('Quick Paste', $quickTitle, '^+v', 'Quick Paste Hotkey'), @('Screenshot', $screenTitle, '^+a', 'Screenshot Hotkey'))) {
+                $detailName = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $panel[3])
+                $box = Wait-Until {
+                    $control = Get-SettingsCheckbox $root $panel[0]
+                    if ($control -and $control.Current.IsEnabled) { $control }
+                } 'Native panel setting unavailable'
                 $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
                 $toggle.Toggle()
                 $expected = if ($enabled) { [Windows.Automation.ToggleState]::On } else { [Windows.Automation.ToggleState]::Off }
                 $null = Wait-Until {
                     if ($resident.HasExited) { throw 'Native panel preference exited the resident' }
-                    $box = Get-SettingsCheckbox $root $panel[0]
-                    if ($box -and $box.Current.IsEnabled) {
-                        # The native switch displays the pending value before the
-                        # resident acknowledges shortcut registration.
-                        $current = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
-                        $current.Current.ToggleState -eq $expected
-                    }
-                } ("Native panel toggle did not save: {0}, enabled={1}" -f $panel[0], $enabled)
+                    try {
+                        $box = Get-SettingsCheckbox $root $panel[0]
+                        if ($box -and $box.Current.IsEnabled) {
+                            $current = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+                            # The switch can publish its optimistic value before the
+                            # resident's reply. The shortcut row follows the saved
+                            # setting after registration or unregistration completes.
+                            $detail = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $detailName)
+                            $current.Current.ToggleState -eq $expected -and ([bool]$detail -eq $enabled)
+                        }
+                    } catch [Windows.Automation.ElementNotAvailableException] {}
+                } ("Native panel acknowledgement did not reach settings: {0}, enabled={1}" -f $panel[0], $enabled)
                 if ($enabled) {
                     Test-ResidentPanel $resident $panel[2] $panel[1] $edit $form
                     $null = [MyGoInput]::SetForegroundWindow($main.MainWindowHandle)
