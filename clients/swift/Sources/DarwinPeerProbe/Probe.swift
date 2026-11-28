@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import DzcTransport
 import Foundation
 import Security
 
@@ -91,39 +92,11 @@ func requireChild(_ fd: Int32, pid: Int32, executable: URL) throws {
     try require(liveHash == installedHash, "helper code identity differs")
 }
 
-func receive(_ fd: Int32, count: Int) throws -> Data {
-    var bytes = Data(count: count)
-    let complete = bytes.withUnsafeMutableBytes { storage in
-        var offset = 0
-        while offset < count {
-            let n = Darwin.read(fd, storage.baseAddress!.advanced(by: offset), count - offset)
-            if n < 0 && errno == EINTR { continue }
-            if n <= 0 { return false }
-            offset += n
-        }
-        return true
-    }
-    try require(complete, "incomplete frame")
-    return bytes
-}
-
-func request(_ fd: Int32, id: String, method: String, params: [String: Any]) throws -> [String: Any] {
+@MainActor
+func request(_ connection: LocalFrameConnection, id: String, method: String, params: [String: Any]) async throws -> [String: Any] {
     let payload = try JSONSerialization.data(withJSONObject: ["request_id": id, "method": method, "params": params])
-    var count = UInt32(payload.count).bigEndian
-    var frame = Data(bytes: &count, count: 4)
-    frame.append(payload)
-    try frame.withUnsafeBytes { storage in
-        var offset = 0
-        while offset < storage.count {
-            let n = Darwin.write(fd, storage.baseAddress!.advanced(by: offset), storage.count - offset)
-            if n < 0 && errno == EINTR { continue }
-            try require(n > 0, "incomplete write")
-            offset += n
-        }
-    }
-    let size = try receive(fd, count: 4).reduce(0) { ($0 << 8) | Int($1) }
-    try require(size > 0 && size <= 1024 * 1024, "invalid frame length")
-    guard let response = try JSONSerialization.jsonObject(with: receive(fd, count: size)) as? [String: Any],
+    let body = try await connection.exchange(payload)
+    guard let response = try JSONSerialization.jsonObject(with: body) as? [String: Any],
           response["request_id"] as? String == id, response["error"] == nil,
           let result = response["result"] as? [String: Any] else {
         throw ProbeFailure("unexpected protocol response")
@@ -154,7 +127,8 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
 }
 
 @main struct DarwinPeerProbe {
-    static func main() throws {
+    @MainActor
+    static func main() async throws {
         let args = CommandLine.arguments
         try require(args.count == 3, "expected helper and private directory")
         let helper = URL(fileURLWithPath: args[1])
@@ -170,7 +144,8 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
             child.waitUntilExit()
         }
         let fd = try connect(to: socket, until: Date().addingTimeInterval(5))
-        defer { Darwin.close(fd) }
+        var adopted = false
+        defer { if !adopted { Darwin.close(fd) } }
         do {
             try requireChild(fd, pid: getpid(), executable: helper)
             throw ProbeFailure("accepted unexpected process")
@@ -180,6 +155,8 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
             throw ProbeFailure("accepted unexpected code")
         } catch let failure as ProbeFailure where failure.message == "helper code identity differs" {}
         try requireChild(fd, pid: child.processIdentifier, executable: helper)
+        let connection = LocalFrameConnection(verifiedSocket: fd)
+        adopted = true
         let contender = Process()
         contender.executableURL = helper
         contender.arguments = ["--capture-lease-check"]
@@ -187,7 +164,7 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
         try contender.run()
         contender.waitUntilExit()
         try require(contender.terminationStatus == 3, "second helper acquired the capture lease")
-        let hello = try request(fd, id: "swift-hello", method: "hello", params: [
+        let hello = try await request(connection, id: "swift-hello", method: "hello", params: [
             "protocol_version": ["major": 1, "minor": 0],
             "client_version": "darwin-fixture", "client_role": "cli",
             "capabilities": [], "required_capabilities": [],
@@ -196,13 +173,13 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) throws 
         try require(state?["service_instance_id"] as? String == "synthetic-instance", "wrong fixture instance")
         let clipboard = NSPasteboard.general
         let before = clipboard.changeCount
-        let health = try request(fd, id: "swift-health", method: "health", params: [:])
+        let health = try await request(connection, id: "swift-health", method: "health", params: [:])
         guard let marker = health["clipboard_text"] as? String, marker.hasPrefix("darwin-pasteboard-") else {
             throw ProbeFailure("missing native clipboard receipt")
         }
         try require(clipboard.changeCount != before && clipboard.string(forType: .string) == marker,
                     "system pasteboard did not receive the helper's text")
-        let list = try request(fd, id: "swift-list", method: "surface.history.list", params: ["limit": 20, "offset": 0])
+        let list = try await request(connection, id: "swift-list", method: "surface.history.list", params: ["limit": 20, "offset": 0])
         try require((list["entries"] as? [Any])?.isEmpty == true, "invalid fixture page")
         try require(list["keychain_verified"] as? Bool == true, "missing helper keychain proof")
         child.waitUntilExit()

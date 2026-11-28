@@ -106,11 +106,15 @@ jobs:
           cargo test --locked -p dzc-core --lib infrastructure::local_file::tests
           cargo test --locked -p dzc-platform --features ipc --lib ipc::
           cargo test --locked -p dzc-platform --features ipc --lib darwin_clipboard::
+      - name: Test the Swift local framed transport
+        run: swift test --package-path clients/swift
       - name: Bind the Swift client to its signed Rust fixture over the local socket
         run: |
           cargo build --locked -p dzc-platform --features ipc --example ipc_protocol_fixture
           socket_dir=$(mktemp -d /private/tmp/dzc-m0.XXXXXX)
-          swiftc -parse-as-library scripts/tests/darwin-peer.swift -o "$RUNNER_TEMP/dzc-darwin-peer"
+          swift build --package-path clients/swift --product DarwinPeerProbe
+          swift_bin=$(swift build --package-path clients/swift --show-bin-path)
+          cp "$swift_bin/DarwinPeerProbe" "$RUNNER_TEMP/dzc-darwin-peer"
           codesign --force --sign - target/debug/examples/ipc_protocol_fixture
           codesign --force --sign - "$RUNNER_TEMP/dzc-darwin-peer"
           "$RUNNER_TEMP/dzc-darwin-peer" "$PWD/target/debug/examples/ipc_protocol_fixture" "$socket_dir"
