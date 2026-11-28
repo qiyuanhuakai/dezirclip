@@ -328,7 +328,7 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	if !busy && u.result.Status == "" && updateErr == nil {
 		support += "\n" + n.text("updater_not_checked")
 	}
-	kit.SettingsFieldLabel(c, title, n.settingsHelpLabel(title), support)
+	kit.SettingsFieldLabel(c.Key("updater-heading"), title, n.settingsHelpLabel(title), support)
 	auto := n.displayedToggle(protocol.SettingUpdateAutoCheck, u.automatic)
 	autoLabel := n.text(protocol.SettingUpdateAutoCheckLabel)
 	if kit.SettingsToggleField(c.Key(protocol.SettingUpdateAutoCheck), &auto, autoLabel, n.settingsHelpLabel(autoLabel), n.text("updater_auto_hint"),
@@ -474,7 +474,7 @@ func (n *nativeMain) drawBackgroundUpdate(c *ui.Context, kit uikit.Kit) {
 	if u.install.Phase == updateNotInstalling && u.installErr == nil {
 		return
 	}
-	ui.Column(c).FillWidth().Padding(4, 8).Children(func() {
+	ui.Column(c.Key("background-update")).FillWidth().Padding(4, 8).Transition(nativeSettingReveal).Children(func() {
 		n.drawUpdateProgress(c, kit)
 		if u.installErr != nil {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Role(ui.RoleStatus).Children(func() {

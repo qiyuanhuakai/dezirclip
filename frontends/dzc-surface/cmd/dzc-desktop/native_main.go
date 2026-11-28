@@ -73,6 +73,7 @@ type nativeMain struct {
 	menu                  uikit.ContextMenu
 	menuTransformsLoading bool
 	readingViewSettings   bool
+	viewSettingsDirty     bool
 	viewSettingsRevision  uint64
 	pendingSettings       map[string]string
 	cardMediaRevision     uint64
@@ -160,6 +161,7 @@ func (n *nativeMain) retireSession(keepView bool) {
 	n.resetOpen = false
 	n.clearHistoryOpen = false
 	n.menuTransformsLoading, n.readingViewSettings = false, false
+	n.viewSettingsDirty = false
 	if !keepView {
 		n.pendingSettings = nil
 	}

@@ -56,7 +56,6 @@ func (n *nativeMain) savePreference(key, value string, timeout time.Duration, wr
 	if n.notice == n.text("native_setting_save_failed") {
 		n.notice = ""
 	}
-	n.viewSettingsRevision++
 	session, epoch := n.session, n.history.state.PrivacyEpoch
 	go func() {
 		ctx, cancel := context.WithTimeout(session, timeout)
@@ -73,8 +72,12 @@ func (n *nativeMain) savePreference(key, value string, timeout time.Duration, wr
 			if finish != nil {
 				finish(err)
 			}
-			// Include external writes and recover an acknowledgement lost after commit.
-			n.refreshViewSettings()
+			if err != nil {
+				// A lost acknowledgement can follow a successful Host write.
+				n.refreshViewSettings()
+			} else {
+				n.readViewSettings()
+			}
 		})
 	}()
 }
@@ -110,9 +113,16 @@ func (n *nativeMain) refreshViewSettings() {
 		return
 	}
 	n.viewSettingsRevision++
-	if n.readingViewSettings || len(n.pendingSettings) != 0 {
+	n.viewSettingsDirty = true
+	n.readViewSettings()
+}
+
+func (n *nativeMain) readViewSettings() {
+	if !n.viewSettingsDirty || n.readingViewSettings || len(n.pendingSettings) != 0 ||
+		n.session == nil || n.history.state.ServiceInstanceId == "" {
 		return
 	}
+	n.viewSettingsDirty = false
 	n.readingViewSettings = true
 	session, state, revision := n.session, n.history.state, n.viewSettingsRevision
 	go func() {
@@ -125,8 +135,9 @@ func (n *nativeMain) refreshViewSettings() {
 		}
 		n.updateIfChanged(session, func() bool {
 			n.readingViewSettings = false
-			if revision != n.viewSettingsRevision {
-				n.refreshViewSettings()
+			if revision != n.viewSettingsRevision || len(n.pendingSettings) != 0 {
+				n.viewSettingsDirty = true
+				n.readViewSettings()
 				return false
 			}
 			if n.appearanceBusy {
@@ -156,9 +167,10 @@ func (n *nativeMain) applyViewSettings(settings map[string]string) bool {
 		return false
 	}
 	background := n.backgroundKey(n.history.state)
-	if previous["app.theme"] != settings["app.theme"] || n.mode != n.colorMode(settings) ||
-		n.importedTheme != nil && previous["app.custom_themes"] != settings["app.custom_themes"] ||
-		n.language() != mainLanguage(settings["app.language"]) ||
+	oldBase, oldMode, oldImported := n.themeBase(), n.mode, n.importedTheme
+	n.configured(settings)
+	if oldBase != n.themeBase() || oldMode != n.mode || oldImported != n.importedTheme ||
+		mainLanguage(previous["app.language"]) != n.language() ||
 		nativeInterfaceFont(previous) != nativeInterfaceFont(settings) ||
 		previous["app.font_mono"] != settings["app.font_mono"] {
 		n.startAppearanceMotion()
@@ -168,7 +180,6 @@ func (n *nativeMain) applyViewSettings(settings map[string]string) bool {
 		nativeTagSize.value(previous) != nativeTagSize.value(settings) {
 		n.historyLayoutRevision++
 	}
-	n.configured(settings)
 	if next := n.backgroundKey(n.history.state); background != next && n.session != nil && n.window != nil {
 		n.appearanceMotionUntil = time.Now().Add(nativeAppearanceMotion)
 		n.loadBackground()

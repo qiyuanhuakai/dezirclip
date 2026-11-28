@@ -500,7 +500,7 @@ func (n *nativeMain) removePrivacyRule(id string) {
 
 func (n *nativeMain) drawPrivacyDetection(c *ui.Context, kit uikit.Kit) {
 	n.drawSourceExclusions(c, kit)
-	kit.SettingsDisclosure(c, n.text("privacy_protection_kinds"), &n.privacyKindsOpen, func() {
+	kit.SettingsDisclosure(c.Key("privacy-detection-kinds"), n.text("privacy_protection_kinds"), &n.privacyKindsOpen, func() {
 		const key = "app.privacy_protection_kinds"
 		raw := n.displayedSetting(key, "phone,idcard,email,secret,password")
 		var selected []string

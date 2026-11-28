@@ -45,7 +45,7 @@ func (n *nativeMain) winVSettings(c *ui.Context, kit uikit.Kit) {
 	if !state.known {
 		enabled = n.preferences[winVSetting] == "true"
 	}
-	ui.Column(c).ColumnSpan(-1).Gap(6).Children(func() {
+	ui.Column(c.Key(winVSetting)).ColumnSpan(-1).Gap(6).Children(func() {
 		label := n.text("use_win_v_shortcut")
 		if kit.SettingsToggleField(c, &enabled, label, n.settingsHelpLabel(label), n.text("use_win_v_shortcut_hint"), !state.known || !n.shortcutAvailable()) {
 			state.confirm = true

@@ -79,9 +79,9 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 	tab := n.emojiTab()
 	kit := n.mainKit()
 	width, _ := c.Size()
-	kit.CharacterPanel(c, width, func(contentWidth float32) {
+	kit.CharacterPanel(c.Key("character-panel"), width, func(contentWidth float32) {
 		panel := n.emojiPanel()
-		kit.CharacterTabs(c, []uikit.CharacterTab{
+		kit.CharacterTabs(c.Key("character-tabs"), []uikit.CharacterTab{
 			{ID: "emoji", Label: n.text("emoji_tab")},
 			{ID: "symbols", Label: n.text("emoji_symbols_tab")},
 			{ID: "favorites", Label: n.text("emoji_favorites")},
@@ -91,8 +91,11 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 				n.saveEmojiTab(panel)
 			}
 		})
+		if tab == "favorites" {
+			n.ensureEmojiFavorites(panel)
+		}
 		var composing bool
-		if tab != "favorites" {
+		if tab != "favorites" || panel.loading && panel.visibleTab != "" && panel.visibleTab != "favorites" {
 			ui.Column(c.Key("character-search")).FillWidth().Transition(nativeSettingReveal).Children(func() {
 				kit.CharacterSearch(c, &panel.query, n.text("emoji_search"), func(editingComposition bool) {
 					composing = editingComposition
@@ -108,16 +111,20 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 		// Keep the current results mounted until the replacement exists. The
 		// tab strip and search input have independent, stable identity.
 		visible := tab
-		if tab != "favorites" && results == nil && panel.results[panel.visibleTab] != nil {
-			visible = panel.visibleTab
-			results = panel.results[visible]
+		if panel.visibleTab != "" && panel.visibleTab != tab {
+			waiting := tab == "favorites" && panel.loading ||
+				tab != "favorites" && !composing && (results == nil || results.query != query)
+			if waiting && (panel.results[panel.visibleTab] != nil || panel.visibleTab == "favorites" && panel.ready) {
+				visible = panel.visibleTab
+				results = panel.results[visible]
+			}
 		}
 		panel.visibleTab = visible
 		ui.Column(c.Key("character-tab-content")).FillWidth().Grow(1).Shrink(1).MinHeight(0).Clip().Children(func() {
 			ui.Column(c.Key(visible)).Fill().Shrink(1).MinHeight(0).Transition(nativePanelEnter).Children(func() {
 				switch {
 				case visible == "favorites":
-					n.emojiFavoritesView(c, contentWidth)
+					n.emojiFavoritesView(c, contentWidth, visible != tab)
 				case results == nil:
 					kit.SettingsLabel(c, n.text("common_loading", "Loading…")).AlignSelf(ui.Center)
 				default:

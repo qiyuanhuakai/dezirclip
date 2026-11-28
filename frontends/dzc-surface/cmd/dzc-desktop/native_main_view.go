@@ -27,7 +27,7 @@ const nativeAppearanceMotion = 160 * time.Millisecond
 var nativePanelEnter = ui.ElementTransition{
 	Duration: 140 * time.Millisecond,
 	Position: true,
-	Enter:    &ui.Motion{Y: 4},
+	Enter:    &ui.Motion{Y: 4, Opacity: 0.8},
 }
 
 var nativeSettingReveal = ui.ElementTransition{
@@ -174,7 +174,7 @@ func (n *nativeMain) view(c *ui.Context) {
 				header.OnQueryKey = n.searchKey
 				header.QueryFocus = func(focused bool) { queryFocused = focused }
 			}
-			kit.Header(c, header)
+			kit.Header(c.Key("window-header"), header)
 			width, _ := c.Size()
 			about := n.settingsSection == "about"
 			if width < nativeSplitWidth {
@@ -202,10 +202,10 @@ func (n *nativeMain) view(c *ui.Context) {
 			animateNativeChange(panel, "window-appearance", n.appearanceRevision)
 			n.savePrivacyTexts(false)
 			if n.notice != "" {
-				ui.Text(c, n.notice).Padding(4, 8).TextColor(c.Theme().TextMuted)
+				ui.Text(c.Key("window-notice"), n.notice).Padding(4, 8).TextColor(c.Theme().TextMuted)
 			}
 			if n.failed {
-				ui.Row(c).Padding(8).AlignItems(ui.Center).Gap(8).Children(func() {
+				ui.Row(c.Key("service-unavailable")).Padding(8).AlignItems(ui.Center).Gap(8).Children(func() {
 					ui.Text(c, n.text("native_service_unavailable")).Grow(1).TextColor(c.Theme().Danger)
 					if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry")}).Clicked() {
 						n.prepare(n.resume)

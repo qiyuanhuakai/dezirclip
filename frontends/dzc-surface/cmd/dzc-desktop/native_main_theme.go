@@ -16,16 +16,22 @@ type nativeTheme struct {
 }
 
 func (n *nativeMain) configureThemes(selection, catalog string) {
+	previous := n.findImportedTheme(n.theme)
 	if catalog != n.preferences["app.custom_themes"] {
 		n.importedThemes = importedThemeCatalog(catalog)
 	} else if selection == n.theme {
 		return
 	}
-	n.importedTheme = nil
-	if entry := n.findImportedTheme(selection); entry != nil {
-		n.importedTheme = &nativeTheme{
-			base: entry.Base, light: presets.Imported(entry.Base, "light", entry.Css), dark: presets.Imported(entry.Base, "dark", entry.Css),
-		}
+	entry := n.findImportedTheme(selection)
+	if entry == nil {
+		n.importedTheme = nil
+		return
+	}
+	if n.importedTheme != nil && previous != nil && previous.Base == entry.Base && previous.Css == entry.Css {
+		return
+	}
+	n.importedTheme = &nativeTheme{
+		base: entry.Base, light: presets.Imported(entry.Base, "light", entry.Css), dark: presets.Imported(entry.Base, "dark", entry.Css),
 	}
 }
 

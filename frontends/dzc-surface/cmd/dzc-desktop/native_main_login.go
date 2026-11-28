@@ -28,7 +28,7 @@ func (n *nativeMain) loginSettings(c *ui.Context) {
 		n.loadLogin(action)
 	}
 	if state.failed {
-		ui.Row(c).Gap(6).Wrap().Children(func() {
+		ui.Row(c.Key("login-failure")).Gap(6).Wrap().Transition(nativeSettingReveal).Children(func() {
 			ui.Text(c, n.text("native_autostart_failed")).TextColor(c.Theme().TextMuted).Wrap()
 			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: state.pending}).Clicked() {
 				n.loadLogin("")

@@ -75,7 +75,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 		n.settingsAccordion(c, kit, panes)
 		return
 	}
-	ui.Row(c).FillWidth().Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Stretch).Gap(splitGap).Padding(12, horizontalInset).Children(func() {
+	ui.Row(c.Key("settings-split")).FillWidth().Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Stretch).Gap(splitGap).Padding(12, horizontalInset).Children(func() {
 		sections := make([]uikit.SettingsSection, 0, len(panes))
 		for _, pane := range panes {
 			sections = append(sections, pane.SettingsSection)
@@ -103,7 +103,7 @@ func (n *nativeMain) settingsView(c *ui.Context, kit uikit.Kit, surfaceOpacity *
 			}
 		}
 	})
-	ui.Box(c).FillWidth().Padding(0, horizontalInset, 8).Children(func() { n.settingsFooter(c, kit, true) })
+	ui.Box(c.Key("settings-footer")).FillWidth().Padding(0, horizontalInset, 8).Children(func() { n.settingsFooter(c, kit, true) })
 }
 
 func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nativeSettingsPane) {
@@ -114,7 +114,7 @@ func (n *nativeMain) settingsAccordion(c *ui.Context, kit uikit.Kit, panes []nat
 			n.settingsOpen[pane.ID] = &open
 		}
 	}
-	ui.Scroll(c).FillWidth().Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Center).TrackScroll(&n.settingsStackScroll).Children(func() {
+	ui.Scroll(c.Key("settings-accordion")).FillWidth().Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Center).TrackScroll(&n.settingsStackScroll).Children(func() {
 		ui.Column(c).FillWidth().Padding(12, 8).Children(func() {
 			uikit.SettingsSectionStack(c, func() {
 				for _, pane := range panes {
@@ -404,7 +404,7 @@ func (n *nativeMain) settingsHelpLabel(label string) string {
 var nativeQuickPasteLayout = protocol.QuickPasteLayoutSetting()
 
 func (n *nativeMain) toolsSettings(c *ui.Context, kit uikit.Kit) {
-	kit.CaptureSettingsHeading(c, n.text("capture_settings"))
+	kit.CaptureSettingsHeading(c.Key("capture-settings-heading"), n.text("capture_settings"))
 	enabled := n.settingEnabled("app.screenshot_enabled", true)
 	n.panelCheckbox(c.Key("screenshot-enabled"), kit, "screenshot", n.text("screenshot_enabled"), n.text("screenshot_enabled_hint"), enabled)
 	if enabled {
@@ -442,7 +442,7 @@ func (n *nativeMain) toolsSettings(c *ui.Context, kit uikit.Kit) {
 		})
 	}
 	n.booleanSettingWithHelp(c, "app.ocr_enabled", n.text("ocr_enabled"), n.text("ocr_enabled_hint"), true)
-	n.drawOCREngine(c, kit)
+	n.drawOCREngine(c.Key("ocr-engine-status"), kit)
 	n.cliSettings(c, kit)
 }
 

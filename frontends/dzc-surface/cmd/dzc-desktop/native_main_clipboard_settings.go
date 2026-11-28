@@ -176,10 +176,12 @@ func (n *nativeMain) sequentialSettings(c *ui.Context) {
 	}
 	switch {
 	case n.queueCount.failed:
-		ui.Text(c, n.text("sequential_paste_queue_unavailable")).TextColor(c.Theme().Danger).Wrap()
-		if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: n.mutating}).Clicked() {
-			n.loadQueueCount()
-		}
+		ui.Column(c.Key("sequential-queue-error")).ColumnSpan(-1).Gap(6).Transition(nativeSettingReveal).Children(func() {
+			ui.Text(c, n.text("sequential_paste_queue_unavailable")).TextColor(c.Theme().Danger).Wrap()
+			if n.mainKit().Button(c, uikit.ButtonOptions{Label: n.text("common_retry"), Disabled: n.mutating}).Clicked() {
+				n.loadQueueCount()
+			}
+		})
 	case n.queueCount.known && n.queueCount.count > 0:
 		kit := n.mainKit()
 		kit.SettingsField(c.Key("sequential-queue"), uikit.SettingsFieldOptions{}).

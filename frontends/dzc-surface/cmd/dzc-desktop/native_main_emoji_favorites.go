@@ -21,21 +21,24 @@ func (n *nativeMain) emojiPanel() *nativeEmojiPanel {
 	return n.emoji
 }
 
-func (n *nativeMain) emojiFavoritesView(c *ui.Context, contentWidth float32) {
-	panel := n.emojiPanel()
+func (n *nativeMain) ensureEmojiFavorites(panel *nativeEmojiPanel) {
 	if !panel.ready && !panel.loading && !panel.loadError && !n.mutating {
 		n.loadEmojiFavorites(panel)
 	}
+}
+
+func (n *nativeMain) emojiFavoritesView(c *ui.Context, contentWidth float32, pending bool) {
+	panel := n.emojiPanel()
 	kit := n.mainKit()
 	options := uikit.EmojiFavoritesOptions{
 		ContentWidth: contentWidth, Count: len(panel.paths), Label: n.text("emoji_favorites"),
 		AddLabel: n.text("emoji_add_files"), DropLabel: n.text("emoji_fav_drop"),
 		EmptyTitle: n.text("emoji_empty"), Hint: n.text("emoji_fav_tip"),
-		Disabled: n.mutating || n.private,
+		Disabled: n.mutating || n.private || pending,
 		OnAdd:    func() { n.changeEmojiFavorites("import", nil, true) },
 		OnDrop:   n.importEmojiPaths,
 		Item: func(c *ui.Context, index int, width float32) {
-			n.emojiFavoriteCard(c, kit, panel, panel.paths[index], width)
+			n.emojiFavoriteCard(c, kit, panel, panel.paths[index], width, pending)
 		},
 	}
 	if options.Count == 0 {
@@ -55,14 +58,14 @@ func (n *nativeMain) emojiFavoritesView(c *ui.Context, contentWidth float32) {
 	}
 }
 
-func (n *nativeMain) emojiFavoriteCard(c *ui.Context, kit uikit.Kit, panel *nativeEmojiPanel, path string, width float32) {
+func (n *nativeMain) emojiFavoriteCard(c *ui.Context, kit uikit.Kit, panel *nativeEmojiPanel, path string, width float32, pending bool) {
 	name := filepath.Base(path)
 	preview, loaded := panel.thumbnails.lookup(path)
-	if !loaded {
+	if !loaded && !pending {
 		n.loadEmojiThumbnail(panel, path)
 	}
 	options := uikit.EmojiFavoriteOptions{
-		Name: name, Width: width, Disabled: n.mutating, RemoveLabel: n.text("native_remove_favorite"),
+		Name: name, Width: width, Disabled: n.mutating || pending, RemoveLabel: n.text("native_remove_favorite"),
 		OnChoose: func() { n.sendEmoji("image", path) },
 		Preview: func() {
 			if preview != nil {
