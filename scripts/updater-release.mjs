@@ -623,11 +623,23 @@ const linuxRuntimeFiles = (tag, target, archPackages) => expectedDesktopCandidat
 const linuxReplayTag = 'v0.2.0';
 // The RPMs have no detached updater signatures. Pin the actual released bytes
 // for the read-only exercise alongside the signed Debian and AppImage files.
-const linuxReplayRPM = {
+const linuxInstallerHashes = {
   'DezirClip-0.2.0-1.x86_64.rpm': 'd55291474b2cbba4e14a3fd2450b8983adba5209de7848b8fffba47f5c58f03d',
   'DezirClip-MyGo-0.2.0-1.x86_64.rpm': '8eff2b7525e80ab001cf740ce5f9248774542734994f6522356b3d1c74f772d5',
   'DezirClip-0.2.0-1.aarch64.rpm': '82af26d4faf6aeb3cd1034ce3c5397e9b7f0350d58599e2d13d6fd8b241fb3f0',
   'DezirClip-MyGo-0.2.0-1.aarch64.rpm': '82af6ace94986fe674605fd062aec17ac7a3492055147deacd9c057ff16a6586',
+  'DezirClip_0.2.0_amd64.deb': 'eca045be38707b4b99a1433f6e4287f6705fba5e75c572f038b1f3bb823d6b9c',
+  'DezirClip-MyGo_0.2.0_amd64.deb': '560c6209445cca15ab83ab3d47943e82922398cf47ecac7786dd99b741dde3ba',
+  'DezirClip_0.2.0_arm64.deb': 'b1e48decdb152ed024267a064aba079b5b2be086cfc62dd12ac8a693ded4167c',
+  'DezirClip-MyGo_0.2.0_arm64.deb': '4442352b30c4e8e9639404e384c2cfd2cfaf1d4427544da0175e65d86dd0207c',
+  'DezirClip-0.2.0-0.rc5.x86_64.rpm': '1342b5da0d9d11f1a58fce35cf7daa3c995971d02051f9b971da121875d9e6d9',
+  'DezirClip-MyGo-0.2.0-0.rc5.x86_64.rpm': '955e27d9e81f700c2c1cdf444917a073f0bb27c3a610f2854b67067afbf819f3',
+  'DezirClip-0.2.0-0.rc5.aarch64.rpm': '5a1ca6237d6ceba69926a1cf4bd21bb82425f0563c1a41146f361bbba45c8dca',
+  'DezirClip-MyGo-0.2.0-0.rc5.aarch64.rpm': 'fbd0284b6e930ba0698355d635c77546272d5354e7634a6841da48d334b04658',
+  'DezirClip_0.2.0-rc5_amd64.deb': '5bc1b57579404101cf930c188684977c6f4ea34f123a5d0312a7673195d75e6f',
+  'DezirClip-MyGo_0.2.0-rc5_amd64.deb': 'a97c39620c59ce332b4b4db0953262ef671619696ca5f859842ab47fb69e054d',
+  'DezirClip_0.2.0-rc5_arm64.deb': '0f5020c812bef2a0bb15fd33b62d04c4ddac22367acc41c0f492c4fa52de5984',
+  'DezirClip-MyGo_0.2.0-rc5_arm64.deb': '661b5181d20e0f4d583c3067fdbc12ce7b314cc03df80ff20c13ce7aed489d2a',
 };
 
 function verifyDesktopSignatures(tag, assets, publicKey) {
@@ -636,6 +648,38 @@ function verifyDesktopSignatures(tag, assets, publicKey) {
     const signedName = name.slice(0, -4);
     verifyTauriSignature(readFileSync(byName.get(signedName).path), readFileSync(path, 'utf8'), publicKey, tag, signedName);
   }
+}
+
+const linuxManagedPackage = name => name.endsWith('.deb') || name.endsWith('.rpm');
+const linuxManager = name => name.endsWith('.deb') ? 'dpkg' : 'rpm';
+const linuxInstallerKind = name => (name.startsWith('DezirClip-MyGo') ? 'mygo-' : 'tauri-') + linuxManager(name);
+
+function stagePublishedLinuxAssets(tag, names, destination, publicKey, cache, transport) {
+  const pinned = publishedDesktopBaselines[tag];
+  const client = githubClient(transport, true);
+  const release = client.releaseByTag(tag);
+  if (release.draft !== false || release.id !== pinned.releaseId || client.releaseCommit(tag) !== pinned.source) {
+    throw new Error('Historical Linux release identity differs');
+  }
+  const assets = names.map(name => {
+    const found = release.assets.filter(item => item.name === name);
+    const [item] = found;
+    if (found.length !== 1 || item.state !== 'uploaded' || !Number.isSafeInteger(item.id) || item.id <= 0 ||
+        !/^sha256:[a-f0-9]{64}$/.test(item.digest ?? '')) {
+      throw new Error('Historical Linux release asset is absent or ambiguous: ' + name);
+    }
+    const bytes = cache ? readFileSync(join(cache, name)) : client.downloadAsset(item);
+    const sha256 = digest(bytes);
+    if (bytes.length !== item.size || item.digest !== 'sha256:' + sha256 ||
+        (linuxManagedPackage(name) && linuxInstallerHashes[name] !== sha256)) {
+      throw new Error('Historical Linux release asset has different bytes: ' + name);
+    }
+    const path = join(destination, name);
+    writeFileSync(path, bytes, { flag: 'wx' });
+    return { name, path, size: item.size, sha256, asset_id: item.id };
+  });
+  verifyDesktopSignatures(tag, assets, publicKey);
+  return assets;
 }
 
 export function stageLinuxRuntime({ tag, source, runId, attempt, target, directory, artifactId, destination, publicKey, cache },
@@ -648,35 +692,16 @@ export function stageLinuxRuntime({ tag, source, runId, attempt, target, directo
   let assets;
   if (replay) {
     tag = linuxReplayTag;
-    const pinned = publishedDesktopBaselines[tag];
-    const client = githubClient(transport, true);
-    const release = client.releaseByTag(tag);
-    if (release.draft !== false || release.id !== pinned.releaseId || client.releaseCommit(tag) !== pinned.source) {
-      throw new Error('Historical Linux release identity differs');
-    }
-    source = pinned.source;
+    source = publishedDesktopBaselines[tag].source;
     artifactId = null;
-    assets = expectedDesktopCandidateFiles(tag, target, false).map(name => {
-      const found = release.assets.filter(item => item.name === name);
-      const [item] = found;
-      if (found.length !== 1 || item.state !== 'uploaded' || !Number.isSafeInteger(item.id) || item.id <= 0
-          || !/^sha256:[a-f0-9]{64}$/.test(item.digest ?? '')) {
-        throw new Error('Historical Linux release asset is absent or ambiguous: ' + name);
-      }
-      const bytes = cache ? readFileSync(join(cache, name)) : client.downloadAsset(item);
-      const sha256 = digest(bytes);
-      if (bytes.length !== item.size || item.digest !== 'sha256:' + sha256 ||
-          (name.endsWith('.rpm') && linuxReplayRPM[name] !== sha256)) {
-        throw new Error('Historical Linux release asset has different bytes: ' + name);
-      }
-      const path = join(destination, name);
-      writeFileSync(path, bytes, { flag: 'wx' });
-      return { name, path, size: item.size, sha256, asset_id: item.id };
-    });
+    assets = stagePublishedLinuxAssets(tag, expectedDesktopCandidateFiles(tag, target, false),
+      destination, publicKey, cache, transport);
   } else {
     const [id] = candidateArtifactIds({ source, runId, attempt },
       desktopProducerArtifact, transport, [target]);
-    if (String(id) !== artifactId) throw new Error('Linux runtime verifier received a different producer artifact');
+    if (String(id) !== artifactId || compareVersions(tag, linuxReplayTag) <= 0) {
+      throw new Error('Linux runtime verifier received a different producer artifact or an invalid upgrade version');
+    }
     assets = readDesktopCandidate({ tag, source, runId, attempt, target, directory }).map(asset => {
       const path = join(destination, asset.name);
       copyFileSync(asset.path, path, constants.COPYFILE_EXCL);
@@ -685,13 +710,26 @@ export function stageLinuxRuntime({ tag, source, runId, attempt, target, directo
       return { ...copy, path };
     });
   }
-  verifyDesktopSignatures(tag, assets, publicKey);
+  if (!replay) verifyDesktopSignatures(tag, assets, publicKey);
   const packages = assets.filter(({ name }) => !name.endsWith('.sig') && !name.endsWith('.src.tar.gz'))
     .map(({ path, ...identity }) => identity);
   const receipt = {
     schema_version: 1, origin: replay ? 'published-replay' : 'release-producer', tag, source_revision: source,
     run_id: Number(runId), run_attempt: Number(attempt), producer_artifact_id: artifactId, target, packages,
   };
+  const baselineTag = replay ? 'v0.2.0-rc5' : linuxReplayTag;
+  const baselineNames = expectedDesktopCandidateFiles(baselineTag, target, false)
+    .filter(name => linuxManagedPackage(name) || name.endsWith('.deb.sig'));
+  const previous = new Map(stagePublishedLinuxAssets(baselineTag, baselineNames, destination, publicKey, cache, transport)
+    .filter(asset => linuxManagedPackage(asset.name))
+    .map(({ path, ...asset }) => [linuxInstallerKind(asset.name),
+      { ...asset, tag: baselineTag, source_revision: publishedDesktopBaselines[baselineTag].source }]));
+  const transactions = packages.filter(asset => linuxManagedPackage(asset.name)).map(asset => ({
+    current: { ...asset, tag, source_revision: source },
+    previous: previous.get(linuxInstallerKind(asset.name)),
+  }));
+  writeFileSync(join(destination, 'linux-package-transactions-inputs.json'),
+    JSON.stringify({ target, packages: transactions }, null, 2) + '\n', { flag: 'wx' });
   writeFileSync(join(destination, 'linux-runtime-inputs.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
 }
 
@@ -710,7 +748,14 @@ function verifyLinuxRuntimeReports(reports, desktop, tag, source, run, transport
         !Array.isArray(packages)) {
       throw new Error(`Linux runtime report does not identify the candidate: ${target}`);
     }
-    requireExactNames(packages.map(asset => asset?.name), linuxRuntimeFiles(tag, target, run.arch_packages), target);
+    const names = linuxRuntimeFiles(tag, target, run.arch_packages);
+    requireExactNames(packages.map(asset => asset?.name), names, target);
+    const transactions = report.package_transactions;
+    if (!Array.isArray(transactions)) throw new Error('Missing Linux package-manager transaction results');
+    requireExactNames(transactions.map(item => item?.current?.name), names.filter(linuxManagedPackage), 'Linux package transactions');
+    const transactionsByName = new Map(transactions.map(item => [item.current.name, item]));
+    const baselineByKind = new Map(linuxRuntimeFiles(linuxReplayTag, target, false).filter(linuxManagedPackage)
+      .map(name => [linuxInstallerKind(name), name]));
     for (const item of packages) {
       const archive = archives.get(item.name);
       const asset = assets.get(item.name);
@@ -721,6 +766,22 @@ function verifyLinuxRuntimeReports(reports, desktop, tag, source, run, transport
           ['desktop', 'cli', 'service'].some(role => item.members[role]?.path !== archive.members[role].path ||
             item.members[role]?.sha256 !== archive.members[role].sha256)) {
         throw new Error(`Linux runtime report does not match the final package: ${item.name}`);
+      }
+      if (linuxManagedPackage(item.name)) {
+        const { current, previous, members, package_manager, installed, upgraded, reinstalled, uninstalled, profile_retained } =
+          transactionsByName.get(item.name);
+        const baseline = baselineByKind.get(linuxInstallerKind(item.name));
+        if (package_manager !== linuxManager(item.name) || current.tag !== tag || current.source_revision !== source ||
+            current.sha256 !== item.sha256 || current.size !== item.size ||
+            previous?.name !== baseline || previous.tag !== linuxReplayTag ||
+            previous.source_revision !== publishedDesktopBaselines[linuxReplayTag].source ||
+            previous.sha256 !== linuxInstallerHashes[baseline] ||
+            ![installed, upgraded, reinstalled, uninstalled, profile_retained].every(value => value === true) ||
+            !members || Object.keys(members).length !== 3 ||
+            Object.keys(item.members).some(role => members[role]?.path !== item.members[role].path ||
+              members[role]?.sha256 !== item.members[role].sha256)) {
+          throw new Error('Linux package transaction did not verify the final bytes and historical upgrade: ' + item.name);
+        }
       }
     }
   }

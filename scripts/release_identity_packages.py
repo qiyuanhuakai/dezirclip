@@ -79,16 +79,26 @@ def package_fields(text, separator):
     return fields
 
 
+def linux_package_paths(root, mygo):
+    directory = root / ('usr/lib/DezirClip-MyGo' if mygo else 'usr/bin')
+    return {
+        'desktop': directory / ('dzc-desktop' if mygo else ROLES['desktop']),
+        'cli': directory / ROLES['cli'],
+        'service': directory / ROLES['service'],
+        'launcher': root / 'usr/bin' / ('dezirclip-mygo' if mygo else 'dezirclip'),
+        'desktop_file': root / 'usr/share/applications' / ('DezirClip-MyGo.desktop' if mygo else 'DezirClip.desktop'),
+    }
+
+
 def desktop_package_files(root, target, mygo):
     roles = {**ROLES, 'desktop': 'dzc-desktop'} if mygo else ROLES
     members = find_members(root, target, roles)
     if target.startswith('windows-'):
         directory, extension = root, '.exe'
     else:
-        directory = root / ('usr/lib/DezirClip-MyGo' if mygo else 'usr/bin')
-        extension = ''
-        launcher = root / ('usr/bin/dezirclip-mygo' if mygo else 'usr/bin/dezirclip')
-        desktop_file = root / 'usr/share/applications' / ('DezirClip-MyGo.desktop' if mygo else 'DezirClip.desktop')
+        installed = linux_package_paths(root, mygo)
+        directory, extension = installed['desktop'].parent, ''
+        launcher, desktop_file = installed['launcher'], installed['desktop_file']
         require(launcher.is_file() and os.access(launcher, os.X_OK) and desktop_file.is_file(), 'Missing Linux desktop launcher')
     result = {}
     for role, path in members.items():

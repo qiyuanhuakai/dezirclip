@@ -537,6 +537,18 @@ function currentDualFixture(version, native = false, linux = false, options = {}
   }
   if (linux) {
     const targets = ['linux-x86_64', 'linux-aarch64'];
+    const baselineHashes = {
+      'DezirClip-0.2.0-1.x86_64.rpm': 'd55291474b2cbba4e14a3fd2450b8983adba5209de7848b8fffba47f5c58f03d',
+      'DezirClip-MyGo-0.2.0-1.x86_64.rpm': '8eff2b7525e80ab001cf740ce5f9248774542734994f6522356b3d1c74f772d5',
+      'DezirClip-0.2.0-1.aarch64.rpm': '82af26d4faf6aeb3cd1034ce3c5397e9b7f0350d58599e2d13d6fd8b241fb3f0',
+      'DezirClip-MyGo-0.2.0-1.aarch64.rpm': '82af6ace94986fe674605fd062aec17ac7a3492055147deacd9c057ff16a6586',
+      'DezirClip_0.2.0_amd64.deb': 'eca045be38707b4b99a1433f6e4287f6705fba5e75c572f038b1f3bb823d6b9c',
+      'DezirClip-MyGo_0.2.0_amd64.deb': '560c6209445cca15ab83ab3d47943e82922398cf47ecac7786dd99b741dde3ba',
+      'DezirClip_0.2.0_arm64.deb': 'b1e48decdb152ed024267a064aba079b5b2be086cfc62dd12ac8a693ded4167c',
+      'DezirClip-MyGo_0.2.0_arm64.deb': '4442352b30c4e8e9639404e384c2cfd2cfaf1d4427544da0175e65d86dd0207c',
+    };
+    const managed = name => name.endsWith('.deb') || name.endsWith('.rpm');
+    const kind = name => [name.startsWith('DezirClip-MyGo'), name.slice(-4)].join(':');
     fixture.state.artifacts = targets.map((target, index) => ({
       id: 950 + index, name: `release-desktop-${target}-1`, digest: 'sha256:' + 'd'.repeat(64),
       expired: false, workflow_run: { id: 7001, head_sha: 'a'.repeat(40), repository_id: 90, head_repository_id: 90 },
@@ -544,15 +556,26 @@ function currentDualFixture(version, native = false, linux = false, options = {}
     readbacks.linux = targets.map((target, index) => {
       const jobs = fixture.state.jobs;
       jobs.push({ ...jobs[0], id: 8_000 + jobs.length, name: `Verify final Linux desktop runtime (${target})` });
+      const packages = readbacks.desktop.archives.filter(archive => archive.target === target && !archive.name.endsWith('.src.tar.gz'))
+        .map(({ name, sha256, members }) => ({ name, sha256, members: structuredClone(members),
+          size: readbacks.desktop.assets.find(asset => asset.name === name).size,
+          runtime: name.endsWith('.AppImage') ? 'appimage' : 'extracted-native-launcher',
+          history_rendered: true, service_verified: true }));
+      const baseline = expectedDesktopCandidateFiles('v0.2.0', target, false).filter(managed);
+      const transactions = packages.filter(item => managed(item.name)).map(({ name, sha256, size, members }) => {
+        const old = baseline.find(asset => kind(asset) === kind(name));
+        return {
+          package_manager: name.endsWith('.deb') ? 'dpkg' : 'rpm',
+          current: { name, sha256, size, tag, source_revision: 'a'.repeat(40) },
+          previous: { name: old, tag: 'v0.2.0', source_revision: 'ba0ad71f7b9d8caddac45d0bc5588254a8273482',
+            sha256: baselineHashes[old] },
+          members: structuredClone(members),
+          installed: true, upgraded: true, reinstalled: true, uninstalled: true, profile_retained: true,
+        };
+      });
       return { schema_version: 1, origin: 'release-producer', status: 'passed', tag, target,
         source_revision: 'a'.repeat(40), run_id: 7001, run_attempt: 1,
-        producer_artifact_id: String(fixture.state.artifacts[index].id),
-        packages: readbacks.desktop.archives.filter(archive => archive.target === target && !archive.name.endsWith('.src.tar.gz'))
-          .map(({ name, sha256, members }) => ({ name, sha256, members: structuredClone(members),
-            size: readbacks.desktop.assets.find(asset => asset.name === name).size,
-            runtime: name.endsWith('.AppImage') ? 'appimage' : 'extracted-native-launcher',
-            history_rendered: true, service_verified: true })),
-      };
+        producer_artifact_id: String(fixture.state.artifacts[index].id), packages, package_transactions: transactions };
     });
   }
   return { ...fixture, readbacks };
@@ -575,6 +598,12 @@ test('a current workflow publishes only the asset identities read back from its 
     fixture => { fixture.readbacks.linux[0].packages[0].history_rendered = false; },
     fixture => { fixture.readbacks.linux[1].packages[0].size += 1; },
     fixture => { fixture.readbacks.linux[1].packages[0].members.cli.sha256 = 'f'.repeat(64); },
+    fixture => { delete fixture.readbacks.linux[0].package_transactions; },
+    fixture => { fixture.readbacks.linux[0].package_transactions.pop(); },
+    fixture => { fixture.readbacks.linux[0].package_transactions[0].previous.sha256 = 'f'.repeat(64); },
+    fixture => { fixture.readbacks.linux[1].package_transactions[0].current.sha256 = 'f'.repeat(64); },
+    fixture => { fixture.readbacks.linux[1].package_transactions[0].members.cli.sha256 = 'f'.repeat(64); },
+    fixture => { fixture.readbacks.linux[1].package_transactions[0].uninstalled = false; },
     fixture => { fixture.state.jobs.at(-1).conclusion = 'failure'; },
   ]) {
     const fixture = make(true, true);

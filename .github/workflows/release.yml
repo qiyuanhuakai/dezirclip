@@ -567,7 +567,7 @@ jobs:
           else
             node scripts/updater-release.mjs replay-linux-runtime "$TARGET" "$fixture"
           fi
-      - name: Run both shipped desktops and their helpers in private sessions
+      - name: Verify shipped launchers and native DEB and RPM transactions
         id: exercise
         env:
           TARGET: ${{ matrix.target }}

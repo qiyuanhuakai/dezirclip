@@ -91,7 +91,7 @@ Linux/Windows x64 的 Go 单测归开发矩阵，桌面验收保留真实 Go/Rus
 
 每个目标用一次 Cargo 构建产出 Tauri、桌面配套 CLI 和 Service，随后 Tauri 打包阶段复用已暂存的二进制，MyGo 使用相同目录。独立 CLI 下载保持原 ABI 构建边界。生产 Web bundle 的浏览器测试在源码验收执行一次。本地以同一路径构建并解包 Windows x64 NSIS 和 Linux x64 deb，两个 helper 的 SHA-256 和实际 CLI/MCP 集成通过。Release 首次运行计时仍需候选实测。
 
-当前门槛保留仓库/tag/SHA/run/attempt、必需 job、资产目录及时间、签名/版本/文件名、updater 下载读回和防降级检查。恢复含 Arch 资产的候选时也核对原 Release run 的源码验收工作。只读的 `replay-windows-candidate` 已用公开签名安装包验证两个桌面从 v0.2.0-rc5 升到 v0.2.0。未创建新 release，也未切换更新通道。Linux x64 和 ARM64 已对 v0.2.0 的 AppImage、DEB 和 RPM 执行隔离启动验收。新 40+1 候选的真实 tag 执行、Arch 与 DEB/RPM 的系统级安装生命周期以及首次总耗时仍待实测。 [双桌面 Windows 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46040562056)
+当前门槛保留仓库/tag/SHA/run/attempt、必需 job、资产目录及时间、签名/版本/文件名、updater 下载读回和防降级检查。恢复含 Arch 资产的候选时也核对原 Release run 的源码验收工作。只读的 `replay-windows-candidate` 已用公开签名安装包验证两个桌面从 v0.2.0-rc5 升到 v0.2.0。未创建新 release，也未切换更新通道。Linux x64 和 ARM64 已对 v0.2.0 的 AppImage、DEB 和 RPM 执行隔离启动验收。Linux 最终包检查并行启动 Ubuntu 和 Fedora 的隔离容器，用 `dpkg`、`rpm` 验证两个桌面的安装、从固定上一版本升级、重装、卸载及 profile 保留。候选封存核对这四组包管理器结果及安装后程序的哈希。只读重放使用 v0.2.0-rc5 和 v0.2.0，正常 tag 使用 v0.2.0 作为基线。真实 40+1 tag 链路、Arch 的包管理器事务以及首次总耗时仍待实测。 [双桌面 Windows 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46040562056)
 
 ### 当前发布资产集合
 

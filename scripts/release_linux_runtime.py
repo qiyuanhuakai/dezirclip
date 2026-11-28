@@ -1,5 +1,6 @@
 """Run the shipped Linux desktop and both bundled helpers in disposable X11 sessions."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, closing
 import json
 import os
@@ -301,12 +302,23 @@ def main():
     output.mkdir(mode=0o700)
     driver = arguments.driver.resolve(strict=True)
     bsdtar = arguments.bsdtar.resolve(strict=True)
+    from release_linux_package_manager import package_transactions
     reports = []
-    for index, package in enumerate(inputs['packages']):
-        print(f"Verify native Linux runtime for {package['name']}", file=sys.stderr, flush=True)
-        reports.append(sandbox(fixture, output, driver, bsdtar, index))
-    with (output / 'linux-runtime.json').open('x', encoding='utf-8') as report:
-        json.dump({**inputs, 'status': 'passed', 'packages': reports}, report, indent=2)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        transactions = pool.submit(package_transactions, fixture, output, inputs['target'])
+        for index, package in enumerate(inputs['packages']):
+            print(f"Verify native Linux runtime for {package['name']}", file=sys.stderr, flush=True)
+            reports.append(sandbox(fixture, output, driver, bsdtar, index))
+        package_manager = transactions.result()
+    inspected = {item['name']: item for item in reports}
+    for item in package_manager:
+        current = item['current']
+        archive = inspected[current['name']]
+        require(current['sha256'] == archive['sha256'] and current['size'] == archive['size']
+                and item['members'] == archive['members'], 'Installed files differ from the exercised Linux archive')
+    report = {**inputs, 'status': 'passed', 'packages': reports, 'package_transactions': package_manager}
+    with (output / 'linux-runtime.json').open('x', encoding='utf-8') as stream:
+        json.dump(report, stream, indent=2)
 
 
 if __name__ == '__main__':
