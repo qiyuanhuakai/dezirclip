@@ -32,6 +32,8 @@
 
 结果汇总通过 GitHub Actions 的任务记录核对固定清单。每个必需矩阵实例和所列的关键步骤都要实际成功，缺失、跳过、取消和失败分别显示。普通 CI 的部分重跑沿用 GitHub 认定的同一 run 最新结果。候选源码验收核对当前 attempt，核对通过后才生成既有格式的凭据。
 
+tag 源码准入的 Tauri 任务会恢复可用的 Rust 缓存，跳过本 tag 独占缓存的保存步骤。手动源码准入实跑中，Windows 桌面任务最后的 Rust 缓存保存耗时 1 分 46 秒。跨 tag 的缓存访问范围见 [GitHub 缓存说明](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)。 [手动源码准入](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46122651572)
+
 PR 更新和新的 master push 会取消同组旧 CI。手动 full 不适用该取消条件。普通日常检查的耗时目标仍为 10 分钟以内；排队、外部下载和真实原生验收耗时须分别记录，超时或取消不能算成功。
 
 ## 测试入口与证据种类

@@ -121,7 +121,7 @@ def job_requirements(mode, legacy_installer, crash_profile="release"):
                 core += ("Verify the bare CLI in a real Windows pseudoterminal",)
             jobs[f"Rust development ({runner}, core-tests)"] = core
             jobs[f"Rust development ({runner}, desktop-check)"] = ("Check all desktop targets without linking another application",)
-    if legacy_installer:
+    if mode == "full" or (mode == "development" and legacy_installer):
         jobs["MyGo installer acceptance"] = ("Verify installation, installed desktop, upgrade, locked files and uninstall",)
     if mode == "full":
         jobs["Build shared native NSIS fixtures"] = ()

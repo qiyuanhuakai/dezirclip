@@ -124,6 +124,7 @@ class AcceptanceTests(unittest.TestCase):
         windows["steps"][-1]["conclusion"] = "skipped"
         report = ci_policy.evaluate("full", True, jobs, SHA, RUN, ATTEMPT)
         self.assertIn(("Native NSIS (DeniedGuiUpgrade)", "required", "missing", False), report)
+        self.assertIn("MyGo installer acceptance", ci_policy.job_requirements("full", False))
         self.assertIn(("Tauri backend (windows-x86_64) / Upload Windows x64 MyGo test installer",
                        "required", "skipped", False), report)
 

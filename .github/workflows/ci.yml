@@ -530,7 +530,8 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
-          # Preserve compilation when a later native UI acceptance step fails.
+          # A cache saved on a release tag cannot be reused by the next tag.
+          save-if: ${{ needs.ci-desktop-plan.outputs.mode != 'source-acceptance' || github.ref_type != 'tag' }}
           cache-on-failure: true
 
       - name: Setup Go for local IPC compatibility
