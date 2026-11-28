@@ -11,9 +11,10 @@ private struct Bootstrap: Decodable {
     let grant: String
     let entryId: Int64
     let marker: String
+    let socket: String
 
     private enum CodingKeys: String, CodingKey {
-        case instance, grant, marker
+        case instance, grant, marker, socket
         case entryId = "entry_id"
     }
 }
@@ -66,7 +67,6 @@ func verifyForeignProcessRejected(socket: String) async throws {
 func verifySharedHost(helper: URL, directory: URL) async throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
                                             attributes: [.posixPermissions: 0o700])
-    let socket = directory.appendingPathComponent("host.sock").path
     let child = Process()
     let lifetime = Pipe()
     let output = Pipe()
@@ -81,7 +81,9 @@ func verifySharedHost(helper: URL, directory: URL) async throws {
         child.waitUntilExit()
     }
     let credentials: Bootstrap = try receipt(output)
-    try require(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("host.control.json").path),
+    let socket = credentials.socket
+    let control = URL(fileURLWithPath: socket).deletingLastPathComponent().appendingPathComponent("host.control.json")
+    try require(!FileManager.default.fileExists(atPath: control.path),
                 "inherited grant was written into discovery")
     func open(grant: String, requireCopy: Bool = false) async throws -> DesktopSession {
         let fd = try connect(to: socket, until: Date().addingTimeInterval(3))

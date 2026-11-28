@@ -51,6 +51,10 @@ impl DarwinKeyProvider {
         }
     }
 
+    pub fn verify_existing(&self) -> Result<(), EncryptionError> {
+        self.read_key()?.map(|_| ()).ok_or(EncryptionError::KeyUnavailable)
+    }
+
     /// Invoke only during previously uninitialized profile creation. An existing
     /// profile with a missing, locked or malformed key must surface the failure.
     pub fn provision_new_profile(&self) -> Result<(), EncryptionError> {

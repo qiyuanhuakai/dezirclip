@@ -1599,6 +1599,7 @@ dependencies = [
  "dzc-platform",
  "dzc-protocol",
  "rand 0.8.6",
+ "security-framework",
  "semver",
  "serde",
  "serde_json",

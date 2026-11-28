@@ -24,6 +24,38 @@ fn private_directory(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Resolve the profile before deriving its endpoint namespace. Reject a symlink
+/// at the profile itself and aliases through parents converge on the same path.
+#[cfg(target_os = "macos")]
+pub fn canonical_private_directory(path: &Path) -> io::Result<PathBuf> {
+    if !path.is_absolute() { return Err(io::Error::from(io::ErrorKind::InvalidInput)); }
+    private_directory(path)?;
+    let canonical = fs::canonicalize(path)?;
+    private_directory(&canonical)?;
+    Ok(canonical)
+}
+
+/// Keep profile ownership independent of temporary socket directory cleanup.
+#[cfg(target_os = "macos")]
+pub fn lock_private_profile(directory: &Path) -> io::Result<fs::File> {
+    private_directory(directory)?;
+    let file = fs::File::options().read(true).write(true).create(true).mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(directory.join("profile.lock"))?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.uid() != unsafe { libc::geteuid() } ||
+        metadata.nlink() != 1 || metadata.mode() & 0o077 != 0 {
+        return Err(denied());
+    }
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        let error = io::Error::last_os_error();
+        return Err(if error.kind() == io::ErrorKind::WouldBlock {
+            io::Error::from(io::ErrorKind::AddrInUse)
+        } else { error });
+    }
+    Ok(file)
+}
+
 #[derive(Debug, Clone)]
 pub struct Endpoint { path: PathBuf, identity: PeerIdentity }
 impl Endpoint {

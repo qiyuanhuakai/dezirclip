@@ -9,10 +9,16 @@ fn main() -> std::io::Result<()> {
 }
 
 #[cfg(target_os = "macos")]
+#[path = "support/darwin_profile.rs"]
+mod profile_fixture;
+
+#[cfg(target_os = "macos")]
 mod darwin {
-    use dzc_core::{api::{ClipboardEntry, HistoryService, PrivacySessionCommand}, ports::ClipboardPayload};
+    use dzc_core::{api::{ClipboardEntry, PrivacySessionCommand}, ports::ClipboardPayload};
     use dzc_host::{Host, HostActions, HostOptions, serve_listener, wire::*};
-    use dzc_platform::{darwin_clipboard::MainThreadClipboard, ipc::Endpoint};
+    use dzc_host::darwin_profile::DarwinProfile;
+    use dzc_platform::{darwin_clipboard::MainThreadClipboard, darwin_keychain::DarwinKeyProvider};
+    use security_framework::os::macos::keychain::CreateOptions;
     use serde_json::{Value, json};
     use std::{io::{self, Read, Write}, path::PathBuf, sync::{Arc, mpsc as reply}, time::Duration};
     use tokio::sync::{mpsc, watch};
@@ -59,10 +65,21 @@ mod darwin {
     }
 
     pub(super) fn run() -> Result<(), Box<dyn std::error::Error>> {
-        let directory = PathBuf::from(std::env::args_os().nth(1).ok_or("private fixture directory required")?);
-        let endpoint = Endpoint::in_directory(&directory)?;
+        let first = std::env::args_os().nth(1).ok_or("private fixture directory required")?;
+        match first.to_str() {
+            Some("--verify-profile") => return super::profile_fixture::verify(),
+            Some("--profile-child") => return super::profile_fixture::child(),
+            _ => {}
+        }
+        let directory = PathBuf::from(first);
         let mut clipboard = MainThreadClipboard::open()?;
-        let history = HistoryService::open(&directory.join("fixture.db"))?;
+        let password = uuid::Uuid::new_v4().simple().to_string();
+        let keychain = CreateOptions::new().password(&password).prompt_user(false)
+            .create(directory.join("fixture.keychain-db"))?;
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+        let _entered = runtime.enter();
+        let profile = DarwinProfile::open(&directory.join("profile"), |id| DarwinKeyProvider::for_profile(keychain, id))?;
+        let history = profile.history.clone();
         let marker = format!("Swift-to-Host 示例 {}", uuid::Uuid::new_v4());
         let text = format!("{marker}\n{}", "x".repeat(200_000));
         let entry: ClipboardEntry = serde_json::from_value(json!({
@@ -72,20 +89,19 @@ mod darwin {
         let id = history.save(&entry, None)?;
         let (writer, mut writes) = mpsc::channel(1);
         let host = Host::new(HostOptions {
-            mode: HostMode::Service, history: history.clone(), directory, actions: Arc::new(Clipboard(writer)),
+            mode: HostMode::Service, history: history.clone(), directory: profile.directory.clone(), actions: Arc::new(Clipboard(writer)),
         }).map_err(wire_error)?;
         host.publish(EventKind::EntryAdded, EventData { entry_id: Some(id), status: None }).map_err(wire_error)?;
         let grant = host.grants().issue(ClientRole::Desktop, vec![
             Permission::HistoryRead, Permission::DesktopHistory, Permission::ClipboardCopy,
         ], Duration::from_secs(90)).map_err(wire_error)?;
         let mut commands = parent_commands()?;
-        tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async {
-            let listener = endpoint.bind_for_parent()?;
+        runtime.block_on(async {
             // Discovery is the socket path alone. The grant stays on the
             // private pipe inherited from the launcher.
-            send_receipt(&json!({"instance": host.instance_id(), "grant": grant.token(), "entry_id": id, "marker": marker}))?;
+            send_receipt(&json!({"instance": host.instance_id(), "grant": grant.token(), "entry_id": id, "marker": marker, "socket": profile.endpoint.address()}))?;
             let (shutdown, receiver) = watch::channel(false);
-            let server = serve_listener(host.clone(), listener, receiver);
+            let server = serve_listener(host.clone(), profile.listener, receiver);
             tokio::pin!(server);
             let mut drain: Option<tokio::task::JoinHandle<Result<(), WireErrorCode>>> = None;
             loop {

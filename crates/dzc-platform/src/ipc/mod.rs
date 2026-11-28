@@ -6,6 +6,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 mod unix;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub use unix::{current_identity, Endpoint, Listener, Stream};
+#[cfg(target_os = "macos")]
+pub use unix::{canonical_private_directory, lock_private_profile};
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]

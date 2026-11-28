@@ -100,6 +100,18 @@ impl HistoryService {
         Ok(Self::from_connection(Arc::new(Mutex::new(connection))))
     }
 
+    /// Read the durable database identity without running migrations or seeding.
+    #[cfg(target_os = "macos")]
+    pub fn read_profile_database_id(path: &Path) -> CoreResult<uuid::Uuid> {
+        let connection = rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|error| CoreError::from(error.to_string()))?;
+        let id: String = connection.query_row(
+            "SELECT state_id FROM privacy_runtime_state WHERE singleton=1", [], |row| row.get(0),
+        ).map_err(|error| CoreError::from(error.to_string()))?;
+        uuid::Uuid::try_parse(&id).ok().filter(|value| !value.is_nil())
+            .ok_or_else(|| CoreError::validation("invalid history database identity"))
+    }
+
     pub fn open(path: &Path) -> CoreResult<Self> {
         if path.as_os_str().is_empty() {
             return Err(CoreError::validation("database path is empty"));

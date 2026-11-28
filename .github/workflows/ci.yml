@@ -120,6 +120,7 @@ jobs:
           codesign --force --sign - target/debug/examples/darwin_desktop_fixture
           codesign --force --sign - "$RUNNER_TEMP/dzc-darwin-peer"
           "$RUNNER_TEMP/dzc-darwin-peer" "$PWD/target/debug/examples/ipc_protocol_fixture" "$socket_dir" "$PWD/target/debug/examples/darwin_desktop_fixture"
+          "$PWD/target/debug/examples/darwin_desktop_fixture" --verify-profile "$socket_dir/profiles"
 
   windows-release-memory:
     name: Published Windows memory comparison
