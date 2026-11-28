@@ -153,3 +153,5 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **C5 独立 Windows 最终包验收**。一次只读重放同时覆盖已发布签名 Tauri 和 MyGo 的 v0.2.0-rc5 → v0.2.0。验收检查旧设置和历史记录、三个实际安装文件的 SHA-256、启动、重装及卸载。发布器将两个验收报告和该次打包产物绑定到固定 draft。此处证据范围为 Windows x64 和该升级组合。 [Windows 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46040562056)
 - **Darwin 预备验收**。macOS 26 ARM64 runner 用临时签名的 Swift 程序启动实际 Rust helper。Swift 在发送首帧前核对有效 UID、内核 PID、audit token 对应的运行签名和预期二进制身份。helper 核对启动者 PID，持有独占采集租约并在主线程写入系统剪贴板。Swift 从另一进程读回同一文本。helper 在隔离的 Keychain 写入、重开、读回和删除试验凭据。Core 的 FIFO、符号链接和路径替换测试也通过。原型使用已有帧格式与合成响应。生产 Host Desktop grant、主线程调度、发行签名和常驻权限尚未验收。 [Darwin 实测](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46047626597)
 - **R6 快贴显示与粘贴设置**。Tauri 的快贴辅助窗口通过 Core 的一次读取取得语言、配色模式、透明度和基础主题。自定义主题只在选中时读取。粘贴热路径改用现有队列配置 API。Linux 通过 9 项配置回归测试和 Tauri 测试目标的类型检查。
+
+- **C5 Linux 最终包运行**。使用 GitHub 发布资产 ID、摘要、Tauri 签名和固定的历史 RPM 摘要读取 v0.2.0。Linux x64 本地隔离 X11 会话实际启动 Tauri 和 MyGo 的 AppImage，以及两种 DEB/RPM 所带的启动入口。六个包都显示了独立 CLI 写入的测试历史，随包 CLI 和 Service 的 BuildInfo 通过核对，并确认了实际运行的程序哈希。AppImage 使用其原生解包运行入口。DEB/RPM 的安装、重装和卸载，以及当前候选的报告绑定仍需验收。

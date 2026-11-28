@@ -485,7 +485,7 @@ export function standaloneArtifactIds(candidate, transport = gh) {
 const windowsX64 = 'windows-x86_64';
 const windowsVariants = ['tauri', 'mygo'];
 const windowsCandidateJob = variant => `Verify final Windows installer (${variant})`;
-const windowsPublished = {
+const publishedDesktopBaselines = {
   'v0.2.0': { source: 'ba0ad71f7b9d8caddac45d0bc5588254a8273482', releaseId: 460242002,
     tauri: [799308519, 799308514, 'e9406e6da0ad5cbe64d1f45209ac82e34d8161d5d6ce2da50737f835c83e25dd'],
     mygo: [799308522, 799308518, 'f7d408f94eec8118767457db90c43ef5e232ae0b6cce63d8c80c0704c33fca92'] },
@@ -500,7 +500,7 @@ function windowsInstaller(tag, variant) {
 }
 
 function publishedWindowsInstaller(tag, variant, publicKey, transport) {
-  const pinned = windowsPublished[tag];
+  const pinned = publishedDesktopBaselines[tag];
   const [id, signatureId, sha256] = pinned[variant];
   const name = windowsInstaller(tag, variant);
   const client = githubClient(transport, true);
@@ -557,7 +557,7 @@ export function stageWindowsCandidate({ tag, source, runId, attempt, directory, 
 function verifyWindowsCandidateReports(reports, desktop, tag, source, run) {
   if (!Array.isArray(reports)) throw new Error('Missing Windows candidate reports');
   requireExactNames(reports.map(report => report?.variant), windowsVariants, 'Windows candidate reports');
-  const baselines = windowsPublished['v0.2.0'];
+  const baselines = publishedDesktopBaselines['v0.2.0'];
   const producerIds = new Set();
   for (const { schema_version, status, origin, target, variant, source_revision, tag: testedTag, run_id, run_attempt,
     producer_artifact_id, current, previous, members } of reports) {
@@ -577,6 +577,82 @@ function verifyWindowsCandidateReports(reports, desktop, tag, source, run) {
     producerIds.add(producer_artifact_id);
   }
   if (producerIds.size !== 1) throw new Error('Windows variants must come from the same producer artifact');
+}
+
+const linuxTargets = desktopReleaseTargets.filter(target => target.startsWith('linux-'));
+const linuxReplayTag = 'v0.2.0';
+// The RPMs have no detached updater signatures. Pin the actual released bytes
+// for the read-only exercise alongside the signed Debian and AppImage files.
+const linuxReplayRPM = {
+  'DezirClip-0.2.0-1.x86_64.rpm': 'd55291474b2cbba4e14a3fd2450b8983adba5209de7848b8fffba47f5c58f03d',
+  'DezirClip-MyGo-0.2.0-1.x86_64.rpm': '8eff2b7525e80ab001cf740ce5f9248774542734994f6522356b3d1c74f772d5',
+  'DezirClip-0.2.0-1.aarch64.rpm': '82af26d4faf6aeb3cd1034ce3c5397e9b7f0350d58599e2d13d6fd8b241fb3f0',
+  'DezirClip-MyGo-0.2.0-1.aarch64.rpm': '82af6ace94986fe674605fd062aec17ac7a3492055147deacd9c057ff16a6586',
+};
+
+function verifyDesktopSignatures(tag, assets, publicKey) {
+  const byName = new Map(assets.map(asset => [asset.name, asset]));
+  for (const { name, path } of assets.filter(asset => asset.name.endsWith('.sig'))) {
+    const signedName = name.slice(0, -4);
+    verifyTauriSignature(readFileSync(byName.get(signedName).path), readFileSync(path, 'utf8'), publicKey, tag, signedName);
+  }
+}
+
+export function stageLinuxRuntime({ tag, source, runId, attempt, target, directory, artifactId, destination, publicKey, cache },
+  transport = gh) {
+  if (!linuxTargets.includes(target) || !/^[1-9][0-9]*$/.test(runId) || !/^[1-9][0-9]*$/.test(attempt)) {
+    throw new Error('Invalid Linux runtime candidate identity');
+  }
+  const replay = !directory;
+  mkdirSync(destination);
+  let assets;
+  if (replay) {
+    tag = linuxReplayTag;
+    const pinned = publishedDesktopBaselines[tag];
+    const client = githubClient(transport, true);
+    const release = client.releaseByTag(tag);
+    if (release.draft !== false || release.id !== pinned.releaseId || client.releaseCommit(tag) !== pinned.source) {
+      throw new Error('Historical Linux release identity differs');
+    }
+    source = pinned.source;
+    artifactId = null;
+    assets = expectedDesktopCandidateFiles(tag, target, false).map(name => {
+      const found = release.assets.filter(item => item.name === name);
+      const [item] = found;
+      if (found.length !== 1 || item.state !== 'uploaded' || !Number.isSafeInteger(item.id) || item.id <= 0
+          || !/^sha256:[a-f0-9]{64}$/.test(item.digest ?? '')) {
+        throw new Error('Historical Linux release asset is absent or ambiguous: ' + name);
+      }
+      const bytes = cache ? readFileSync(join(cache, name)) : client.downloadAsset(item);
+      const sha256 = digest(bytes);
+      if (bytes.length !== item.size || item.digest !== 'sha256:' + sha256 ||
+          (name.endsWith('.rpm') && linuxReplayRPM[name] !== sha256)) {
+        throw new Error('Historical Linux release asset has different bytes: ' + name);
+      }
+      const path = join(destination, name);
+      writeFileSync(path, bytes, { flag: 'wx' });
+      return { name, path, size: item.size, sha256, asset_id: item.id };
+    });
+  } else {
+    const [id] = candidateArtifactIds({ source, runId, attempt },
+      (name, number) => 'release-desktop-' + name + '-' + number, transport, [target]);
+    if (String(id) !== artifactId) throw new Error('Linux runtime verifier received a different producer artifact');
+    assets = readDesktopCandidate({ tag, source, runId, attempt, target, directory }).map(asset => {
+      const path = join(destination, asset.name);
+      copyFileSync(asset.path, path, constants.COPYFILE_EXCL);
+      const copy = localReleaseAsset(path);
+      if (copy.sha256 !== asset.sha256 || copy.size !== asset.size) throw new Error('Linux runtime candidate changed during staging');
+      return { ...copy, path };
+    });
+  }
+  verifyDesktopSignatures(tag, assets, publicKey);
+  const packages = assets.filter(({ name }) => !name.endsWith('.sig') && !name.endsWith('.src.tar.gz'))
+    .map(({ path, ...identity }) => identity);
+  const receipt = {
+    schema_version: 1, origin: replay ? 'published-replay' : 'release-producer', tag, source_revision: source,
+    run_id: Number(runId), run_attempt: Number(attempt), producer_artifact_id: artifactId, target, packages,
+  };
+  writeFileSync(join(destination, 'linux-runtime-inputs.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
 }
 
 function standaloneArchiveName(version, target) {
@@ -609,12 +685,7 @@ export function attachDesktopCandidates(candidate, transport = gh, examine) {
 function examineDesktopArchives(tag, assets, publicKey) {
   const { value } = parseVersion(tag);
   const byName = new Map(assets.map(asset => [asset.name, asset]));
-  for (const { name, path } of assets) {
-    if (name.endsWith('.sig')) {
-      const signedName = name.slice(0, -4);
-      verifyTauriSignature(readFileSync(byName.get(signedName).path), readFileSync(path, 'utf8'), publicKey, value, signedName);
-    }
-  }
+  verifyDesktopSignatures(tag, assets, publicKey);
   const archives = assets.filter(asset => !asset.name.endsWith('.sig'));
   const inspection = JSON.parse(execFileSync('python3',
     ['scripts/release_identity_packages.py', '--candidate-version', value],
@@ -1040,6 +1111,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   } else if (mode === 'replay-windows-candidate' && process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
     stageWindowsCandidate({ replay: true, variant: version, destination: acceptancePath,
       publicKey: config.plugins.updater.pubkey, runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT });
+  } else if (mode === 'replay-linux-runtime' && process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
+    stageLinuxRuntime({ target: version, destination: acceptancePath, publicKey: config.plugins.updater.pubkey,
+      runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT });
+  } else if (mode === 'linux-runtime-producer-id' && linuxTargets.includes(runAttempt)) {
+    console.log(candidateArtifactIds({ source: acceptancePath, runId: process.env.GITHUB_RUN_ID,
+      attempt: process.env.GITHUB_RUN_ATTEMPT }, (target, attempt) => 'release-desktop-' + target + '-' + attempt, gh, [runAttempt])[0]);
+  } else if (mode === 'stage-linux-runtime' && remaining.length === 2) {
+    stageLinuxRuntime({ tag: version, source: acceptancePath, target: runAttempt, directory: upgradePath,
+      destination: remaining[0], artifactId: remaining[1], publicKey: config.plugins.updater.pubkey,
+      runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT });
   } else if (mode === 'desktop-artifact-ids' || mode === 'standalone-artifact-ids') {
     const resolveIds = mode === 'desktop-artifact-ids' ? desktopArtifactIds : standaloneArtifactIds;
     console.log(resolveIds({ source: acceptancePath, runId: process.env.GITHUB_RUN_ID,

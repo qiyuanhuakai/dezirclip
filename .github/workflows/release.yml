@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Synchronize a channel, recover a release, or verify a published Windows installer upgrade
+        description: Synchronize a channel, recover a release, or replay published desktop acceptance
         required: true
         type: choice
         default: sync-dual-channel
-        options: [sync-published-channel, resume-verified-draft, sync-dual-channel, resume-dual-draft, resume-existing-alpha2, publish-mygo-installer, replay-windows-candidate]
+        options: [sync-published-channel, resume-verified-draft, sync-dual-channel, resume-dual-draft, resume-existing-alpha2, publish-mygo-installer, replay-windows-candidate, replay-linux-runtime]
       tag:
         description: Original version tag for channel synchronization or verified draft recovery
         required: false
@@ -34,7 +34,7 @@ env:
   DZC_BUILD_REVISION: ${{ github.sha }}
 
 concurrency:
-  group: ${{ inputs.mode == 'replay-windows-candidate' && format('release-windows-candidate-replay-{0}', github.ref) || 'release-updater-channels' }}
+  group: ${{ startsWith(inputs.mode || '', 'replay-') && format('release-{0}-{1}', inputs.mode, github.ref) || 'release-updater-channels' }}
   queue: max
   cancel-in-progress: false
 
@@ -570,6 +570,53 @@ jobs:
         with:
           name: windows-candidate-diagnostics-${{ matrix.variant }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/windows-candidate-inputs/**/*.log
+
+  replay-linux-runtime:
+    name: Verify published Linux desktop runtime (${{ matrix.target }})
+    if: inputs.mode == 'replay-linux-runtime'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-24.04
+          - target: linux-aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare native Linux acceptance
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap xvfb xauth openbox dbus-x11 python3-gi gir1.2-atspi-2.0 at-spi2-core webkit2gtk-driver libwebkit2gtk-4.1-0 libgtk-4-1 libayatana-appindicator3-1 libpipewire-0.3-0 libgbm1 libarchive-tools squashfs-tools
+          setting=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -f "$setting" ] && [ "$(cat "$setting")" = 1 ]; then
+            sudo -n sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --unshare-user --unshare-pid --unshare-net --ro-bind / / --proc /proc /usr/bin/true
+      - name: Authenticate exact published Linux assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ matrix.target }}
+        run: node scripts/updater-release.mjs replay-linux-runtime "$TARGET" "$RUNNER_TEMP/linux-runtime-inputs"
+      - name: Run both shipped desktops and their helpers in private sessions
+        id: exercise
+        run: /usr/bin/python3 scripts/release_linux_runtime.py "$RUNNER_TEMP/linux-runtime-inputs" "$RUNNER_TEMP/linux-runtime-evidence"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && (steps.exercise.outcome == 'success' || steps.exercise.outcome == 'failure') }}
+        with:
+          name: linux-runtime-${{ matrix.target }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/linux-runtime-evidence/
+          if-no-files-found: error
 
   collect-release-identities:
     name: Collect actual final package identities

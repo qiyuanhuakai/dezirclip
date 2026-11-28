@@ -31,10 +31,10 @@ def sha(path):
             digest.update(block)
     return digest.hexdigest()
 
-def validate_info(info, role, target, revision):
+def validate_info(info, role, target, revision, version=VERSION):
     require(isinstance(info, dict) and set(info) == FIELDS, 'BuildInfo fields differ')
-    require(info['component'] == role and info['component_version'] == VERSION, 'BuildInfo role/version differs')
-    require(info['source_revision'] == revision and info['build_id'] == VERSION + '@' + revision, 'BuildInfo source differs')
+    require(info['component'] == role and info['component_version'] == version, 'BuildInfo role/version differs')
+    require(info['source_revision'] == revision and info['build_id'] == version + '@' + revision, 'BuildInfo source differs')
     require(info['target'] == TARGETS[target] and info['source_state'] == 'verified_checkout'
             and info['revision_origin'] in ('explicit_checkout', 'local_git'), 'BuildInfo target/provenance differs')
     require(type(info['metadata_version']) is int and info['metadata_version'] == 1
@@ -43,7 +43,7 @@ def validate_info(info, role, target, revision):
             and all(type(v) is int for v in info['protocol_version'].values()), 'BuildInfo protocol differs')
     names = ['dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host'] + (['dzc-service'] if role == 'service' else [])
     require(isinstance(info['linked_components'], list) and len(info['linked_components']) == len(names), 'BuildInfo inventory count differs')
-    require(all(isinstance(item, dict) and set(item) == {'component', 'version'} and item['version'] == VERSION
+    require(all(isinstance(item, dict) and set(item) == {'component', 'version'} and item['version'] == version
                 for item in info['linked_components']), 'BuildInfo linked version differs')
     require(sorted(item['component'] for item in info['linked_components']) == sorted(names), 'BuildInfo inventory differs')
     return info
