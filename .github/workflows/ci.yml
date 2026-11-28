@@ -136,7 +136,7 @@ jobs:
         run: cargo test --locked -p dzc-host --lib
       - name: Build and sign Darwin probe binaries
         run: |
-          cargo build --locked -p dzc-platform -p dzc-host --features dzc-platform/ipc --example ipc_protocol_fixture --example darwin_desktop_fixture
+          cargo build --locked -p dzc-platform -p dzc-host --features dzc-platform/ipc,dzc-host/darwin-helper --bin dzc-darwin-host --example ipc_protocol_fixture --example darwin_desktop_fixture
           swift build --package-path clients/swift --product DarwinPeerProbe
           swift_bin=$(swift build --package-path clients/swift --show-bin-path)
           cp "$swift_bin/DarwinPeerProbe" "$RUNNER_TEMP/dzc-darwin-peer"
@@ -163,6 +163,12 @@ jobs:
           codesign --force --sign - --options runtime --identifier io.github.qiyuanhuakai.dezirclip.host-probe.helper "$app/Contents/Helpers/dzc-darwin-host"
           codesign --force --sign - --options runtime "$app"
           codesign --verify --deep --strict "$app"
+          production="$RUNNER_TEMP/DezirClipHostProduction.app"
+          cp -R "$app" "$production"
+          cp target/debug/dzc-darwin-host "$production/Contents/Helpers/dzc-darwin-host"
+          codesign --force --sign - --options runtime --identifier io.github.qiyuanhuakai.dezirclip.host-probe.helper "$production/Contents/Helpers/dzc-darwin-host"
+          codesign --force --sign - --options runtime "$production"
+          codesign --verify --deep --strict "$production"
       - name: Verify profile persistence across signed helper processes
         run: |
           root=$(mktemp -d /private/tmp/dzc-profile.XXXXXX)
@@ -185,6 +191,24 @@ jobs:
           fi
           grep -Fx 'helper directory must be private and owned by the current user' "$socket_dir/linked-profile.log"
           "$probe" --bundled-host "$socket_dir/desktop"
+          production="$RUNNER_TEMP/DezirClipHostProduction.app"
+          helper="$production/Contents/Helpers/dzc-darwin-host"
+          if (set -o pipefail; printf '' | "$helper" "$socket_dir/foreign-parent" 2>"$socket_dir/foreign-parent.log" | cat); then
+            echo "The production helper accepted a launcher outside its bundle"
+            exit 1
+          fi
+          grep -F 'helper requires private pipes from its signed app launcher' "$socket_dir/foreign-parent.log"
+          test ! -e "$socket_dir/foreign-parent"
+          saved=$(security default-keychain -d user | awk -F '"' '{print $2}')
+          test -n "$saved"
+          keychain="$socket_dir/production.keychain-db"
+          password=$(uuidgen)
+          security create-keychain -p "$password" "$keychain"
+          trap 'security default-keychain -d user -s "$saved"; security delete-keychain "$keychain"' EXIT
+          security unlock-keychain -p "$password" "$keychain"
+          security default-keychain -d user -s "$keychain"
+          production_probe="$production/Contents/MacOS/DarwinPeerProbe"
+          "$production_probe" --bundled-production "$socket_dir/production"
 
   windows-release-memory:
     name: Published Windows memory comparison

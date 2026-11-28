@@ -88,9 +88,14 @@ func verifyCancelledRead(helper: URL, directory: String, socket: String) async t
             try await verifyForeignProcessRejected(socket: args[2])
             return
         }
-        if args.count == 3, args[1] == "--bundled-host" {
+        if args.count == 3, ["--bundled-host", "--bundled-production"].contains(args[1]) {
             do {
-                try await verifySharedHost(directory: URL(fileURLWithPath: args[2], isDirectory: true))
+                let directory = URL(fileURLWithPath: args[2], isDirectory: true)
+                if args[1] == "--bundled-production" {
+                    try await verifyProductionHost(directory: directory)
+                } else {
+                    try await verifySharedHost(directory: directory)
+                }
             } catch {
                 let message = (error as? DarwinHostLaunchError)?.message ?? (error as? ProbeFailure)?.message ?? String(describing: error)
                 FileHandle.standardError.write(Data((message + "\n").utf8))

@@ -6,7 +6,12 @@ authors.workspace = true
 description = "Authenticated local Host shared by DezirClip embedded and service modes"
 publish = false
 
+[[bin]]
+name = "dzc-darwin-host"
+required-features = ["darwin-helper"]
+
 [features]
+darwin-helper = []
 native-screen = ["dzc-platform/native-screen", "dzc-platform/native-fonts", "dep:zeroize"]
 
 [dependencies]

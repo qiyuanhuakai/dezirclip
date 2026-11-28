@@ -15,16 +15,14 @@ mod profile_fixture;
 #[cfg(target_os = "macos")]
 mod darwin {
     use dzc_core::{api::{ClipboardEntry, PrivacySessionCommand}, ports::ClipboardPayload};
-    use dzc_host::{Host, HostOptions, serve_listener, wire::*};
+    use dzc_host::{Host, HostOptions, darwin_desktop::{serve_darwin_desktop, wire_error}, wire::*};
     use dzc_host::darwin_clipboard::DarwinClipboardPump;
     use dzc_host::darwin_profile::DarwinProfile;
     use dzc_platform::darwin_keychain::DarwinKeyProvider;
     use security_framework::os::macos::keychain::CreateOptions;
     use serde_json::{Value, json};
     use std::{io::{self, Read, Write}, path::PathBuf, time::Duration};
-    use tokio::sync::{mpsc, watch};
-
-    fn wire_error(code: WireErrorCode) -> io::Error { io::Error::other(format!("{code:?}")) }
+    use tokio::sync::mpsc;
 
     fn send_receipt(value: &Value) -> io::Result<()> {
         let mut output = io::stdout().lock();
@@ -52,7 +50,7 @@ mod darwin {
             _ => {}
         }
         let directory = PathBuf::from(first);
-        let (mut clipboard, actions) = DarwinClipboardPump::open()?;
+        let (clipboard, actions) = DarwinClipboardPump::open()?;
         if actions.copy(ClipboardPayload::Text(String::new())) != Err(WireErrorCode::Unavailable) {
             return Err("main-thread copy dispatch did not refuse a blocking wait".into());
         }
@@ -78,47 +76,28 @@ mod darwin {
             Permission::HistoryRead, Permission::DesktopHistory, Permission::ClipboardCopy,
         ], Duration::from_secs(90)).map_err(wire_error)?;
         let mut commands = parent_commands()?;
-        runtime.block_on(async {
-            // Discovery is the socket path alone. The grant stays on the
-            // private pipe inherited from the launcher.
-            send_receipt(&json!({"instance": host.instance_id(), "grant": grant.token(), "entry_id": id, "marker": marker, "socket": profile.endpoint.address()}))?;
-            let (shutdown, receiver) = watch::channel(false);
-            let server = serve_listener(host.clone(), profile.listener, receiver);
-            tokio::pin!(server);
-            let mut drain: Option<tokio::task::JoinHandle<Result<(), WireErrorCode>>> = None;
-            loop {
-                tokio::select! {
-                    result = &mut server => {
-                        result?;
-                        if let Some(worker) = drain {
-                            worker.await.map_err(io::Error::other)?.map_err(wire_error)?;
-                        }
-                        return Ok(());
-                    },
-                    true = clipboard.process_next_write() => {},
-                    command = commands.recv(), if drain.is_none() => match command {
-                        Some(b'p') => {
-                            let now = unix_milliseconds()?;
-                            history.privacy().set_session(PrivacySessionCommand::On { duration_ms: None }, now)
-                                .map_err(io::Error::other)?;
-                            let state = host.snapshot().map_err(wire_error)?;
-                            send_receipt(&json!({"privacy_epoch": state.privacy_epoch}))?;
-                        },
-                        Some(b'r') => {
-                            host.grants().revoke(&grant);
-                            send_receipt(&json!({"revoked": true}))?;
-                        },
-                        None => {
-                            host.grants().revoke(&grant);
-                            let _ = shutdown.send(true);
-                            let shutting_down = host.clone();
-                            drain = Some(tokio::task::spawn_blocking(move || shutting_down.shutdown()));
-                        },
-                        Some(_) => return Err(io::Error::from(io::ErrorKind::InvalidData)),
-                    },
+        // Keep the fixture commands and extra receipt fields outside the shared service loop.
+        send_receipt(&json!({"instance": host.instance_id(), "grant": grant.token(), "entry_id": id, "marker": marker, "socket": profile.endpoint.address()}))?;
+        let owner = host.clone();
+        let fixture_grant = grant.clone();
+        runtime.block_on(serve_darwin_desktop(host, profile.listener, clipboard, grant, async move {
+            while let Some(command) = commands.recv().await {
+                match command {
+                    b'p' => {
+                        history.privacy().set_session(PrivacySessionCommand::On { duration_ms: None }, unix_milliseconds()?)
+                            .map_err(io::Error::other)?;
+                        let state = owner.snapshot().map_err(wire_error)?;
+                        send_receipt(&json!({"privacy_epoch": state.privacy_epoch}))?;
+                    }
+                    b'r' => {
+                        owner.grants().revoke(&fixture_grant);
+                        send_receipt(&json!({"revoked": true}))?;
+                    }
+                    _ => return Err(io::Error::from(io::ErrorKind::InvalidData)),
                 }
             }
-        })?;
+            Ok(())
+        }))?;
         Ok(())
     }
 

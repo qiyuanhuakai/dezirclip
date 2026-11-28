@@ -45,6 +45,8 @@ pub mod data;
 #[cfg(target_os = "macos")]
 pub mod darwin_clipboard;
 #[cfg(target_os = "macos")]
+pub mod darwin_desktop;
+#[cfg(target_os = "macos")]
 pub mod darwin_profile;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 pub mod controller;

@@ -97,3 +97,5 @@ pub mod image_png;
 pub mod darwin_clipboard;
 #[cfg(target_os = "macos")]
 pub mod darwin_keychain;
+#[cfg(target_os = "macos")]
+pub mod darwin_launcher;

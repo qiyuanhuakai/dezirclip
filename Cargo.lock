@@ -1617,6 +1617,7 @@ dependencies = [
  "arboard",
  "base64 0.22.1",
  "clipboard-win",
+ "core-foundation 0.10.1",
  "dbus",
  "dirs 5.0.1",
  "dunce",

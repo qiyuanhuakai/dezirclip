@@ -19,6 +19,13 @@ impl GrantAuthority {
         if lifetime.is_zero() || lifetime > Duration::from_secs(30 * 86400) { return Err(WireErrorCode::InvalidRequest); }
         self.issue_inner(role, permissions, Some(Instant::now() + lifetime))
     }
+    /// Kept on the inherited pipe and revoked when the bundled launcher exits.
+    #[cfg(target_os = "macos")]
+    pub fn issue_bundled_desktop(&self) -> Result<Grant, WireErrorCode> {
+        self.issue_inner(ClientRole::Desktop, vec![
+            Permission::HistoryRead, Permission::DesktopHistory, Permission::ClipboardCopy,
+        ], None)
+    }
     /// A local private control credential lives only for this Host instance.
     pub fn issue_control(&self, role: ClientRole) -> Result<Grant, WireErrorCode> {
         if !matches!(role, ClientRole::Desktop | ClientRole::Cli) { return Err(WireErrorCode::PermissionDenied); }
