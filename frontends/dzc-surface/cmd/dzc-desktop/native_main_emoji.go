@@ -48,6 +48,12 @@ func (n *nativeMain) closeEmoji() {
 
 const nativeEmojiTabSetting = "app.emoji_panel_tab"
 
+var nativeEmojiTabEnter = ui.ElementTransition{
+	Duration: nativeAppearanceMotion,
+	Position: true,
+	Enter:    &ui.Motion{Y: 6, Opacity: 0.45},
+}
+
 func (n *nativeMain) emojiTab() string {
 	if n.emoji != nil && n.emoji.nextTab != "" {
 		return n.emoji.nextTab
@@ -95,9 +101,10 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 			n.ensureEmojiFavorites(panel)
 		}
 		var composing bool
+		// Keep the search field mounted until the favorites pane is ready to show.
 		if tab != "favorites" || panel.loading && panel.visibleTab != "" && panel.visibleTab != "favorites" {
 			ui.Column(c.Key("character-search")).FillWidth().Transition(nativeSettingReveal).Children(func() {
-				kit.CharacterSearch(c, &panel.query, n.text("emoji_search"), func(editingComposition bool) {
+				kit.CharacterSearch(c.Key("character-query"), &panel.query, n.text("emoji_search"), func(editingComposition bool) {
 					composing = editingComposition
 				})
 			})
@@ -113,7 +120,7 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 		visible := tab
 		if panel.visibleTab != "" && panel.visibleTab != tab {
 			waiting := tab == "favorites" && panel.loading ||
-				tab != "favorites" && !composing && (results == nil || results.query != query)
+				tab != "favorites" && (results == nil || !composing && results.query != query)
 			if waiting && (panel.results[panel.visibleTab] != nil || panel.visibleTab == "favorites" && panel.ready) {
 				visible = panel.visibleTab
 				results = panel.results[visible]
@@ -121,7 +128,7 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 		}
 		panel.visibleTab = visible
 		ui.Column(c.Key("character-tab-content")).FillWidth().Grow(1).Shrink(1).MinHeight(0).Clip().Children(func() {
-			ui.Column(c.Key(visible)).Fill().Shrink(1).MinHeight(0).Transition(nativePanelEnter).Children(func() {
+			ui.Column(c.Key(visible)).Fill().Shrink(1).MinHeight(0).Transition(nativeEmojiTabEnter).Children(func() {
 				switch {
 				case visible == "favorites":
 					n.emojiFavoritesView(c, contentWidth, visible != tab)
@@ -195,7 +202,7 @@ func (n *nativeMain) refreshEmojiResults(panel *nativeEmojiPanel, tab, query str
 		matches := find()
 		n.updateIfChanged(session, func() bool {
 			panel.searching = false
-			if n.emoji != panel || !n.showEmoji {
+			if n.emoji != panel {
 				return false
 			}
 			if strings.TrimSpace(panel.query) == query {
@@ -203,7 +210,7 @@ func (n *nativeMain) refreshEmojiResults(panel *nativeEmojiPanel, tab, query str
 			}
 			// If the query or tab changed while the worker was busy,
 			// the next frame can start the latest request.
-			return n.emojiTab() != "favorites"
+			return n.showEmoji && n.emojiTab() != "favorites"
 		})
 	}()
 }

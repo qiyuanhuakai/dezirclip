@@ -402,17 +402,22 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 	case "unpublished":
 		status = n.text("updater_unpublished")
 	}
-	if !busy && status != "" {
-		ui.Text(c.Key("updater-status"), status).Wrap()
-	}
-	if !u.checked.IsZero() {
-		ui.Text(c.Key("updater-checked"), n.text("updater_checked_at")+" "+u.checked.Format("15:04:05")).Wrap()
-	}
-	if !busy && updateErr != nil {
-		ui.Text(c.Key("updater-error"), n.updateError(updateErr)).TextColor(c.Theme().Danger).Wrap()
-	}
-	if u.channel == "preview" && u.result.Status != "unpublished" && slices.Contains(u.result.UnpublishedChannels, "preview") {
-		ui.Text(c.Key("updater-preview-missing"), n.text("updater_preview_index_missing")).Wrap()
+	previewMissing := u.channel == "preview" && u.result.Status != "unpublished" && slices.Contains(u.result.UnpublishedChannels, "preview")
+	if !busy && (status != "" || updateErr != nil) || !u.checked.IsZero() || previewMissing {
+		ui.Column(c.Key("updater-result")).FillWidth().Gap(4).Transition(nativeSettingReveal).Children(func() {
+			if !busy && status != "" {
+				ui.Text(c.Key("updater-status"), status).Wrap()
+			}
+			if !u.checked.IsZero() {
+				ui.Text(c.Key("updater-checked"), n.text("updater_checked_at")+" "+u.checked.Format("15:04:05")).Wrap()
+			}
+			if !busy && updateErr != nil {
+				ui.Text(c.Key("updater-error"), n.updateError(updateErr)).TextColor(c.Theme().Danger).Wrap()
+			}
+			if previewMissing {
+				ui.Text(c.Key("updater-preview-missing"), n.text("updater_preview_index_missing")).Wrap()
+			}
+		})
 	}
 	if available := u.result.Available; available != nil {
 		ui.Column(c.Key("updater-release-notes")).FillWidth().Transition(nativeSettingReveal).Children(func() {

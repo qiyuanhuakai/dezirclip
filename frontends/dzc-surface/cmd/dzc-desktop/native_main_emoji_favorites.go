@@ -116,14 +116,15 @@ func (n *nativeMain) loadEmojiFavorites(panel *nativeEmojiPanel) {
 		ctx, cancel := context.WithTimeout(session, 5*time.Second)
 		defer cancel()
 		result, err := n.library.EmojiFavorites(ctx, epoch, nil)
-		n.update(session, func() {
+		n.updateIfChanged(session, func() bool {
 			if n.emoji != panel || panel.read != request {
-				return
+				return false
 			}
 			panel.loading, panel.ready, panel.loadError = false, err == nil, err != nil
 			if err == nil {
 				panel.paths = favoriteOrder(result.Paths, order)
 			}
+			return n.showEmoji && n.emojiTab() == "favorites"
 		})
 	}()
 }
@@ -141,15 +142,16 @@ func (n *nativeMain) loadEmojiThumbnail(panel *nativeEmojiPanel, path string) {
 		if err == nil && result.Preview != nil {
 			preview = previewSourceImage(*result.Preview)
 		}
-		n.update(session, func() {
+		n.updateIfChanged(session, func() bool {
 			if n.emoji != panel {
-				return
+				return false
 			}
 			if !slices.Contains(panel.paths, path) {
 				delete(panel.thumbnails.pending, path)
-				return
+				return false
 			}
 			panel.thumbnails.finish(path, preview)
+			return n.showEmoji && panel.visibleTab == "favorites"
 		})
 	}()
 }

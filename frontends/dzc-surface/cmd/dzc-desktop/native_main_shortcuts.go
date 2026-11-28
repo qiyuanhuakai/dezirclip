@@ -403,6 +403,7 @@ func (n *nativeMain) saveNativeShortcut(key, value string) {
 		ctx, cancel := context.WithTimeout(session, 15*time.Second)
 		defer cancel()
 		var err error
+		saved := value
 		switch key {
 		case mainShortcutSetting:
 			err = n.shell.SetMainHotkeys(ctx, value, state.PrivacyEpoch)
@@ -411,7 +412,7 @@ func (n *nativeMain) saveNativeShortcut(key, value string) {
 		case "app.sequential_hotkey", "app.rich_paste_hotkey":
 			err = n.shell.SetPasteHotkey(ctx, key, value, state.PrivacyEpoch)
 		case "app.privacy_session_hotkey":
-			_, err = n.library.SetPrivacyHotkey(ctx, value)
+			saved, err = n.library.SetPrivacyHotkey(ctx, value)
 		default:
 			err = n.shell.SetPanelHotkey(ctx, key, value, state.PrivacyEpoch)
 		}
@@ -419,9 +420,11 @@ func (n *nativeMain) saveNativeShortcut(key, value string) {
 			n.savingShortcut = false
 			if err != nil {
 				n.reportShortcutError(key, n.shortcutError(err))
+				n.refreshViewSettings()
 				return
 			}
 			n.cancelShortcut()
+			n.applySavedSetting(key, saved)
 			n.refreshViewSettings()
 		})
 	}()

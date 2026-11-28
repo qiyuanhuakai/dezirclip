@@ -119,7 +119,7 @@ func (n *nativeMain) refreshViewSettings() {
 
 func (n *nativeMain) readViewSettings() {
 	if !n.viewSettingsDirty || n.readingViewSettings || len(n.pendingSettings) != 0 ||
-		n.session == nil || n.history.state.ServiceInstanceId == "" {
+		n.appearanceBusy || n.winV.changing || n.session == nil || n.history.state.ServiceInstanceId == "" {
 		return
 	}
 	n.viewSettingsDirty = false
@@ -140,12 +140,11 @@ func (n *nativeMain) readViewSettings() {
 				n.readViewSettings()
 				return false
 			}
-			if n.appearanceBusy {
-				n.appearanceSync = true
-			} else if !n.winV.changing && err == nil && settings != nil {
-				return n.applyViewSettings(settings)
+			if n.appearanceBusy || n.winV.changing || err != nil || settings == nil {
+				n.viewSettingsDirty = true
+				return false
 			}
-			return false
+			return n.applyViewSettings(settings)
 		})
 	}()
 }
@@ -169,11 +168,13 @@ func (n *nativeMain) applyViewSettings(settings map[string]string) bool {
 	background := n.backgroundKey(n.history.state)
 	oldBase, oldMode, oldImported := n.themeBase(), n.mode, n.importedTheme
 	n.configured(settings)
-	if oldBase != n.themeBase() || oldMode != n.mode || oldImported != n.importedTheme ||
-		mainLanguage(previous["app.language"]) != n.language() ||
+	if oldBase != n.themeBase() || oldMode != n.mode || oldImported != n.importedTheme {
+		n.appearanceMotionUntil = time.Now().Add(nativeAppearanceMotion)
+	}
+	if mainLanguage(previous["app.language"]) != n.language() ||
 		nativeInterfaceFont(previous) != nativeInterfaceFont(settings) ||
 		previous["app.font_mono"] != settings["app.font_mono"] {
-		n.startAppearanceMotion()
+		n.appearanceRevision++
 	}
 	if (previous["app.compact_mode"] == "true") != (settings["app.compact_mode"] == "true") ||
 		nativeItemSize.value(previous) != nativeItemSize.value(settings) ||
@@ -199,9 +200,4 @@ func (n *nativeMain) applyViewSettings(settings map[string]string) bool {
 		}
 	}
 	return true
-}
-
-func (n *nativeMain) startAppearanceMotion() {
-	n.appearanceMotionUntil = time.Now().Add(nativeAppearanceMotion)
-	n.appearanceRevision++
 }

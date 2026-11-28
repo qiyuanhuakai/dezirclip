@@ -56,7 +56,10 @@ func (n *nativeMain) enableGameMode(previous string) {
 		changed, err := n.saveGameMode(session, state, language, previous)
 		n.update(session, func() {
 			n.mutating = false
-			if changed {
+			if changed && err == nil {
+				n.applySavedSetting(nativePasteMethodKey, "game_mode")
+				n.readViewSettings()
+			} else if err != nil {
 				n.refreshViewSettings()
 			}
 			if err != nil {

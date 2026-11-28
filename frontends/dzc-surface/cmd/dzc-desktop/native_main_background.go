@@ -289,9 +289,10 @@ func (n *nativeMain) chooseBackground(label string) {
 					n.applySavedSetting(backgroundSetting, savedPath)
 				}
 			}
-			if savedPath != "" || n.appearanceSync {
-				n.appearanceSync = false
+			if savedPath != "" {
 				n.refreshViewSettings()
+			} else {
+				n.readViewSettings()
 			}
 			n.notice = notice
 		})

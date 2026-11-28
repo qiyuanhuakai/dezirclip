@@ -76,9 +76,10 @@ func (n *nativeMain) changeThemeFile(action nativeThemeAction, selected protocol
 		}
 		n.update(session, func() {
 			n.appearanceBusy = false
-			if refresh || n.appearanceSync {
-				n.appearanceSync = false
+			if refresh {
 				n.refreshViewSettings()
+			} else {
+				n.readViewSettings()
 			}
 			n.notice = notice
 		})

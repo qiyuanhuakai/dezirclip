@@ -45,6 +45,7 @@ type nativePrivacyRules struct {
 	rules                    []protocol.PolicyRuleValue
 	pendingDelete            string
 	actionFailed             bool
+	height                   float32
 }
 
 type nativePrivacyDialog struct {
@@ -365,7 +366,7 @@ func (n *nativeMain) loadPrivacyRules() {
 	if n.session == nil || state.ServiceInstanceId == "" || n.privacyRules.loading {
 		return
 	}
-	n.privacyRules = nativePrivacyRules{started: true, loading: true}
+	n.privacyRules = nativePrivacyRules{started: true, loading: true, height: n.privacyRules.height}
 	session := n.session
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 4*time.Second)
@@ -380,6 +381,13 @@ func (n *nativeMain) loadPrivacyRules() {
 func (n *nativeMain) drawPrivacyRules(c *ui.Context) {
 	manager := ui.Column(c.Key("privacy-rule-manager")).ColumnSpan(-1).FillWidth().MinWidth(0).
 		Gap(8).Role(ui.RoleGroup).Label(n.text("privacy_rules_manage")).Focusable().FocusRing(true)
+	rules := &n.privacyRules
+	if !rules.started || rules.loading {
+		// Keep the current scroll range while the new epoch authorizes the list.
+		manager.MinHeight(rules.height)
+	} else if bounds := manager.LayoutBounds(); bounds.H > 0 {
+		rules.height = bounds.H
+	}
 	if n.focusPrivacyRules {
 		manager.Focus()
 		scroll := &n.settingsScroll

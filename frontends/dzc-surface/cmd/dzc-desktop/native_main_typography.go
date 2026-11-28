@@ -122,7 +122,8 @@ func (n *nativeMain) rangeSetting(c *ui.Context, setting nativeRangeSetting, lab
 	}
 	kit := n.mainKit()
 	row := kit.SettingsField(c.Key(setting.key), uikit.SettingsFieldOptions{Stacked: true, Last: setting == nativeBackgroundOpacity})
-	if setting.key == "app.sound_volume" {
+	switch setting.key {
+	case "app.sound_volume", nativeBackgroundOpacity.key, nativeSurfaceOpacity.key:
 		row.Transition(nativeSettingReveal)
 	}
 	edit := ui.Local(row, setting.key, func() draft { return draft{value: float64(saved)} })

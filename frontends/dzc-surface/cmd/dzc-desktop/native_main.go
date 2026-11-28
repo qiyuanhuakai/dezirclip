@@ -53,7 +53,6 @@ type nativeMain struct {
 	importedThemes        []protocol.DesktopThemePackage
 	importedTheme         *nativeTheme
 	appearanceBusy        bool
-	appearanceSync        bool
 	appearanceMotionUntil time.Time
 	appearanceRevision    uint64
 	historyLayoutRevision uint64
@@ -147,11 +146,11 @@ func (n *nativeMain) retireSession(keepView bool) {
 		n.ocrEngine, n.ocrEngineFailed = nil, false
 	}
 	n.cardTagColors, n.readingTagColors = nil, false
-	n.reading, n.failed, n.mutating, n.private = false, false, n.profile.moving || n.profile.restartPending || n.winV.changing || n.restartingAdmin, false
-	n.privateUntil = nil
+	n.reading, n.failed, n.mutating = false, false, n.profile.moving || n.profile.restartPending || n.winV.changing || n.restartingAdmin
 	n.historyNeedsLoad = false
 	n.keyboard, n.focusList = false, false
 	if !keepView {
+		n.private, n.privateUntil = false, nil
 		n.notice = ""
 		n.temporarySearch = false
 	}
@@ -165,7 +164,7 @@ func (n *nativeMain) retireSession(keepView bool) {
 	if !keepView {
 		n.pendingSettings = nil
 	}
-	n.appearanceBusy, n.appearanceSync = false, false
+	n.appearanceBusy = false
 	if keepView {
 		// Settings are still mounted. The backdrop and other snapshots are
 		// bound to the previous privacy epoch, but the slider draft is local.
@@ -188,7 +187,11 @@ func (n *nativeMain) retireSession(keepView bool) {
 		n.winV = nativeWinVState{}
 	}
 	n.queueCount = nativeQueueCount{}
-	n.privacyRules = nativePrivacyRules{}
+	if keepView {
+		n.privacyRules = nativePrivacyRules{height: n.privacyRules.height}
+	} else {
+		n.privacyRules = nativePrivacyRules{}
+	}
 	if tags := n.tagLibrary; tags != nil {
 		// Navigation outlives a hidden window, while confirmations, selection
 		// and revealed contents are bound to the retired session.
@@ -328,11 +331,14 @@ func (n *nativeMain) configured(settings map[string]string) {
 		n.configureThemes(themeName, settings["app.custom_themes"])
 	}
 	appearanceChanged := themeName != n.theme || mode != n.mode ||
-		(settings["app.show_app_border"] == "false") != (n.preferences["app.show_app_border"] == "false")
+		(settings["app.show_app_border"] == "false") != (previous["app.show_app_border"] == "false")
 	language := mainLanguage(settings["app.language"])
 	languageChanged := n.preferences == nil || n.language() != language
 	n.preferences, n.theme, n.mode = settings, themeName, mode
-	n.configureUpdater(settings[protocol.SettingUpdateChannel], settings[protocol.SettingUpdateAutoCheck] == "true")
+	if previous == nil || settings[protocol.SettingUpdateChannel] != previous[protocol.SettingUpdateChannel] ||
+		settings[protocol.SettingUpdateAutoCheck] != previous[protocol.SettingUpdateAutoCheck] {
+		n.configureUpdater(settings[protocol.SettingUpdateChannel], settings[protocol.SettingUpdateAutoCheck] == "true")
+	}
 	if n.window != nil && languageChanged {
 		mygo.App.SetLocale(model.NativeLocale(string(language)))
 	}
@@ -345,7 +351,9 @@ func (n *nativeMain) configured(settings map[string]string) {
 	if n.shell != nil && n.window != nil && (previous == nil || settings["app.edge_docking"] != previous["app.edge_docking"]) {
 		n.shell.dock.configure(settings["app.edge_docking"] == "true")
 	}
-	n.syncWindowPin()
+	if previous == nil || settings["app.window_pinned"] != previous["app.window_pinned"] {
+		n.syncWindowPin()
+	}
 }
 
 func (n *nativeMain) syncWindowPin() {
@@ -370,7 +378,7 @@ func (n *nativeMain) systemAppearanceChanged() {
 	mode := n.colorMode(n.preferences)
 	if mode != n.mode {
 		n.mode = mode
-		n.startAppearanceMotion()
+		n.appearanceMotionUntil = time.Now().Add(nativeAppearanceMotion)
 		n.resetPreviewSelection()
 	}
 	// The OS can update the compositor material even with an explicit palette.
@@ -537,12 +545,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) bool {
 		}
 	}
 	if settingsChanged {
-		switch {
-		case n.appearanceBusy:
-			n.appearanceSync = true
-		case !n.winV.changing:
-			n.refreshViewSettings()
-		}
+		n.refreshViewSettings()
 	}
 	if next.HistoryRevision != current.HistoryRevision {
 		n.cardThumbnails = nativeCardThumbnails{}
