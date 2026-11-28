@@ -1,11 +1,7 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
-	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -29,41 +25,6 @@ func newDesktopDiagnostics(owner *client.Client, role string) *desktopDiagnostic
 		return nil
 	}
 	return &desktopDiagnostics{path: filepath.Join(filepath.Dir(database), "desktop-lifecycle-"+role+".log"), role: role}
-}
-
-func diagnosticError(err error) string {
-	if err == nil {
-		return ""
-	}
-	var remote *client.RemoteError
-	if errors.As(err, &remote) {
-		switch string(remote.Code) {
-		case "busy", "unavailable", "privacy_blocked", "privacy_epoch_changed", "permission_denied", "session_expired":
-			return "remote-" + string(remote.Code)
-		default:
-			return "remote"
-		}
-	}
-	if errors.Is(err, client.ErrProtocol) {
-		return "protocol"
-	}
-	if errors.Is(err, context.Canceled) {
-		return "cancelled"
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return "deadline"
-	}
-	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-		return "eof"
-	}
-	var timeout net.Error
-	if errors.As(err, &timeout) && timeout.Timeout() {
-		return "transport-timeout"
-	}
-	if desktopruntime.EventTransportFailure(err) {
-		return "transport"
-	}
-	return "other"
 }
 
 // Only fixed lifecycle labels and error categories are stored. Never include
@@ -106,7 +67,7 @@ func (d *desktopDiagnostics) write(event string, exitCode int, err error, childP
 		Error    string `json:"error,omitempty"`
 		Version  string `json:"version"`
 		Revision string `json:"revision"`
-	}{time.Now().UnixMilli(), os.Getpid(), childPID, d.role, event, exitCode, diagnosticError(err), buildinfo.Version, buildinfo.SourceRevision})
+	}{time.Now().UnixMilli(), os.Getpid(), childPID, d.role, event, exitCode, desktopruntime.DiagnosticError(err), buildinfo.Version, buildinfo.SourceRevision})
 }
 
 func (d *desktopDiagnostics) eventRead(err error) {

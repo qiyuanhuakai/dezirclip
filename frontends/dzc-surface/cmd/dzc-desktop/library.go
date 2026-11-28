@@ -21,20 +21,7 @@ type hostedEntry struct {
 }
 
 func (l *Library) Status(ctx context.Context) (protocol.ServiceStatus, error) {
-	return l.readStatus(ctx, nil)
-}
-
-func (l *Library) readStatus(ctx context.Context, observe func(error)) (protocol.ServiceStatus, error) {
-	var status protocol.ServiceStatus
-	err := readPrivacyStatus(ctx, func() error {
-		status = protocol.ServiceStatus{}
-		err := l.owner.DesktopCall(ctx, protocol.MethodServiceStatus, struct{}{}, "ServiceStatus", &status)
-		if observe != nil {
-			observe(err)
-		}
-		return err
-	})
-	return status, err
+	return application.PrivacyStatus(ctx, l.owner, nil)
 }
 
 func (l *Library) Platform(ctx context.Context) (json.RawMessage, error) {
@@ -44,33 +31,11 @@ func (l *Library) Platform(ctx context.Context) (json.RawMessage, error) {
 }
 
 func (l *Library) SetPrivacy(ctx context.Context, params protocol.PrivacySetParams) (protocol.ServiceStatus, error) {
-	if !params.Active && params.DurationMs != nil {
-		return protocol.ServiceStatus{}, errors.New("PrivacyDurationInvalid")
-	}
-	var privacy protocol.PrivacyState
-	if err := l.owner.DesktopCall(ctx, protocol.MethodPrivacySet, params, "PrivacyState", &privacy); err != nil {
-		return protocol.ServiceStatus{}, err
-	}
-	status, err := l.Status(ctx)
-	if err == nil && status.Privacy.PrivacyEpoch != privacy.PrivacyEpoch {
-		return protocol.ServiceStatus{}, errors.New("PrivacyEpochChanged")
-	}
-	return status, err
+	return application.SetPrivacy(ctx, l.owner, params)
 }
 
 func (l *Library) SetPrivacyHotkey(ctx context.Context, hotkey string) (string, error) {
-	var result protocol.PrivacyHotkey
-	err := l.owner.DesktopCall(ctx, protocol.MethodPrivacyHotkeySet, protocol.PrivacyHotkey{Hotkey: hotkey}, "PrivacyHotkey", &result)
-	var remote *client.RemoteError
-	if errors.As(err, &remote) {
-		switch remote.Code {
-		case protocol.WireErrorCodeBusy:
-			return "", errors.New("PrivacyHotkeyBusy")
-		case protocol.WireErrorCodeUnsupportedCapability:
-			return "", errors.New("PrivacyHotkeyUnavailable")
-		}
-	}
-	return result.Hotkey, err
+	return application.SetPrivacyHotkey(ctx, l.owner, hotkey)
 }
 
 func (l *Library) reader() application.LibraryReader {
