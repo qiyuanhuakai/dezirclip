@@ -104,6 +104,7 @@ type nativeMain struct {
 	captureError          string
 	cli                   nativeCLISettings
 	reading               bool
+	historyNeedsLoad      bool
 	private               bool
 	privateUntil          *int64
 	pinned                bool
@@ -128,7 +129,9 @@ type nativeMain struct {
 	qr                    *nativeQRDialog
 }
 
-func (n *nativeMain) stopSession() {
+func (n *nativeMain) stopSession() { n.retireSession(false) }
+
+func (n *nativeMain) retireSession(keepView bool) {
 	if n.stop != nil {
 		n.stop()
 		n.stop = nil
@@ -138,22 +141,39 @@ func (n *nativeMain) stopSession() {
 	n.cancelSearchTimer()
 	n.history.reset(protocol.RuntimeState{}, nativeHistoryFilter{})
 	n.cardMedia = nativeVisibleCache[nativeCardKey, nativeCardMedia]{}
-	n.ocrJob, n.ocrEngine, n.ocrEngineLoading, n.ocrEngineFailed = nativeOCRJob{}, nil, false, false
+	n.ocrJob, n.ocrEngineLoading = nativeOCRJob{}, false
+	if !keepView {
+		n.ocrEngine, n.ocrEngineFailed = nil, false
+	}
 	n.cardTagColors, n.readingTagColors = nil, false
 	n.reading, n.failed, n.mutating, n.private = false, false, n.profile.moving || n.profile.restartPending || n.winV.changing || n.restartingAdmin, false
 	n.privateUntil = nil
-	n.notice, n.keyboard, n.focusList = "", false, false
-	n.temporarySearch = false
+	n.historyNeedsLoad = false
+	n.keyboard, n.focusList = false, false
+	if !keepView {
+		n.notice = ""
+		n.temporarySearch = false
+	}
 	n.searchWheel, n.towardsTop = 0, time.Time{}
 	n.capturing, n.captureError = false, ""
 	n.profile.reading = false
 	n.resetOpen = false
 	n.clearHistoryOpen = false
 	n.menuTransformsLoading, n.readingViewSettings = false, false
-	n.pendingSettings = nil
+	if !keepView {
+		n.pendingSettings = nil
+	}
 	n.appearanceBusy, n.appearanceSync = false, false
-	n.resetOpacityPreviews()
-	n.background.pause()
+	if keepView {
+		// Settings are still mounted. The backdrop and other snapshots are
+		// bound to the previous privacy epoch, but the slider draft is local.
+		backgroundDraft := n.background.opacityDraft
+		n.clearBackground()
+		n.background.opacityDraft = backgroundDraft
+	} else {
+		n.resetOpacityPreviews()
+		n.background.pause()
+	}
 	n.tags = nil
 	n.closeEntryEditor()
 	n.closeQR()
@@ -182,22 +202,46 @@ func (n *nativeMain) stopSession() {
 	if n.login.pending {
 		n.login = nativeLoginState{}
 	}
-	n.emoji = nil
+	if keepView && n.emoji != nil {
+		panel := n.emoji
+		// Character catalogs are public. Favorites contain profile paths and
+		// thumbnails and must be loaded again under the new privacy epoch.
+		n.emoji = &nativeEmojiPanel{query: panel.query, visibleTab: panel.visibleTab, results: panel.results}
+	} else {
+		n.emoji = nil
+	}
 	n.resetPreviewSelection()
 }
 
 func (n *nativeMain) prepare(request uint64) {
+	n.startPresentation(request, false)
+}
+
+func (n *nativeMain) refreshPrivacyPresentation(next protocol.RuntimeState) {
+	current := n.history.state
+	if current.ServiceInstanceId == next.ServiceInstanceId && current.PrivacyEpoch == next.PrivacyEpoch {
+		return
+	}
+	n.cardThumbnails = nativeCardThumbnails{}
+	sameProfile := current.ServiceInstanceId != "" && current.ServiceInstanceId == next.ServiceInstanceId
+	if !sameProfile {
+		n.clearBackground()
+	}
+	n.startPresentation(n.resume, sameProfile)
+}
+
+func (n *nativeMain) startPresentation(request uint64, keepView bool) {
 	if n.profile.moving || n.profile.restartPending {
 		return
 	}
-	n.stopSession()
+	n.retireSession(keepView)
 	session, cancel := context.WithCancel(context.Background())
 	n.session, n.stop, n.resume = session, cancel, request
 	n.reading = true
-	go n.open(session)
+	go n.open(session, keepView)
 }
 
-func (n *nativeMain) open(session context.Context) {
+func (n *nativeMain) open(session context.Context, keepView bool) {
 	for session.Err() == nil {
 		read, cancel := context.WithTimeout(session, 4*time.Second)
 		status, err := n.library.Status(read)
@@ -212,6 +256,10 @@ func (n *nativeMain) open(session context.Context) {
 		if err == nil {
 			cancel()
 			n.update(session, func() {
+				// A policy write can publish its new epoch before it sends
+				// the acknowledgement. Resolve pending controls directly
+				// from the newly authorized preferences.
+				n.pendingSettings = nil
 				if n.preferences == nil {
 					n.configured(settings)
 				} else {
@@ -230,8 +278,15 @@ func (n *nativeMain) open(session context.Context) {
 					}
 				}
 				n.loadBackground()
-				n.list.Reset()
-				n.loadPage()
+				if !keepView {
+					n.list.Reset()
+				}
+				n.historyNeedsLoad = keepView && n.showSettings && n.resume == 0
+				if n.historyNeedsLoad {
+					n.reading = false
+				} else {
+					n.loadPage()
+				}
 				go n.watch(session, status.State.EventSequence)
 			})
 			return
@@ -342,6 +397,7 @@ func (n *nativeMain) loadPage() {
 	if n.session == nil || n.history.state.ServiceInstanceId == "" {
 		return
 	}
+	n.historyNeedsLoad = false
 	n.cancelSearchTimer()
 	if n.stopRead != nil {
 		n.stopRead()
@@ -442,9 +498,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) bool {
 		n.resetOpacityPreviews()
 	}
 	if current.ServiceInstanceId != next.ServiceInstanceId || current.PrivacyEpoch != next.PrivacyEpoch {
-		n.cardThumbnails = nativeCardThumbnails{}
-		n.clearBackground()
-		n.prepare(n.resume)
+		n.refreshPrivacyPresentation(next)
 		return true
 	}
 	changed := reset
@@ -526,7 +580,7 @@ func (n *nativeMain) applyEvents(events protocol.EventsResult) bool {
 			}
 		}
 		n.invalidateCardMedia(affected)
-		if n.searchTimer == nil {
+		if n.searchTimer == nil && !n.historyNeedsLoad {
 			n.loadPage()
 		}
 		n.tagCatalog.invalidate()

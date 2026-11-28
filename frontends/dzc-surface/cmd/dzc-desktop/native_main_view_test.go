@@ -243,7 +243,7 @@ func TestNativeHistoryRendersCachedRichTextOnlyForVisibleContent(t *testing.T) {
 func TestNativeEmojiAutomaticallyReachesFinalChoices(t *testing.T) {
 	window := nativeMain{showEmoji: true, preferences: map[string]string{"app.language": "en"}}
 	view := ui.NewTester(window.view, 360, 330)
-	groups := window.emojiPanel().matches
+	groups := window.emojiPanel().results["emoji"].matches
 	lastGroup := groups[len(groups)-1]
 	symbol := lastGroup.choices[len(lastGroup.choices)-1].Value
 	if view.HasText(symbol) {
@@ -267,12 +267,23 @@ func TestNativeEmojiSwitchKeepsPanelAndHistory(t *testing.T) {
 	panel := n.emojiPanel()
 	panel.ready = true
 	view := ui.NewTester(n.view, 430, 420)
-	if panel.tab != "emoji" || len(panel.matches) == 0 {
+	emoji := panel.results["emoji"]
+	if panel.visibleTab != "emoji" || emoji == nil || len(emoji.matches) == 0 {
 		t.Fatal("emoji did not populate its initial pane")
 	}
+	// The prior result stays mounted while the first load of the other
+	// catalog is outstanding.
+	panel.searching = true
 	n.applySavedSetting(nativeEmojiTabSetting, "symbols")
 	view.Frame()
-	if panel.tab != "symbols" || len(panel.matches) == 0 {
+	if panel.visibleTab != "emoji" || panel.results["emoji"] != emoji ||
+		view.HasText(n.text("common_loading")) {
+		t.Fatal("a pending tab switch replaced the visible character list")
+	}
+	panel.searching = false
+	view.Frame()
+	symbols := panel.results["symbols"]
+	if panel.visibleTab != "symbols" || symbols == nil || len(symbols.matches) == 0 {
 		t.Fatal("symbols did not appear after changing tabs")
 	}
 	n.applySavedSetting(nativeEmojiTabSetting, "favorites")
@@ -282,7 +293,7 @@ func TestNativeEmojiSwitchKeepsPanelAndHistory(t *testing.T) {
 	}
 	n.applySavedSetting(nativeEmojiTabSetting, "emoji")
 	view.Frame()
-	if n.emoji != panel || !panel.ready || panel.tab != "emoji" || !n.showEmoji || n.history.generation != 2 ||
+	if n.emoji != panel || !panel.ready || panel.visibleTab != "emoji" || panel.results["emoji"] != emoji || !n.showEmoji || n.history.generation != 2 ||
 		n.history.selectedID() != 11 {
 		t.Fatal("changing tabs recreated the saved panel or history")
 	}

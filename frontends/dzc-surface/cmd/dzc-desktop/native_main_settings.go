@@ -40,6 +40,9 @@ func (n *nativeMain) closeSettings() {
 		n.focusPrivacyRules = false
 		n.updater.confirm = false
 		n.resetOpacityPreviews()
+		if n.historyNeedsLoad {
+			n.loadPage()
+		}
 	}
 }
 
@@ -160,7 +163,9 @@ func (n *nativeMain) confirmSettingsReset() {
 	n.mutating, n.notice = true, ""
 	session := n.session
 	go func() {
-		err := n.shell.ResetSettings(session, state.PrivacyEpoch)
+		// The reset event can renew the presentation before the resident
+		// acknowledges the completed request. Keep its bounded reply read alive.
+		err := n.shell.ResetSettings(context.WithoutCancel(session), state.PrivacyEpoch)
 		n.update(session, func() {
 			if err != nil {
 				n.mutating = false
@@ -326,7 +331,7 @@ func (n *nativeMain) changePrivateSession(active bool) {
 				return
 			}
 			if status.State.ServiceInstanceId != n.history.state.ServiceInstanceId || status.State.PrivacyEpoch != n.history.state.PrivacyEpoch {
-				n.prepare(n.resume)
+				n.refreshPrivacyPresentation(status.State)
 				return
 			}
 			n.mutating = false

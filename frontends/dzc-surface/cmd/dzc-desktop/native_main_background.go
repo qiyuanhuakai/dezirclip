@@ -76,8 +76,9 @@ func (n *nativeMain) loadBackground() {
 			return
 		}
 	}
+	draft := n.background.opacityDraft
 	n.clearBackground()
-	n.background = nativeBackground{key: key, loading: true}
+	n.background = nativeBackground{key: key, loading: true, opacityDraft: draft}
 	session := n.session
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 5*time.Second)

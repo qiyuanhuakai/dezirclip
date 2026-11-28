@@ -334,3 +334,38 @@ func TestNativeSettingsApplyInPlaceAcrossChannelAndToggles(t *testing.T) {
 		t.Fatal("settings write modified a previous snapshot")
 	}
 }
+
+func TestNativeSettingsKeepPresentationAcrossPrivacyEpochChanges(t *testing.T) {
+	session, cancel := context.WithCancel(context.Background())
+	initial := map[string]string{"app.language": "en", "app.privacy_protection": "true"}
+	open := true
+	opacity := 44
+	characters := &nativeCharacterResults{query: "heart"}
+	n := nativeMain{
+		session: session, stop: cancel, preferences: initial,
+		showSettings: true, settingsSection: "privacy",
+		settingsOpen:        map[string]*bool{"privacy": &open},
+		pendingSettings:     map[string]string{"app.privacy_protection": "false"},
+		sourceExclusions:    nativePrivacyTextDraft{instance: "host", value: "Draft", dirty: true},
+		surfaceOpacityDraft: &opacity, temporarySearch: true,
+		emoji: &nativeEmojiPanel{
+			query: "heart",
+			paths: []string{"private.png"}, ready: true,
+			results: map[string]*nativeCharacterResults{"emoji": characters},
+		},
+	}
+	n.history.reset(protocol.RuntimeState{ServiceInstanceId: "host", PrivacyEpoch: 1}, nativeHistoryFilter{})
+	n.history.rows = []protocol.DesktopEntry{{Id: 1, Preview: "old clipboard value"}}
+	n.settingsScroll.Y, n.settingsStackScroll.Y = 120, 160
+	n.retireSession(true)
+	if !n.showSettings || n.settingsSection != "privacy" || !*n.settingsOpen["privacy"] ||
+		n.settingsScroll.Y != 120 || n.settingsStackScroll.Y != 160 || !n.temporarySearch ||
+		n.sourceExclusions.value != "Draft" || n.surfaceOpacityDraft != &opacity ||
+		n.displayedToggle("app.privacy_protection", true) {
+		t.Fatal("renewing the privacy snapshot discarded settings or reverted the pending switch")
+	}
+	if session.Err() == nil || len(n.history.rows) != 0 || n.emoji.ready || len(n.emoji.paths) != 0 ||
+		n.emoji.query != "heart" || n.emoji.results["emoji"] != characters {
+		t.Fatal("renewing privacy must retire old reads and favorites while retaining the public character list")
+	}
+}

@@ -12,26 +12,31 @@ import (
 )
 
 type nativeEmojiPanel struct {
-	paths                []string
-	favorites            ui.ListState
-	thumbnails           nativeVisibleCache[string, ui.ImageSource]
-	read                 uint64
-	ready, loading       bool
-	changing             bool
-	loadError            bool
-	query, searched, tab string
-	nextTab              string
-	searching            bool
-	matches              []characterGroup
-	groups               []uikit.CharacterGroup
-	groupLanguage        nativeLanguage
-	characters           ui.ListState
+	paths          []string
+	favorites      ui.ListState
+	thumbnails     nativeVisibleCache[string, ui.ImageSource]
+	read           uint64
+	ready, loading bool
+	changing       bool
+	loadError      bool
+	query, nextTab string
+	visibleTab     string
+	searching      bool
+	results        map[string]*nativeCharacterResults
+}
+
+type nativeCharacterResults struct {
+	query    string
+	matches  []characterGroup
+	groups   []uikit.CharacterGroup
+	language nativeLanguage
+	list     ui.ListState
 }
 
 func (n *nativeMain) openEmoji() {
 	n.resetPreviewSelection()
 	panel := n.emojiPanel()
-	panel.query, panel.searched, panel.tab = "", "", ""
+	panel.query, panel.visibleTab = "", ""
 	n.showEmoji = true
 }
 
@@ -94,40 +99,50 @@ func (n *nativeMain) emojiView(c *ui.Context) {
 				})
 			})
 		}
+		query := strings.TrimSpace(panel.query)
+		results := panel.results[tab]
+		if tab != "favorites" && !composing && (results == nil || results.query != query) {
+			n.refreshEmojiResults(panel, tab, query)
+			results = panel.results[tab]
+		}
+		// Keep the current results mounted until the replacement exists. The
+		// tab strip and search input have independent, stable identity.
+		visible := tab
+		if tab != "favorites" && results == nil && panel.results[panel.visibleTab] != nil {
+			visible = panel.visibleTab
+			results = panel.results[visible]
+		}
+		panel.visibleTab = visible
 		ui.Column(c.Key("character-tab-content")).FillWidth().Grow(1).Shrink(1).MinHeight(0).Clip().Children(func() {
-			ui.Column(c.Key(tab)).Fill().Shrink(1).MinHeight(0).Transition(nativePanelEnter).Children(func() {
-				if tab == "favorites" {
+			ui.Column(c.Key(visible)).Fill().Shrink(1).MinHeight(0).Transition(nativePanelEnter).Children(func() {
+				switch {
+				case visible == "favorites":
 					n.emojiFavoritesView(c, contentWidth)
-				} else {
-					n.drawEmojiResults(c, kit, tab, contentWidth, composing)
+				case results == nil:
+					kit.SettingsLabel(c, n.text("common_loading", "Loading…")).AlignSelf(ui.Center)
+				default:
+					pending := visible != tab || !composing && results.query != query
+					n.drawEmojiResults(c, kit, visible, contentWidth, results, pending)
 				}
 			})
 		})
 	})
 }
 
-func (n *nativeMain) drawEmojiResults(c *ui.Context, kit uikit.Kit, tab string, contentWidth float32, composing bool) {
-	panel := n.emojiPanel()
-	if !composing && (panel.tab != tab || panel.searched != panel.query) {
-		n.refreshEmojiResults(panel, tab)
-	}
-	if panel.tab != tab || !composing && panel.searched != panel.query {
-		kit.SettingsLabel(c, n.text("common_loading", "Loading…")).AlignSelf(ui.Center)
-		return
-	}
-	if language := n.language(); panel.groupLanguage != language || panel.groups == nil {
-		panel.groupLanguage = language
-		panel.groups = make([]uikit.CharacterGroup, 0, len(panel.matches))
-		for _, group := range panel.matches {
-			panel.groups = append(panel.groups, uikit.CharacterGroup{Label: n.emojiGroupName(group.ID), Choices: group.choices})
+func (n *nativeMain) drawEmojiResults(c *ui.Context, kit uikit.Kit, tab string, contentWidth float32, results *nativeCharacterResults, pending bool) {
+	if language := n.language(); results.language != language || results.groups == nil {
+		results.language = language
+		results.groups = make([]uikit.CharacterGroup, 0, len(results.matches))
+		for _, group := range results.matches {
+			results.groups = append(results.groups, uikit.CharacterGroup{Label: n.emojiGroupName(group.ID), Choices: group.choices})
 		}
 	}
 	label := n.text("emoji_tab")
 	if tab == "symbols" {
 		label = n.text("emoji_symbols_tab")
 	}
-	kit.CharacterList(c.Key("character-results"), &panel.characters, contentWidth, panel.groups, label,
-		n.text("emoji_search_empty"), n.mutating, func(value string) { n.sendEmoji("text", value) })
+	kit.CharacterList(c.Key("character-results"), &results.list, contentWidth, results.groups, label,
+		n.text("emoji_search_empty"), n.mutating || pending, func(value string) { n.sendEmoji("text", value) })
 }
 
 var (
@@ -144,13 +159,12 @@ func characterChoices(tab, query string) []characterGroup {
 	return groups
 }
 
-func (n *nativeMain) refreshEmojiResults(panel *nativeEmojiPanel, tab string) {
+func (n *nativeMain) refreshEmojiResults(panel *nativeEmojiPanel, tab, query string) {
 	if panel.searching {
 		return
 	}
-	query := panel.query
 	find := func() []characterGroup {
-		if strings.TrimSpace(query) == "" {
+		if query == "" {
 			if tab == "symbols" {
 				return browseSymbols()
 			}
@@ -159,9 +173,10 @@ func (n *nativeMain) refreshEmojiResults(panel *nativeEmojiPanel, tab string) {
 		return characterChoices(tab, query)
 	}
 	apply := func(matches []characterGroup) {
-		panel.matches, panel.groups = matches, nil
-		panel.tab, panel.searched = tab, query
-		panel.characters = ui.ListState{}
+		if panel.results == nil {
+			panel.results = make(map[string]*nativeCharacterResults, 2)
+		}
+		panel.results[tab] = &nativeCharacterResults{query: query, matches: matches}
 	}
 	session := n.session
 	if session == nil {
@@ -171,11 +186,17 @@ func (n *nativeMain) refreshEmojiResults(panel *nativeEmojiPanel, tab string) {
 	panel.searching = true
 	go func() {
 		matches := find()
-		n.update(session, func() {
+		n.updateIfChanged(session, func() bool {
 			panel.searching = false
-			if n.emoji == panel && panel.query == query && n.emojiTab() == tab {
+			if n.emoji != panel || !n.showEmoji {
+				return false
+			}
+			if strings.TrimSpace(panel.query) == query {
 				apply(matches)
 			}
+			// If the query or tab changed while the worker was busy,
+			// the next frame can start the latest request.
+			return n.emojiTab() != "favorites"
 		})
 	}()
 }

@@ -307,6 +307,10 @@ impl Host {
                     q.reset_tracking();
                 }
                 self.queue_changed()?;
+                self.publish(
+                    EventKind::ServiceStateChanged,
+                    EventData { entry_id: None, status: Some("view_settings_changed".into()) },
+                )?;
                 Ok(json!({"performed":true}))
             }
             Method::DesktopQueueNext => {

@@ -347,13 +347,14 @@ func (n *nativeMain) commitPrivacyDialog(dialog *nativePrivacyDialog) {
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 8*time.Second)
 		defer cancel()
-		_, err := n.library.PolicyFeedback(ctx, params)
+		result, err := n.library.PolicyFeedback(ctx, params)
 		n.update(session, func() {
-			n.prepare(n.resume)
+			n.mutating = false
 			if err != nil {
 				n.notice = n.text("privacy_rules_action_failed")
 				return
 			}
+			n.refreshPrivacyPresentation(result.State)
 			n.notice = n.text("privacy_feedback_done")
 		})
 	}()
@@ -429,7 +430,9 @@ func (n *nativeMain) drawPrivacyRuleList(c *ui.Context) {
 		}
 		kit.PrivacyRuleGrid(c, columns, func() {
 			for _, rule := range rules.rules {
-				n.drawPrivacyRule(c, kit, rule)
+				ui.Column(c.Key(rule.Id)).FillWidth().Transition(nativePanelEnter).Children(func() {
+					n.drawPrivacyRule(c, kit, rule)
+				})
 			}
 		})
 	}
@@ -482,14 +485,14 @@ func (n *nativeMain) removePrivacyRule(id string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(session, 8*time.Second)
 		defer cancel()
-		_, err := n.library.RemovePolicyRule(ctx, id, state.PrivacyEpoch)
+		result, err := n.library.RemovePolicyRule(ctx, id, state.PrivacyEpoch)
 		n.update(session, func() {
 			n.mutating = false
 			if err != nil {
 				n.privacyRules.actionFailed = true
 				return
 			}
-			n.prepare(n.resume)
+			n.refreshPrivacyPresentation(result.State)
 			n.notice = n.text("privacy_feedback_done")
 		})
 	}()

@@ -415,12 +415,14 @@ func (n *nativeMain) updateSettings(c *ui.Context, kit uikit.Kit) {
 		ui.Text(c.Key("updater-preview-missing"), n.text("updater_preview_index_missing")).Wrap()
 	}
 	if available := u.result.Available; available != nil {
-		kit.SettingsDisclosure(c.Key("updater-release-notes"), n.text("updater_release_notes"), &u.notesOpen, func() {
-			notes := available.Notes
-			if notes == "" {
-				notes = n.text("updater_no_notes")
-			}
-			ui.Text(c, notes).Wrap().Selectable()
+		ui.Column(c.Key("updater-release-notes")).FillWidth().Transition(nativeSettingReveal).Children(func() {
+			kit.SettingsDisclosure(c, n.text("updater_release_notes"), &u.notesOpen, func() {
+				notes := available.Notes
+				if notes == "" {
+					notes = n.text("updater_no_notes")
+				}
+				ui.Text(c, notes).Wrap().Selectable()
+			})
 		})
 	}
 }

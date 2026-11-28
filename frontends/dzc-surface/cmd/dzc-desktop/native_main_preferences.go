@@ -159,7 +159,8 @@ func (n *nativeMain) applyViewSettings(settings map[string]string) bool {
 	if previous["app.theme"] != settings["app.theme"] || n.mode != n.colorMode(settings) ||
 		n.importedTheme != nil && previous["app.custom_themes"] != settings["app.custom_themes"] ||
 		n.language() != mainLanguage(settings["app.language"]) ||
-		nativeInterfaceFont(previous) != nativeInterfaceFont(settings) {
+		nativeInterfaceFont(previous) != nativeInterfaceFont(settings) ||
+		previous["app.font_mono"] != settings["app.font_mono"] {
 		n.startAppearanceMotion()
 	}
 	if (previous["app.compact_mode"] == "true") != (settings["app.compact_mode"] == "true") ||
