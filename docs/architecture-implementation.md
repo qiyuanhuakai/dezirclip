@@ -251,6 +251,12 @@ macOS 26 ARM64 首次验收用时 3 分 36 秒。临时签名测试包通过 15 
 
 macOS 26 ARM64 的第一次托管验收用时 2 分 59 秒。正式签名 helper 从独立 `pbcopy` 写入读取文本，验证历史和事件、回写防回采、隐藏内容、隐私暂停与恢复及来源排除。Linux Host 套件通过 88 项，1 项按既有条件忽略。 [Darwin 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46148019746/job/140988292744)
 
+### M2 Swift 会话容量与隐私操作
+
+`74a006bb` 为每个签名 helper 启动器保留最多 8 条正在建立或已打开的 SDK 会话。每条连接独立验签及授权。关闭会话回收名额，重复关闭不会多还名额。传输取消时先中断在途读写，待 worker 退出后关闭描述符。隐私读取和写入使用共享 Schema 生成的 DTO。写入需要独立确认隐私授权。回执丢失时返回结果未知，调用方可在新连接查询状态。
+
+macOS 26 ARM64 的托管验收通过 Swift 协议、路径、授权和签名 helper 步骤。正式 helper 以并发连接达到上限，验证超限拒绝和关闭后复用，并通过 SDK 切换隐私会话、核对 epoch 和剪贴板暂停与恢复。共享 Host 夹具拒绝了要求隐私写权限的未授权连接。Swift 测试也覆盖了隐私写回执丢失，以及 `expires_at_ms` 的必填 null。 [Swift 与签名 helper 托管验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46149642199/job/140993308576)
+
 ### R8 维护量中间复算
 
 按规范原基线 `1f1641a0` 与 `d2291d7b` 的 Git blob 统计。使用 `git ls-tree -r -z` 取得两次提交的常规文件，按对象 ID 批量读取，计入末尾没有换行的最后一行。范围沿用原统计的 Rust、Go、Python、JSON、TS、TSX、MJS、JS，加上当前提交中的 Swift。基线复算与规范原表的八种后缀计数一致。
