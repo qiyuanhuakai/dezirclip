@@ -18,54 +18,54 @@ pub fn require_bundled_launcher() -> io::Result<()> {
         if unsafe { libc::fstat(descriptor, metadata.as_mut_ptr()) } != 0
             || unsafe { metadata.assume_init() }.st_mode & libc::S_IFMT != libc::S_IFIFO
         {
-            return Err(denied());
+            return Err(denied("bootstrap descriptors must be pipes"));
         }
     }
 
     let helper = fs::canonicalize(std::env::current_exe()?)?;
     let Some(contents) = helper.parent().and_then(Path::parent) else {
-        return Err(denied());
+        return Err(denied("helper must be inside Contents/Helpers"));
     };
     let Some(bundle) = contents.parent() else {
-        return Err(denied());
+        return Err(denied("helper must be inside Contents/Helpers"));
     };
     if helper != contents.join("Helpers/dzc-darwin-host")
         || contents.file_name() != Some(OsStr::new("Contents"))
         || bundle.extension() != Some(OsStr::new("app"))
     {
-        return Err(denied());
+        return Err(denied("helper must be inside Contents/Helpers"));
     }
 
     let pid = unsafe { libc::getppid() };
     if pid <= 1 {
-        return Err(denied());
+        return Err(denied("launcher exited"));
     }
     let path = parent_executable(pid)?;
     if path.parent() != Some(contents.join("MacOS").as_path()) {
-        return Err(denied());
+        return Err(denied("parent is outside Contents/MacOS"));
     }
 
-    let flags = Flags::NO_NETWORK_ACCESS;
     let requirement: SecRequirement = r#"info[CFBundlePackageType] = "APPL""#
         .parse()
-        .map_err(|_| denied())?;
+        .map_err(|error| signature_error("app requirement", error))?;
     let mut attributes = GuestAttributes::new();
     attributes.set_pid(pid);
-    let parent =
-        SecCode::copy_guest_with_attribues(None, &attributes, flags).map_err(|_| denied())?;
+    let parent = SecCode::copy_guest_with_attribues(None, &attributes, Flags::NONE)
+        .map_err(|error| signature_error("running app lookup", error))?;
     parent
-        .check_validity(flags, &requirement)
-        .map_err(|_| denied())?;
-    let url = CFURL::from_path(bundle, true).ok_or_else(denied)?;
-    let signed = SecStaticCode::from_path(&url, flags).map_err(|_| denied())?;
+        .check_validity(Flags::NONE, &requirement)
+        .map_err(|error| signature_error("running app", error))?;
+    let url = CFURL::from_path(bundle, true).ok_or_else(|| denied("invalid bundle URL"))?;
+    let signed = SecStaticCode::from_path(&url, Flags::NONE)
+        .map_err(|error| signature_error("app bundle lookup", error))?;
     signed
         .check_validity(
-            flags | Flags::CHECK_NESTED_CODE | Flags::STRICT_VALIDATE,
+            Flags::NO_NETWORK_ACCESS | Flags::CHECK_NESTED_CODE | Flags::STRICT_VALIDATE,
             &requirement,
         )
         .map_err(|error| signature_error("app bundle", error))?;
     if unsafe { libc::getppid() } != pid {
-        return Err(denied());
+        return Err(denied("launcher changed during verification"));
     }
     Ok(())
 }
@@ -74,16 +74,18 @@ fn parent_executable(pid: libc::pid_t) -> io::Result<PathBuf> {
     let mut buffer = [0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
     let count = unsafe { libc::proc_pidpath(pid, buffer.as_mut_ptr().cast(), buffer.len() as u32) };
     if count <= 0 || count as usize >= buffer.len() {
-        return Err(denied());
+        return Err(denied("parent executable is unavailable"));
     }
-    let path = CStr::from_bytes_until_nul(&buffer).map_err(|_| denied())?;
-    fs::canonicalize(Path::new(OsStr::from_bytes(path.to_bytes()))).map_err(|_| denied())
+    let path = CStr::from_bytes_until_nul(&buffer)
+        .map_err(|_| denied("parent executable is unavailable"))?;
+    fs::canonicalize(Path::new(OsStr::from_bytes(path.to_bytes())))
+        .map_err(|_| denied("parent executable is unavailable"))
 }
 
-fn denied() -> io::Error {
+fn denied(reason: &str) -> io::Error {
     io::Error::new(
         io::ErrorKind::PermissionDenied,
-        "helper requires private pipes from its signed app launcher",
+        format!("helper requires private pipes from its signed app launcher: {reason}"),
     )
 }
 

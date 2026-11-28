@@ -174,7 +174,8 @@ def job_requirements(mode, legacy_installer, crash_profile="release"):
         })
     if mode == "darwin-native":
         jobs["Darwin native foundations"] = ("Verify profile persistence across signed helper processes",
-                                            "Verify signed Swift sessions against the local Rust Host and platform fixture")
+                                            "Verify signed Swift sessions against the local Rust Host and platform fixture",
+                                            "Verify the production Darwin helper with its own Keychain")
     if mode == "historical-windows-memory":
         jobs["Published Windows memory comparison"] = ("Measure original published executables",)
     if mode == "windows-service-startup":

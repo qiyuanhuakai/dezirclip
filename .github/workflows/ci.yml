@@ -191,6 +191,9 @@ jobs:
           fi
           grep -Fx 'helper directory must be private and owned by the current user' "$socket_dir/linked-profile.log"
           "$probe" --bundled-host "$socket_dir/desktop"
+      - name: Verify the production Darwin helper with its own Keychain
+        run: |
+          socket_dir=$(mktemp -d /private/tmp/dzc-helper.XXXXXX)
           production="$RUNNER_TEMP/DezirClipHostProduction.app"
           helper="$production/Contents/Helpers/dzc-darwin-host"
           if (set -o pipefail; printf '' | "$helper" "$socket_dir/foreign-parent" 2>"$socket_dir/foreign-parent.log" | cat); then
