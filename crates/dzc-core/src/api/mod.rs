@@ -2,6 +2,7 @@
 mod backup;
 mod clipboard;
 mod clipboard_payload;
+mod desktop_history;
 mod error;
 mod history;
 mod summary;
@@ -13,6 +14,7 @@ pub use crate::domain::models::ClipboardEntry;
 pub use crate::privacy::{PrivacyAction, PrivacyDecision, PrivacyEvidence, PrivacyPolicy};
 pub use backup::{BackupService, ExportEntry, ImportMode};
 pub use clipboard::ClipboardService;
+pub use desktop_history::{DesktopHistoryError, DesktopHistoryQuery};
 pub use error::{CoreError, CoreErrorCode, CoreResult};
 pub use history::{AutomationHistory, HistoryQuery, HistorySearchMode, HistoryService};
 pub use summary::{EntrySummary, SearchRequest, SearchResult, SummaryQuery, SummarySearchMode};

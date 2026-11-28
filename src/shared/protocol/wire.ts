@@ -36,3 +36,31 @@ export interface PrivacyState {
     privacy_epoch: number;
     expires_at_ms: number | null;
 }
+
+export type HostMode = "embedded" | "service";
+
+export interface ServiceStatus {
+    mode: HostMode;
+    capture_owner: boolean;
+    state: RuntimeState;
+    privacy: PrivacyState;
+    capture_unavailable_reason?: "native_listener_unavailable" | "capture_ownership_unavailable" | "disabled_by_request";
+}
+
+export interface DesktopPageParams {
+    limit: number;
+    offset: number;
+    kind?: string;
+    query?: string;
+}
+
+export interface DesktopTagPageParams {
+    tag: string;
+    query: string;
+    kind?: string;
+    sort_by: "time" | "count" | "pinned";
+    limit: number;
+    offset: number;
+    service_instance_id: string;
+    expected_epoch: number;
+}

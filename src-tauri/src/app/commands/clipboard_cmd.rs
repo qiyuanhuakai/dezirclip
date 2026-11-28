@@ -23,7 +23,7 @@ pub async fn update_tags(
     let bridge=app_handle.state::<crate::app::ipc_host::DesktopHost>();
     let mut request=bridge.mutation_request(id,"tags",expected_privacy_epoch).map_err(AppError::Validation)?;
     request.tags=Some(tags);request.confirm_persistence=confirm_persistence;request.reveal=allow_sensitive.unwrap_or(false);
-    let id=bridge.mutation(request,expected_host_instance_id.as_deref()).await.map_err(AppError::Validation)?.ok_or_else(||AppError::Validation("ClipboardHostUnavailable".into()))?;
+    let id=bridge.mutation(request,expected_host_instance_id.as_deref()).await.map_err(AppError::Validation)?;
     let _=app_handle.emit("clipboard-changed",());Ok(id)
 }
 

@@ -106,6 +106,14 @@ pub(crate) fn entry(mut entry: api::ClipboardEntry, compact: bool) -> DesktopEnt
 }
 
 impl Host {
+    /// An embedded adapter owns the caller's window context. The local Host
+    /// provides its selected repository and RAM history as one pair.
+    pub fn embedded_history_page(
+        &self, query: api::DesktopHistoryQuery<'_>, limit: i32,
+    ) -> Result<Vec<api::ClipboardEntry>, api::DesktopHistoryError> {
+        self.history.embedded_history_page(&self.session, query, limit)
+    }
+
     pub fn tag_page_owned(&self, request: DesktopTagPageParams) -> Result<DesktopTagItemsPage, WireErrorCode> {
         value("DesktopTagPageParams", &request)?;
         if request.service_instance_id != self.snapshot()?.service_instance_id { return Err(WireErrorCode::PrivacyBlocked); }

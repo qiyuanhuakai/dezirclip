@@ -9,7 +9,7 @@ use crate::infrastructure::linux_api::window_tracker::{get_clipboard_capture_app
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_api::window_tracker::{get_clipboard_source_app_info as resolve_source,ActiveAppInfo};
 pub use dzc_core::capture::CaptureData as ClipboardData;
-pub use utils::truncate_html_for_preview;
+pub(crate) use utils::{cap_history_rows, cap_tag_rows};
 
 pub(crate) fn summarize_captured_entry(entry: crate::domain::models::ClipboardEntry)->crate::domain::models::ClipboardEntry {
     match utils::truncate_entry_for_ui(&entry) {std::borrow::Cow::Borrowed(_)=>entry,std::borrow::Cow::Owned(summary)=>summary}

@@ -1,8 +1,8 @@
-use crate::app_state::{AppDataDir, SessionHistory};
+use crate::app_state::SessionHistory;
 use dzc_core::api::HistoryService;
 use crate::domain::models::ClipboardEntry;
 use crate::error::{AppError, AppResult};
-use crate::services::clipboard::truncate_html_for_preview;
+use crate::services::clipboard::{cap_history_rows, cap_tag_rows};
 use tauri::{AppHandle,Manager,State};
 use crate::app::ipc_host::{DesktopHost,HostedEntry};
 
@@ -18,12 +18,6 @@ pub(super) async fn edit_library(app: &AppHandle, method: Method, params: impl s
     let _ = app.emit("clipboard-changed", ());
     Ok(())
 }
-
-const UI_CONTENT_LIMIT: usize = 2000;
-const UI_PREVIEW_LIMIT: usize = 500;
-const TAG_CONTENT_LIMIT: usize = 50000;
-const MAX_HISTORY_LIMIT: i32 = 150;
-const MIN_HISTORY_LIMIT: i32 = 1;
 
 #[derive(serde::Serialize)]
 pub struct HostedTagItemsPage {
@@ -41,41 +35,6 @@ impl HostedTagItemsPage {
 fn check_tag_host_instance(original:&str,current:&str)->AppResult<()> {
     if original!=current {return Err(AppError::Validation("ClipboardHostInstanceChanged".into()));}
     Ok(())
-}
-
-fn is_text_like_content_type(content_type: &str) -> bool {
-    matches!(content_type, "text" | "code" | "url" | "rich_text")
-}
-
-fn truncate_with_suffix(input: &str, limit: usize, suffix: &str) -> String {
-    let mut chars = input.chars();
-    if chars.by_ref().nth(limit).is_some() {
-        let head: String = input.chars().take(limit).collect();
-        format!("{head}{suffix}")
-    } else {
-        input.to_string()
-    }
-}
-
-fn normalize_entries_for_ui(entries: &mut [ClipboardEntry]) {
-    for item in entries {
-        if is_text_like_content_type(&item.content_type) {
-            item.content =
-                truncate_with_suffix(&item.content, UI_CONTENT_LIMIT, "... [Truncated for speed]");
-            item.preview =
-                truncate_with_suffix(&item.content, UI_PREVIEW_LIMIT.saturating_sub(3), "...");
-        }
-
-        if let Some(ref html) = item.html_content {
-            if html.chars().count() > 5000 {
-                item.html_content = truncate_html_for_preview(html);
-            }
-        }
-    }
-}
-
-fn normalize_limit(limit: i32) -> i32 {
-    limit.clamp(MIN_HISTORY_LIMIT, MAX_HISTORY_LIMIT)
 }
 
 fn captured_entry_summary(
@@ -102,7 +61,7 @@ fn captured_entry_summary(
     let mut guarded=vec![entry];
     repository.entries_for_gui(&mut guarded,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     let mut entry=guarded.pop().ok_or_else(||AppError::Validation("SensitiveAccessDenied".into()))?;
-    normalize_entries_for_ui(std::slice::from_mut(&mut entry));
+    cap_history_rows(std::slice::from_mut(&mut entry));
     Ok(crate::services::clipboard::summarize_captured_entry(entry))
 }
 
@@ -123,124 +82,32 @@ pub async fn get_captured_entry_summary(
 
 #[tauri::command]
 pub async fn get_clipboard_history(
-    app:AppHandle,
-    state: State<'_, HistoryService>,
-    session: State<'_, SessionHistory>,
+    host: State<'_, DesktopHost>,
     limit: i32,
     offset: i32,
     content_type: Option<String>,
 ) -> AppResult<Vec<HostedEntry>> {
-    let limit = normalize_limit(limit);
-    let bridge=app.state::<DesktopHost>();
-    if let Some(entries)=bridge.page(limit,offset,content_type.clone(),None).await.map_err(AppError::Validation)? {return Ok(entries);}
-    // 1. Get history from repository
-    let mut history = state
-
-        .get_history(limit, offset, content_type.as_deref())?;
-
-    // 2. Add session history items (non-persisted) ONLY on the first page
-    if offset == 0 {
-        let session_items = session.inner().0.lock().unwrap();
-        for item in session_items.iter().rev() {
-            if let Some(ct) = content_type.as_deref() {
-                if item.content_type != ct {
-                    continue;
-                }
-            }
-            // Avoid duplicates: if item is already in DB, it will have id > 0
-            if !history.iter().any(|h| h.id == item.id && item.id != 0) {
-                history.push(item.clone());
-            }
-        }
-    }
-
-    // 3. Apply stable sorting: Pinned -> Pinned Order -> Timestamp -> ID
-    // This MUST match the repository's logic to maintain pagination stability
-    history.sort_by(|a, b| {
-        b.is_pinned
-            .cmp(&a.is_pinned)
-            .then_with(|| b.pinned_order.cmp(&a.pinned_order))
-            .then_with(|| b.timestamp.cmp(&a.timestamp))
-            .then_with(|| b.id.cmp(&a.id))
-    });
-
-    // 4. Truncate to limit
-    if history.len() > limit as usize {
-        history.truncate(limit as usize);
-    }
-
-    state.entries_for_gui_list(&mut history,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
-    normalize_entries_for_ui(&mut history);
-
-    history.into_iter().map(|entry|bridge.hosted(entry).map_err(AppError::Validation)).collect()
+    host.page(limit, offset, content_type, None).await
 }
 
 #[tauri::command]
 pub async fn search_clipboard_history(
-    app:AppHandle,
-    state: State<'_, HistoryService>,
-    session: State<'_, SessionHistory>,
+    host: State<'_, DesktopHost>,
     search_term: String,
     limit: i32,
 ) -> AppResult<Vec<HostedEntry>> {
-    let limit = normalize_limit(limit);
-    let bridge=app.state::<DesktopHost>();
-    if let Some(entries)=bridge.page(limit,0,None,Some(search_term.clone())).await.map_err(AppError::Validation)? {return Ok(entries);}
-    search_embedded_history(&state,&session,&bridge,&search_term,limit)
-}
-
-fn search_embedded_history(repository:&dzc_core::api::HistoryService,session:&SessionHistory,bridge:&DesktopHost,search_term:&str,limit:i32)->AppResult<Vec<HostedEntry>> {
-    let mut history = repository.search(search_term, limit)?;
-
-    let term = search_term.to_lowercase();
-    let session_items = session.0.lock().unwrap();
-    for item in session_items.iter().rev() {
-        let matches = item.content.to_lowercase().contains(&term)
-            || item.source_app.to_lowercase().contains(&term)
-            || item.tags.iter().any(|t| t.to_lowercase().contains(&term));
-
-        if matches {
-            if !history.iter().any(|h| h.id == item.id && item.id != 0) {
-                history.push(item.clone());
-            }
-        }
-    }
-    drop(session_items);
-
-    history.sort_by(|a, b| b.timestamp.cmp(&a.timestamp).then_with(|| b.id.cmp(&a.id)));
-    if history.len() > limit as usize {
-        history.truncate(limit as usize);
-    }
-
-    repository.entries_for_gui_list(&mut history,false,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
-    normalize_entries_for_ui(&mut history);
-
-    history.into_iter().map(|entry|bridge.hosted(entry).map_err(AppError::Validation)).collect()
+    host.page(limit, 0, None, Some(search_term)).await
 }
 
 #[tauri::command]
 pub async fn delete_clipboard_entry(
-    app:AppHandle,
-    state: State<'_, HistoryService>,
-    session: State<'_, SessionHistory>,
-    app_data: State<'_, AppDataDir>,
+    host: State<'_, DesktopHost>,
     id: i64,
-    expected_host_instance_id:Option<String>,
+    expected_host_instance_id: Option<String>,
 ) -> AppResult<()> {
-    let bridge=app.state::<DesktopHost>();
-    let request=bridge.mutation_request(id,"delete",None).map_err(AppError::Validation)?;
-    if bridge.mutation(request,expected_host_instance_id.as_deref()).await.map_err(AppError::Validation)?.is_some() {return Ok(());}
-    {
-        let mut session_items = session.inner().0.lock().unwrap();
-        session_items.retain(|item| item.id != id);
-    }
-
-    if id > 0 {
-        let data_dir = app_data.0.lock().unwrap();
-        state.delete(id, Some(&data_dir))?;
-    }
-    crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
-    Ok(())
+    let request = host.mutation_request(id, "delete", None).map_err(AppError::Validation)?;
+    host.mutation(request, expected_host_instance_id.as_deref()).await
+        .map(|_| ()).map_err(AppError::Validation)
 }
 
 #[tauri::command]
@@ -262,12 +129,7 @@ pub async fn get_tag_items(
         .map_err(AppError::from)?;
 
     state.entries_for_gui(&mut history,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
-    for item in &mut history {
-        if is_text_like_content_type(&item.content_type) {
-            item.content =
-                truncate_with_suffix(&item.content, TAG_CONTENT_LIMIT, "... [Content Truncated]");
-        }
-    }
+    cap_tag_rows(&mut history);
 
     Ok(history)
 }
@@ -566,7 +428,7 @@ mod capture_summary_tests {
             // Identity remains readable while this caller owns the RAM guard.
             let rows=session.0.lock().unwrap();let instance=bridge.instance().unwrap();
             let tagged=bridge.hosted(rows[0].clone()).unwrap();assert_eq!(tagged.host_instance_id.as_deref(),Some(instance.as_str()));drop(rows);
-            let found=search_embedded_history(&history,&session,&bridge,"body",100).unwrap();
+            let found=tauri::async_runtime::block_on(bridge.page(100,0,None,Some("body".into()))).unwrap();
             assert_eq!(found.len(),2);assert!(found.iter().any(|row|row.id<0));assert!(found.iter().any(|row|row.id>0));
             assert!(found.iter().all(|row|row.host_instance_id.as_deref()==Some(instance.as_str())));
             use dzc_core::capture::*;

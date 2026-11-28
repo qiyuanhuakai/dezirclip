@@ -1,3 +1,4 @@
+import { desktopHistory } from '../../../shared/desktop/history';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '../../../shared/lib/desktopInvoke';
 import { listen } from '@tauri-apps/api/event';
@@ -5,7 +6,7 @@ import type { ClipboardEntry } from '../../../shared/types';
 import type { TagInfo, TagItemsPage, TagSort } from '../types';
 import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
+import { beginPrivacyAccess, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 import { reuseUnchangedEntries } from '../../../shared/lib/reuseUnchanged';
 
 const EMPTY_PAGE: TagItemsPage = { items: [], total: 0, has_more: false, next_offset: null };
@@ -147,7 +148,7 @@ export function useTagLibrary() {
         const epoch = selectionEpoch.current;
         setMetadataLoading(true);
         void Promise.all([
-            invokePrivacyBound<Record<string, number>>('get_all_tags_info'),
+            desktopHistory.tagCounts(beginPrivacyAccess("list")),
             invoke<Record<string, string>>('get_tag_colors'),
         ]).then(([tagMap, nextColors]) => {
             if (!mounted.current || request !== metadataGeneration.current) return;
@@ -190,8 +191,8 @@ export function useTagLibrary() {
             const items: ClipboardEntry[] = [];
             let offset = 0;
             do {
-                next = await invokePrivacyBound<TagItemsPage>('get_tag_items_page', {
-                    tag: selectedTag, query: debouncedQuery, sortBy, limit: PAGE_SIZE, offset, expectedEpoch: access.epoch,
+                next = await desktopHistory.tagPage(access, {
+                    tag: selectedTag, query: debouncedQuery, sortBy, limit: PAGE_SIZE, offset,
                 });
                 if (!mounted.current || request !== generation.current || !access.isCurrent()) return;
                 items.push(...next.items);
@@ -232,8 +233,8 @@ export function useTagLibrary() {
         if (pending.current.has(key)) return;
         pending.current.add(key);
         setLoadingMore(true);
-        void invokePrivacyBound<TagItemsPage>('get_tag_items_page', {
-            tag: active.selectedTag, query: active.debouncedQuery, sortBy: active.sortBy, limit: PAGE_SIZE, offset: current.next_offset, expectedEpoch: access.epoch,
+        void desktopHistory.tagPage(access, {
+            tag: active.selectedTag, query: active.debouncedQuery, sortBy: active.sortBy, limit: PAGE_SIZE, offset: current.next_offset,
         }).then(next => {
             if (!mounted.current || request !== generation.current) return;
             const known = new Set(pageRef.current.items.map(item => item.id));

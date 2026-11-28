@@ -7,18 +7,37 @@ const HTML_PREVIEW_MAX_ROWS: usize = 10;
 const HTML_TRUNCATION_SUFFIX: &str = "... [HTML Truncated]";
 
 fn truncate_chars_with_suffix(text: &str, max_chars: usize, suffix: &str) -> String {
-    if text.chars().count() <= max_chars {
-        return text.to_string();
+    let Some((cut, _)) = text.char_indices().nth(max_chars) else {
+        return text.to_owned();
+    };
+    let mut result = String::with_capacity(cut + suffix.len());
+    result.push_str(&text[..cut]);
+    result.push_str(suffix);
+    result
+}
+
+fn is_text_like(entry: &ClipboardEntry) -> bool {
+    matches!(entry.content_type.as_str(), "text" | "code" | "url" | "rich_text")
+}
+
+pub(crate) fn cap_history_rows(entries: &mut [ClipboardEntry]) {
+    for entry in entries {
+        if is_text_like(entry) {
+            entry.content = truncate_chars_with_suffix(&entry.content, CONTENT_PREVIEW_MAX_CHARS, "... [Truncated for speed]");
+            entry.preview = truncate_chars_with_suffix(&entry.content, 497, "...");
+        }
+        if let Some(html) = &entry.html_content {
+            if html.chars().count() > HTML_PREVIEW_MAX_CHARS {
+                entry.html_content = truncate_html_for_preview(html);
+            }
+        }
     }
-    let cut = text
-        .char_indices()
-        .nth(max_chars)
-        .map(|(idx, _)| idx)
-        .unwrap_or(text.len());
-    let mut out = String::with_capacity(cut + suffix.len());
-    out.push_str(&text[..cut]);
-    out.push_str(suffix);
-    out
+}
+
+pub(crate) fn cap_tag_rows(entries: &mut [ClipboardEntry]) {
+    for entry in entries.iter_mut().filter(|entry| is_text_like(entry)) {
+        entry.content = truncate_chars_with_suffix(&entry.content, 50_000, "... [Content Truncated]");
+    }
 }
 
 /// Text and HTML are bounded for explicit summary reads. In-memory images keep

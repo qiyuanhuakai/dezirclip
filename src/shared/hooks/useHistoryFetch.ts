@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { beginPrivacyAccess, getMainPageStamp, invokePrivacyBound, subscribePrivacyInvalidation } from "../lib/privacySession";
+import { beginPrivacyAccess, getMainPageStamp, subscribePrivacyInvalidation } from "../lib/privacySession";
 import { createResumePage, type PageStamp } from "../lib/resumePage";
 import type { Dispatch, SetStateAction } from "react";
 import type { ClipboardEntry } from "../types";
@@ -7,7 +7,7 @@ import { HISTORY_SEARCH_LIMIT } from "../../features/app/constants/pagination";
 import { reuseUnchangedEntries } from "../lib/reuseUnchanged";
 import { createHistoryRequestGate } from "../lib/historyRequestGate";
 import { parseTagFilter } from "../lib/tagQuery";
-import type { TagItemsPage } from "../../features/tag/types";
+import { desktopHistory } from "../desktop/history";
 
 interface UseHistoryFetchOptions {
   debouncedSearch: string;
@@ -79,16 +79,14 @@ export const useHistoryFetch = ({
           ? 0
           : Math.min(currentOffsetRef.current, historyLengthRef.current);
 
-        let data: ClipboardEntry[] = [];
-
         const hasSearch = debouncedSearch && debouncedSearch.trim().length > 0;
 
         const selectedTag = hasSearch ? parseTagFilter(debouncedSearch) : null;
         if (selectedTag !== null) {
           const access = beginPrivacyAccess("list");
           if (!access) throw new Error("PrivacyStateUnavailable");
-          const page = selectedTag ? await invokePrivacyBound<TagItemsPage>("get_tag_items_page", {
-            tag: selectedTag, query: "", sortBy: "time", limit: Math.min(pageSize, 100), offset: baseOffset, expectedEpoch: access.epoch
+          const page = selectedTag ? await desktopHistory.tagPage(access, {
+            tag: selectedTag, query: "", sortBy: "time", limit: Math.min(pageSize, 100), offset: baseOffset,
           }) : { items: [], has_more: false, next_offset: null };
           if (!request.isCurrent(currentQueryKey.current)) return false;
           setHistory(previous => reset ? reuseUnchangedEntries(previous, page.items) : [
@@ -98,16 +96,7 @@ export const useHistoryFetch = ({
           setCurrentOffset(page.next_offset ?? baseOffset + page.items.length);
           setHasMore(page.has_more);
         } else if (hasSearch) {
-
-          try {
-            data = await invokePrivacyBound<ClipboardEntry[]>("search_clipboard_history", {
-              searchTerm: debouncedSearch,
-              limit: HISTORY_SEARCH_LIMIT
-            });
-          } catch (e) {
-            console.error("Search failed, falling back", e);
-            throw e;
-          }
+          const data = await desktopHistory.search(beginPrivacyAccess("list"), debouncedSearch, HISTORY_SEARCH_LIMIT);
 
           if (!request.isCurrent(currentQueryKey.current)) return false;
           // Search results are not paginated; always replace list and stop infinite loading.
@@ -119,10 +108,10 @@ export const useHistoryFetch = ({
           const stamp = reset ? resume ?? getMainPageStamp() : null;
           const key = JSON.stringify([typeFilter, requestedLimit]);
           const cached = resume && stamp ? resumePage.read(stamp, key) : null;
-          const rawData = cached ?? await invokePrivacyBound<ClipboardEntry[]>("get_clipboard_history", {
+          const rawData = cached ?? await desktopHistory.page(beginPrivacyAccess("list"), {
             limit: requestedLimit,
             offset: baseOffset,
-            content_type: typeFilter || undefined
+            kind: typeFilter || undefined,
           });
 
           if (!request.isCurrent(currentQueryKey.current)) return false;

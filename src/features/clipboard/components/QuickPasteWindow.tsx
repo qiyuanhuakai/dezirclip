@@ -1,3 +1,4 @@
+import { desktopHistory } from "../../../shared/desktop/history";
 import { useState, useEffect, useRef, useCallback, useMemo, forwardRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -12,7 +13,7 @@ import {
 } from "../../../shared/lib/quickPasteSelection";
 import type { ClipboardEntry } from "../../../shared/types";
 import { usePrivacySession } from "../../../shared/hooks/usePrivacySession";
-import { invokePrivacyBound, privacyListGeneration, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
+import { beginPrivacyAccess, invokePrivacyBound, privacyListGeneration, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
 import { entryInstanceArgs } from "../../../shared/lib/historyIdentity";
 import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { PrivacyStatusBanner } from "../../../shared/components/PrivacyStatusBanner";
@@ -93,11 +94,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
 
   const listGeneration = privacyListGeneration();
   const refreshReader = useMemo(() => createSnapshotRefresh(
-    () => invokePrivacyBound<ClipboardEntry[]>("get_clipboard_history", {
-      limit: historyLimit.current,
-      offset: 0,
-      contentType: null,
-    }),
+    () => desktopHistory.page(beginPrivacyAccess("list"), { limit: historyLimit.current, offset: 0, kind: null }),
     (data) => replaceEntries((data ?? []).filter(entry => !isSensitiveEntry(entry))),
     () => replaceEntries([]),
   ), [replaceEntries, listGeneration]);

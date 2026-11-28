@@ -6,6 +6,7 @@ import type { PrivacyRuntimeSnapshot } from "./privacyRuntime";
 import { privacyViewState as model, setPrivacyViewState } from "./privacyViewState";
 import type { PrivacyViewState } from "./privacyViewState";
 import type { ClipboardEntry } from "../types";
+import type { ServiceStatus } from "../protocol/wire";
 import { entryInstanceArgs } from "./historyIdentity";
 import { privacyBlurScope, samePrivacyAuthority, sharesPrivacyFocusLifecycle } from "./privacyViewLifecycle";
 import type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
@@ -88,7 +89,7 @@ const accept = (value: unknown) => {
 };
 
 async function readMainStatus() {
-  const status = await invoke<{ state: { history_revision: number }; privacy: { active: boolean; expires_at_ms: number | null } }>("get_clipboard_host_status");
+  const status = await invoke<ServiceStatus>("get_clipboard_host_status");
   const authority = readResumeAuthority(status);
   const snapshot = parsePrivacySnapshot({ history_revision: status.state.history_revision, privacy_epoch: authority.epoch,
     session: { active: status.privacy.active, expires_at_ms: status.privacy.expires_at_ms } });
@@ -330,8 +331,7 @@ export async function invokePrivacyBound<T>(command: string, args?: Record<strin
   return result;
 }
 
-const publicReadCommands = new Set(["get_clipboard_history", "search_clipboard_history", "get_tag_items_page",
-  "get_captured_entry_summary", "get_history_resource_preview", "get_all_tags_info", "get_source_app_icon"]);
+const publicReadCommands = new Set(["get_captured_entry_summary", "get_history_resource_preview", "get_source_app_icon"]);
 
 export const privacyListGeneration = () => listFence.current();
 

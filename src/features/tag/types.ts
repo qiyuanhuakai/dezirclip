@@ -1,4 +1,4 @@
-import type { ClipboardEntry } from '../../shared/types';
+export type { TagItemsPage } from '../../shared/desktop/history';
 
 export interface TagInfo {
     name: string;
@@ -6,10 +6,3 @@ export interface TagInfo {
 }
 
 export type TagSort = 'time' | 'count';
-
-export interface TagItemsPage {
-    items: ClipboardEntry[];
-    total: number;
-    has_more: boolean;
-    next_offset: number | null;
-}

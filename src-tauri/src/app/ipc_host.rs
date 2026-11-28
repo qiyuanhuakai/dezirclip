@@ -1,6 +1,7 @@
 //! The default desktop uses the shared Host in process. Only an explicitly
 //! started service changes history hydration into local IPC.
 use crate::app_state::{AppDataDir, SessionHistory};
+use crate::error::{AppError, AppResult};
 use dzc_core::{api::{ClipboardEntry, HistoryService}, ports::{ClipboardWriter, PasteController}};
 use dzc_host::{wire::*, CaptureManager, Client, ControlFile, Host, HostActions, HostOptions};
 use serde::{Serialize, de::DeserializeOwned};
@@ -488,14 +489,35 @@ impl DesktopHost {
             }
         })
     }
-    pub async fn page(&self,limit:i32,offset:i32,kind:Option<String>,query:Option<String>)->Result<Option<Vec<HostedEntry>>,String> {
-        if self.embedded()?.is_some() {return Ok(None);}
+    pub async fn page(&self, limit: i32, offset: i32, kind: Option<String>, query: Option<String>) -> AppResult<Vec<HostedEntry>> {
+        use dzc_core::api::{DesktopHistoryError, DesktopHistoryQuery};
+        let Some(host) = self.embedded().map_err(AppError::Validation)? else {
+            return self.remote_page(limit, offset, kind, query).await.map_err(AppError::Validation);
+        };
+        let read = match &query {
+            Some(term) => DesktopHistoryQuery::Search { term },
+            None => DesktopHistoryQuery::Page { offset, kind: kind.as_deref() },
+        };
+        let mut rows = host.embedded_history_page(read, limit).map_err(|error| match error {
+            DesktopHistoryError::Storage(error) => AppError::from(error),
+            DesktopHistoryError::Privacy(error) => AppError::Validation(error.to_string()),
+            DesktopHistoryError::SessionUnavailable => AppError::Internal("SessionHistoryUnavailable".into()),
+        })?;
+        crate::services::clipboard::cap_history_rows(&mut rows);
+        if self.embedded().map_err(AppError::Validation)?.is_none_or(|current| !Arc::ptr_eq(&host, &current)) {
+            return Err(AppError::Validation("ClipboardHostInstanceChanged".into()));
+        }
+        let instance = host.instance_id();
+        Ok(rows.into_iter().map(|entry| HostedEntry { entry, host_instance_id: Some(instance.into()) }).collect())
+    }
+
+    async fn remote_page(&self,limit:i32,offset:i32,kind:Option<String>,query:Option<String>)->Result<Vec<HostedEntry>,String> {
         let mut client=self.service_client().await?;
         let instance=client.hello.state.service_instance_id.clone();
         if instance!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
         let body:BodySnapshot=client.call(Method::DesktopHistoryPage,DesktopPageParams {limit:limit.clamp(1,150) as u16,offset:offset.max(0) as u32,kind,query},"BodySnapshot").await.map_err(remote_error)?;
         let result:DesktopEntries=client.read_snapshot(body,"DesktopEntries").await.map_err(remote_error)?;
-        result.entries.into_iter().map(|entry|hosted(entry,&instance)).collect::<Result<Vec<_>,_>>().map(Some)
+        result.entries.into_iter().map(|entry|hosted(entry,&instance)).collect()
     }
     pub async fn tag_page(&self,tag:String,query:String,sort_by:String,limit:usize,offset:usize,epoch:u64)->Result<(dzc_core::api::TagItemsPage,String),String> {
         let instance=self.instance()?;
@@ -565,12 +587,14 @@ impl DesktopHost {
         let result:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,CaptureBeginParams{service_instance_id:state.service_instance_id,expected_epoch:epoch.unwrap_or(state.privacy_epoch),copy_to_clipboard:Some(copy_to_clipboard),expected_paste_target:target},"CaptureBeginResult").await.map_err(remote_error)?;
         Ok(result.capture_id.map(|id|GeneratedUpload{client,id,windows_paste_bound}))
     }
-    pub async fn mutation(&self,mut request:DesktopMutationParams,expected:Option<&str>)->Result<Option<i64>,String> {
-        self.check_instance(request.id,expected)?;
-        if let Some(host)=self.embedded()? {return host.mutate_owned(request).map(|result|Some(result.id)).map_err(public_code);}
-        request.service_instance_id=self.instance()?;
+    pub async fn mutation(&self,request:DesktopMutationParams,expected:Option<&str>)->Result<i64,String> {
+        if (request.id < 0 && expected != Some(request.service_instance_id.as_str()))
+            || self.instance()? != request.service_instance_id {
+            return Err("ClipboardHostInstanceChanged".into());
+        }
+        if let Some(host)=self.embedded()? {return host.mutate_owned(request).map(|result|result.id).map_err(public_code);}
         let result:DesktopMutationResult=self.call(Method::DesktopHistoryMutate,request,"DesktopMutationResult").await?;
-        Ok(Some(result.id))
+        Ok(result.id)
     }
 
     pub async fn add_manual(&self, content: String, content_type: String, tags: Vec<String>, epoch: Option<u64>, confirmed: bool) -> Result<i64, String> {

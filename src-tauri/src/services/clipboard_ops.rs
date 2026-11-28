@@ -1044,15 +1044,8 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
             settings.delete_after_paste.load(Ordering::Relaxed)
         };
 
-        let history = crate::app::commands::history_cmd::get_clipboard_history(
-            app_handle_clone.clone(),
-            app_handle_clone.state::<HistoryService>(),
-            app_handle_clone.state::<SessionHistory>(),
-            1,
-            0, // offset
-            None,
-        )
-        .await;
+        let history = app_handle_clone.state::<crate::app::ipc_host::DesktopHost>()
+            .page(1, 0, None, None).await;
 
         if let Ok(items) = history {
             if let Some(item) = items.first() {

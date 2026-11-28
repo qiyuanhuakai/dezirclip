@@ -1,9 +1,10 @@
+import { desktopHistory } from '../../../shared/desktop/history';
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref, type RefObject } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { TagSuggestion, TagSuggestions, TagSuggestionRetry, TagSuggestionStatus } from '@deziro/ui-react/components/TagSuggestions';
 import { getTagColor } from '../../../shared/lib/utils';
 import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
-import { invokePrivacyBound, privacyListGeneration, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
+import { beginPrivacyAccess, privacyListGeneration, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 import { matchesTagName } from '../../../shared/lib/tagQuery';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 
@@ -38,7 +39,7 @@ export default function TagFilterPicker({ ref, id, tags, colors, query, isCompos
     useEffect(() => {
         let disposed = false;
         if (privacy.phase !== 'ready') return;
-        void invokePrivacyBound<Record<string, number>>('get_all_tags_info').then(info => {
+        void desktopHistory.tagCounts(beginPrivacyAccess("list")).then(info => {
             if (!disposed) { setCatalog(Object.keys(info).sort((a, b) => a.localeCompare(b))); setCatalogError(false); }
         }).catch(() => { if (!disposed) setCatalogError(true); });
         return () => { disposed = true; };
