@@ -228,6 +228,7 @@ mod tests {
                 original:self.target_generation.load(std::sync::atomic::Ordering::SeqCst)}))
         }
         fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
+        fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
     }
     fn session(host:&Host,role:ClientRole,grant:bool)->Session {
         let token=grant.then(||host.grants().issue_control(role).unwrap().token().to_owned());

@@ -281,6 +281,9 @@ impl HostActions for DesktopActions {
     fn can_activate(&self)->bool {app().is_some()}
     fn activate(&self,_id:Option<i64>)->Result<(),WireErrorCode> {crate::app::window_manager::focus_clipboard_window(app().ok_or(WireErrorCode::Unavailable)?.clone()).map_err(|_|WireErrorCode::Unavailable)}
     fn dismiss(&self)->Result<(),WireErrorCode> {crate::app::window_manager::hide_window_cmd(app().ok_or(WireErrorCode::Unavailable)?.clone()).map_err(|_|WireErrorCode::Unavailable)}
+    fn revoke_private_exports(&self) -> Result<(), WireErrorCode> {
+        dzc_platform::runtime::revoke_private_exports().map_err(|_| WireErrorCode::Busy)
+    }
     fn stop_helpers(&self)->Result<(),WireErrorCode> {
         if let Some(app)=app() {crate::app::surface_supervisor::stop_blocking(app,"exit",false).map_err(|_|WireErrorCode::Busy)?;}
         self.writer.stop().map_err(|_|WireErrorCode::Busy)
@@ -299,6 +302,7 @@ impl DesktopHost {
             fn can_paste(&self)->bool {false}
             fn paste(&self)->Result<(),WireErrorCode>{Err(WireErrorCode::Unavailable)}
             fn stop_helpers(&self)->Result<(),WireErrorCode>{Ok(())}
+            fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
         }
         let directory=PathBuf::new();
         let host=Host::with_session(HostOptions{mode:HostMode::Embedded,history:history.clone(),directory:directory.clone(),actions:Arc::new(Actions)},session.clone()).unwrap();

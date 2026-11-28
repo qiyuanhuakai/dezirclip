@@ -168,3 +168,6 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 
 - **M2 Swift 握手与帧约束**。Swift package 从现有 JSON Schema 生成握手 DTO 和传输上限。macOS 26 ARM64 托管运行通过有界读写、取消、嵌套、非法权限、整数边界以及缺失和 null 的区分。签名 Swift helper 在核对实际 Rust 进程身份后使用这套握手，并验证实例和权限。Host 响应来自原型。历史、订阅、snapshot 和生产 grant 仍在后续范围。 [Darwin 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46111989195)
 - **C5/C6 候选冻结与发布恢复**。正常发布先在独立 job 封存 40 项产品和固定名称的候选附件。附件绑定原 release ID、原源码验收及构建/验收/上传 artifact、各产品上传截止时间和待发布通道摘要。公开任务核对成功封存 job 的资产 ID 与 hash。恢复任务从原成功封存 job 按 ID 下载凭据，在全部原前置均成功的情况下可继续 publisher 取消后的发布。离线模拟验证上传响应丢失与原字节复用、错误 producer、额外附件、不同截止时间及取消门槛。独立复核被取消的封存 job 与真实 tag 链仍待验证。
+
+- **M1 Darwin Keychain**。签名 Rust helper 使用显式选定的隔离文件型 Keychain，为新 profile 创建密钥。普通读写只读取既有密钥。Core 保存并重新读取真实 SQLite 敏感条目，核对授权前后的可见性。Keychain 锁定后，已保护条目的读取会报告不可用，新的敏感写入会失败。版本化 Keychain 密文和既有 Linux AES-GCM 共享 codec，Linux 格式以固定向量核对。Windows DPAPI 的既有格式保持。发行 helper 的 Keychain 访问控制和 profile ID 持久化仍需实测。 [Darwin 验收](https://github.com/qiyuanhuakai/dezirclip/actions/runs/46114265742) [Apple Keychain 实现说明](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains)
+- **R6 Host 原生导出撤销边界**。将进程级原生文件撤销交给 Service 和 Tauri 的适配器显式实现。合成 Host 各自注入撤销行为，避免并行测试中的一次隐私切换删除另一个测试的临时附件。Linux 三轮 Host 套件均通过各 87 项，原有独立 Go 客户端用例仍按条件跳过。Linux Core 498 项和 Platform 183 项通过，Tauri 测试目标通过类型检查，Windows Host 与 Platform 测试目标通过类型检查。

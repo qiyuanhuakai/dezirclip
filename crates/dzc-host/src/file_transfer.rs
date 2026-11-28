@@ -185,6 +185,7 @@ mod tests {
         fn can_paste(&self) -> bool { false }
         fn paste(&self) -> Result<(), WireErrorCode> { panic!("file transfer never injects paste") }
         fn stop_helpers(&self) -> Result<(), WireErrorCode> { Ok(()) }
+        fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
     }
 
     #[test]

@@ -23,9 +23,7 @@ pub trait HostActions: Send + Sync {
     fn activate(&self, _entry_id: Option<i64>) -> Result<(), WireErrorCode> { Err(WireErrorCode::Unavailable) }
     fn dismiss(&self) -> Result<(), WireErrorCode> { Err(WireErrorCode::Unavailable) }
     fn stop_helpers(&self) -> Result<(), WireErrorCode>;
-    fn revoke_private_exports(&self) -> Result<(), WireErrorCode> {
-        dzc_platform::runtime::revoke_private_exports().map_err(|_| WireErrorCode::Busy)
-    }
+    fn revoke_private_exports(&self) -> Result<(), WireErrorCode>;
     fn queue_changed(&self, _count: usize) {}
     fn privacy_changed(&self, _snapshot: &api::RuntimeSnapshot) {}
 }
@@ -929,6 +927,7 @@ pub(crate) mod tests {
         fn can_paste(&self) -> bool { false }
         fn paste(&self) -> Result<(), WireErrorCode> { Err(WireErrorCode::Unavailable) }
         fn stop_helpers(&self) -> Result<(), WireErrorCode> { Ok(()) }
+        fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
     }
     struct SyntheticKeys;
     fn sealed_fixture_values() -> &'static Mutex<std::collections::HashMap<String, String>> {
@@ -1520,6 +1519,7 @@ pub(crate) mod tests {
             fn can_paste(&self)->bool {false}
             fn paste(&self)->Result<(),WireErrorCode> {Err(WireErrorCode::Unavailable)}
             fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
+            fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
         }
         let original=synthetic_host();
         let actions=Arc::new(EchoActions{host:Mutex::new(std::sync::Weak::new()),fail:AtomicBool::new(true)});

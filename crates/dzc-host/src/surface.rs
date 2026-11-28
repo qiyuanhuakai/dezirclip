@@ -215,6 +215,7 @@ mod tests {
             fn can_paste(&self)->bool {true}
             fn paste(&self)->Result<(),WireErrorCode>{panic!("parent-only selected copy cannot send native input")}
             fn stop_helpers(&self)->Result<(),WireErrorCode>{Ok(())}
+            fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
         }
         for mode in [HostMode::Embedded,HostMode::Service] {
             let original=crate::router::tests::synthetic_host();let copies=Arc::new(Copies::default());
@@ -255,6 +256,7 @@ mod tests {
             fn can_paste(&self)->bool {true}
             fn paste(&self)->Result<(),WireErrorCode>{panic!("copy is not a paste grant")}
             fn stop_helpers(&self)->Result<(),WireErrorCode>{Ok(())}
+            fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
         }
         let original=crate::router::tests::synthetic_host();insert(&original,"original",false);
         let id=original.history.query(&api::HistoryQuery{limit:1,..Default::default()}).unwrap()[0].id;

@@ -248,6 +248,7 @@ mod tests {
             fn can_paste(&self) -> bool { false }
             fn paste(&self) -> Result<(), WireErrorCode> { unreachable!() }
             fn stop_helpers(&self) -> Result<(), WireErrorCode> { Ok(()) }
+            fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
         }
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
             let directory = directory();

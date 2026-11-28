@@ -508,6 +508,7 @@ mod queue_completion_tests {
         fn can_paste(&self)->bool {true}
         fn paste(&self)->Result<(),WireErrorCode> {self.pastes.fetch_add(1,Ordering::SeqCst);Ok(())}
         fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
+        fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
     }
     fn session(host:&Host,role:ClientRole)->Session {
         let grant=host.grants().issue_control(role).unwrap();
@@ -535,6 +536,7 @@ mod queue_completion_tests {
                 Ok(Box::new(Rejected))
             }
             fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
+            fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
         }
         for mode in [HostMode::Embedded,HostMode::Service] {
             for delete in [false,true] {
@@ -584,6 +586,7 @@ mod queue_completion_tests {
                 Ok(Box::new(Fixed{current:self.current.clone(),sent:self.sent.clone()}))
             }
             fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
+            fn revoke_private_exports(&self) -> Result<(), WireErrorCode> { Ok(()) }
         }
         for (missing, change, preference, requested) in [
             (true, false, true, None),

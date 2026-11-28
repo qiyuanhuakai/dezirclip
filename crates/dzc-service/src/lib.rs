@@ -34,6 +34,9 @@ impl HostActions for NativeActions {
     fn prepare_windows_paste(&self,target:&dzc_host::wire::WindowsPasteTarget)->Result<Box<dyn dzc_host::PreparedPaste>,WireErrorCode> {
         Ok(Box::new(WindowsPreparedPaste(dzc_platform::runtime::WindowsBoundPaste::prepare(target).map_err(|_|WireErrorCode::Unavailable)?)))
     }
+    fn revoke_private_exports(&self) -> Result<(), WireErrorCode> {
+        dzc_platform::runtime::revoke_private_exports().map_err(|_| WireErrorCode::Busy)
+    }
     fn stop_helpers(&self) -> Result<(), WireErrorCode> { self.writer.stop().map_err(|_| WireErrorCode::Busy) }
 }
 
