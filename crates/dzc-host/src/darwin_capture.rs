@@ -65,21 +65,7 @@ impl DarwinCapture {
         let clipboard = pump.native_clipboard();
         let selection = clipboard.change_count();
         let epoch = pump.privacy_epoch();
-        if self.epoch != epoch {
-            self.epoch = epoch;
-            self.selection = selection;
-            return;
-        }
-        if self.selection == selection {
-            return;
-        }
-        if pump.owns_selection(selection)
-            || self
-                .pending
-                .as_ref()
-                .is_some_and(|task| !task.is_finished())
-        {
-            self.selection = selection;
+        if !self.selection_is_ready(selection, epoch, pump.owns_selection(selection)) {
             return;
         }
         // A copy request may hold this guard while it awaits the main thread.
@@ -164,6 +150,17 @@ impl DarwinCapture {
         }));
     }
 
+    fn selection_is_ready(&mut self, selection: isize, epoch: u64, owned: bool) -> bool {
+        if self.epoch != epoch || owned {
+            self.epoch = epoch;
+            self.selection = selection;
+            return false;
+        }
+        // Leave changed selections pending until the current write is complete.
+        // The next tick reads the actual pasteboard again before authorizing it.
+        self.selection != selection && self.pending.as_ref().is_none_or(JoinHandle::is_finished)
+    }
+
     pub(crate) async fn finish(&mut self) -> std::io::Result<()> {
         let _ = self.owner.stop_capture();
         if let Some(worker) = self.pending.take() {
@@ -195,5 +192,39 @@ impl EventSink for DarwinEvents<'_> {
                 status,
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn changed_selection_remains_pending_until_previous_write_finishes() {
+        let (complete, writing) = tokio::sync::oneshot::channel();
+        let mut capture = DarwinCapture {
+            owner: Arc::new(CaptureOwner {
+                active: AtomicBool::new(true),
+                lease: Mutex::new(None),
+            }),
+            epoch: 4,
+            selection: 10,
+            pending: Some(tokio::spawn(async move {
+                writing.await.unwrap();
+            })),
+        };
+
+        assert!(!capture.selection_is_ready(11, 4, false));
+        assert!(!capture.selection_is_ready(12, 4, false));
+        assert_eq!(capture.selection, 10);
+        complete.send(()).unwrap();
+        capture.pending.as_mut().unwrap().await.unwrap();
+        assert!(capture.selection_is_ready(12, 4, false));
+
+        assert!(!capture.selection_is_ready(13, 4, true));
+        assert!(!capture.selection_is_ready(13, 4, false));
+        assert!(!capture.selection_is_ready(14, 5, false));
+        assert!(!capture.selection_is_ready(14, 5, false));
+        assert!(capture.selection_is_ready(15, 5, false));
     }
 }
