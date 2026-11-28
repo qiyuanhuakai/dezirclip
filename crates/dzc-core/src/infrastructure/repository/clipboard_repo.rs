@@ -167,7 +167,7 @@ impl<T: Clone> SimpleLruCache<T> {
 }
 
 pub trait ClipboardRepository {
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     fn save(
         &self,
         entry: &ClipboardEntry,
@@ -179,8 +179,6 @@ pub trait ClipboardRepository {
         offset: i32,
         content_type: Option<&str>,
     ) -> Result<Vec<ClipboardEntry>, String>;
-    #[cfg(feature = "legacy-bridge")]
-    fn search_fts(&self, query: &str, limit: u32) -> Result<Vec<ClipboardEntry>, String>;
     fn search(&self, query: &str, limit: i32) -> Result<Vec<ClipboardEntry>, String>;
     fn delete(&self, id: i64, data_dir: Option<&std::path::Path>) -> Result<(), String>;
     fn clear(&self, data_dir: Option<&std::path::Path>) -> Result<(), String>;
@@ -191,17 +189,9 @@ pub trait ClipboardRepository {
     fn toggle_pin(&self, id: i64, is_pinned: bool) -> Result<(), String>;
     fn update_pinned_order(&self, orders: Vec<(i64, i64)>) -> Result<(), String>;
     fn get_entry_by_id(&self, id: i64) -> Result<Option<ClipboardEntry>, String>;
-    #[cfg(feature = "legacy-bridge")]
-    fn get_entry_by_content(
-        &self,
-        content: &str,
-        content_type: Option<&str>,
-    ) -> Result<Option<i64>, String>;
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     fn update_entry_content(&self, id: i64, content: &str, preview: &str) -> Result<(), String>;
     fn get_entry_content(&self, id: i64) -> Result<Option<String>, String>;
-    #[cfg(feature = "legacy-bridge")]
-    fn get_entry_content_full(&self, id: i64) -> Result<Option<(String, String)>, String>;
     fn get_entry_content_with_html(
         &self,
         id: i64,
@@ -747,7 +737,7 @@ impl SqliteClipboardRepository {
         paths.into_iter().collect()
     }
 
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     pub fn save_with_conn(
         &self,
         conn: &Connection,
@@ -767,7 +757,7 @@ impl SqliteClipboardRepository {
     /// a duplicate, so it passes the value in and the decode happens once per
     /// event. `None` means "no hash was computed for you", which is what every
     /// other caller wants and keeps the previous behaviour intact.
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     pub fn save_with_conn_and_image_hash(
         &self,
         conn: &Connection,
@@ -813,7 +803,7 @@ impl SqliteClipboardRepository {
     }
 
     /// Captured HTML assets are materialized only after protection checks and SQL succeed.
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     pub fn save_capture_with_conn(
         &self,
         conn: &Connection,
@@ -838,7 +828,7 @@ impl SqliteClipboardRepository {
         self.save_capture_guarded_receipt(conn, entry, data_dir, image_hash, attachments, Some((ticket, now_ms)))
     }
 
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     fn save_capture_guarded(
         &self,
         conn: &Connection,
@@ -1531,7 +1521,7 @@ impl SqliteClipboardRepository {
         })
     }
 
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     pub fn update_entry_content_with_conn(
         &self,
         conn: &Connection,
@@ -1639,25 +1629,6 @@ impl SqliteClipboardRepository {
         Ok(cleanup)
     }
 
-    #[cfg(feature = "legacy-bridge")]
-    pub fn get_entry_content_full_with_conn(
-        &self,
-        conn: &Connection,
-        id: i64,
-    ) -> Result<Option<(String, String)>, String> {
-        let mut stmt = conn
-            .prepare("SELECT content, content_type FROM clipboard_history WHERE id = ?")
-            .map_err(|e| e.to_string())?;
-        let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
-        if let Some(row) = rows.next().map_err(|e| e.to_string())? {
-            let content: String = row.get(0).map_err(|e| e.to_string())?;
-            let content_type: String = row.get(1).map_err(|e| e.to_string())?;
-            Ok(Some((self.maybe_decrypt_text(&content), content_type)))
-        } else {
-            Ok(None)
-        }
-    }
-
     pub fn get_entry_content_with_html_with_conn(
         &self,
         conn: &Connection,
@@ -1730,7 +1701,7 @@ impl SqliteClipboardRepository {
         self.update_ocr_authorized_with_conn(&conn, id, text, status, ticket, now_ms)
     }
 
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     pub fn update_ocr_text_with_conn(
         &self,
         conn: &Connection,
@@ -1741,7 +1712,7 @@ impl SqliteClipboardRepository {
         self.update_ocr_text_checked(conn, id, ocr_text, ocr_status, || {})
     }
 
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     fn update_ocr_text_checked(
         &self,
         conn: &Connection,
@@ -1796,7 +1767,7 @@ impl SqliteClipboardRepository {
         })
     }
 
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     pub fn get_ocr_status_with_conn(
         &self,
         conn: &Connection,
@@ -1917,7 +1888,7 @@ fn first_matching_id(
 }
 
 impl ClipboardRepository for SqliteClipboardRepository {
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     fn save(
         &self,
         entry: &ClipboardEntry,
@@ -2034,11 +2005,6 @@ impl ClipboardRepository for SqliteClipboardRepository {
             cache.put(cache_key, history.clone());
         }
         Ok(history)
-    }
-
-    #[cfg(feature = "legacy-bridge")]
-    fn search_fts(&self, query: &str, limit: u32) -> Result<Vec<ClipboardEntry>, String> {
-        Self::search_fts(self, query, limit)
     }
 
     fn search(&self, query: &str, limit: i32) -> Result<Vec<ClipboardEntry>, String> {
@@ -2408,17 +2374,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
         self.get_entry_by_id_with_conn(&conn, id)
     }
 
-    #[cfg(feature = "legacy-bridge")]
-    fn get_entry_by_content(
-        &self,
-        content: &str,
-        content_type: Option<&str>,
-    ) -> Result<Option<i64>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        self.find_by_content_with_conn(&conn, content, content_type)
-    }
-
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     fn update_entry_content(&self, id: i64, content: &str, preview: &str) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         self.update_entry_content_with_conn(&conn, id, content, preview)
@@ -2428,13 +2384,6 @@ impl ClipboardRepository for SqliteClipboardRepository {
         Ok(self
             .get_entry_content_with_html(id)?
             .map(|(content, _, _)| content))
-    }
-
-    #[cfg(feature = "legacy-bridge")]
-    fn get_entry_content_full(&self, id: i64) -> Result<Option<(String, String)>, String> {
-        Ok(self
-            .get_entry_content_with_html(id)?
-            .map(|(content, content_type, _)| (content, content_type)))
     }
 
     fn get_entry_content_with_html(

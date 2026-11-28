@@ -9,7 +9,6 @@ publish = false
 [features]
 portable = []
 # Temporary desktop migration access; excluded from the stable business API.
-legacy-bridge = []
 
 [dependencies]
 dzc-protocol.workspace = true
@@ -37,3 +36,4 @@ libc.workspace = true
 [package.metadata.dzc]
 capture-contract = 3
 capture-protection-report = true
+capture-public-api = true

@@ -4,10 +4,7 @@ use base64::Engine;
 use std::borrow::Cow;
 pub use crate::privacy::{has_sensitive_tag, SENSITIVE_TAGS};
 
-#[cfg(feature = "legacy-bridge")]
-pub use crate::infrastructure::encryption::{self, ENCRYPT_PREFIX};
-
-#[cfg(any(feature = "legacy-bridge", test))]
+#[cfg(test)]
 pub use crate::domain::models::ClipboardEntry;
 pub fn ensure_writable(conn: &Connection) -> std::result::Result<(), String> {
     let query_only = conn

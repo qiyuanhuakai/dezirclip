@@ -63,7 +63,7 @@ Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows v
 - Core depends on Protocol and existing foundations; it accepts injected ports/providers and does not import concrete Platform or UI implementations.
 - Platform may use controlled public Core APIs, ports and providers, but not repository types, history connections or SQL.
 - Host depends on Core/Platform/Protocol and owns authenticated sessions, capture coordination and event contracts.
-- Tauri keeps window lifecycle and native UI coordination and uses Core's public APIs. The capture benchmark still selects the transitional `legacy-bridge` layout for older source snapshots.
+- Tauri keeps window lifecycle and native UI coordination and uses Core's public APIs. The current Core has no legacy feature. The capture benchmark reads archived source layouts when measuring historical baselines.
 - Tauri manages the `HistoryService` opened once with the desktop initialization policy. Desktop commands and Embedded Host share its repositories and caches.
 - Do not replace the GUI initializer with `HistoryService::open` without preserving the existing PRAGMA, migrations, seed and shared session policy.
 - `global_state.rs` contains cross-thread lifecycle atomics. Do not replace hot-path CAS coordination with a global Mutex.

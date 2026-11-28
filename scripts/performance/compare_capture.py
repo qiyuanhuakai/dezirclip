@@ -56,7 +56,9 @@ def compare(baseline, candidate):
                              "candidate_p50_ms": after_p50, "baseline_p95_ms": before_p95,
                              "candidate_p95_ms": after_p95, "allowed_p95_ms": threshold,
                              "passed": after_p95 <= threshold}
-    return {"scope": "Same production store dedup+commit boundaries; conversion method entry-to-commit",
+    return {"scope": "Production duplicate lookup and commit. Conversion spans the protection operation through commit.",
+            "conversion_paths": {"baseline": baseline.get("conversion_path", "archived_repository_encrypt_entry"),
+                                 "candidate": candidate.get("conversion_path", "archived_repository_encrypt_entry")},
             "rule": "p95 <= baseline p95 + max(baseline p95 * 10%, 20ms)", "cases": comparisons,
             "passed_for_common_store_boundaries": all(case["passed"] for case in comparisons.values()),
             "complete_capture_acceptance": False,

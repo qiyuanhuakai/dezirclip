@@ -23,7 +23,7 @@ use rusqlite::Connection;
 /// Search strategy. Each variant carries the user-supplied pattern.
 pub enum SearchMode {
     /// Full-text search via SQLite FTS5.
-    #[cfg(any(feature = "legacy-bridge", test))]
+    #[cfg(test)]
     Fts5 { query: String },
     /// Prefix-match fuzzy search. `threshold` is currently unused by
     /// the SQL fallback but is part of the API so callers can pass
@@ -49,7 +49,7 @@ pub enum SearchPlan {
 pub fn build_search_query(mode: &SearchMode, limit: u32) -> SearchPlan {
     let limit_str = limit.to_string();
     match mode {
-        #[cfg(any(feature = "legacy-bridge", test))]
+        #[cfg(test)]
         SearchMode::Fts5 { query } => {
             if query.trim().is_empty() {
                 return SearchPlan::Empty;

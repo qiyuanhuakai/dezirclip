@@ -24,9 +24,9 @@ python scripts/performance/prepare_capture.py --repository REPOSITORY --candidat
 
 `capture/main.rs` 生成中性合成数据，通过生产 initializer 建立真实 SQLite。seed、数据库复制/打开和后置查询都在计时段外。计时内只调用生产仓库方法或实际 CaptureEngine。两端使用相同 payload、记录数和调用模板，依赖真实 Windows DPAPI；不使用测试 key provider。
 
-候选 Core 若提供非默认 `legacy-bridge`，适配器会显式启用它，以 `legacy` 下的隐藏兼容出口测量仓库边界，同时从公开 `capture` 使用实际引擎。这只影响测量程序，不要求稳定 facade 公开数据库连接。
+对声明了 `legacy-bridge` 的旧归档，适配器按原归档启用该特性。当前 Core 使用公开 API。
 
-`capture/measured_engine.rs` 经共享既有仓库与缓存的 `history_service()` 兼容桥取得 `HistoryService`，再调用公开的 `HistoryService::capture_store` 工厂。包装按泛型 `CaptureStore` 委托 `prepare/find_duplicate/contains/contains_image_hash/commit`，不引用私有 store 类型；各方法前后读取 Instant 并累计时长。EventSink 只计数，不复制正文。没有插入额外事务、查询、SQL 模型或加密实现。`engine_total_ms` 包含这些少量计时记账及事件计数开销，`engine_non_store_ms` 也包含包装开销，不把它全部归因于业务引擎。六个固定文本/HTML 场景不构成图片查重性能证据。
+`capture-public-api=true` 的 Core 使用公开 `HistoryService` 写入合成数据、执行捕获及转换。独立的只读 SQLite 连接仅校验原始字段、密文、行数和 FTS 可见性。旧归档按其声明选择原有仓库或兼容桥。三个适配器继续使用同一份计时模板。包装按泛型 `CaptureStore` 委托 `prepare/find_duplicate/contains/contains_image_hash/commit`，不引用私有 store 类型；各方法前后读取 Instant 并累计时长。EventSink 只计数，不复制正文。没有插入额外事务、查询、SQL 模型或加密实现。`engine_total_ms` 包含这些少量计时记账及事件计数开销，`engine_non_store_ms` 也包含包装开销，不把它全部归因于业务引擎。六个固定文本/HTML 场景不构成图片查重性能证据。
 
 Core 的 `[package.metadata.dzc] capture-contract=2` 及更高支持版本声明读前隐私 ticket 契约。测量器仅为该实际源码启用临时 `privacy-runtime` 分支，完整委托 `capture_ticket/check_capture/with_capture_guard`，并在 payload frame 构造前取得真实 SQLite store ticket。计时从取票之前开始；新旧 Engine 模板均包含 payload clone，授权方法另列时长且计入总开销。`privacy_guard_ms` 用 guard 总 Duration 减去其全部 publish 回调的累计 Duration，只记录授权及 guard 自身开销；publish 中的 `commit_ms` 独立记录，不能重复计入 `store_total_ms`。记账不跨 publish 持有 RefCell 借用；若回调时间超出外层或 store 合计超出 Engine 总时长则明确失败，不把负值截成零。内联测试用确定性时钟验证分区，Windows contract2 功能测试另以真实 SQLite/DPAPI 检查普通与敏感捕获。早期契约缺省为 1，未知契约明确拒绝，不能用 fake store 默认方法或计时后补票绕过生产权限。共同 deduplicate+commit 及转换门槛保持原定义，构建凭据记录两端实际契约和 features。
 
@@ -50,7 +50,7 @@ python scripts/performance/run_capture.py --preparation REPOSITORY/.harness/capt
 python scripts/performance/compare_capture.py --baseline REPOSITORY/.harness/capture-evidence/legacy-1k-A1.json --candidate REPOSITORY/.harness/capture-evidence/engine-1k-B1.json --output REPOSITORY/.harness/capture-evidence/comparison-1k.json
 ```
 
-`run_capture.py` 核对只读二进制哈希和机器标识，把原始报告和构建/源码/工具凭据关联到结果。比较器只对共同的 `deduplicate+commit` 和同一转换方法执行 `p95 <= baseline + max(10%, 20ms)`。它要求六个场景与完整原始样本，重算 p50/p95；拒绝不同机器、profile、工具链、模板、数据规模和短样本；核对功能后置条件；失败退出非零。
+`run_capture.py` 核对只读二进制哈希和机器标识，把原始报告和构建/源码/工具凭据关联到结果。比较器校验两边的 `deduplicate+commit` 及加密转换操作，并在报告中记录转换入口。默认上限为 `p95 <= baseline + max(10%, 20ms)`。它要求六个场景与完整原始样本，重算 p50/p95；拒绝不同机器、profile、工具链、模板、数据规模和短样本；核对功能后置条件；失败退出非零。
 
 ## CLI 与 scope 边界
 

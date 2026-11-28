@@ -159,3 +159,5 @@ cargo test --locked -p dezirclip --no-default-features --features desktop --bin 
 - **R6 Tauri 共享装配**。删除旧的 `DbState` 适配器。Tauri 在启动时按原有桌面 SQLite 初始化政策创建一个 `HistoryService`，各命令和 Embedded Host 复用同一组仓库、缓存和既有 RAM session。设置读写和桌面路径选择走 Core，保留旧值默认规则、数据库错误文案和窗口侧效果。Linux Core 单测默认配置 493 项通过，含现有桌面适配配置 494 项通过。Linux X11 Tauri 测试 272 项通过，3 项按原规则忽略。Windows x64 编译了桌面测试目标。独立的备份格式和部分存储测试仍使用原 legacy 导出。
 
 - **R6 Tauri 退出旧 Core 兼容层**。Tauri 的产品入口和测试使用公开 Core API，备份检查继续支持既有文件格式入口。搜索、队列、备份和历史测试保留真实存储和权限边界，Windows 迁移使用旧版 SQLite 文件中的真实 DPAPI 字段。Linux Core 单测 496 项通过，Linux X11 Tauri 269 项通过、3 项忽略，备份集成 9 项通过。Windows 的 DPAPI 迁移回归通过。无兼容特性的独立 Platform IPC 样件也已在 Linux 编译通过。
+
+- **R6/R7a Core 兼容出口退役**。删除现行 `legacy-bridge`、仓库重导出与仅供桥接使用的方法。捕获性能适配器使用公开 `HistoryService`、`CaptureStore` 和类型化设置，独立 SQLite 连接只验证合成数据。Windows 分别以旧单包基线 `802808b` 和拆分后的 `90ba9960` 运行三个真实适配器，各核对六种新建、去重和加密转换场景。拆分基线的复验使用已删除兼容层的当前 Core。Linux Core 496 项通过，独立 IPC 样件编译通过。功能验收未采集性能样本。

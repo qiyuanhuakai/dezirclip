@@ -8,12 +8,6 @@ use std::path::{Component, Path, PathBuf};
 
 mod html_refs;
 
-#[cfg(feature = "legacy-bridge")]
-pub fn has_unsupported_sensitive_resources(html: &str) -> bool {
-    let references = html_refs::references(html);
-    !references.complete || !references.values.is_empty()
-}
-
 pub(crate) fn resource_references(html: &str) -> (Vec<String>, bool) {
     let references = html_refs::references(html);
     (references.values, references.complete)

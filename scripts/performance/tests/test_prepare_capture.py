@@ -34,7 +34,7 @@ def messages(*items):
 
 
 class PreparationTests(unittest.TestCase):
-    def prepare(self, stale=False, cargo_target=HOST, bad_artifact=False, workspace_baseline=False, privacy_contract=False, protection_report=False):
+    def prepare(self, stale=False, cargo_target=HOST, bad_artifact=False, workspace_baseline=False, privacy_contract=False, protection_report=False, public_api=False):
         contract = 2 if privacy_contract is True else privacy_contract or 1
         temporary = tempfile.TemporaryDirectory(prefix="dzc-prepare-artifact-test-")
         self.addCleanup(temporary.cleanup)
@@ -48,6 +48,8 @@ class PreparationTests(unittest.TestCase):
                 stream.write(f'\n[package.metadata.dzc]\ncapture-contract={contract}\n')
                 if protection_report:
                     stream.write('capture-protection-report=true\n')
+                if public_api:
+                    stream.write('capture-public-api=true\n')
         (root / "Cargo.toml").write_text('[workspace]\nmembers=["crates/dzc-core"]\n[workspace.dependencies]\nrusqlite={git="' + SQLITE_GIT + '",rev="' + SQLITE_REV + '",features=["bundled","functions"]}\n')
         (root / "Cargo.lock").write_text(lock)
         # This conflicting config and environment must not redirect a native
@@ -140,13 +142,18 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(record["role"], "baseline" if variant == "legacy" else "candidate")
             self.assertEqual(record["capture_contract"], contract if privacy_contract and variant != "legacy" else 1)
             self.assertEqual(record["capture_protection_report"], protection_report and variant != "legacy")
+            if public_api and variant != "legacy":
+                declared = tomllib.loads(Path(record["manifest"]).read_text())["dependencies"]["app_backend"]
+                self.assertEqual(declared["features"], [])
+                self.assertIn("public-core", record["features"])
+                self.assertNotIn("legacy-layout", record["features"])
             if privacy_contract and variant == "engine":
                 expected_features = ["engine", "privacy-runtime"]
                 if contract >= 3:
                     expected_features.append("privacy-policy")
                 if protection_report:
                     expected_features.append("capture-protection-report")
-                self.assertEqual(record["features"], [*expected_features, "legacy-layout"])
+                self.assertEqual(record["features"], [*expected_features, "public-core" if public_api else "legacy-layout"])
             elif variant != "engine":
                 self.assertNotIn("privacy-runtime", record["features"])
             if variant == "legacy" and workspace_baseline:
@@ -179,6 +186,9 @@ class PreparationTests(unittest.TestCase):
 
     def test_workspace_baseline_keeps_its_core_lock_and_native_provider(self):
         self.prepare(workspace_baseline=True)
+
+    def test_public_storage_api_disables_the_transitional_dependency_feature(self):
+        self.prepare(privacy_contract=3, protection_report=True, public_api=True)
 
     def test_new_engine_contract_selects_and_records_real_privacy_delegation(self):
         self.prepare(privacy_contract=True)

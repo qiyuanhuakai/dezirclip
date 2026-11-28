@@ -31,6 +31,3 @@ pub mod filesystem {
     pub use crate::infrastructure::attachments::{image_bytes, path_from_uri};
     pub use crate::infrastructure::local_file::*;
 }
-#[cfg(feature = "legacy-bridge")]
-#[doc(hidden)]
-pub mod legacy;

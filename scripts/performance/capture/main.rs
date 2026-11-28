@@ -1,9 +1,11 @@
-#[cfg(not(feature = "legacy-layout"))]
+#[cfg(not(any(feature = "legacy-layout", feature = "public-core")))]
 use app_backend as app;
 #[cfg(feature = "legacy-layout")]
 use app_backend::legacy as app;
 
+#[cfg(not(feature = "public-core"))]
 use app::database::{ClipboardEntry, DbState};
+#[cfg(not(feature = "public-core"))]
 use app::infrastructure::repository::{
     clipboard_repo::SqliteClipboardRepository, settings_repo::SqliteSettingsRepository,
     tag_repo::SqliteTagRepository,
@@ -11,13 +13,35 @@ use app::infrastructure::repository::{
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+#[cfg(not(feature = "public-core"))]
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "public-core")]
+use app_backend::api::{ClipboardEntry, HistoryService, ImportMode};
 use std::time::Instant;
 
 #[cfg(feature = "engine")]
 mod measured_engine;
 
-fn state(path: &Path) -> DbState {
+#[cfg(not(feature = "public-core"))]
+type Profile = DbState;
+
+#[cfg(feature = "public-core")]
+struct Profile {
+    history: HistoryService,
+    reader: rusqlite::Connection,
+}
+
+#[cfg(feature = "public-core")]
+fn state(path: &Path) -> Profile {
+    Profile {
+        history: HistoryService::open_desktop(path).unwrap(),
+        reader: rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap(),
+    }
+}
+
+#[cfg(not(feature = "public-core"))]
+fn state(path: &Path) -> Profile {
     let conn = Arc::new(Mutex::new(
         app::database::init_db(path.to_str().unwrap()).unwrap(),
     ));
@@ -30,7 +54,7 @@ fn state(path: &Path) -> DbState {
 }
 
 fn entry(body: &str, sensitive: bool, rich: bool) -> ClipboardEntry {
-    let normalized = app::database::normalize_text(body);
+    let normalized = body.trim().replace("\r\n", "\n");
     let preview = if normalized.chars().count() > 500 {
         format!(
             "{}...",
@@ -68,6 +92,35 @@ fn entry(body: &str, sensitive: bool, rich: bool) -> ClipboardEntry {
     }
 }
 
+#[cfg(feature = "public-core")]
+fn set_capture_preference(history: &HistoryService, key: &str, value: &str) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis().try_into().unwrap();
+    let epoch = history.runtime_snapshot(now).unwrap().privacy_epoch;
+    history.update_capture_setting(key, value, epoch).unwrap();
+}
+
+#[cfg(feature = "public-core")]
+fn seed(path: &Path, rows: usize) {
+    let history = HistoryService::open_desktop(path).unwrap();
+    set_capture_preference(&history, "app.persistent_limit_enabled", "false");
+    let entries: Vec<_> = (1..=rows).map(|index| {
+        let body = format!("synthetic neutral history row {index} {}", "sample ".repeat(40));
+        let mut row = entry(&body, false, false);
+        row.id = index as i64;
+        row.timestamp = index as i64;
+        row.source_app = "fixture".into();
+        row.preview = body;
+        row
+    }).collect();
+    history.restore(&entries, ImportMode::Merge).unwrap();
+    drop(history);
+    let connection = rusqlite::Connection::open(path).unwrap();
+    let busy: i64 = connection.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0)).unwrap();
+    assert_eq!(busy, 0);
+}
+
+#[cfg(not(feature = "public-core"))]
 fn seed(path: &Path, rows: usize) {
     let db = state(path);
     let conn = db.conn.lock().unwrap();
@@ -88,8 +141,9 @@ fn milliseconds(start: Instant) -> f64 {
     start.elapsed().as_secs_f64() * 1000.0
 }
 
+#[cfg(not(feature = "public-core"))]
 fn repository_capture(
-    db: &DbState,
+    db: &Profile,
     input: &ClipboardEntry,
     directory: &Path,
     duplicate: bool,
@@ -159,7 +213,85 @@ fn repository_capture(
     (id, metrics)
 }
 
-fn verify(db: &DbState, id: i64, input: &ClipboardEntry, rows: usize, protected: bool) -> Value {
+#[cfg(feature = "public-core")]
+fn repository_capture(
+    db: &Profile,
+    input: &ClipboardEntry,
+    directory: &Path,
+    duplicate: bool,
+    conversion: bool,
+) -> (i64, BTreeMap<String, f64>) {
+    use app_backend::capture::CaptureStore;
+    let mut metrics = BTreeMap::new();
+    let total = Instant::now();
+    if conversion {
+        let start = Instant::now();
+        db.history.update_entry_tags(input.id, input.tags.clone()).unwrap();
+        metrics.insert("conversion_commit_ms".into(), milliseconds(start));
+        metrics.insert("repository_total_ms".into(), milliseconds(total));
+        return (input.id, metrics);
+    }
+    let store = db.history.capture_store(directory);
+    let mut entry = input.clone();
+    entry.id = 0;
+    let start = Instant::now();
+    let mut prepared = store.prepare(entry).unwrap();
+    metrics.insert("prepare_ms".into(), milliseconds(start));
+    let start = Instant::now();
+    let kinds: &[&str] = if input.content_type == "rich_text" {
+        &["rich_text", "text", "code", "url"]
+    } else {
+        &["text"]
+    };
+    for kind in kinds {
+        if let Some(existing) = store.find_duplicate(&prepared.entry, kind, prepared.image_hash).unwrap() {
+            prepared.entry.id = existing.id;
+            prepared.entry.tags = existing.tags;
+            break;
+        }
+    }
+    assert_eq!(prepared.entry.id > 0, duplicate);
+    metrics.insert("deduplicate_ms".into(), milliseconds(start));
+    let start = Instant::now();
+    let committed = store.commit(&prepared).unwrap();
+    assert!(committed.removed_ids.is_empty());
+    metrics.insert("commit_ms".into(), milliseconds(start));
+    metrics.insert("common_store_total_ms".into(), metrics["commit_ms"] + metrics["deduplicate_ms"]);
+    metrics.insert("repository_total_ms".into(), milliseconds(total));
+    (committed.id, metrics)
+}
+
+fn seed_case(db: &Profile, initial: &ClipboardEntry, directory: &Path) -> i64 {
+    #[cfg(feature = "public-core")]
+    {
+        use app_backend::capture::CaptureStore;
+        let store = db.history.capture_store(directory);
+        let prepared = store.prepare(initial.clone()).unwrap();
+        store.commit(&prepared).unwrap().id
+    }
+    #[cfg(not(feature = "public-core"))]
+    db.repo.save_with_conn(&db.conn.lock().unwrap(), initial, Some(directory)).unwrap()
+}
+
+#[cfg(feature = "public-core")]
+fn decode_fixture_field(value: &str) -> String {
+    app_backend::crypto::decode_for_mutation(value).unwrap()
+}
+
+#[cfg(not(feature = "public-core"))]
+fn decode_fixture_field(value: &str) -> String {
+    app::infrastructure::encryption::decrypt_value(value).unwrap_or_else(|| value.to_owned())
+}
+
+#[cfg(feature = "public-core")]
+use app_backend::crypto::has_ciphertext_envelope as is_encrypted_value;
+#[cfg(not(feature = "public-core"))]
+use app::infrastructure::encryption::is_encrypted_value;
+
+fn verify(db: &Profile, id: i64, input: &ClipboardEntry, rows: usize, protected: bool) -> Value {
+    #[cfg(feature = "public-core")]
+    let conn = &db.reader;
+    #[cfg(not(feature = "public-core"))]
     let conn = db.conn.lock().unwrap();
     let (content, preview, html): (String, String, Option<String>) = conn
         .query_row(
@@ -168,22 +300,13 @@ fn verify(db: &DbState, id: i64, input: &ClipboardEntry, rows: usize, protected:
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .unwrap();
-    let decode = |value: &str| {
-        app::infrastructure::encryption::decrypt_value(value).unwrap_or_else(|| value.to_owned())
-    };
-    assert_eq!(decode(&content), input.content);
-    assert_eq!(decode(&preview), input.preview);
-    assert_eq!(html.as_deref().map(&decode), input.html_content);
+    assert_eq!(decode_fixture_field(&content), input.content);
+    assert_eq!(decode_fixture_field(&preview), input.preview);
+    assert_eq!(html.as_deref().map(decode_fixture_field), input.html_content);
     if protected {
-        assert!(app::infrastructure::encryption::is_encrypted_value(
-            &content
-        ));
-        assert!(app::infrastructure::encryption::is_encrypted_value(
-            &preview
-        ));
-        assert!(html
-            .as_deref()
-            .is_none_or(app::infrastructure::encryption::is_encrypted_value));
+        assert!(is_encrypted_value(&content));
+        assert!(is_encrypted_value(&preview));
+        assert!(html.as_deref().is_none_or(is_encrypted_value));
     }
     assert_eq!(
         conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| row
@@ -257,10 +380,7 @@ fn main() {
                 if conversion {
                     initial.tags.clear();
                 }
-                let id = db
-                    .repo
-                    .save_with_conn(&db.conn.lock().unwrap(), &initial, Some(&directory))
-                    .unwrap();
+                let id = seed_case(&db, &initial, &directory);
                 input.id = id;
                 Some(id)
             } else {
@@ -301,7 +421,7 @@ fn main() {
         results.insert(name, json!({"metrics":metrics.iter_mut().map(|(name,values)|(name.clone(),summary(values))).collect::<BTreeMap<_,_>>(),"postconditions":checked}));
     }
     let report = json!({"schema_version":1,"fixture_version":1,"rows":rows,"iterations":if verification {0}else{iterations},"warmups":if verification {0}else{5},"verification_only":verification,"results":results,
-        "engine":cfg!(feature="engine"),"provider":"real Windows DPAPI","fixture":"synthetic-only; SQLite seed/open/clone/verification excluded",
+        "engine":cfg!(feature="engine"),"conversion_path":if cfg!(feature="public-core") {"public_history_update_entry_tags"} else {"archived_repository_encrypt_entry"},"provider":"real Windows DPAPI","fixture":"synthetic-only; SQLite seed/open/clone/verification excluded",
         "limits":["Old repository timings exclude its AppHandle pipeline; engine total is a separate scope","No native clipboard read, GUI, worker scheduling, or event transport timing","Store metrics wrap production calls; no SQL model substitutes timed behavior"]});
     let output = PathBuf::from(&args[4]);
     assert!(!output.exists(), "preserve previous report");

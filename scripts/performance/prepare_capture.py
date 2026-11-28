@@ -212,9 +212,19 @@ def toml_value(value):
 def write_adapter(output, variant, package, source, native, lock):
     directory = output / "adapters" / variant
     directory.mkdir(parents=True)
-    bridge = package == "dzc-core" and "legacy-bridge" in tomllib.loads(
-        (source / "Cargo.toml").read_text(encoding="utf-8")).get("features", {})
-    dependency_features = '["legacy-bridge"]' if bridge else '[]'
+    layout = None
+    if package == "dzc-core":
+        metadata = tomllib.loads((source / "Cargo.toml").read_text(encoding="utf-8"))
+        public_api = metadata.get("package", {}).get("metadata", {}).get("dzc", {}).get("capture-public-api", False)
+        if type(public_api) is not bool or public_api and capture_contract(package, source) < 3:
+            raise ValueError("Unsupported Core capture storage API")
+        if public_api:
+            layout = "public-core"
+        elif "legacy-bridge" in metadata.get("features", {}):
+            layout = "legacy-layout"
+        else:
+            raise ValueError("Core source declares no supported capture storage API")
+    dependency_features = '["legacy-bridge"]' if layout == "legacy-layout" else '[]'
     dependency = f'app_backend={{package="{package}",path={json.dumps(source.as_posix())},default-features=false,features={dependency_features}}}'
     manifest = f'''[package]
 name="capture-perf-{variant}"
@@ -228,6 +238,7 @@ resolver="2"
 native-provider=[]
 engine=["native-provider"]
 legacy-layout=[]
+public-core=[]
 privacy-runtime=[]
 privacy-policy=["privacy-runtime"]
 capture-protection-report=["privacy-policy"]
@@ -253,7 +264,7 @@ panic="abort"
     path = directory / "Cargo.toml"
     path.write_text(manifest, encoding="utf-8")
     shutil.copyfile(lock, directory / "Cargo.lock")
-    return path, bridge
+    return path, layout
 
 
 def capture_contract(package, source):
@@ -334,9 +345,9 @@ def prepare(args):
             features = [*features, "privacy-policy"]
         if variant == "engine" and protection_report:
             features = [*features, "capture-protection-report"]
-        manifest, bridge = write_adapter(output, variant, package, package_source, native, lock)
-        if bridge:
-            features = [*features, "legacy-layout"]
+        manifest, layout = write_adapter(output, variant, package, package_source, native, lock)
+        if layout:
+            features = [*features, layout]
         record = {"manifest": str(manifest), "manifest_sha256": sha256(manifest), "features": features,
                   "source_package": package, "source_manifest": str(package_source / "Cargo.toml"),
                    "role": "baseline" if variant == "legacy" else "candidate", "capture_contract": contract,

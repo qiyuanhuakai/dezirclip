@@ -1,7 +1,7 @@
 use super::*;
-#[cfg(not(feature = "legacy-layout"))]
+#[cfg(not(any(feature = "legacy-layout", feature = "public-core")))]
 use app::services::capture::*;
-#[cfg(feature = "legacy-layout")]
+#[cfg(any(feature = "legacy-layout", feature = "public-core"))]
 use app_backend::capture::*;
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -98,13 +98,24 @@ impl EventSink for Events {
 }
 
 pub fn capture(
-    db: &DbState,
+    db: &Profile,
     input: &ClipboardEntry,
     directory: &Path,
 ) -> (i64, BTreeMap<String, f64>) {
-    let session = dzc_core::api::SessionHistoryStore::new(VecDeque::new());
+    let session = app_backend::api::SessionHistoryStore::new(VecDeque::new());
+    #[cfg(feature = "public-core")]
+    let sensitive = app_backend::privacy::has_sensitive_tag(&input.tags);
+    #[cfg(not(feature = "public-core"))]
     let sensitive = app::database::has_sensitive_tag(&input.tags);
-    #[cfg(feature = "privacy-policy")]
+    #[cfg(all(feature = "privacy-policy", feature = "public-core"))]
+    for (key, value) in [
+        ("app.privacy_protection", if sensitive && input.id == 0 { "true" } else { "false" }),
+        ("app.privacy_protection_custom_rules", if sensitive { "benchmarker" } else { "" }),
+        ("app.privacy_protection_kinds", ""),
+    ] {
+        set_capture_preference(&db.history, key, value);
+    }
+    #[cfg(all(feature = "privacy-policy", not(feature = "public-core")))]
     {
         let conn = db.conn.lock().unwrap();
         for (key, value) in [
@@ -143,8 +154,10 @@ pub fn capture(
     let history = db.history_service();
     #[cfg(feature = "legacy-layout")]
     let actual = history.capture_store(directory);
-    #[cfg(not(feature = "legacy-layout"))]
+    #[cfg(not(any(feature = "legacy-layout", feature = "public-core")))]
     let actual = db.capture_store(directory);
+    #[cfg(feature = "public-core")]
+    let actual = db.history.capture_store(directory);
     let store = TimedStore {
         actual,
         times: RefCell::new(BTreeMap::new()),
@@ -242,12 +255,15 @@ mod tests {
         std::fs::create_dir(&directory).unwrap();
         let db = state(&directory.join("clipboard.db"));
         {
+        #[cfg(feature = "legacy-layout")]
         let history = db.history_service();
+        #[cfg(feature = "public-core")]
+        let history = &db.history;
         let store = TimedStore {
             actual: history.capture_store(&directory),
             times: RefCell::new(BTreeMap::new()),
         };
-        let session = dzc_core::api::SessionHistoryStore::new(VecDeque::new());
+        let session = app_backend::api::SessionHistoryStore::new(VecDeque::new());
         let context = CaptureContext {
             source: CaptureSource { app_name: "synthetic session timer".into(), process_path: None },
             timestamp: 100_000,
@@ -278,7 +294,11 @@ mod tests {
         assert!(!times.contains_key("commit_ms"));
         let storage: f64 = times.values().sum();
         assert!(storage <= elapsed, "session store timers overlap: {times:?}; engine={elapsed}");
-        assert_eq!(db.conn.lock().unwrap().query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        #[cfg(feature = "public-core")]
+        let conn = &db.reader;
+        #[cfg(not(feature = "public-core"))]
+        let conn = db.conn.lock().unwrap();
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
         eprintln!("contract2-session-functional-only {}", json!({"metrics":times,"engine_total_ms":elapsed,"store_total_ms":storage,"engine_non_store_ms":elapsed-storage,"session_rows":1,"database_rows":0}));
         }
         drop(db);
